@@ -1,0 +1,49 @@
+# Base image for RedundaNet containers
+FROM python:3.11-slim AS base
+
+# Labels
+LABEL org.opencontainers.image.title="RedundaNet Base"
+LABEL org.opencontainers.image.description="Base image for RedundaNet containers"
+LABEL org.opencontainers.image.vendor="RedundaNet"
+
+# Environment
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies (including build tools for C extensions)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    gnupg \
+    iproute2 \
+    iputils-ping \
+    netcat-openbsd \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.7.1
+
+# Set work directory
+WORKDIR /app
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies (no dev dependencies)
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-interaction --no-ansi
+
+# Copy source code
+COPY src/ ./src/
+
+# Install the package
+RUN poetry install --only main --no-interaction --no-ansi
+
+# Create data directories
+RUN mkdir -p /var/lib/redundanet /var/log/redundanet /etc/redundanet
+
+# Default command
+CMD ["redundanet", "--help"]

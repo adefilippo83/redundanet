@@ -1,0 +1,64 @@
+# Tinc VPN container for RedundaNet
+FROM python:3.11-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry and dependencies
+RUN pip install poetry==1.7.1
+WORKDIR /app
+COPY pyproject.toml poetry.lock* ./
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-interaction --no-ansi
+
+# Final stage
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="RedundaNet Tinc"
+LABEL org.opencontainers.image.description="Tinc VPN mesh network for RedundaNet"
+
+# Environment
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    REDUNDANET_LOG_LEVEL=INFO
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tinc \
+    gnupg \
+    iproute2 \
+    iputils-ping \
+    netcat-openbsd \
+    procps \
+    git \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy source code
+WORKDIR /app
+COPY src/ ./src/
+COPY docker/entrypoints/tinc.py ./entrypoint.py
+COPY docker/supervisord/tinc.conf /etc/supervisor/conf.d/tinc.conf
+
+# Create directories
+RUN mkdir -p /var/lib/redundanet/{manifest,tinc} \
+    /var/log/redundanet \
+    /etc/tinc/redundanet/hosts \
+    /root/.gnupg
+
+# Expose Tinc port
+EXPOSE 655/tcp 655/udp
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ip link show tinc0 | grep -q UP || exit 1
+
+# Run entrypoint
+CMD ["supervisord", "-c", "/etc/supervisor/conf.d/tinc.conf"]

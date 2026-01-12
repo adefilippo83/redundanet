@@ -1,0 +1,50 @@
+# RedundaNet Docker Compose - Development Configuration
+# Use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: "3.8"
+
+services:
+  tinc:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+      target: builder
+    volumes:
+      - ../src:/app/src:ro
+    environment:
+      - REDUNDANET_DEBUG=true
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_TEST_MODE=true
+
+  tahoe-introducer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-introducer
+      target: builder
+    volumes:
+      - ../src:/app/src:ro
+    environment:
+      - REDUNDANET_DEBUG=true
+      - REDUNDANET_LOG_LEVEL=DEBUG
+
+  tahoe-storage:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-storage
+      target: builder
+    volumes:
+      - ../src:/app/src:ro
+    environment:
+      - REDUNDANET_DEBUG=true
+      - REDUNDANET_LOG_LEVEL=DEBUG
+
+  tahoe-client:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-client
+      target: builder
+    volumes:
+      - ../src:/app/src:ro
+    environment:
+      - REDUNDANET_DEBUG=true
+      - REDUNDANET_LOG_LEVEL=DEBUG

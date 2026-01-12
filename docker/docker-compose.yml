@@ -1,0 +1,135 @@
+# RedundaNet Docker Compose Configuration
+# Distributed encrypted storage on a mesh VPN network
+
+version: "3.8"
+
+services:
+  tinc:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+    image: ghcr.io/redundanet/tinc:${VERSION:-latest}
+    container_name: redundanet-tinc
+    hostname: ${NODE_NAME:-redundanet-node}
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - redundanet
+    ports:
+      - "${TINC_PORT:-655}:655/tcp"
+      - "${TINC_PORT:-655}:655/udp"
+    environment:
+      - REDUNDANET_NODE_NAME=${NODE_NAME}
+      - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
+      - REDUNDANET_PUBLIC_IP=${PUBLIC_IP:-auto}
+      - REDUNDANET_GPG_KEY_ID=${GPG_KEY_ID}
+      - REDUNDANET_MANIFEST_REPO=${MANIFEST_REPO}
+      - REDUNDANET_MANIFEST_BRANCH=${MANIFEST_BRANCH:-main}
+      - REDUNDANET_DEBUG=${DEBUG:-false}
+      - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - tinc-config:/etc/tinc/redundanet
+      - manifest:/var/lib/redundanet/manifest
+      - logs:/var/log/redundanet
+      - ${GPG_KEY_FILE:-./secrets/gpg_private_key.asc}:/run/secrets/gpg_private_key:ro
+    healthcheck:
+      test: ["CMD", "ip", "link", "show", "tinc0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  tahoe-introducer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-introducer
+    image: ghcr.io/redundanet/tahoe-introducer:${VERSION:-latest}
+    container_name: redundanet-tahoe-introducer
+    hostname: ${NODE_NAME:-redundanet-node}-introducer
+    restart: unless-stopped
+    depends_on:
+      tinc:
+        condition: service_healthy
+    network_mode: "service:tinc"
+    environment:
+      - REDUNDANET_NODE_NAME=${NODE_NAME}
+      - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
+      - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - tahoe-introducer:/var/lib/tahoe-introducer
+      - manifest:/var/lib/redundanet/manifest
+      - logs:/var/log/redundanet
+    profiles:
+      - introducer
+
+  tahoe-storage:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-storage
+    image: ghcr.io/redundanet/tahoe-storage:${VERSION:-latest}
+    container_name: redundanet-tahoe-storage
+    hostname: ${NODE_NAME:-redundanet-node}-storage
+    restart: unless-stopped
+    depends_on:
+      tinc:
+        condition: service_healthy
+    network_mode: "service:tinc"
+    environment:
+      - REDUNDANET_NODE_NAME=${NODE_NAME}
+      - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
+      - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - tahoe-storage:/var/lib/tahoe-storage
+      - storage-data:/data/storage
+      - manifest:/var/lib/redundanet/manifest
+      - logs:/var/log/redundanet
+    profiles:
+      - storage
+
+  tahoe-client:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-client
+    image: ghcr.io/redundanet/tahoe-client:${VERSION:-latest}
+    container_name: redundanet-tahoe-client
+    hostname: ${NODE_NAME:-redundanet-node}-client
+    restart: unless-stopped
+    depends_on:
+      tinc:
+        condition: service_healthy
+    network_mode: "service:tinc"
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    environment:
+      - REDUNDANET_NODE_NAME=${NODE_NAME}
+      - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
+      - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - tahoe-client:/var/lib/tahoe-client
+      - manifest:/var/lib/redundanet/manifest
+      - logs:/var/log/redundanet
+      - ${MOUNT_POINT:-./mount}:/mnt/redundanet:shared
+    profiles:
+      - client
+
+networks:
+  redundanet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  tinc-config:
+  manifest:
+  logs:
+  tahoe-introducer:
+  tahoe-storage:
+  tahoe-client:
+  storage-data:

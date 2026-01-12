@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://redundanet.io/schemas/manifest.json",
+  "title": "RedundaNet Manifest",
+  "description": "Schema for RedundaNet network manifest files",
+  "type": "object",
+  "required": ["network", "nodes"],
+  "properties": {
+    "network": {
+      "type": "object",
+      "description": "Network configuration",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Network identifier",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+          "minLength": 3,
+          "maxLength": 63
+        },
+        "version": {
+          "type": "string",
+          "description": "Manifest version (semver)",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$"
+        },
+        "domain": {
+          "type": "string",
+          "description": "Internal DNS domain",
+          "default": "redundanet.local"
+        },
+        "vpn_network": {
+          "type": "string",
+          "description": "VPN CIDR range",
+          "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+$",
+          "default": "10.100.0.0/16"
+        }
+      }
+    },
+    "tahoe": {
+      "type": "object",
+      "description": "Tahoe-LAFS configuration",
+      "properties": {
+        "shares_needed": {
+          "type": "integer",
+          "description": "Minimum shares for reconstruction (k)",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 3
+        },
+        "shares_happy": {
+          "type": "integer",
+          "description": "Minimum shares for successful upload",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 7
+        },
+        "shares_total": {
+          "type": "integer",
+          "description": "Total shares to create (n)",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 10
+        },
+        "reserved_space": {
+          "type": "string",
+          "description": "Reserved space per storage node",
+          "pattern": "^\\d+[KMGT]?B?$",
+          "default": "50G"
+        },
+        "introducer_furl": {
+          "type": "string",
+          "description": "Introducer FURL (auto-populated)"
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "description": "List of network nodes",
+      "items": {
+        "type": "object",
+        "required": ["name", "internal_ip", "vpn_ip"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique node identifier",
+            "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+            "minLength": 3,
+            "maxLength": 63
+          },
+          "internal_ip": {
+            "type": "string",
+            "description": "LAN IP address",
+            "format": "ipv4"
+          },
+          "vpn_ip": {
+            "type": "string",
+            "description": "VPN IP address",
+            "format": "ipv4"
+          },
+          "public_ip": {
+            "type": "string",
+            "description": "Public IP address (optional)",
+            "format": "ipv4"
+          },
+          "gpg_key_id": {
+            "type": "string",
+            "description": "GPG key identifier",
+            "pattern": "^[A-F0-9]{8,40}$"
+          },
+          "roles": {
+            "type": "array",
+            "description": "Node roles",
+            "items": {
+              "type": "string",
+              "enum": ["introducer", "storage", "client", "gateway"]
+            },
+            "uniqueItems": true
+          },
+          "storage_contribution": {
+            "type": "string",
+            "description": "Storage contributed to network",
+            "pattern": "^\\d+[KMGT]?B?$"
+          },
+          "storage_allocation": {
+            "type": "string",
+            "description": "Maximum storage usage from network",
+            "pattern": "^\\d+[KMGT]?B?$"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional node metadata",
+            "additionalProperties": true
+          }
+        }
+      },
+      "minItems": 1
+    }
+  }
+}

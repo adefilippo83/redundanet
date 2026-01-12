@@ -1,0 +1,125 @@
+# RedundaNet Docker Compose - Test Configuration
+# Used for integration testing
+
+services:
+  # Tinc VPN node for testing
+  tinc-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+    container_name: redundanet-tinc-test
+    hostname: test-node
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - test-network
+    environment:
+      - REDUNDANET_NODE_NAME=test-node
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.1
+      - REDUNDANET_DEBUG=true
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_TEST_MODE=true
+    volumes:
+      - tinc-test-config:/etc/tinc/redundanet
+      - test-logs:/var/log/redundanet
+    healthcheck:
+      test: ["CMD", "tincd", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Tahoe Introducer for testing
+  tahoe-introducer-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-introducer
+    container_name: redundanet-tahoe-introducer-test
+    hostname: test-introducer
+    networks:
+      - test-network
+    environment:
+      - REDUNDANET_NODE_NAME=test-node
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.1
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_TEST_MODE=true
+    volumes:
+      - tahoe-introducer-test:/var/lib/tahoe-introducer
+      - test-logs:/var/log/redundanet
+    healthcheck:
+      test: ["CMD", "tahoe", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Tahoe Storage for testing
+  tahoe-storage-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-storage
+    container_name: redundanet-tahoe-storage-test
+    hostname: test-storage
+    networks:
+      - test-network
+    environment:
+      - REDUNDANET_NODE_NAME=test-node
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.1
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_TEST_MODE=true
+    volumes:
+      - tahoe-storage-test:/var/lib/tahoe-storage
+      - test-storage-data:/data/storage
+      - test-logs:/var/log/redundanet
+    healthcheck:
+      test: ["CMD", "tahoe", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Tahoe Client for testing
+  tahoe-client-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-client
+    container_name: redundanet-tahoe-client-test
+    hostname: test-client
+    networks:
+      - test-network
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse:/dev/fuse
+    environment:
+      - REDUNDANET_NODE_NAME=test-node
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.1
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_TEST_MODE=true
+    volumes:
+      - tahoe-client-test:/var/lib/tahoe-client
+      - test-logs:/var/log/redundanet
+    healthcheck:
+      test: ["CMD", "tahoe", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.29.0.0/16
+
+volumes:
+  tinc-test-config:
+  tahoe-introducer-test:
+  tahoe-storage-test:
+  tahoe-client-test:
+  test-storage-data:
+  test-logs:

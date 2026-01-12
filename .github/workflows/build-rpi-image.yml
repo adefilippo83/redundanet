@@ -1,0 +1,432 @@
+name: Build Raspberry Pi Image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_suffix:
+        description: 'Image name suffix (e.g., beta, test)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  IMAGE_NAME: redundanet-rpi
+
+jobs:
+  build-arm64:
+    name: Build ARM64 Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build RedundaNet Raspberry Pi Image (64-bit)
+        uses: pguyot/arm-runner-action@v2
+        id: build
+        with:
+          base_image: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz
+          image_additional_mb: 2048
+          commands: |
+            # Prevent initramfs updates from failing in QEMU
+            export DEBIAN_FRONTEND=noninteractive
+            echo 'exit 0' > /usr/sbin/update-initramfs
+            chmod +x /usr/sbin/update-initramfs
+
+            # Update package lists (skip upgrade to avoid initramfs issues)
+            apt-get update
+
+            # Install dependencies
+            apt-get install -y --no-install-recommends \
+              docker.io \
+              docker-compose \
+              python3 \
+              python3-pip \
+              python3-venv \
+              python3-dev \
+              git \
+              gnupg \
+              gnupg-agent \
+              tinc \
+              curl \
+              wget \
+              jq \
+              ca-certificates \
+              apt-transport-https \
+              software-properties-common \
+              build-essential \
+              libffi-dev \
+              libssl-dev
+
+            # Enable Docker
+            systemctl enable docker
+
+            # Create redundanet user
+            useradd -m -s /bin/bash -G sudo,docker redundanet || true
+            echo "redundanet:redundanet" | chpasswd
+
+            # Create directories
+            mkdir -p /opt/redundanet
+            mkdir -p /etc/redundanet
+            mkdir -p /var/lib/redundanet
+            mkdir -p /var/log/redundanet
+
+            # Setup Python virtual environment
+            python3 -m venv /opt/redundanet/venv
+            /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
+
+            # Create symlink for redundanet command
+            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet || true
+
+            # Set ownership
+            chown -R redundanet:redundanet /opt/redundanet
+            chown -R redundanet:redundanet /etc/redundanet
+            chown -R redundanet:redundanet /var/lib/redundanet
+            chown -R redundanet:redundanet /var/log/redundanet
+
+            # Set hostname
+            echo "redundanet" > /etc/hostname
+
+            # Enable SSH
+            systemctl enable ssh
+
+            # Create MOTD
+            cat > /etc/motd << 'MOTD'
+
+              ____          _                 _       _   _      _
+             |  _ \ ___  __| |_   _ _ __   __| | __ _| \ | | ___| |_
+             | |_) / _ \/ _` | | | | '_ \ / _` |/ _` |  \| |/ _ \ __|
+             |  _ <  __/ (_| | |_| | | | | (_| | (_| | |\  |  __/ |_
+             |_| \_\___|\__,_|\__,_|_| |_|\__,_|\__,_|_| \_|\___|\__|
+
+              Distributed Encrypted Storage on Mesh VPN Network
+
+              Quick Start:
+                redundanet status    - Check node status
+                redundanet init      - Initialize this node
+                redundanet --help    - Show all commands
+
+              Default credentials: redundanet / redundanet
+              PLEASE CHANGE YOUR PASSWORD: passwd
+
+            MOTD
+
+            # Create first-boot service
+            cat > /etc/systemd/system/redundanet-firstboot.service << 'EOF'
+            [Unit]
+            Description=RedundaNet First Boot Setup
+            After=network-online.target
+            Wants=network-online.target
+            ConditionPathExists=!/etc/redundanet/.initialized
+
+            [Service]
+            Type=oneshot
+            ExecStart=/opt/redundanet/first-boot.sh
+            ExecStartPost=/usr/bin/touch /etc/redundanet/.initialized
+            RemainAfterExit=yes
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            # Create first-boot script
+            cat > /opt/redundanet/first-boot.sh << 'EOF'
+            #!/bin/bash
+            set -e
+
+            CONFIG_DIR="/etc/redundanet"
+            LOG_FILE="/var/log/redundanet/first-boot.log"
+
+            log() {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+            }
+
+            log "Starting RedundaNet first boot initialization..."
+
+            # Generate unique node name
+            if [ ! -f "$CONFIG_DIR/node-name" ]; then
+                NODE_NAME="rpi-$(hostname -s)-$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 4)"
+                echo "$NODE_NAME" > "$CONFIG_DIR/node-name"
+                log "Generated node name: $NODE_NAME"
+            fi
+
+            # Create default config
+            if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
+                cat > "$CONFIG_DIR/config.yaml" << CONF
+            # RedundaNet Node Configuration
+            # Generated on first boot: $(date)
+
+            node:
+              name: $(cat $CONFIG_DIR/node-name)
+
+            network:
+              manifest_repo: ""
+              manifest_branch: "main"
+
+            storage:
+              contribution: "100GB"
+              data_path: "/var/lib/redundanet/storage"
+
+            initialized: false
+            CONF
+                log "Created default configuration"
+            fi
+
+            log "First boot initialization complete!"
+            EOF
+
+            chmod +x /opt/redundanet/first-boot.sh
+            systemctl enable redundanet-firstboot.service
+
+            # Clean up
+            apt-get clean
+            rm -rf /var/lib/apt/lists/*
+
+      - name: Compress image
+        run: |
+          mv ${{ steps.build.outputs.image }} ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img
+          xz -9 -T0 ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img
+
+      - name: Generate SHA256 checksum
+        run: |
+          sha256sum ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img.xz > SHA256SUMS-arm64.txt
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpi-image-arm64
+          path: |
+            ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img.xz
+            SHA256SUMS-arm64.txt
+          retention-days: 7
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img.xz
+            SHA256SUMS-arm64.txt
+
+  build-arm32:
+    name: Build ARM32 Image (Legacy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build RedundaNet Raspberry Pi Image (32-bit)
+        uses: pguyot/arm-runner-action@v2
+        id: build
+        with:
+          base_image: https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz
+          image_additional_mb: 2048
+          commands: |
+            # Prevent initramfs updates from failing in QEMU
+            export DEBIAN_FRONTEND=noninteractive
+            echo 'exit 0' > /usr/sbin/update-initramfs
+            chmod +x /usr/sbin/update-initramfs
+
+            # Update package lists (skip upgrade to avoid initramfs issues)
+            apt-get update
+
+            # Install dependencies
+            apt-get install -y --no-install-recommends \
+              docker.io \
+              docker-compose \
+              python3 \
+              python3-pip \
+              python3-venv \
+              python3-dev \
+              git \
+              gnupg \
+              gnupg-agent \
+              tinc \
+              curl \
+              wget \
+              jq \
+              ca-certificates \
+              apt-transport-https \
+              software-properties-common \
+              build-essential \
+              libffi-dev \
+              libssl-dev
+
+            # Enable Docker
+            systemctl enable docker
+
+            # Create redundanet user
+            useradd -m -s /bin/bash -G sudo,docker redundanet || true
+            echo "redundanet:redundanet" | chpasswd
+
+            # Create directories
+            mkdir -p /opt/redundanet
+            mkdir -p /etc/redundanet
+            mkdir -p /var/lib/redundanet
+            mkdir -p /var/log/redundanet
+
+            # Setup Python virtual environment
+            python3 -m venv /opt/redundanet/venv
+            /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
+
+            # Create symlink for redundanet command
+            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet || true
+
+            # Set ownership
+            chown -R redundanet:redundanet /opt/redundanet
+            chown -R redundanet:redundanet /etc/redundanet
+            chown -R redundanet:redundanet /var/lib/redundanet
+            chown -R redundanet:redundanet /var/log/redundanet
+
+            # Set hostname
+            echo "redundanet" > /etc/hostname
+
+            # Enable SSH
+            systemctl enable ssh
+
+            # Create MOTD
+            cat > /etc/motd << 'MOTD'
+
+              ____          _                 _       _   _      _
+             |  _ \ ___  __| |_   _ _ __   __| | __ _| \ | | ___| |_
+             | |_) / _ \/ _` | | | | '_ \ / _` |/ _` |  \| |/ _ \ __|
+             |  _ <  __/ (_| | |_| | | | | (_| | (_| | |\  |  __/ |_
+             |_| \_\___|\__,_|\__,_|_| |_|\__,_|\__,_|_| \_|\___|\__|
+
+              Distributed Encrypted Storage on Mesh VPN Network
+
+              Quick Start:
+                redundanet status    - Check node status
+                redundanet init      - Initialize this node
+                redundanet --help    - Show all commands
+
+              Default credentials: redundanet / redundanet
+              PLEASE CHANGE YOUR PASSWORD: passwd
+
+            MOTD
+
+            # Create first-boot service
+            cat > /etc/systemd/system/redundanet-firstboot.service << 'EOF'
+            [Unit]
+            Description=RedundaNet First Boot Setup
+            After=network-online.target
+            Wants=network-online.target
+            ConditionPathExists=!/etc/redundanet/.initialized
+
+            [Service]
+            Type=oneshot
+            ExecStart=/opt/redundanet/first-boot.sh
+            ExecStartPost=/usr/bin/touch /etc/redundanet/.initialized
+            RemainAfterExit=yes
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            # Create first-boot script
+            cat > /opt/redundanet/first-boot.sh << 'EOF'
+            #!/bin/bash
+            set -e
+
+            CONFIG_DIR="/etc/redundanet"
+            LOG_FILE="/var/log/redundanet/first-boot.log"
+
+            log() {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+            }
+
+            log "Starting RedundaNet first boot initialization..."
+
+            # Generate unique node name
+            if [ ! -f "$CONFIG_DIR/node-name" ]; then
+                NODE_NAME="rpi-$(hostname -s)-$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 4)"
+                echo "$NODE_NAME" > "$CONFIG_DIR/node-name"
+                log "Generated node name: $NODE_NAME"
+            fi
+
+            # Create default config
+            if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
+                cat > "$CONFIG_DIR/config.yaml" << CONF
+            # RedundaNet Node Configuration
+            # Generated on first boot: $(date)
+
+            node:
+              name: $(cat $CONFIG_DIR/node-name)
+
+            network:
+              manifest_repo: ""
+              manifest_branch: "main"
+
+            storage:
+              contribution: "100GB"
+              data_path: "/var/lib/redundanet/storage"
+
+            initialized: false
+            CONF
+                log "Created default configuration"
+            fi
+
+            log "First boot initialization complete!"
+            EOF
+
+            chmod +x /opt/redundanet/first-boot.sh
+            systemctl enable redundanet-firstboot.service
+
+            # Clean up
+            apt-get clean
+            rm -rf /var/lib/apt/lists/*
+
+      - name: Compress image
+        run: |
+          mv ${{ steps.build.outputs.image }} ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img
+          xz -9 -T0 ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img
+
+      - name: Generate SHA256 checksum
+        run: |
+          sha256sum ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img.xz > SHA256SUMS-armhf.txt
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpi-image-arm32
+          path: |
+            ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img.xz
+            SHA256SUMS-armhf.txt
+          retention-days: 7
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img.xz
+            SHA256SUMS-armhf.txt

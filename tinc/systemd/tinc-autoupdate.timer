@@ -1,9 +1,0 @@
-[Unit]
-Description=Run tinc VPN Configuration Auto-Update periodically
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=30min
-
-[Install]
-WantedBy=timers.target

@@ -1,8 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Poetry
+poetry.lock
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
 # macOS
 ._*
 .DS_Store
 .LSOverride
-# Icon must end with two carriage returns (\r)
 Icon
 
 # Windows
@@ -35,6 +94,18 @@ temp/
 [._]ss[a-gi-z]
 [._]sw[a-p]
 
-#RSA KEY
+# Secrets
+*.pem
+*.key
+*.asc
+secrets/
 id_rsa
 id_rsa.pub
+
+# Docker
+.docker/
+
+# Local configuration
+*.local.yaml
+*.local.yml
+config.local.yaml

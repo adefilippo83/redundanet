@@ -1,0 +1,27 @@
+[Unit]
+Description=RedundaNet Distributed Storage Service
+Documentation=https://github.com/yourorg/redundanet
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/redundanet
+ExecStart=/opt/redundanet/venv/bin/redundanet start
+ExecStop=/opt/redundanet/venv/bin/redundanet stop
+User=redundanet
+Group=redundanet
+
+# Environment
+Environment=REDUNDANET_CONFIG_DIR=/etc/redundanet
+Environment=REDUNDANET_DATA_DIR=/var/lib/redundanet
+Environment=REDUNDANET_LOG_LEVEL=INFO
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=RedundaNet First Boot Initialization
+Documentation=https://github.com/yourorg/redundanet
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/etc/redundanet/.initialized
+
+[Service]
+Type=oneshot
+ExecStart=/opt/redundanet/first-boot.sh
+ExecStartPost=/usr/bin/touch /etc/redundanet/.initialized
+RemainAfterExit=yes
+TimeoutStartSec=600
+
+# Environment
+Environment=REDUNDANET_CONFIG_DIR=/etc/redundanet
+Environment=REDUNDANET_DATA_DIR=/var/lib/redundanet
+
+[Install]
+WantedBy=multi-user.target
