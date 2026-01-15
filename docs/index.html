@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedundaNet - Distributed Encrypted Storage</title>
+    <meta name="description" content="RedundaNet is a distributed encrypted storage system built on a mesh VPN network. Self-hosted, secure, and resilient.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 100px 0;
+            text-align: center;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid var(--primary);
+            border-radius: 50px;
+            font-size: 0.875rem;
+            color: var(--primary);
+            margin-bottom: 24px;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 40px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Features */
+        .features {
+            padding: 100px 0;
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .section-title h2 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .section-title p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .feature-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+        }
+
+        /* Architecture */
+        .architecture {
+            padding: 100px 0;
+            background: var(--bg-card);
+        }
+
+        .arch-diagram {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px;
+            margin-top: 40px;
+        }
+
+        .arch-nodes {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 40px;
+        }
+
+        .arch-node {
+            text-align: center;
+        }
+
+        .arch-node-icon {
+            width: 80px;
+            height: 80px;
+            background: var(--bg-card);
+            border: 2px solid var(--primary);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin: 0 auto 16px;
+        }
+
+        .arch-node h4 {
+            font-size: 1rem;
+            margin-bottom: 8px;
+        }
+
+        .arch-node p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .arch-connection {
+            text-align: center;
+            padding: 40px 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Installation */
+        .installation {
+            padding: 100px 0;
+        }
+
+        .install-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .install-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        .install-card h3 {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .install-card p {
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        pre {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--secondary);
+        }
+
+        /* Footer */
+        footer {
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: var(--text);
+        }
+
+        .footer-copy {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .arch-nodes {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <a href="/" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#installation">Installation</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet">GitHub</a></li>
+            </ul>
+            <a href="https://github.com/adefilippo83/redundanet" class="btn btn-primary">
+                Get Started
+            </a>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <span class="hero-badge">Open Source & Self-Hosted</span>
+            <h1>Distributed Encrypted Storage</h1>
+            <p>
+                Build your own resilient, encrypted storage network across multiple nodes.
+                Self-hosted, secure, and designed for communities and organizations.
+            </p>
+            <div class="hero-buttons">
+                <a href="#installation" class="btn btn-primary">
+                    Quick Start
+                </a>
+                <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary">
+                    View on GitHub
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-title">
+                <h2>Why RedundaNet?</h2>
+                <p>A complete solution for distributed, encrypted storage</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">&#128274;</div>
+                    <h3>End-to-End Encryption</h3>
+                    <p>Your data is encrypted before it leaves your device. Only you hold the keys. Built on Tahoe-LAFS proven cryptography.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#127760;</div>
+                    <h3>Mesh VPN Network</h3>
+                    <p>Nodes connect securely via Tinc VPN mesh network. No central server required. Works across NATs and firewalls.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#128218;</div>
+                    <h3>Redundant Storage</h3>
+                    <p>Data is split and distributed across multiple nodes. Configurable redundancy ensures availability even when nodes go offline.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#128422;</div>
+                    <h3>Raspberry Pi Ready</h3>
+                    <p>Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes. Perfect for home labs and edge deployments.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#128051;</div>
+                    <h3>Docker Native</h3>
+                    <p>Fully containerized with Docker Compose. Easy deployment, updates, and management. Run anywhere Docker runs.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#129302;</div>
+                    <h3>Python CLI</h3>
+                    <p>Modern Python CLI for node management. Initialize, configure, and monitor your network with simple commands.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="architecture" id="architecture">
+        <div class="container">
+            <div class="section-title">
+                <h2>How It Works</h2>
+                <p>A decentralized architecture with no single point of failure</p>
+            </div>
+            <div class="arch-diagram">
+                <div class="arch-nodes">
+                    <div class="arch-node">
+                        <div class="arch-node-icon">&#128187;</div>
+                        <h4>Your Device</h4>
+                        <p>Tahoe-LAFS Client</p>
+                    </div>
+                    <div class="arch-node">
+                        <div class="arch-node-icon">&#128268;</div>
+                        <h4>Introducer</h4>
+                        <p>Node Discovery</p>
+                    </div>
+                    <div class="arch-node">
+                        <div class="arch-node-icon">&#128190;</div>
+                        <h4>Storage Node 1</h4>
+                        <p>Encrypted Shares</p>
+                    </div>
+                    <div class="arch-node">
+                        <div class="arch-node-icon">&#128190;</div>
+                        <h4>Storage Node 2</h4>
+                        <p>Encrypted Shares</p>
+                    </div>
+                    <div class="arch-node">
+                        <div class="arch-node-icon">&#128190;</div>
+                        <h4>Storage Node N</h4>
+                        <p>Encrypted Shares</p>
+                    </div>
+                </div>
+                <div class="arch-connection">
+                    All nodes connected via encrypted Tinc VPN mesh network
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="installation" id="installation">
+        <div class="container">
+            <div class="section-title">
+                <h2>Get Started</h2>
+                <p>Choose your preferred installation method</p>
+            </div>
+            <div class="install-options">
+                <div class="install-card">
+                    <h3>&#128051; Docker (Recommended)</h3>
+                    <p>Run RedundaNet using Docker Compose. Works on any system with Docker installed.</p>
+                    <pre><code>git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
+docker compose up -d</code></pre>
+                </div>
+                <div class="install-card">
+                    <h3>&#128013; PyPI</h3>
+                    <p>Install the RedundaNet CLI tool via pip for node management.</p>
+                    <pre><code>pip install redundanet
+
+redundanet init --name my-node
+redundanet status</code></pre>
+                </div>
+                <div class="install-card">
+                    <h3>&#128422; Raspberry Pi</h3>
+                    <p>Download our pre-built image, flash it to an SD card, and boot.</p>
+                    <pre><code># Download from GitHub Releases
+# Flash with Raspberry Pi Imager
+# Boot and SSH in:
+ssh redundanet@redundanet.local
+# Password: redundanet</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="https://github.com/adefilippo83/redundanet">GitHub</a>
+                <a href="https://github.com/adefilippo83/redundanet/releases">Releases</a>
+                <a href="https://github.com/adefilippo83/redundanet/issues">Issues</a>
+                <a href="https://pypi.org/project/redundanet/">PyPI</a>
+            </div>
+            <p class="footer-copy">
+                RedundaNet is open source software licensed under MIT.
+            </p>
+        </div>
+    </footer>
+</body>
+</html>
