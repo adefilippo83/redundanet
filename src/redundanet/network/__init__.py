@@ -5,7 +5,7 @@ from redundanet.network.dns import DNSManager
 from redundanet.network.validation import NetworkValidator
 
 __all__ = [
-    "NodeDiscovery",
-    "NetworkValidator",
     "DNSManager",
+    "NetworkValidator",
+    "NodeDiscovery",
 ]

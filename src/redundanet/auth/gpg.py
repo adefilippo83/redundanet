@@ -43,9 +43,9 @@ class GPGKeyInfo:
             fingerprint=key.get("fingerprint", ""),
             user_id=user_id,
             email=email,
-            created=key.get("date", None),
-            expires=key.get("expires", None),
-            trust=key.get("trust", None),
+            created=key.get("date"),
+            expires=key.get("expires"),
+            trust=key.get("trust"),
         )
 
 

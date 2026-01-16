@@ -13,7 +13,7 @@ Before installing RedundaNet, ensure you have:
 
 ## Installation Methods
 
-### 1. PyPI Installation (Recommended for CLI)
+### 1. PyPI Installation (Recommended)
 
 The simplest way to install the RedundaNet CLI:
 
@@ -32,8 +32,8 @@ redundanet --version
 Clone the repository and install with Poetry:
 
 ```bash
-git clone https://github.com/adefilippo83/project-earthgrid.git
-cd project-earthgrid
+git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
 
 # Install Poetry if not already installed
 curl -sSL https://install.python-poetry.org | python3 -
@@ -48,25 +48,34 @@ poetry shell
 redundanet --version
 ```
 
-### 3. Docker Deployment (Recommended for Production)
+### 3. Docker Deployment (For Running Services)
 
-Pull pre-built containers:
-
-```bash
-docker pull ghcr.io/redundanet/tinc:latest
-docker pull ghcr.io/redundanet/tahoe-client:latest
-docker pull ghcr.io/redundanet/tahoe-storage:latest
-docker pull ghcr.io/redundanet/tahoe-introducer:latest
-```
-
-Or build locally:
+Clone the repository:
 
 ```bash
-git clone https://github.com/adefilippo83/project-earthgrid.git
-cd project-earthgrid
-
-docker compose -f docker/docker-compose.yml build
+git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
 ```
+
+Start services:
+
+```bash
+# As a storage node
+docker compose --profile storage up -d
+
+# As a client
+docker compose --profile client up -d
+```
+
+### 4. Raspberry Pi Image
+
+Download the pre-built image from [GitHub Releases](https://github.com/adefilippo83/redundanet/releases):
+
+1. Flash to SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+2. Boot your Raspberry Pi
+3. SSH in: `ssh redundanet@redundanet.local` (password: `redundanet`)
+4. Change password immediately: `passwd`
+5. Configure: `redundanet init`
 
 ## System Requirements
 
@@ -95,6 +104,7 @@ docker compose -f docker/docker-compose.yml build
 Fully supported on:
 - Ubuntu 20.04+
 - Debian 11+
+- Raspberry Pi OS
 - CentOS 8+
 - Fedora 35+
 - Arch Linux
@@ -120,7 +130,7 @@ Supported via WSL2 (Windows Subsystem for Linux). Native Windows support is expe
 
 ### Firewall Configuration
 
-For publicly accessible nodes:
+For publicly accessible nodes, open port 655:
 
 ```bash
 # UFW (Ubuntu)
@@ -139,17 +149,43 @@ sudo iptables -A INPUT -p udp --dport 655 -j ACCEPT
 
 ## GPG Key Setup
 
-Generate a GPG key for node authentication:
+GPG keys are required for node authentication. Keys must be published to a public keyserver.
+
+### Using RedundaNet CLI (Recommended)
+
+```bash
+# Generate a new GPG key
+redundanet node keys generate --name my-node --email you@example.com
+
+# List your keys to get the Key ID
+redundanet node keys list
+
+# Publish to keyservers
+redundanet node keys publish --key-id YOUR_KEY_ID
+```
+
+### Using Standard GPG Commands
 
 ```bash
 # Generate new key
 gpg --full-generate-key
+# Choose: RSA and RSA, 4096 bits, no expiration
 
 # List keys to get your key ID
-gpg --list-keys
+gpg --list-keys --keyid-format long
 
-# Export public key to keyserver
-gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_ID
+# Export to keyserver
+gpg --keyserver keys.openpgp.org --send-keys YOUR_KEY_ID
+```
+
+### Verifying Key Publication
+
+```bash
+# Search for your key on the keyserver
+redundanet node keys fetch --key-id YOUR_KEY_ID
+
+# Or using gpg
+gpg --keyserver keys.openpgp.org --search-keys your@email.com
 ```
 
 ## Verification
@@ -160,11 +196,14 @@ After installation, verify everything is working:
 # Check CLI
 redundanet --version
 
-# Check Docker (if using containers)
-docker compose -f docker/docker-compose.yml config
+# Check GPG keys
+redundanet node keys list
 
-# Check GPG
-gpg --list-keys
+# Check Docker (if using containers)
+docker compose config
+
+# Check status
+redundanet status
 ```
 
 ## Next Steps

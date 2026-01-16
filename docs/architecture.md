@@ -2,7 +2,27 @@
 
 This document describes the architecture of RedundaNet and how its components work together.
 
-## System Architecture
+## System Overview
+
+RedundaNet is a distributed encrypted storage system with three main layers:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Application Layer                             │
+│                    (CLI, Web Interface, APIs)                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                           Storage Layer                                 │
+│                  (Tahoe-LAFS: Encryption + Erasure Coding)             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                           Network Layer                                 │
+│                    (Tinc VPN: Encrypted Mesh Network)                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                           Identity Layer                                │
+│                    (GPG Keys + Public Keyservers)                       │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## Network Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -85,13 +105,19 @@ Any 3 shares can reconstruct the original file
 
 GPG keys provide node identity and authentication.
 
+**Why GPG?**
+- Decentralized identity (no central authority)
+- Proven cryptographic security
+- Public keyserver infrastructure already exists
+- Users control their own keys
+
 **Authentication Flow:**
 ```
 1. Node generates GPG keypair
-2. Public key uploaded to keyserver
-3. Key ID added to manifest
+2. Public key uploaded to keyserver (keys.openpgp.org)
+3. Key ID added to network manifest
 4. Other nodes verify identity via keyserver
-5. Manifest signed with GPG for integrity
+5. Manifest can be GPG-signed for integrity
 ```
 
 ### 4. Manifest System
@@ -99,16 +125,65 @@ GPG keys provide node identity and authentication.
 The manifest is a YAML file defining the network configuration.
 
 **Contents:**
-- Network parameters
-- Node list with IPs and roles
-- Tahoe-LAFS settings
-- GPG key IDs
+- Network parameters (name, version, VPN range)
+- Tahoe-LAFS settings (shares needed/total)
+- Node list with IPs, GPG keys, and roles
+- Introducer FURL
 
-**Distribution:**
-- Stored in Git repository
-- Nodes sync via `git pull`
-- Changes require PR approval
-- GPG signatures verify integrity
+**Distribution via Git:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    GitHub Repository                         │
+│                                                             │
+│  manifests/manifest.yaml                                    │
+│  ├── network configuration                                  │
+│  ├── node list (auto-updated by GitHub Actions)            │
+│  └── introducer FURL                                        │
+│                                                             │
+│  On join request:                                           │
+│  1. User submits issue via join.html                       │
+│  2. GitHub Action parses request                           │
+│  3. PR created to add node to manifest                     │
+│  4. Maintainer reviews and merges                          │
+│  5. All nodes sync updated manifest                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Node Joining Process
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Node Joining Flow                               │
+│                                                                         │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐          │
+│  │ Generate │    │ Publish  │    │  Submit  │    │  Wait    │          │
+│  │ GPG Key  │───►│ to Key   │───►│  Join    │───►│  for     │          │
+│  │          │    │ Server   │    │ Request  │    │ Approval │          │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘          │
+│       │                                               │                 │
+│       │ redundanet node                              │ Maintainer       │
+│       │ keys generate                                │ reviews PR       │
+│       │                                               │                 │
+│       ▼                                               ▼                 │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐          │
+│  │  Clone   │    │  Init    │    │  Sync    │    │  Start   │          │
+│  │  Repo    │◄───│  Node    │◄───│ Manifest │◄───│ Services │          │
+│  │          │    │          │    │          │    │          │          │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Automated Processing:**
+1. User fills form at redundanet.com/join.html
+2. Form creates GitHub issue with `join-request` label
+3. GitHub Action triggers on issue creation
+4. Action parses GPG key ID, storage, region
+5. Action verifies GPG key exists on keyserver
+6. Action assigns next available VPN IP
+7. Action creates PR to update manifest
+8. Maintainer reviews and merges PR
+9. Issue is closed with setup instructions
 
 ## Node Roles
 
@@ -253,9 +328,12 @@ User File
 
 ### Encryption Layers
 
-1. **Transport**: TLS over Tinc VPN
-2. **Storage**: AES-128 (Tahoe-LAFS convergent encryption)
-3. **Capability**: Cryptographic read/write capabilities
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Transport | Tinc VPN (RSA + AES) | Encrypts all network traffic |
+| Storage | Tahoe-LAFS (AES-128) | Encrypts data at rest |
+| Capability | Cryptographic URIs | Access control |
+| Identity | GPG (RSA-4096) | Node authentication |
 
 ### Threat Model
 
@@ -264,14 +342,16 @@ User File
 | Network eavesdropping | Tinc VPN encryption |
 | Storage node compromise | Client-side encryption |
 | Single node failure | Erasure coding (3-of-10) |
-| Rogue node joining | GPG authentication |
-| Manifest tampering | GPG signatures |
+| Rogue node joining | GPG authentication via keyserver |
+| Manifest tampering | Git history + GPG signatures |
+| Man-in-the-middle | VPN certificates + GPG verification |
 
 ### What Storage Nodes Can See
 
-- Encrypted data blobs
+- Encrypted data blobs (meaningless without keys)
 - Share identifiers
-- Access patterns (which shares are requested)
+- Access patterns (which shares are requested when)
+- IP addresses of requesters (within VPN)
 
 ### What Storage Nodes Cannot See
 
@@ -279,27 +359,31 @@ User File
 - File names
 - File metadata
 - Who uploaded what
+- Relationship between shares
 
 ## Scalability
 
 ### Adding Nodes
 
-1. New node generates keys
-2. Submit PR to manifest
-3. Existing nodes verify GPG key
-4. PR merged, manifest updated
-5. All nodes sync new manifest
-6. New node joins mesh
+1. New node generates GPG key and publishes to keyserver
+2. User submits join request via web form
+3. GitHub Action creates PR to add node
+4. Maintainer reviews and merges
+5. All nodes sync new manifest via `git pull`
+6. New node joins Tinc mesh
+7. New node announces to Tahoe introducer
 
 ### Network Growth
 
 ```
-Nodes: 10   → Storage: ~5TB   → Capacity: ~500GB effective
-Nodes: 100  → Storage: ~50TB  → Capacity: ~5TB effective
-Nodes: 1000 → Storage: ~500TB → Capacity: ~50TB effective
+Nodes: 10   → Storage: ~5TB   → Effective Capacity: ~500GB
+Nodes: 100  → Storage: ~50TB  → Effective Capacity: ~5TB
+Nodes: 1000 → Storage: ~500TB → Effective Capacity: ~50TB
 
 (Assuming 500GB contribution per node, 3-of-10 encoding)
 ```
+
+**Note:** Effective capacity is ~10% of total due to 3-of-10 erasure coding overhead.
 
 ## Failure Scenarios
 
@@ -307,16 +391,47 @@ Nodes: 1000 → Storage: ~500TB → Capacity: ~50TB effective
 
 - Data remains accessible (need only 3 of 10 shares)
 - Tahoe-LAFS can repair by recreating missing shares
-- Network continues operating
+- Network continues operating normally
 
 ### Multiple Node Failures
 
 - Data accessible if ≥3 shares survive
 - Automatic repair when nodes return
-- New nodes can receive repairs
+- New nodes can receive repair shares
 
 ### Introducer Failure
 
 - Existing connections continue working
 - New connections fail until introducer returns
-- Consider multiple introducers for resilience
+- Recommendation: Run multiple introducers for resilience
+
+### Network Partition
+
+- Nodes in each partition continue working
+- Cross-partition requests fail
+- Automatic recovery when partition heals
+
+## Container Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Docker Compose Stack                            │
+│                                                                         │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │
+│  │   tinc          │  │ tahoe-storage   │  │  tahoe-client   │         │
+│  │                 │  │                 │  │                 │         │
+│  │ • VPN daemon    │  │ • Storage svc   │  │ • Client svc    │         │
+│  │ • Port 655      │  │ • Port 3457     │  │ • Port 3456     │         │
+│  │ • Mesh network  │  │ • Data storage  │  │ • FUSE mount    │         │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘         │
+│           │                    │                    │                   │
+│           └────────────────────┴────────────────────┘                   │
+│                                │                                        │
+│                    ┌───────────┴───────────┐                           │
+│                    │      Shared Volumes    │                           │
+│                    │  • tinc-config         │                           │
+│                    │  • tahoe-storage       │                           │
+│                    │  • storage-data        │                           │
+│                    └───────────────────────┘                           │
+└─────────────────────────────────────────────────────────────────────────┘
+```

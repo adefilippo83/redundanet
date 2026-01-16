@@ -8,9 +8,9 @@ from redundanet.core.config import NetworkConfig, NodeConfig, TahoeConfig
 from redundanet.core.manifest import Manifest
 
 __all__ = [
-    "__version__",
+    "Manifest",
     "NetworkConfig",
     "NodeConfig",
     "TahoeConfig",
-    "Manifest",
+    "__version__",
 ]

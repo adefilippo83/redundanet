@@ -171,7 +171,7 @@ async def run_command_async(
             command=cmd_str,
         )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         process.kill()
         await process.wait()
         logger.error("Async command timed out", command=cmd_str, timeout=timeout)

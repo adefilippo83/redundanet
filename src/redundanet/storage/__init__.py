@@ -6,8 +6,8 @@ from redundanet.storage.introducer import TahoeIntroducer
 from redundanet.storage.storage import TahoeStorage
 
 __all__ = [
-    "TahoeClient",
-    "TahoeStorage",
-    "TahoeIntroducer",
     "FURLManager",
+    "TahoeClient",
+    "TahoeIntroducer",
+    "TahoeStorage",
 ]

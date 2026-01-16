@@ -266,40 +266,223 @@ def remove_node(
 def manage_keys(
     action: Annotated[
         str,
-        typer.Argument(help="Action: generate, export, import"),
+        typer.Argument(help="Action: generate, export, import, list, publish, fetch"),
     ],
     node_name: Annotated[
         Optional[str],
         typer.Option("--name", "-n", help="Node name"),
     ] = None,
+    email: Annotated[
+        Optional[str],
+        typer.Option("--email", "-e", help="Email address for the GPG key"),
+    ] = None,
+    key_id: Annotated[
+        Optional[str],
+        typer.Option("--key-id", "-k", help="Key ID for export/import operations"),
+    ] = None,
+    output_file: Annotated[
+        Optional[Path],
+        typer.Option("--output", "-o", help="Output file for export"),
+    ] = None,
+    input_file: Annotated[
+        Optional[Path],
+        typer.Option("--input", "-i", help="Input file for import"),
+    ] = None,
 ) -> None:
     """Manage GPG keys for node authentication."""
+    from redundanet.auth.gpg import GPGManager
     from redundanet.core.config import load_settings
+    from redundanet.core.exceptions import GPGError
 
     settings = load_settings()
     node_name = node_name or settings.node_name
 
-    if not node_name:
-        console.print("[red]Error:[/red] No node name specified")
-        console.print("Use --name or set REDUNDANET_NODE_NAME")
-        raise typer.Exit(1)
-
     if action == "generate":
+        if not node_name:
+            console.print("[red]Error:[/red] No node name specified")
+            console.print("Use --name or set REDUNDANET_NODE_NAME")
+            raise typer.Exit(1)
+
+        # Prompt for email if not provided
+        if not email:
+            email = typer.prompt("Enter email address for the GPG key")
+
         console.print(f"[bold]Generating GPG key for node: {node_name}[/bold]")
         console.print("[yellow]Note:[/yellow] This will create a new GPG keypair.")
-        console.print("Use 'redundanet node keys export' to share your public key.")
-        # In a real implementation, we'd call the GPG module
-        console.print("[dim]GPG key generation not yet implemented[/dim]")
+
+        try:
+            gpg = GPGManager(node_name=node_name)
+            with console.status("[bold green]Generating GPG key (this may take a moment)..."):
+                key_info = gpg.generate_key(
+                    name=f"RedundaNet Node {node_name}",
+                    email=email,
+                )
+
+            console.print("\n[bold green]GPG key generated successfully![/bold green]")
+            console.print(f"  Key ID:      [cyan]{key_info.key_id}[/cyan]")
+            console.print(f"  Fingerprint: [dim]{key_info.fingerprint}[/dim]")
+            console.print(f"  User ID:     {key_info.user_id}")
+
+            console.print("\n[bold]Next steps:[/bold]")
+            console.print(
+                f"1. Publish your key to keyservers: [cyan]redundanet node keys publish --key-id {key_info.key_id}[/cyan]"
+            )
+            console.print(
+                "2. Submit your application at: [cyan]https://redundanet.com/join.html[/cyan]"
+            )
+            console.print(f"3. Use this Key ID in your application: [cyan]{key_info.key_id}[/cyan]")
+
+        except GPGError as e:
+            console.print(f"[red]Error generating key:[/red] {e}")
+            raise typer.Exit(1) from None
 
     elif action == "export":
-        console.print(f"[bold]Exporting public key for node: {node_name}[/bold]")
-        console.print("[dim]Key export not yet implemented[/dim]")
+        if not key_id:
+            console.print("[red]Error:[/red] --key-id is required for export")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Exporting public key: {key_id}[/bold]")
+
+        try:
+            gpg = GPGManager()
+            public_key = gpg.export_public_key(key_id)
+
+            if output_file:
+                output_file.write_text(public_key)
+                console.print(f"[green]Public key exported to:[/green] {output_file}")
+            else:
+                console.print("\n[bold]Public Key:[/bold]")
+                console.print(public_key)
+
+        except GPGError as e:
+            console.print(f"[red]Error exporting key:[/red] {e}")
+            raise typer.Exit(1) from None
 
     elif action == "import":
-        console.print("[bold]Importing public key[/bold]")
-        console.print("[dim]Key import not yet implemented[/dim]")
+        if not input_file:
+            console.print("[red]Error:[/red] --input is required for import")
+            console.print("Provide a path to an ASCII-armored public key file")
+            raise typer.Exit(1)
+
+        if not input_file.exists():
+            console.print(f"[red]Error:[/red] File not found: {input_file}")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Importing public key from: {input_file}[/bold]")
+
+        try:
+            gpg = GPGManager()
+            key_data = input_file.read_text()
+            key_info = gpg.import_key(key_data)
+
+            console.print("[green]Key imported successfully![/green]")
+            console.print(f"  Key ID:      [cyan]{key_info.key_id}[/cyan]")
+            console.print(f"  Fingerprint: [dim]{key_info.fingerprint}[/dim]")
+            console.print(f"  User ID:     {key_info.user_id}")
+
+        except GPGError as e:
+            console.print(f"[red]Error importing key:[/red] {e}")
+            raise typer.Exit(1) from None
+
+    elif action == "list":
+        console.print("[bold]GPG Keys in Keyring:[/bold]")
+
+        try:
+            gpg = GPGManager()
+            keys = gpg.list_keys()
+
+            if not keys:
+                console.print("[dim]No keys found in keyring[/dim]")
+                return
+
+            table = Table()
+            table.add_column("Key ID", style="cyan")
+            table.add_column("User ID")
+            table.add_column("Created")
+            table.add_column("Expires")
+
+            for key in keys:
+                table.add_row(
+                    key.key_id,
+                    key.user_id,
+                    key.created or "[dim]unknown[/dim]",
+                    key.expires or "[dim]never[/dim]",
+                )
+
+            console.print(table)
+
+        except GPGError as e:
+            console.print(f"[red]Error listing keys:[/red] {e}")
+            raise typer.Exit(1) from None
+
+    elif action == "publish":
+        if not key_id:
+            console.print("[red]Error:[/red] --key-id is required for publish")
+            console.print("Use 'redundanet node keys list' to see your keys")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Publishing key to keyservers: {key_id}[/bold]")
+
+        try:
+            from redundanet.auth.keyserver import KeyServerClient
+            from redundanet.core.exceptions import KeyServerError
+
+            gpg = GPGManager()
+            keyserver_client = KeyServerClient(gpg)
+
+            with console.status("[bold green]Uploading to keyservers..."):
+                success = keyserver_client.upload_key(key_id)
+
+            if success:
+                console.print("[green]Key published successfully![/green]")
+                console.print("\nYour key is now available on public keyservers.")
+                console.print("Note: It may take a few minutes for the key to propagate.")
+                console.print("\n[bold]Keyservers used:[/bold]")
+                for server in keyserver_client.keyservers:
+                    console.print(f"  - {server}")
+            else:
+                console.print("[yellow]Warning:[/yellow] Failed to upload to any keyserver")
+                console.print("You may need to manually upload your key at:")
+                console.print("  - https://keys.openpgp.org/upload")
+                console.print("  - https://keyserver.ubuntu.com/")
+
+        except (GPGError, KeyServerError) as e:
+            console.print(f"[red]Error publishing key:[/red] {e}")
+            raise typer.Exit(1) from None
+
+    elif action == "fetch":
+        if not key_id:
+            console.print("[red]Error:[/red] --key-id is required for fetch")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Fetching key from keyservers: {key_id}[/bold]")
+
+        try:
+            from redundanet.auth.keyserver import KeyServerClient
+
+            gpg = GPGManager()
+            keyserver_client = KeyServerClient(gpg)
+
+            with console.status("[bold green]Searching keyservers..."):
+                success = keyserver_client.import_key_from_server(key_id)
+
+            if success:
+                console.print("[green]Key fetched and imported successfully![/green]")
+
+                # Show key info
+                fetched_key = gpg.get_key(key_id)
+                if fetched_key:
+                    console.print(f"  Key ID:  [cyan]{fetched_key.key_id}[/cyan]")
+                    console.print(f"  User ID: {fetched_key.user_id}")
+            else:
+                console.print(f"[red]Error:[/red] Key {key_id} not found on any keyserver")
+                raise typer.Exit(1)
+
+        except GPGError as e:
+            console.print(f"[red]Error fetching key:[/red] {e}")
+            raise typer.Exit(1) from None
 
     else:
         console.print(f"[red]Error:[/red] Unknown action '{action}'")
-        console.print("Valid actions: generate, export, import")
+        console.print("Valid actions: generate, export, import, list, publish, fetch")
         raise typer.Exit(1)

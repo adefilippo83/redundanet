@@ -91,7 +91,7 @@ class TestVPNKeyManagerIntegration:
         )
         key_manager = VPNKeyManager(config)
 
-        private_key, public_key = key_manager.generate_keypair()
+        private_key, _public_key = key_manager.generate_keypair()
 
         assert (config.network_dir / "rsa_key.priv").exists()
         assert "-----BEGIN RSA PRIVATE KEY-----" in private_key

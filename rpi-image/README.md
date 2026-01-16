@@ -1,150 +1,233 @@
 # RedundaNet Raspberry Pi Image
 
-This directory contains the configuration for building custom Raspberry Pi OS images with RedundaNet pre-installed.
+Pre-built Raspberry Pi OS images with RedundaNet pre-installed for easy deployment.
 
 ## Overview
 
-The image is built using [pi-gen](https://github.com/RPi-Distro/pi-gen), the official tool for creating Raspberry Pi OS images. The build is automated via GitHub Actions.
+The images are built automatically via GitHub Actions using [arm-runner-action](https://github.com/pguyot/arm-runner-action), which modifies official Raspberry Pi OS images with QEMU emulation.
 
 ## Image Features
 
-- **Base**: Raspberry Pi OS Lite (Bookworm)
+- **Base**: Raspberry Pi OS Lite (64-bit, Bookworm)
 - **Pre-installed**:
   - Docker & Docker Compose
-  - Python 3.11+ with virtual environment
+  - Python 3.11+ with pip
   - Tinc VPN
   - GnuPG for key management
-  - RedundaNet CLI and services
+  - RedundaNet CLI
 - **Ready to use**: SSH enabled, systemd services configured
-- **Default credentials**: `redundanet` / `redundanet` (change on first login!)
+- **Default credentials**: `redundanet` / `redundanet` (change immediately on first login!)
 
-## Building the Image
+## Quick Start
 
-### Automatic (GitHub Actions)
+### 1. Download the Image
 
-Images are automatically built when:
-- A new release is published
-- Manually triggered via workflow dispatch
+Download the latest image from [GitHub Releases](https://github.com/adefilippo83/redundanet/releases).
 
-The built images are uploaded to GitHub Releases.
+### 2. Flash to SD Card
 
-### Manual Build
-
-To build locally (requires Linux with Docker):
+Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or `dd`:
 
 ```bash
-# Clone pi-gen
-git clone https://github.com/RPi-Distro/pi-gen.git
-cd pi-gen
+# Using Raspberry Pi Imager (recommended)
+# Select "Use custom" and choose the downloaded .img file
 
-# Copy our custom stage
-cp -r ../rpi-image/stage-redundanet ./
-
-# Configure the build
-cat > config << EOF
-IMG_NAME=redundanet-rpi
-RELEASE=bookworm
-DEPLOY_COMPRESSION=xz
-LOCALE_DEFAULT=en_US.UTF-8
-TARGET_HOSTNAME=redundanet
-KEYBOARD_KEYMAP=us
-KEYBOARD_LAYOUT="English (US)"
-TIMEZONE_DEFAULT=UTC
-FIRST_USER_NAME=redundanet
-FIRST_USER_PASS=redundanet
-ENABLE_SSH=1
-STAGE_LIST="stage0 stage1 stage2 stage-redundanet"
-EOF
-
-# Build
-./build-docker.sh
+# Or using dd (Linux/macOS)
+xzcat redundanet-rpi-*.img.xz | sudo dd of=/dev/sdX bs=4M status=progress
+sync
 ```
 
-## Directory Structure
+### 3. Boot and Connect
 
-```
-rpi-image/
-├── README.md                      # This file
-└── stage-redundanet/              # Custom pi-gen stage
-    ├── prerun.sh                  # Stage pre-run script
-    ├── 00-install-deps/           # Install system dependencies
-    │   ├── 00-packages            # APT packages to install
-    │   └── 01-run.sh              # Post-install configuration
-    ├── 01-install-redundanet/     # Install RedundaNet
-    │   ├── 00-run.sh              # Create directories
-    │   ├── 01-run.sh              # Setup Python environment
-    │   ├── 02-run.sh              # Copy files
-    │   └── files/
-    │       └── install-redundanet.sh
-    ├── 02-configure-services/     # Configure systemd services
-    │   ├── 00-run.sh              # Install services
-    │   └── files/
-    │       ├── redundanet.service
-    │       ├── redundanet-docker.service
-    │       └── redundanet-init.service
-    └── 03-first-boot/             # First boot setup
-        ├── 00-run.sh              # Install first-boot script
-        └── files/
-            ├── first-boot.sh      # Runs on first boot
-            └── motd               # Welcome message
-```
+1. Insert SD card into your Raspberry Pi
+2. Connect Ethernet (or configure WiFi in Imager)
+3. Power on
+4. Wait ~2 minutes for first boot
 
-## Using the Image
-
-1. **Download** the latest image from [GitHub Releases](../../releases)
-2. **Flash** to SD card using [Raspberry Pi Imager](https://www.raspberrypi.com/software/) or `dd`
-3. **Boot** your Raspberry Pi
-4. **Connect** via SSH: `ssh redundanet@redundanet.local`
-5. **Change password**: `passwd`
-6. **Initialize**: `redundanet init`
-
-### First Boot
-
-On first boot, the system will:
-1. Generate a unique node name
-2. Create default configuration
-3. Pull Docker images (if network available)
-4. Prepare for setup wizard
-
-### Configuration
-
-After first boot, configure your node:
+### 4. SSH In
 
 ```bash
-# Interactive setup
-redundanet init --name my-node --network my-network
+ssh redundanet@redundanet.local
+# Password: redundanet
+```
 
-# Or edit configuration directly
-sudo nano /etc/redundanet/config.yaml
+**Important**: Change the default password immediately!
+
+```bash
+passwd
+```
+
+### 5. Configure Your Node
+
+If you haven't already joined the network, follow the join process:
+
+```bash
+# Generate GPG key
+redundanet node keys generate --name my-pi-node --email you@example.com
+
+# Publish to keyservers
+redundanet node keys publish --key-id YOUR_KEY_ID
+
+# Note your Key ID, then visit:
+# https://redundanet.com/join.html
+```
+
+If you've already been approved:
+
+```bash
+# Initialize with your assigned node name
+redundanet init --name node-XXXXXXXX
+
+# Sync the manifest
+redundanet sync
 
 # Start services
 sudo systemctl enable --now redundanet-docker
+# Or manually:
+cd /opt/redundanet && docker compose up -d
+```
+
+### 6. Verify
+
+```bash
+redundanet status
+docker compose ps
 ```
 
 ## Supported Hardware
 
-- Raspberry Pi 4 (recommended)
-- Raspberry Pi 3B/3B+
-- Raspberry Pi 5
-- Raspberry Pi Zero 2 W
+| Model | Status | Notes |
+|-------|--------|-------|
+| Raspberry Pi 5 | Supported | Recommended |
+| Raspberry Pi 4 | Supported | 2GB+ RAM recommended |
+| Raspberry Pi 3B/3B+ | Supported | Minimum viable |
+| Raspberry Pi Zero 2 W | Supported | Limited performance |
 
-Both 32-bit (armhf) and 64-bit (arm64) images are available.
+64-bit (arm64) images are provided.
+
+## Directory Structure
+
+After setup, RedundaNet files are located at:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/redundanet/` | RedundaNet installation |
+| `/etc/redundanet/` | Configuration files |
+| `/var/lib/redundanet/` | Data storage |
+| `/var/log/redundanet/` | Log files |
+
+## Services
+
+The image includes systemd services:
+
+```bash
+# Enable and start RedundaNet
+sudo systemctl enable --now redundanet-docker
+
+# Check status
+sudo systemctl status redundanet-docker
+
+# View logs
+sudo journalctl -u redundanet-docker -f
+```
+
+## Building the Image Locally
+
+To build the image yourself (requires Linux with Docker):
+
+```bash
+# Clone the repository
+git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
+
+# Run the build script (uses QEMU via Docker)
+./rpi-image/build.sh
+```
+
+Or trigger a build via GitHub Actions:
+1. Go to Actions > Build RPi Image
+2. Click "Run workflow"
 
 ## Troubleshooting
 
-### Check service status
+### Can't find `redundanet.local`
+
+1. Ensure your Pi is connected to the network
+2. Try using the IP address directly (check your router)
+3. On macOS/Linux: `ping redundanet.local`
+
+### SSH connection refused
+
+Wait 2-3 minutes after boot for services to start, then try again.
+
+### Docker not starting
+
 ```bash
-systemctl status redundanet-docker
-journalctl -u redundanet-docker -f
+sudo systemctl status docker
+sudo journalctl -u docker -n 50
 ```
 
-### View first boot log
+### Check first boot log
+
 ```bash
 cat /var/log/redundanet/first-boot.log
 ```
 
-### Rebuild configuration
+### Reset configuration
+
 ```bash
 sudo rm /etc/redundanet/.initialized
 sudo systemctl restart redundanet-init
+```
+
+### Storage issues
+
+Ensure your SD card has sufficient space:
+
+```bash
+df -h
+```
+
+The image requires at least 8GB SD card, 16GB+ recommended.
+
+## Network Configuration
+
+### WiFi Setup
+
+If using WiFi, configure during flashing with Raspberry Pi Imager, or after boot:
+
+```bash
+sudo raspi-config
+# Navigate to: System Options > Wireless LAN
+```
+
+### Static IP
+
+Edit `/etc/dhcpcd.conf`:
+
+```bash
+interface eth0
+static ip_address=192.168.1.100/24
+static routers=192.168.1.1
+static domain_name_servers=8.8.8.8
+```
+
+Then restart: `sudo systemctl restart dhcpcd`
+
+## Security Recommendations
+
+1. **Change default password** immediately after first login
+2. **Set up SSH keys** and disable password authentication
+3. **Keep the system updated**: `sudo apt update && sudo apt upgrade`
+4. **Configure firewall** if directly exposed to internet
+
+```bash
+# Set up SSH key authentication
+mkdir -p ~/.ssh
+echo "your-public-key" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+# Disable password authentication (after confirming key works)
+sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo systemctl restart sshd
 ```

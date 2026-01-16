@@ -26,7 +26,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyyaml
+          pip install pyyaml httpx
 
       - name: Parse issue and update manifest
         id: process
@@ -60,6 +60,39 @@ jobs:
 
           gpg_key_id = gpg_match.group(1).strip()
           print(f"Found GPG Key ID: {gpg_key_id}")
+
+          # Verify GPG key exists on keyserver
+          import httpx
+
+          def verify_key_on_keyserver(key_id):
+              """Check if a GPG key exists on public keyservers."""
+              key_id_clean = key_id.replace(" ", "").upper()
+              if not key_id_clean.startswith("0x"):
+                  key_id_clean = f"0x{key_id_clean}"
+
+              keyservers = [
+                  "keys.openpgp.org",
+                  "keyserver.ubuntu.com",
+              ]
+
+              for server in keyservers:
+                  try:
+                      url = f"https://{server}/pks/lookup"
+                      params = {"op": "get", "search": key_id_clean, "options": "mr"}
+                      response = httpx.get(url, params=params, timeout=10.0)
+                      if response.status_code == 200 and "BEGIN PGP PUBLIC KEY BLOCK" in response.text:
+                          print(f"✓ Key found on {server}")
+                          return True
+                  except Exception as e:
+                      print(f"  Could not check {server}: {e}")
+                      continue
+              return False
+
+          print("Verifying GPG key on keyservers...")
+          key_verified = verify_key_on_keyserver(gpg_key_id)
+          if not key_verified:
+              print("::warning::GPG key not found on keyservers. Proceeding anyway, but verification is recommended.")
+              print("The applicant should publish their key using: redundanet node keys publish --key-id <key-id>")
 
           # Parse Storage Contribution
           storage_match = re.search(r'\*\*Storage Contribution\*\*\s*\|\s*(\d+\s*[GMTP]B)', issue_body)
@@ -244,9 +277,22 @@ jobs:
             This issue is being closed. The PR will be reviewed by a maintainer. Once merged, you can configure your node with:
 
             \`\`\`bash
+            # Clone the repository
+            git clone https://github.com/adefilippo83/redundanet.git
+            cd redundanet
+
+            # Initialize your node
+            pip install redundanet
             redundanet init --name ${nodeName}
+
+            # Pull the latest manifest
             redundanet sync
-            redundanet start
+
+            # Start services with Docker
+            docker compose up -d
+
+            # Check status
+            redundanet status
             \`\`\`
 
             *Thank you for contributing to RedundaNet!*`;
@@ -264,43 +310,6 @@ jobs:
               issue_number: ${{ github.event.issue.number }},
               state: 'closed'
             });
-
-      - name: Comment on issue - Failure
-        if: steps.process.outputs.success == 'false'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.issue.number }}
-          body: |
-            ## ✅ Application Processed Successfully!
-
-            Your node has been assigned the following configuration:
-
-            | Field | Value |
-            |-------|-------|
-            | **Node Name** | `${{ steps.process.outputs.node_name }}` |
-            | **VPN IP** | `${{ steps.process.outputs.vpn_ip }}` |
-            | **GPG Key ID** | `${{ steps.process.outputs.gpg_key_id }}` |
-
-            ### Next Steps
-
-            1. **Wait for PR approval**: A pull request has been created to add your node to the manifest. A maintainer will review and merge it.
-
-            2. **Once approved**, download the latest manifest and configure your node:
-               ```bash
-               redundanet init --name ${{ steps.process.outputs.node_name }}
-               redundanet sync
-               redundanet start
-               ```
-
-            3. **Verify your node** is connected:
-               ```bash
-               redundanet status
-               ```
-
-            📎 **Pull Request**: ${{ steps.create-pr.outputs.pull-request-url }}
-
-            ---
-            *Thank you for contributing to RedundaNet!*
 
       - name: Comment on issue - Failure
         if: steps.process.outputs.success == 'false'

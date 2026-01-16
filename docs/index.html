@@ -223,6 +223,178 @@
             color: var(--text-muted);
         }
 
+        /* How It Works */
+        .how-it-works {
+            padding: 100px 0;
+            background: var(--bg-card);
+        }
+
+        .process-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 32px;
+            margin-top: 60px;
+        }
+
+        .process-step {
+            text-align: center;
+            position: relative;
+        }
+
+        .step-number {
+            width: 64px;
+            height: 64px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0 auto 20px;
+        }
+
+        .process-step h4 {
+            font-size: 1.125rem;
+            margin-bottom: 12px;
+        }
+
+        .process-step p {
+            color: var(--text-muted);
+            font-size: 0.9375rem;
+        }
+
+        /* Data Flow Diagram */
+        .data-flow {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px;
+            margin-top: 60px;
+        }
+
+        .data-flow h3 {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .flow-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .flow-box {
+            background: var(--bg-card);
+            border: 2px solid var(--primary);
+            border-radius: 12px;
+            padding: 16px 24px;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .flow-box.highlight {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border: none;
+        }
+
+        .flow-box h5 {
+            font-size: 0.875rem;
+            margin-bottom: 4px;
+        }
+
+        .flow-box p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .flow-box.highlight p {
+            color: rgba(255,255,255,0.8);
+        }
+
+        .flow-arrow {
+            font-size: 24px;
+            color: var(--primary);
+        }
+
+        .flow-nodes {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .flow-node {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+
+        /* Join Process */
+        .join-process {
+            padding: 100px 0;
+        }
+
+        .join-steps {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-top: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .join-steps {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .join-step {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        .join-step-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .join-step-number {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .join-step h4 {
+            font-size: 1.125rem;
+        }
+
+        .join-step p {
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
         /* Architecture */
         .architecture {
             padding: 100px 0;
@@ -324,6 +496,38 @@
             color: var(--secondary);
         }
 
+        /* Security */
+        .security {
+            padding: 100px 0;
+            background: var(--bg-card);
+        }
+
+        .security-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .security-item {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .security-item h4 {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .security-item p {
+            color: var(--text-muted);
+            font-size: 0.9375rem;
+        }
+
         /* Footer */
         footer {
             padding: 60px 0;
@@ -379,7 +583,8 @@
             </a>
             <ul class="nav-links">
                 <li><a href="#features">Features</a></li>
-                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+                <li><a href="#join">Join</a></li>
                 <li><a href="#installation">Installation</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet">GitHub</a></li>
             </ul>
@@ -401,8 +606,8 @@
                 <a href="join.html" class="btn btn-primary">
                     Join the Network
                 </a>
-                <a href="#installation" class="btn btn-secondary">
-                    Quick Start
+                <a href="#how-it-works" class="btn btn-secondary">
+                    How It Works
                 </a>
                 <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary">
                     View on GitHub
@@ -421,7 +626,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">&#128274;</div>
                     <h3>End-to-End Encryption</h3>
-                    <p>Your data is encrypted before it leaves your device. Only you hold the keys. Built on Tahoe-LAFS proven cryptography.</p>
+                    <p>Your data is encrypted before it leaves your device. Only you hold the keys. Storage nodes cannot read your files.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#127760;</div>
@@ -430,23 +635,148 @@
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128218;</div>
-                    <h3>Redundant Storage</h3>
-                    <p>Data is split and distributed across multiple nodes. Configurable redundancy ensures availability even when nodes go offline.</p>
+                    <h3>Erasure Coding</h3>
+                    <p>Data is split into 10 encrypted shares. Any 3 can reconstruct your file. Survives up to 7 node failures.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">&#128422;</div>
-                    <h3>Raspberry Pi Ready</h3>
-                    <p>Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes. Perfect for home labs and edge deployments.</p>
+                    <div class="feature-icon">&#128273;</div>
+                    <h3>GPG Authentication</h3>
+                    <p>Node identity verified via public GPG keyservers. Decentralized trust with no central authority.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128051;</div>
                     <h3>Docker Native</h3>
-                    <p>Fully containerized with Docker Compose. Easy deployment, updates, and management. Run anywhere Docker runs.</p>
+                    <p>Fully containerized with Docker Compose. Easy deployment, updates, and management on any system.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">&#129302;</div>
-                    <h3>Python CLI</h3>
-                    <p>Modern Python CLI for node management. Initialize, configure, and monitor your network with simple commands.</p>
+                    <div class="feature-icon">&#128422;</div>
+                    <h3>Raspberry Pi Ready</h3>
+                    <p>Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-title">
+                <h2>How It Works</h2>
+                <p>Your data is encrypted, split, and distributed across multiple nodes</p>
+            </div>
+
+            <div class="data-flow">
+                <h3>Data Flow: Upload</h3>
+                <div class="flow-diagram">
+                    <div class="flow-row">
+                        <div class="flow-box">
+                            <h5>Your File</h5>
+                            <p>Original data</p>
+                        </div>
+                        <span class="flow-arrow">&#8594;</span>
+                        <div class="flow-box highlight">
+                            <h5>Encrypt</h5>
+                            <p>AES-128</p>
+                        </div>
+                        <span class="flow-arrow">&#8594;</span>
+                        <div class="flow-box highlight">
+                            <h5>Split</h5>
+                            <p>Erasure coding</p>
+                        </div>
+                    </div>
+                    <div class="flow-row">
+                        <span class="flow-arrow">&#8595;</span>
+                    </div>
+                    <div class="flow-row">
+                        <div class="flow-nodes">
+                            <div class="flow-node">Share 1<br>Node A</div>
+                            <div class="flow-node">Share 2<br>Node B</div>
+                            <div class="flow-node">Share 3<br>Node C</div>
+                            <div class="flow-node">...</div>
+                            <div class="flow-node">Share 10<br>Node J</div>
+                        </div>
+                    </div>
+                    <p style="text-align: center; margin-top: 24px; color: var(--text-muted);">
+                        <strong>Any 3 of 10 shares</strong> can reconstruct your original file.<br>
+                        Storage nodes only see encrypted blobs - they cannot read your data.
+                    </p>
+                </div>
+            </div>
+
+            <div class="process-steps">
+                <div class="process-step">
+                    <div class="step-number">1</div>
+                    <h4>Client-Side Encryption</h4>
+                    <p>Your file is encrypted on your device using AES-128. The encryption key is embedded in the capability URL.</p>
+                </div>
+                <div class="process-step">
+                    <div class="step-number">2</div>
+                    <h4>Erasure Coding</h4>
+                    <p>The encrypted file is split into 10 shares using Reed-Solomon coding. Only 3 are needed to reconstruct.</p>
+                </div>
+                <div class="process-step">
+                    <div class="step-number">3</div>
+                    <h4>Distributed Storage</h4>
+                    <p>Each share is sent to a different storage node over the encrypted VPN mesh network.</p>
+                </div>
+                <div class="process-step">
+                    <div class="step-number">4</div>
+                    <h4>Capability URL</h4>
+                    <p>You receive a capability URL containing the encryption key. Share it to grant access to the file.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="join-process" id="join">
+        <div class="container">
+            <div class="section-title">
+                <h2>Join the Network</h2>
+                <p>Contribute storage and become part of the distributed network</p>
+            </div>
+
+            <div class="join-steps">
+                <div class="join-step">
+                    <div class="join-step-header">
+                        <div class="join-step-number">1</div>
+                        <h4>Generate Your GPG Key</h4>
+                    </div>
+                    <p>Create a GPG key pair and publish it to a public keyserver. This is your node's identity.</p>
+                    <pre><code>pip install redundanet
+redundanet node keys generate \
+  --name my-node \
+  --email you@example.com
+redundanet node keys publish \
+  --key-id YOUR_KEY_ID</code></pre>
+                </div>
+
+                <div class="join-step">
+                    <div class="join-step-header">
+                        <div class="join-step-number">2</div>
+                        <h4>Submit Application</h4>
+                    </div>
+                    <p>Fill out the join form with your GPG key ID and storage contribution. This creates a GitHub issue.</p>
+                    <a href="join.html" class="btn btn-primary" style="margin-top: 8px;">Join Form &#8594;</a>
+                </div>
+
+                <div class="join-step">
+                    <div class="join-step-header">
+                        <div class="join-step-number">3</div>
+                        <h4>Wait for Approval</h4>
+                    </div>
+                    <p>A maintainer reviews your application, verifies your GPG key, and merges the PR to add your node.</p>
+                </div>
+
+                <div class="join-step">
+                    <div class="join-step-header">
+                        <div class="join-step-number">4</div>
+                        <h4>Set Up Your Node</h4>
+                    </div>
+                    <p>Once approved, initialize your node and start the services.</p>
+                    <pre><code>git clone github.com/adefilippo83/redundanet
+cd redundanet
+redundanet init --name node-XXXXX
+redundanet sync
+docker compose up -d</code></pre>
                 </div>
             </div>
         </div>
@@ -455,7 +785,7 @@
     <section class="architecture" id="architecture">
         <div class="container">
             <div class="section-title">
-                <h2>How It Works</h2>
+                <h2>Architecture</h2>
                 <p>A decentralized architecture with no single point of failure</p>
             </div>
             <div class="arch-diagram">
@@ -493,6 +823,41 @@
         </div>
     </section>
 
+    <section class="security">
+        <div class="container">
+            <div class="section-title">
+                <h2>Security Model</h2>
+                <p>Multiple layers of encryption protect your data</p>
+            </div>
+            <div class="security-grid">
+                <div class="security-item">
+                    <h4>&#128274; Transport Encryption</h4>
+                    <p>All network traffic is encrypted via Tinc VPN using RSA key exchange and AES encryption.</p>
+                </div>
+                <div class="security-item">
+                    <h4>&#128272; Storage Encryption</h4>
+                    <p>Data is encrypted with AES-128 before upload. Storage nodes only see encrypted blobs.</p>
+                </div>
+                <div class="security-item">
+                    <h4>&#128273; Identity Verification</h4>
+                    <p>Node identities are verified via GPG keys published to public keyservers. No central authority.</p>
+                </div>
+                <div class="security-item">
+                    <h4>&#128736; Capability Security</h4>
+                    <p>Access is controlled by cryptographic capability URLs. Possession of the URL grants access.</p>
+                </div>
+                <div class="security-item">
+                    <h4>&#127856; Redundant Storage</h4>
+                    <p>Erasure coding ensures data survives up to 7 node failures out of 10.</p>
+                </div>
+                <div class="security-item">
+                    <h4>&#128065; Zero Knowledge</h4>
+                    <p>Storage nodes cannot see file contents, names, or metadata. Only encrypted shares.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="installation" id="installation">
         <div class="container">
             <div class="section-title">
@@ -505,6 +870,7 @@
                     <p>Run RedundaNet using Docker Compose. Works on any system with Docker installed.</p>
                     <pre><code>git clone https://github.com/adefilippo83/redundanet.git
 cd redundanet
+redundanet init --name my-node
 docker compose up -d</code></pre>
                 </div>
                 <div class="install-card">
@@ -512,7 +878,9 @@ docker compose up -d</code></pre>
                     <p>Install the RedundaNet CLI tool via pip for node management.</p>
                     <pre><code>pip install redundanet
 
-redundanet init --name my-node
+redundanet node keys generate \
+  --name my-node \
+  --email you@example.com
 redundanet status</code></pre>
                 </div>
                 <div class="install-card">
