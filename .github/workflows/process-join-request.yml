@@ -1,0 +1,281 @@
+name: Process Join Request
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  process-join-request:
+    name: Process Node Application
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'join-request')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Parse issue and update manifest
+        id: process
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          python << 'EOF'
+          import os
+          import re
+          import yaml
+          import ipaddress
+          from pathlib import Path
+
+          issue_body = os.environ.get('ISSUE_BODY', '')
+          issue_number = os.environ.get('ISSUE_NUMBER', '')
+          issue_title = os.environ.get('ISSUE_TITLE', '')
+
+          print(f"Processing issue #{issue_number}: {issue_title}")
+          print(f"Issue body:\n{issue_body}\n")
+
+          # Parse GPG Key ID from the issue body
+          gpg_match = re.search(r'\*\*GPG Key ID\*\*\s*\|\s*`([^`]+)`', issue_body)
+          if not gpg_match:
+              print("::error::Could not find GPG Key ID in issue body")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("success=false\n")
+                  f.write("error=Could not parse GPG Key ID from issue\n")
+              exit(0)
+
+          gpg_key_id = gpg_match.group(1).strip()
+          print(f"Found GPG Key ID: {gpg_key_id}")
+
+          # Parse Storage Contribution
+          storage_match = re.search(r'\*\*Storage Contribution\*\*\s*\|\s*(\d+\s*[GMTP]B)', issue_body)
+          storage = storage_match.group(1) if storage_match else "100GB"
+          print(f"Storage contribution: {storage}")
+
+          # Parse Region
+          region_match = re.search(r'\*\*Region\*\*\s*\|\s*([^\n|]+)', issue_body)
+          region = region_match.group(1).strip() if region_match else "unknown"
+          if region == "Not specified":
+              region = "unknown"
+          print(f"Region: {region}")
+
+          # Parse Public IP
+          public_ip_match = re.search(r'\*\*Public IP\*\*\s*\|\s*([^\n|]+)', issue_body)
+          public_ip = public_ip_match.group(1).strip() if public_ip_match else None
+          if public_ip in ["None", "Not specified", ""]:
+              public_ip = None
+          print(f"Public IP: {public_ip}")
+
+          # Load or create manifest
+          manifest_path = Path('manifests/manifest.yaml')
+          if manifest_path.exists():
+              with open(manifest_path) as f:
+                  manifest = yaml.safe_load(f) or {}
+          else:
+              manifest_path.parent.mkdir(parents=True, exist_ok=True)
+              manifest = {
+                  'network': {
+                      'name': 'redundanet',
+                      'version': '2.0.0',
+                      'domain': 'redundanet.local',
+                      'vpn_network': '10.100.0.0/16',
+                      'tahoe': {
+                          'shares_needed': 3,
+                          'shares_happy': 7,
+                          'shares_total': 10,
+                          'reserved_space': '1G'
+                      }
+                  },
+                  'introducer_furl': None,
+                  'nodes': []
+              }
+
+          nodes = manifest.get('nodes', [])
+
+          # Check for duplicate GPG key
+          for node in nodes:
+              if node.get('gpg_key_id', '').lower() == gpg_key_id.lower():
+                  print(f"::error::Node with GPG key {gpg_key_id} already exists")
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                      f.write("success=false\n")
+                      f.write(f"error=Node with GPG key {gpg_key_id} already exists\n")
+                  exit(0)
+
+          # Calculate next available IP
+          vpn_network = manifest.get('network', {}).get('vpn_network', '10.100.0.0/16')
+          network = ipaddress.ip_network(vpn_network)
+
+          used_ips = set()
+          for node in nodes:
+              if node.get('vpn_ip'):
+                  used_ips.add(ipaddress.ip_address(node['vpn_ip']))
+              if node.get('internal_ip'):
+                  used_ips.add(ipaddress.ip_address(node['internal_ip']))
+
+          # Start from .10 to reserve some IPs for infrastructure
+          next_ip = None
+          for ip in network.hosts():
+              if int(ip) % 256 < 10:  # Skip first 10 IPs in each subnet
+                  continue
+              if ip not in used_ips:
+                  next_ip = str(ip)
+                  break
+
+          if not next_ip:
+              print("::error::No available IP addresses in the VPN network")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  f.write("success=false\n")
+                  f.write("error=No available IP addresses\n")
+              exit(0)
+
+          print(f"Assigned VPN IP: {next_ip}")
+
+          # Generate node name from GPG key (last 8 chars)
+          node_name = f"node-{gpg_key_id[-8:].lower()}"
+          print(f"Node name: {node_name}")
+
+          # Create new node entry
+          new_node = {
+              'name': node_name,
+              'internal_ip': next_ip,
+              'vpn_ip': next_ip,
+              'gpg_key_id': gpg_key_id,
+              'region': region,
+              'status': 'pending',
+              'roles': ['tinc_vpn', 'tahoe_storage'],
+              'ports': {
+                  'tinc': 655,
+                  'tahoe_storage': 3457,
+                  'tahoe_client': 3456,
+                  'tahoe_introducer': 3458
+              },
+              'storage_contribution': storage,
+              'is_publicly_accessible': public_ip is not None
+          }
+
+          if public_ip:
+              new_node['public_ip'] = public_ip
+
+          # Add node to manifest
+          nodes.append(new_node)
+          manifest['nodes'] = nodes
+
+          # Write updated manifest
+          with open(manifest_path, 'w') as f:
+              yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
+
+          print(f"Updated manifest with new node: {node_name}")
+
+          # Set outputs
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write("success=true\n")
+              f.write(f"node_name={node_name}\n")
+              f.write(f"vpn_ip={next_ip}\n")
+              f.write(f"gpg_key_id={gpg_key_id}\n")
+              f.write(f"storage={storage}\n")
+
+          print("Done!")
+          EOF
+
+      - name: Create Pull Request
+        if: steps.process.outputs.success == 'true'
+        id: create-pr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Add node ${{ steps.process.outputs.node_name }} to network manifest"
+          title: "Add node ${{ steps.process.outputs.node_name }} (Issue #${{ github.event.issue.number }})"
+          body: |
+            ## New Node Addition
+
+            This PR adds a new node to the RedundaNet network manifest.
+
+            | Field | Value |
+            |-------|-------|
+            | **Node Name** | `${{ steps.process.outputs.node_name }}` |
+            | **VPN IP** | `${{ steps.process.outputs.vpn_ip }}` |
+            | **GPG Key ID** | `${{ steps.process.outputs.gpg_key_id }}` |
+            | **Storage** | ${{ steps.process.outputs.storage }} |
+
+            ### Checklist
+            - [ ] Verify GPG key is valid
+            - [ ] Confirm storage allocation
+            - [ ] Review node configuration
+
+            Closes #${{ github.event.issue.number }}
+
+            ---
+            *Auto-generated from join request*
+          branch: join-request/${{ github.event.issue.number }}
+          delete-branch: true
+          labels: |
+            node-addition
+            automated
+
+      - name: Comment on issue - Success
+        if: steps.process.outputs.success == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ✅ Application Processed Successfully!
+
+            Your node has been assigned the following configuration:
+
+            | Field | Value |
+            |-------|-------|
+            | **Node Name** | `${{ steps.process.outputs.node_name }}` |
+            | **VPN IP** | `${{ steps.process.outputs.vpn_ip }}` |
+            | **GPG Key ID** | `${{ steps.process.outputs.gpg_key_id }}` |
+
+            ### Next Steps
+
+            1. **Wait for PR approval**: A pull request has been created to add your node to the manifest. A maintainer will review and merge it.
+
+            2. **Once approved**, download the latest manifest and configure your node:
+               ```bash
+               redundanet init --name ${{ steps.process.outputs.node_name }}
+               redundanet sync
+               redundanet start
+               ```
+
+            3. **Verify your node** is connected:
+               ```bash
+               redundanet status
+               ```
+
+            📎 **Pull Request**: ${{ steps.create-pr.outputs.pull-request-url }}
+
+            ---
+            *Thank you for contributing to RedundaNet!*
+
+      - name: Comment on issue - Failure
+        if: steps.process.outputs.success == 'false'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ## ❌ Application Processing Failed
+
+            There was an error processing your application:
+
+            > ${{ steps.process.outputs.error }}
+
+            Please check your submission and try again, or contact a maintainer for help.
+
+            ---
+            *If you believe this is an error, please comment below.*

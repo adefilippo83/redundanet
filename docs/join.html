@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join the Network | RedundaNet</title>
+    <meta name="description" content="Apply to join the RedundaNet distributed storage network">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* Main Content */
+        .page-header {
+            text-align: center;
+            padding: 60px 0 40px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Form */
+        .form-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .form-group .hint {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-group.error input {
+            border-color: var(--error);
+        }
+
+        .form-group .error-message {
+            color: var(--error);
+            font-size: 0.875rem;
+            margin-top: 6px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 600px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin-top: 4px;
+        }
+
+        .checkbox-group label {
+            font-weight: 400;
+            margin-bottom: 0;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 16px;
+            font-size: 1.125rem;
+        }
+
+        /* Requirements */
+        .requirements {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 40px;
+        }
+
+        .requirements h3 {
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .requirements ul {
+            list-style: none;
+            color: var(--text-muted);
+        }
+
+        .requirements li {
+            padding: 8px 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .requirements li::before {
+            content: "✓";
+            color: var(--secondary);
+            font-weight: bold;
+        }
+
+        /* Steps */
+        .steps {
+            margin-bottom: 60px;
+        }
+
+        .steps h3 {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+
+        .step {
+            text-align: center;
+            padding: 24px;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            margin: 0 auto 16px;
+        }
+
+        .step h4 {
+            margin-bottom: 8px;
+        }
+
+        .step p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-dark);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-container">
+            <a href="./" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <a href="./" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Join the Network</h1>
+            <p>Apply to become a node in the RedundaNet distributed storage network. Contribute storage and help build a resilient, encrypted infrastructure.</p>
+        </div>
+
+        <div class="requirements">
+            <h3>📋 Requirements</h3>
+            <ul>
+                <li>A GPG key pair (for node authentication and manifest signing)</li>
+                <li>A device that can run Docker (Raspberry Pi, server, VM, etc.)</li>
+                <li>Storage space you're willing to contribute (minimum 10GB recommended)</li>
+                <li>Reliable internet connection</li>
+                <li>A GitHub account (to submit your application)</li>
+            </ul>
+        </div>
+
+        <div class="steps">
+            <h3>How It Works</h3>
+            <div class="steps-grid">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Submit Application</h4>
+                    <p>Fill out the form below with your GPG key ID and storage contribution</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>Review</h4>
+                    <p>Maintainers review your application and verify your GPG key</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>Approval</h4>
+                    <p>Once approved, your node is added to the manifest with an assigned IP</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h4>Connect</h4>
+                    <p>Download the manifest and start your node to join the network</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-card">
+            <form id="joinForm">
+                <div class="form-group">
+                    <label for="gpgKeyId">GPG Key ID *</label>
+                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="e.g., 0x1234ABCD5678EF90" required>
+                    <p class="hint">Your GPG public key ID. Run <code>gpg --list-keys --keyid-format long</code> to find it.</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="storageContribution">Storage Contribution *</label>
+                        <select id="storageContribution" name="storageContribution" required>
+                            <option value="">Select amount...</option>
+                            <option value="10GB">10 GB</option>
+                            <option value="50GB">50 GB</option>
+                            <option value="100GB">100 GB</option>
+                            <option value="250GB">250 GB</option>
+                            <option value="500GB">500 GB</option>
+                            <option value="1TB">1 TB</option>
+                            <option value="2TB">2 TB</option>
+                            <option value="5TB">5 TB+</option>
+                        </select>
+                        <p class="hint">How much storage you'll contribute to the network</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="region">Region</label>
+                        <select id="region" name="region">
+                            <option value="">Select region...</option>
+                            <option value="north-america">North America</option>
+                            <option value="south-america">South America</option>
+                            <option value="europe">Europe</option>
+                            <option value="asia">Asia</option>
+                            <option value="africa">Africa</option>
+                            <option value="oceania">Oceania</option>
+                        </select>
+                        <p class="hint">Your approximate geographic location</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="deviceType">Device Type</label>
+                    <select id="deviceType" name="deviceType">
+                        <option value="">Select device...</option>
+                        <option value="raspberry-pi">Raspberry Pi</option>
+                        <option value="server">Dedicated Server</option>
+                        <option value="vps">VPS / Cloud VM</option>
+                        <option value="desktop">Desktop / Workstation</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <p class="hint">What type of device will run your node?</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="publicIp">Public IP (optional)</label>
+                    <input type="text" id="publicIp" name="publicIp" placeholder="e.g., 203.0.113.50">
+                    <p class="hint">If your node has a static public IP and can accept incoming connections</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="notes">Additional Notes</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="Any additional information about your setup..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="acceptTerms" name="acceptTerms" required>
+                        <label for="acceptTerms">
+                            I understand that my GPG key ID will be public in the network manifest, and I agree to contribute the specified storage to the network.
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary submit-btn">
+                    Submit Application →
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Need help generating a GPG key? Check out the <a href="https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key" target="_blank">GitHub GPG guide</a>.</p>
+        </div>
+    </footer>
+
+    <script>
+        const GITHUB_REPO = 'adefilippo83/redundanet';
+
+        document.getElementById('joinForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const gpgKeyId = document.getElementById('gpgKeyId').value.trim();
+            const storageContribution = document.getElementById('storageContribution').value;
+            const region = document.getElementById('region').value || 'Not specified';
+            const deviceType = document.getElementById('deviceType').value || 'Not specified';
+            const publicIp = document.getElementById('publicIp').value.trim() || 'None';
+            const notes = document.getElementById('notes').value.trim() || 'None';
+
+            // Validate GPG key format (basic validation)
+            if (!/^(0x)?[A-Fa-f0-9]{8,40}$/.test(gpgKeyId.replace(/\s/g, ''))) {
+                alert('Please enter a valid GPG key ID (8-40 hexadecimal characters)');
+                return;
+            }
+
+            // Create issue title
+            const title = `[Join Request] Node: ${gpgKeyId.slice(-8)}`;
+
+            // Create issue body
+            const body = `## New Node Application
+
+### Node Information
+| Field | Value |
+|-------|-------|
+| **GPG Key ID** | \`${gpgKeyId}\` |
+| **Storage Contribution** | ${storageContribution} |
+| **Region** | ${region} |
+| **Device Type** | ${deviceType} |
+| **Public IP** | ${publicIp} |
+
+### Additional Notes
+${notes}
+
+---
+
+### Checklist for Reviewers
+- [ ] GPG key is valid and accessible on public keyservers
+- [ ] Storage contribution is reasonable
+- [ ] No duplicate node with same GPG key
+- [ ] Assign VPN IP address
+- [ ] Update manifest file
+
+---
+*This issue was automatically generated from the [Join Network](https://adefilippo83.github.io/redundanet/join.html) form.*
+`;
+
+            // Create GitHub issue URL
+            const issueUrl = `https://github.com/${GITHUB_REPO}/issues/new?` + new URLSearchParams({
+                title: title,
+                body: body,
+                labels: 'join-request'
+            }).toString();
+
+            // Redirect to GitHub
+            window.location.href = issueUrl;
+        });
+    </script>
+</body>
+</html>

@@ -1,67 +1,18 @@
-# RedundaNet Manifest File
+# RedundaNet Network Manifest
+# This file is automatically updated when new nodes join the network
 
 network:
   name: redundanet
-  version: "1.0.0"
+  version: 2.0.0
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
+  tahoe:
+    shares_needed: 3
+    shares_happy: 7
+    shares_total: 10
+    reserved_space: 1G
 
-tahoe:
-  shares_needed: 3      # Minimum shares to reconstruct data
-  shares_happy: 7       # Minimum shares for successful upload
-  shares_total: 10      # Total shares to create
-  reserved_space: 50G   # Reserved space per storage node
-  # introducer_furl will be auto-populated by the introducer node
+introducer_furl: null
 
-nodes:
-  # Introducer node - coordinates the storage network
-  - name: introducer-node
-    internal_ip: 192.168.1.10
-    vpn_ip: 10.100.0.1
-    public_ip: 203.0.113.10    # Optional: for publicly accessible nodes
-    gpg_key_id: ABCD1234EFGH5678
-    roles:
-      - introducer
-      - storage
-    storage_contribution: 100GB
-    metadata:
-      region: us-east
-      description: Primary introducer and storage
-
-  # Storage node example
-  - name: storage-node-1
-    internal_ip: 192.168.1.20
-    vpn_ip: 10.100.0.2
-    gpg_key_id: IJKL9012MNOP3456
-    roles:
-      - storage
-    storage_contribution: 500GB
-    metadata:
-      region: eu-west
-      description: European storage node
-
-  # Storage node with client access
-  - name: storage-node-2
-    internal_ip: 192.168.2.30
-    vpn_ip: 10.100.0.3
-    gpg_key_id: QRST7890UVWX1234
-    roles:
-      - storage
-      - client
-    storage_contribution: 1TB
-    storage_allocation: 2TB    # Can use up to 2TB from network
-    metadata:
-      region: asia-pacific
-      description: Asia-Pacific storage and client
-
-  # Client-only node
-  - name: client-node
-    internal_ip: 192.168.3.40
-    vpn_ip: 10.100.0.4
-    gpg_key_id: YZAB5678CDEF9012
-    roles:
-      - client
-    storage_allocation: 500GB
-    metadata:
-      region: us-west
-      description: Client-only access node
+# Network nodes - automatically populated via join requests
+nodes: []
