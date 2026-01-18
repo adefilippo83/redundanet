@@ -1,27 +1,24 @@
 [Unit]
 Description=RedundaNet Distributed Storage Service
-Documentation=https://github.com/yourorg/redundanet
-After=network-online.target docker.service
+Documentation=https://github.com/adefilippo83/redundanet
+After=network-online.target docker.service redundanet-init.service
 Wants=network-online.target
 Requires=docker.service
+BindsTo=redundanet-docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/redundanet
-ExecStart=/opt/redundanet/venv/bin/redundanet start
-ExecStop=/opt/redundanet/venv/bin/redundanet stop
-User=redundanet
-Group=redundanet
+
+# Use redundanet CLI for status check on start
+ExecStart=/opt/redundanet/venv/bin/redundanet status
+ExecStop=/bin/true
 
 # Environment
 Environment=REDUNDANET_CONFIG_DIR=/etc/redundanet
 Environment=REDUNDANET_DATA_DIR=/var/lib/redundanet
 Environment=REDUNDANET_LOG_LEVEL=INFO
-
-# Restart policy
-Restart=on-failure
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

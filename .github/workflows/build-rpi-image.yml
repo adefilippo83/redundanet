@@ -41,6 +41,7 @@ jobs:
         with:
           base_image: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz
           image_additional_mb: 2048
+          copy_repository_path: /tmp/redundanet-repo
           commands: |
             # Prevent initramfs updates from failing in QEMU
             export DEBIAN_FRONTEND=noninteractive
@@ -85,12 +86,20 @@ jobs:
             mkdir -p /var/lib/redundanet
             mkdir -p /var/log/redundanet
 
-            # Setup Python virtual environment
+            # Setup Python virtual environment and install RedundaNet CLI
             python3 -m venv /opt/redundanet/venv
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
+            /opt/redundanet/venv/bin/pip install redundanet || echo "Note: redundanet package not yet on PyPI"
 
-            # Create symlink for redundanet command
-            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet || true
+            # Create symlink for redundanet command (available system-wide)
+            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
+
+            # Copy Docker configuration files from repository
+            mkdir -p /opt/redundanet/docker
+            if [ -d /tmp/redundanet-repo/docker ]; then
+              cp -r /tmp/redundanet-repo/docker/* /opt/redundanet/docker/
+              echo "Docker configuration files installed"
+            fi
 
             # Set ownership
             chown -R redundanet:redundanet /opt/redundanet
@@ -248,6 +257,7 @@ jobs:
         with:
           base_image: https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz
           image_additional_mb: 2048
+          copy_repository_path: /tmp/redundanet-repo
           commands: |
             # Prevent initramfs updates from failing in QEMU
             export DEBIAN_FRONTEND=noninteractive
@@ -292,12 +302,20 @@ jobs:
             mkdir -p /var/lib/redundanet
             mkdir -p /var/log/redundanet
 
-            # Setup Python virtual environment
+            # Setup Python virtual environment and install RedundaNet CLI
             python3 -m venv /opt/redundanet/venv
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
+            /opt/redundanet/venv/bin/pip install redundanet || echo "Note: redundanet package not yet on PyPI"
 
-            # Create symlink for redundanet command
-            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet || true
+            # Create symlink for redundanet command (available system-wide)
+            ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
+
+            # Copy Docker configuration files from repository
+            mkdir -p /opt/redundanet/docker
+            if [ -d /tmp/redundanet-repo/docker ]; then
+              cp -r /tmp/redundanet-repo/docker/* /opt/redundanet/docker/
+              echo "Docker configuration files installed"
+            fi
 
             # Set ownership
             chown -R redundanet:redundanet /opt/redundanet
