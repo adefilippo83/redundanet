@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redundanet"
-version = "2.0.0"
+version = "2.0.1"
 description = "Distributed encrypted storage on a mesh VPN network"
 authors = ["Alessandro De Filippo <alessandro@example.com>"]
 license = "MIT"

@@ -41,7 +41,6 @@ jobs:
         with:
           base_image: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz
           image_additional_mb: 2048
-          copy_repository_path: /tmp/redundanet-repo
           commands: |
             # Prevent initramfs updates from failing in QEMU
             export DEBIAN_FRONTEND=noninteractive
@@ -88,52 +87,15 @@ jobs:
             mkdir -p /var/log/redundanet
 
             # Setup Python virtual environment and install RedundaNet CLI
-            echo "Creating Python virtual environment..."
             python3 -m venv /opt/redundanet/venv
-
-            echo "Upgrading pip..."
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
-
-            echo "Installing redundanet from PyPI..."
             /opt/redundanet/venv/bin/pip install redundanet
 
-            echo "Checking venv bin directory..."
-            ls -la /opt/redundanet/venv/bin/
-
-            echo "Checking if redundanet script exists..."
-            ls -la /opt/redundanet/venv/bin/redundanet || echo "ERROR: redundanet script not found in venv!"
-
             # Create symlink for redundanet command (available system-wide)
-            echo "Creating symlink..."
             ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
-            ls -la /usr/local/bin/redundanet
 
             # Verify installation
-            echo "Verifying installation..."
-            /usr/local/bin/redundanet --version || {
-              echo "Symlink failed, trying direct venv path..."
-              /opt/redundanet/venv/bin/redundanet --version || {
-                echo "Entry point failed, trying python -m..."
-                /opt/redundanet/venv/bin/python -m redundanet --version
-              }
-            }
-
-            # Create a wrapper script as backup if entry point doesn't exist
-            if [ ! -f /opt/redundanet/venv/bin/redundanet ]; then
-              echo "Creating wrapper script..."
-              cat > /opt/redundanet/venv/bin/redundanet << 'WRAPPER'
-            #!/bin/bash
-            exec /opt/redundanet/venv/bin/python -m redundanet "$@"
-            WRAPPER
-              chmod +x /opt/redundanet/venv/bin/redundanet
-            fi
-
-            # Copy Docker configuration files from repository
-            mkdir -p /opt/redundanet/docker
-            if [ -d /tmp/redundanet-repo/docker ]; then
-              cp -r /tmp/redundanet-repo/docker/* /opt/redundanet/docker/
-              echo "Docker configuration files installed"
-            fi
+            /usr/local/bin/redundanet --version || /opt/redundanet/venv/bin/python -m redundanet --version
 
             # Set ownership
             chown -R redundanet:redundanet /opt/redundanet
@@ -291,7 +253,6 @@ jobs:
         with:
           base_image: https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz
           image_additional_mb: 2048
-          copy_repository_path: /tmp/redundanet-repo
           commands: |
             # Prevent initramfs updates from failing in QEMU
             export DEBIAN_FRONTEND=noninteractive
@@ -338,52 +299,15 @@ jobs:
             mkdir -p /var/log/redundanet
 
             # Setup Python virtual environment and install RedundaNet CLI
-            echo "Creating Python virtual environment..."
             python3 -m venv /opt/redundanet/venv
-
-            echo "Upgrading pip..."
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
-
-            echo "Installing redundanet from PyPI..."
             /opt/redundanet/venv/bin/pip install redundanet
 
-            echo "Checking venv bin directory..."
-            ls -la /opt/redundanet/venv/bin/
-
-            echo "Checking if redundanet script exists..."
-            ls -la /opt/redundanet/venv/bin/redundanet || echo "ERROR: redundanet script not found in venv!"
-
             # Create symlink for redundanet command (available system-wide)
-            echo "Creating symlink..."
             ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
-            ls -la /usr/local/bin/redundanet
 
             # Verify installation
-            echo "Verifying installation..."
-            /usr/local/bin/redundanet --version || {
-              echo "Symlink failed, trying direct venv path..."
-              /opt/redundanet/venv/bin/redundanet --version || {
-                echo "Entry point failed, trying python -m..."
-                /opt/redundanet/venv/bin/python -m redundanet --version
-              }
-            }
-
-            # Create a wrapper script as backup if entry point doesn't exist
-            if [ ! -f /opt/redundanet/venv/bin/redundanet ]; then
-              echo "Creating wrapper script..."
-              cat > /opt/redundanet/venv/bin/redundanet << 'WRAPPER'
-            #!/bin/bash
-            exec /opt/redundanet/venv/bin/python -m redundanet "$@"
-            WRAPPER
-              chmod +x /opt/redundanet/venv/bin/redundanet
-            fi
-
-            # Copy Docker configuration files from repository
-            mkdir -p /opt/redundanet/docker
-            if [ -d /tmp/redundanet-repo/docker ]; then
-              cp -r /tmp/redundanet-repo/docker/* /opt/redundanet/docker/
-              echo "Docker configuration files installed"
-            fi
+            /usr/local/bin/redundanet --version || /opt/redundanet/venv/bin/python -m redundanet --version
 
             # Set ownership
             chown -R redundanet:redundanet /opt/redundanet
