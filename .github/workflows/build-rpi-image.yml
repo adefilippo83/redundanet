@@ -35,6 +35,9 @@ jobs:
             echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Build RedundaNet Raspberry Pi Image (64-bit)
         uses: pguyot/arm-runner-action@v2
         id: build
@@ -246,6 +249,9 @@ jobs:
           else
             echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Build RedundaNet Raspberry Pi Image (32-bit)
         uses: pguyot/arm-runner-action@v2
