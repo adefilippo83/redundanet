@@ -58,6 +58,7 @@ jobs:
               python3 \
               python3-pip \
               python3-venv \
+              python3-full \
               python3-dev \
               git \
               gnupg \
@@ -87,12 +88,45 @@ jobs:
             mkdir -p /var/log/redundanet
 
             # Setup Python virtual environment and install RedundaNet CLI
+            echo "Creating Python virtual environment..."
             python3 -m venv /opt/redundanet/venv
+
+            echo "Upgrading pip..."
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
-            /opt/redundanet/venv/bin/pip install redundanet || echo "Note: redundanet package not yet on PyPI"
+
+            echo "Installing redundanet from PyPI..."
+            /opt/redundanet/venv/bin/pip install redundanet
+
+            echo "Checking venv bin directory..."
+            ls -la /opt/redundanet/venv/bin/
+
+            echo "Checking if redundanet script exists..."
+            ls -la /opt/redundanet/venv/bin/redundanet || echo "ERROR: redundanet script not found in venv!"
 
             # Create symlink for redundanet command (available system-wide)
+            echo "Creating symlink..."
             ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
+            ls -la /usr/local/bin/redundanet
+
+            # Verify installation
+            echo "Verifying installation..."
+            /usr/local/bin/redundanet --version || {
+              echo "Symlink failed, trying direct venv path..."
+              /opt/redundanet/venv/bin/redundanet --version || {
+                echo "Entry point failed, trying python -m..."
+                /opt/redundanet/venv/bin/python -m redundanet --version
+              }
+            }
+
+            # Create a wrapper script as backup if entry point doesn't exist
+            if [ ! -f /opt/redundanet/venv/bin/redundanet ]; then
+              echo "Creating wrapper script..."
+              cat > /opt/redundanet/venv/bin/redundanet << 'WRAPPER'
+            #!/bin/bash
+            exec /opt/redundanet/venv/bin/python -m redundanet "$@"
+            WRAPPER
+              chmod +x /opt/redundanet/venv/bin/redundanet
+            fi
 
             # Copy Docker configuration files from repository
             mkdir -p /opt/redundanet/docker
@@ -274,6 +308,7 @@ jobs:
               python3 \
               python3-pip \
               python3-venv \
+              python3-full \
               python3-dev \
               git \
               gnupg \
@@ -303,12 +338,45 @@ jobs:
             mkdir -p /var/log/redundanet
 
             # Setup Python virtual environment and install RedundaNet CLI
+            echo "Creating Python virtual environment..."
             python3 -m venv /opt/redundanet/venv
+
+            echo "Upgrading pip..."
             /opt/redundanet/venv/bin/pip install --upgrade pip wheel setuptools
-            /opt/redundanet/venv/bin/pip install redundanet || echo "Note: redundanet package not yet on PyPI"
+
+            echo "Installing redundanet from PyPI..."
+            /opt/redundanet/venv/bin/pip install redundanet
+
+            echo "Checking venv bin directory..."
+            ls -la /opt/redundanet/venv/bin/
+
+            echo "Checking if redundanet script exists..."
+            ls -la /opt/redundanet/venv/bin/redundanet || echo "ERROR: redundanet script not found in venv!"
 
             # Create symlink for redundanet command (available system-wide)
+            echo "Creating symlink..."
             ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
+            ls -la /usr/local/bin/redundanet
+
+            # Verify installation
+            echo "Verifying installation..."
+            /usr/local/bin/redundanet --version || {
+              echo "Symlink failed, trying direct venv path..."
+              /opt/redundanet/venv/bin/redundanet --version || {
+                echo "Entry point failed, trying python -m..."
+                /opt/redundanet/venv/bin/python -m redundanet --version
+              }
+            }
+
+            # Create a wrapper script as backup if entry point doesn't exist
+            if [ ! -f /opt/redundanet/venv/bin/redundanet ]; then
+              echo "Creating wrapper script..."
+              cat > /opt/redundanet/venv/bin/redundanet << 'WRAPPER'
+            #!/bin/bash
+            exec /opt/redundanet/venv/bin/python -m redundanet "$@"
+            WRAPPER
+              chmod +x /opt/redundanet/venv/bin/redundanet
+            fi
 
             # Copy Docker configuration files from repository
             mkdir -p /opt/redundanet/docker

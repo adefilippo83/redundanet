@@ -22,7 +22,7 @@ source "${VENV_DIR}/bin/activate"
 # Upgrade pip
 pip install --upgrade pip wheel setuptools
 
-# Install/update RedundaNet
+# Install/update RedundaNet from PyPI
 if [ "$REDUNDANET_VERSION" = "latest" ]; then
     pip install --upgrade redundanet
 else

@@ -167,6 +167,26 @@ sudo systemctl status docker
 sudo journalctl -u docker -n 50
 ```
 
+### `redundanet` command not found
+
+The `redundanet` CLI is installed in a virtual environment at `/opt/redundanet/venv`.
+
+```bash
+# Option 1: Run the install/update script
+sudo /opt/redundanet/install-redundanet.sh
+
+# Option 2: Use the venv directly
+/opt/redundanet/venv/bin/redundanet --version
+
+# Option 3: Run as Python module
+/opt/redundanet/venv/bin/python -m redundanet --version
+
+# Option 4: Recreate the symlink
+sudo ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
+```
+
+**Note:** Do NOT run `pip install redundanet` directly - use the virtual environment.
+
 ### Check first boot log
 
 ```bash

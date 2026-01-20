@@ -16,7 +16,7 @@ pip install redundanet
 ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
 
 # Verify installation
-redundanet --version || echo "Warning: redundanet CLI not yet available (package may not be on PyPI yet)"
+redundanet --version
 EOF
 
 echo "RedundaNet CLI installed"
