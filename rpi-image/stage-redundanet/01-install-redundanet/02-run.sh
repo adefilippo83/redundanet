@@ -2,7 +2,7 @@
 # Copy RedundaNet files to the image
 
 # Get the project root directory (two levels up from stage-redundanet)
-PROJECT_ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 
 # Copy installation script
 install -m 755 files/install-redundanet.sh "${ROOTFS_DIR}/opt/redundanet/install-redundanet.sh"
