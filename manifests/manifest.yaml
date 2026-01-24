@@ -1,6 +1,3 @@
-# RedundaNet Network Manifest
-# This file is automatically updated when new nodes join the network
-
 network:
   name: redundanet
   version: 2.0.0
@@ -11,8 +8,21 @@ network:
     shares_happy: 7
     shares_total: 10
     reserved_space: 1G
-
 introducer_furl: null
-
-# Network nodes - automatically populated via join requests
-nodes: []
+nodes:
+- name: node-dd2be971
+  internal_ip: 10.100.0.10
+  vpn_ip: 10.100.0.10
+  gpg_key_id: 333BEC68DD2BE971
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 100GB
+  is_publicly_accessible: false
