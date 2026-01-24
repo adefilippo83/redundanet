@@ -107,7 +107,7 @@ class GPGManager:
 
         key = self._gpg.gen_key(input_data)
 
-        if not key.ok:
+        if not key.fingerprint:
             raise GPGError(f"Failed to generate GPG key: {key.status}")
 
         logger.info("GPG key generated", fingerprint=str(key))
