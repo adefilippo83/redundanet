@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -11,6 +14,80 @@ from rich.table import Table
 
 app = typer.Typer(help="Network management commands")
 console = Console()
+
+INSTALL_DIR = Path("/opt/redundanet")
+REPO_DIR = Path("/var/lib/redundanet/repo")
+
+
+def _clone_or_pull_repo(repo_url: str, branch: str, target_dir: Path) -> None:
+    """Clone a repo or pull if it already exists."""
+    if (target_dir / ".git").exists():
+        # Pull latest changes
+        subprocess.run(
+            ["git", "-C", str(target_dir), "fetch", "origin"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(target_dir), "checkout", branch],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(target_dir), "pull", "origin", branch],
+            check=True,
+            capture_output=True,
+        )
+    else:
+        # Clone fresh
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", "--branch", branch, repo_url, str(target_dir)],
+            check=True,
+            capture_output=True,
+        )
+
+
+def _setup_docker_files(repo_dir: Path, install_dir: Path) -> None:
+    """Copy docker files from cloned repo to install directory."""
+    src_docker = repo_dir / "docker"
+    dst_docker = install_dir / "docker"
+
+    if not src_docker.exists():
+        console.print("[yellow]Warning:[/yellow] No docker directory found in repo")
+        return
+
+    # Remove existing docker dir if present
+    if dst_docker.exists():
+        shutil.rmtree(dst_docker)
+
+    # Copy docker directory
+    shutil.copytree(src_docker, dst_docker)
+
+    # Create secrets directory
+    (dst_docker / "secrets").mkdir(exist_ok=True)
+
+    console.print(f"[green]Docker files installed to:[/green] {dst_docker}")
+
+
+def _setup_manifest(repo_dir: Path) -> None:
+    """Copy manifest files to the data directory."""
+    src_manifest = repo_dir / "manifests"
+    dst_manifest = Path("/var/lib/redundanet/manifest")
+
+    if not src_manifest.exists():
+        console.print("[yellow]Warning:[/yellow] No manifests directory found in repo")
+        return
+
+    dst_manifest.mkdir(parents=True, exist_ok=True)
+
+    # Copy manifest files
+    for f in src_manifest.glob("*.yaml"):
+        shutil.copy(f, dst_manifest / f.name)
+    for f in src_manifest.glob("*.json"):
+        shutil.copy(f, dst_manifest / f.name)
+
+    console.print(f"[green]Manifest files installed to:[/green] {dst_manifest}")
 
 
 @app.command("join")
@@ -23,6 +100,10 @@ def join_network(
         str,
         typer.Option("--branch", "-b", help="Git branch"),
     ] = "main",
+    install_dir: Annotated[
+        Path,
+        typer.Option("--install-dir", help="Installation directory"),
+    ] = INSTALL_DIR,
 ) -> None:
     """Join an existing RedundaNet network."""
     from redundanet.core.config import load_settings
@@ -37,15 +118,28 @@ def join_network(
 
     console.print(Panel(f"[bold]Joining RedundaNet Network[/bold]\nRepository: {repo}"))
 
-    with console.status("[bold green]Cloning manifest repository..."):
-        # In a real implementation, we'd clone the repo
-        console.print(f"[green]Repository:[/green] {repo}")
-        console.print(f"[green]Branch:[/green] {branch}")
+    # Clone or update the repository
+    with console.status("[bold green]Cloning repository..."):
+        try:
+            _clone_or_pull_repo(repo, branch, REPO_DIR)
+            console.print(f"[green]Repository cloned to:[/green] {REPO_DIR}")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error cloning repository:[/red] {e}")
+            raise typer.Exit(1) from None
+
+    # Set up docker files
+    with console.status("[bold green]Setting up Docker files..."):
+        _setup_docker_files(REPO_DIR, install_dir)
+
+    # Set up manifest
+    with console.status("[bold green]Setting up manifest..."):
+        _setup_manifest(REPO_DIR)
 
     console.print("\n[bold green]Successfully joined the network![/bold green]")
     console.print("\n[bold]Next steps:[/bold]")
-    console.print("1. Start the VPN: [cyan]redundanet network vpn start[/cyan]")
-    console.print("2. Start storage:  [cyan]redundanet storage start[/cyan]")
+    console.print("1. Configure environment: [cyan]nano /opt/redundanet/.env[/cyan]")
+    console.print("2. Export GPG key:        [cyan]gpg --armor --export-secret-keys <KEY_ID> > /opt/redundanet/docker/secrets/gpg_private_key.asc[/cyan]")
+    console.print("3. Start services:        [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]")
 
 
 @app.command("leave")
