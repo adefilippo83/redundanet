@@ -138,8 +138,12 @@ def join_network(
     console.print("\n[bold green]Successfully joined the network![/bold green]")
     console.print("\n[bold]Next steps:[/bold]")
     console.print("1. Configure environment: [cyan]nano /opt/redundanet/.env[/cyan]")
-    console.print("2. Export GPG key:        [cyan]gpg --armor --export-secret-keys <KEY_ID> > /opt/redundanet/docker/secrets/gpg_private_key.asc[/cyan]")
-    console.print("3. Start services:        [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]")
+    console.print(
+        "2. Export GPG key:        [cyan]gpg --armor --export-secret-keys <KEY_ID> > /opt/redundanet/docker/secrets/gpg_private_key.asc[/cyan]"
+    )
+    console.print(
+        "3. Start services:        [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]"
+    )
 
 
 @app.command("leave")
