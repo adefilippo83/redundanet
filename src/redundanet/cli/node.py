@@ -323,14 +323,51 @@ def manage_keys(
             console.print(f"  Fingerprint: [dim]{key_info.fingerprint}[/dim]")
             console.print(f"  User ID:     {key_info.user_id}")
 
+            # Auto-export private key to docker secrets directory
+            secrets_dir = Path("/opt/redundanet/docker/secrets")
+            secrets_dir.mkdir(parents=True, exist_ok=True)
+            private_key_path = secrets_dir / "gpg_private_key.asc"
+
+            with console.status("[bold green]Exporting private key..."):
+                private_key = gpg.export_private_key(key_info.key_id)
+                private_key_path.write_text(private_key)
+                # Set secure permissions
+                private_key_path.chmod(0o600)
+
+            console.print(f"\n[green]Private key exported to:[/green] {private_key_path}")
+
+            # Update .env file with the new GPG_KEY_ID if it exists
+            env_file = Path("/opt/redundanet/.env")
+            if env_file.exists():
+                env_content = env_file.read_text()
+                # Update or add GPG_KEY_ID
+                lines = env_content.splitlines()
+                updated = False
+                new_lines = []
+                for line in lines:
+                    if line.startswith("GPG_KEY_ID="):
+                        new_lines.append(f"GPG_KEY_ID={key_info.key_id}")
+                        updated = True
+                    else:
+                        new_lines.append(line)
+                if not updated:
+                    new_lines.append(f"GPG_KEY_ID={key_info.key_id}")
+                env_file.write_text("\n".join(new_lines) + "\n")
+                console.print(f"[green]Updated GPG_KEY_ID in:[/green] {env_file}")
+
             console.print("\n[bold]Next steps:[/bold]")
-            console.print(
-                f"1. Publish your key to keyservers: [cyan]redundanet node keys publish --key-id {key_info.key_id}[/cyan]"
-            )
-            console.print(
-                "2. Submit your application at: [cyan]https://redundanet.com/join.html[/cyan]"
-            )
-            console.print(f"3. Use this Key ID in your application: [cyan]{key_info.key_id}[/cyan]")
+            if not env_file.exists():
+                console.print(
+                    f"1. Join the network: [cyan]redundanet network join --repo <repo-url> --name {node_name}[/cyan]"
+                )
+                console.print(
+                    "2. Start services: [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]"
+                )
+            else:
+                console.print(
+                    "1. Start services: [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]"
+                )
+            console.print(f"\n[dim]Your Key ID: {key_info.key_id}[/dim]")
 
         except GPGError as e:
             console.print(f"[red]Error generating key:[/red] {e}")

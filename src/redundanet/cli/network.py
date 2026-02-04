@@ -52,10 +52,19 @@ def _setup_docker_files(repo_dir: Path, install_dir: Path) -> None:
     """Copy docker files from cloned repo to install directory."""
     src_docker = repo_dir / "docker"
     dst_docker = install_dir / "docker"
+    secrets_dir = dst_docker / "secrets"
 
     if not src_docker.exists():
         console.print("[yellow]Warning:[/yellow] No docker directory found in repo")
         return
+
+    # Backup secrets if they exist (e.g., GPG key generated before join)
+    secrets_backup = None
+    if secrets_dir.exists():
+        secrets_backup = install_dir / "secrets_backup"
+        if secrets_backup.exists():
+            shutil.rmtree(secrets_backup)
+        shutil.move(str(secrets_dir), str(secrets_backup))
 
     # Remove existing docker dir if present
     if dst_docker.exists():
@@ -64,8 +73,14 @@ def _setup_docker_files(repo_dir: Path, install_dir: Path) -> None:
     # Copy docker directory
     shutil.copytree(src_docker, dst_docker)
 
-    # Create secrets directory
-    (dst_docker / "secrets").mkdir(exist_ok=True)
+    # Restore secrets if they were backed up
+    if secrets_backup and secrets_backup.exists():
+        if secrets_dir.exists():
+            shutil.rmtree(secrets_dir)
+        shutil.move(str(secrets_backup), str(secrets_dir))
+    else:
+        # Create empty secrets directory
+        secrets_dir.mkdir(exist_ok=True)
 
     console.print(f"[green]Docker files installed to:[/green] {dst_docker}")
 

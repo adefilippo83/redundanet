@@ -76,7 +76,7 @@ class GPGManager:
         self,
         name: str,
         email: str,
-        passphrase: str | None = None,
+        passphrase: str = "",
         key_type: str = "RSA",
         key_length: int = 4096,
         expire_date: str = "0",  # Never expire
@@ -86,7 +86,7 @@ class GPGManager:
         Args:
             name: Real name for the key
             email: Email address for the key
-            passphrase: Optional passphrase (None for no passphrase)
+            passphrase: Passphrase for the key (empty string for no passphrase)
             key_type: Key algorithm (RSA, DSA, etc.)
             key_length: Key length in bits
             expire_date: Expiration (0 = never, 1y, 2m, etc.)
@@ -96,13 +96,14 @@ class GPGManager:
         """
         logger.info("Generating GPG key", name=name, email=email)
 
+        # Use empty string explicitly to create key without passphrase
         input_data = self._gpg.gen_key_input(
             key_type=key_type,
             key_length=key_length,
             name_real=name,
             name_email=email,
             expire_date=expire_date,
-            passphrase=passphrase,
+            passphrase=passphrase if passphrase else "",
         )
 
         key = self._gpg.gen_key(input_data)
@@ -162,17 +163,19 @@ class GPGManager:
 
         return str(result)
 
-    def export_private_key(self, key_id: str, passphrase: str | None = None) -> str:
+    def export_private_key(self, key_id: str, passphrase: str = "") -> str:
         """Export a private key in ASCII-armored format.
 
         Args:
             key_id: Key ID or fingerprint
-            passphrase: Passphrase for the key
+            passphrase: Passphrase for the key (empty string for no passphrase)
 
         Returns:
             ASCII-armored private key
         """
-        result = self._gpg.export_keys(key_id, secret=True, armor=True, passphrase=passphrase)
+        result = self._gpg.export_keys(
+            key_id, secret=True, armor=True, passphrase=passphrase if passphrase else ""
+        )
 
         if not result:
             raise GPGError(f"Failed to export private key: {key_id}")
