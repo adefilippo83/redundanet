@@ -59,6 +59,7 @@ def get_introducer_furl() -> str | None:
     manifest_file = manifest_dir / "manifest.yaml"
     if manifest_file.exists():
         import yaml
+
         with open(manifest_file) as f:
             manifest = yaml.safe_load(f)
 

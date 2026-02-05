@@ -361,11 +361,11 @@ def manage_keys(
                     f"1. Join the network: [cyan]redundanet network join --repo <repo-url> --name {node_name}[/cyan]"
                 )
                 console.print(
-                    "2. Start services: [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]"
+                    "2. Start services: [cyan]cd /var/lib/redundanet/repo/docker && docker-compose --env-file /opt/redundanet/.env up -d[/cyan]"
                 )
             else:
                 console.print(
-                    "1. Start services: [cyan]cd /opt/redundanet/docker && docker-compose --env-file ../.env up -d[/cyan]"
+                    "1. Start services: [cyan]cd /var/lib/redundanet/repo/docker && docker-compose --env-file /opt/redundanet/.env up -d[/cyan]"
                 )
             console.print(f"\n[dim]Your Key ID: {key_info.key_id}[/dim]")
 

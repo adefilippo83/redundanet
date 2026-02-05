@@ -143,8 +143,8 @@ class GPGManager:
         """
         result = self._gpg.import_keys(key_data)
 
-        if not result.ok:
-            raise GPGError(f"Failed to import key: {result.status}")
+        if not result.fingerprints:
+            raise GPGError(f"Failed to import key: {result.results}")
 
         if not result.fingerprints:
             raise GPGError("No keys imported")

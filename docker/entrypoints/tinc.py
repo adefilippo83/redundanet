@@ -8,8 +8,7 @@ from pathlib import Path
 
 from redundanet.core.config import AppSettings
 from redundanet.utils.logging import setup_logging, get_logger
-from redundanet.vpn.tinc import TincManager
-from redundanet.vpn.keys import VPNKeyManager
+from redundanet.vpn.tinc import TincConfig, TincManager
 from redundanet.auth.gpg import GPGManager
 
 
@@ -96,31 +95,16 @@ def main():
         logger.info("Importing GPG key", key_id=gpg_key_id)
         gpg = GPGManager()
         try:
-            gpg.import_key(gpg_key_path)
+            key_data = Path(gpg_key_path).read_text()
+            gpg.import_key(key_data)
         except Exception as e:
             logger.warning("Failed to import GPG key", error=str(e))
-
-    # Initialize Tinc manager
-    tinc = TincManager(
-        config_dir=tinc_config_dir,
-        network_name="redundanet",
-    )
-
-    # Generate or load keys
-    key_manager = VPNKeyManager(tinc_config_dir)
-
-    private_key_path = tinc_config_dir / "rsa_key.priv"
-    if not private_key_path.exists():
-        logger.info("Generating new Tinc keypair")
-        key_manager.generate_keypair()
-
-    # Configure Tinc
-    logger.info("Configuring Tinc VPN", node=node_name, vpn_ip=vpn_ip)
 
     # Determine public IP if set to auto
     if public_ip == "auto":
         try:
             import httpx
+
             response = httpx.get("https://api.ipify.org", timeout=10)
             public_ip = response.text.strip()
             logger.info("Detected public IP", ip=public_ip)
@@ -128,58 +112,42 @@ def main():
             public_ip = ""
             logger.warning("Could not detect public IP")
 
-    # Generate configuration
-    tinc.generate_config(
-        node_name=node_name,
-        vpn_ip=vpn_ip,
-        public_ip=public_ip if public_ip else None,
-        connect_to=[],  # Will be populated from manifest
-    )
-
-    # Generate host file
-    tinc.generate_host_file(
-        node_name=node_name,
-        vpn_ip=vpn_ip,
-        public_ip=public_ip if public_ip else None,
-        port=655,
-    )
-
-    # Load peer configurations from manifest
+    # Load peer list from manifest
+    connect_to = []
     manifest_file = manifest_dir / "manifest.yaml"
+    peers = []
     if manifest_file.exists():
         import yaml
+
         with open(manifest_file) as f:
             manifest = yaml.safe_load(f)
 
-        nodes = manifest.get("nodes", [])
-        connect_to = []
-
-        for node in nodes:
+        for node in manifest.get("nodes", []):
             peer_name = node.get("name")
             if peer_name and peer_name != node_name:
-                peer_vpn_ip = node.get("vpn_ip")
-                peer_public_ip = node.get("public_ip")
+                connect_to.append(peer_name)
 
-                if peer_vpn_ip:
-                    tinc.generate_host_file(
-                        node_name=peer_name,
-                        vpn_ip=peer_vpn_ip,
-                        public_ip=peer_public_ip,
-                        port=655,
-                    )
-                    connect_to.append(peer_name)
+    # Initialize Tinc config and manager
+    logger.info("Configuring Tinc VPN", node=node_name, vpn_ip=vpn_ip)
 
-        # Regenerate config with connect_to peers
-        if connect_to:
-            tinc.generate_config(
-                node_name=node_name,
-                vpn_ip=vpn_ip,
-                public_ip=public_ip if public_ip else None,
-                connect_to=connect_to,
-            )
+    tinc_config = TincConfig(
+        network_name="redundanet",
+        node_name=node_name,
+        vpn_ip=vpn_ip,
+        public_ip=public_ip if public_ip else None,
+        connect_to=connect_to,
+        config_dir=tinc_config_dir.parent,  # /etc/tinc (network_dir adds /redundanet)
+    )
+    tinc = TincManager(config=tinc_config)
 
-    # Generate tinc-up and tinc-down scripts
-    tinc.generate_scripts(vpn_ip=vpn_ip)
+    # Generate keys if needed
+    private_key_path = tinc_config.network_dir / "rsa_key.priv"
+    if not private_key_path.exists():
+        logger.info("Generating new Tinc keypair")
+        tinc.generate_keys()
+
+    # Run full setup (writes conf, scripts, host files)
+    tinc.setup()
 
     logger.info("Tinc configuration complete, starting tincd")
 
