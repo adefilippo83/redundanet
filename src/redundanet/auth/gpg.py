@@ -96,15 +96,27 @@ class GPGManager:
         """
         logger.info("Generating GPG key", name=name, email=email)
 
-        # Use empty string explicitly to create key without passphrase
-        input_data = self._gpg.gen_key_input(
-            key_type=key_type,
-            key_length=key_length,
-            name_real=name,
-            name_email=email,
-            expire_date=expire_date,
-            passphrase=passphrase if passphrase else "",
-        )
+        if passphrase:
+            # Use python-gnupg helper when passphrase is set
+            input_data = self._gpg.gen_key_input(
+                key_type=key_type,
+                key_length=key_length,
+                name_real=name,
+                name_email=email,
+                expire_date=expire_date,
+                passphrase=passphrase,
+            )
+        else:
+            # Build input manually with %no-protection for GPG 2.2+
+            input_data = (
+                f"Key-Type: {key_type}\n"
+                f"Key-Length: {key_length}\n"
+                f"Name-Real: {name}\n"
+                f"Name-Email: {email}\n"
+                f"Expire-Date: {expire_date}\n"
+                "%no-protection\n"
+                "%commit\n"
+            )
 
         key = self._gpg.gen_key(input_data)
 
