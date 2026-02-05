@@ -43,3 +43,19 @@ nodes:
   storage_contribution: 10GB
   is_publicly_accessible: true
   public_ip: 168.119.173.11
+- name: node-12345678
+  internal_ip: 10.100.0.12
+  vpn_ip: 10.100.0.12
+  gpg_key_id: '123456789012345678'
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 10GB
+  is_publicly_accessible: false
