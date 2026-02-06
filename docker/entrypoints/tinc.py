@@ -77,6 +77,9 @@ def main():
         logger.error("REDUNDANET_NODE_NAME environment variable is required")
         sys.exit(1)
 
+    # Sanitize node name for tinc (only alphanumeric and underscore allowed)
+    tinc_node_name = node_name.replace("-", "_")
+
     if not vpn_ip:
         logger.error("REDUNDANET_INTERNAL_VPN_IP environment variable is required")
         sys.exit(1)
@@ -125,14 +128,15 @@ def main():
         for node in manifest.get("nodes", []):
             peer_name = node.get("name")
             if peer_name and peer_name != node_name:
-                connect_to.append(peer_name)
+                # Sanitize peer names for tinc compatibility
+                connect_to.append(peer_name.replace("-", "_"))
 
     # Initialize Tinc config and manager
-    logger.info("Configuring Tinc VPN", node=node_name, vpn_ip=vpn_ip)
+    logger.info("Configuring Tinc VPN", node=tinc_node_name, vpn_ip=vpn_ip)
 
     tinc_config = TincConfig(
         network_name="redundanet",
-        node_name=node_name,
+        node_name=tinc_node_name,
         vpn_ip=vpn_ip,
         public_ip=public_ip if public_ip else None,
         connect_to=connect_to,
