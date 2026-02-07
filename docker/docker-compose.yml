@@ -34,7 +34,7 @@ services:
       - logs:/var/log/redundanet
       - ${GPG_KEY_FILE:-./secrets/gpg_private_key.asc}:/run/secrets/gpg_private_key:ro
     healthcheck:
-      test: ["CMD", "ip", "link", "show", "tinc0"]
+      test: ["CMD", "ip", "link", "show", "redundanet"]
       interval: 30s
       timeout: 10s
       retries: 3
