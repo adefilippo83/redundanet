@@ -37,9 +37,6 @@ ConnectTo = {{ connect_node }}
 Compression = 9
 Cipher = aes-256-cbc
 Digest = sha256
-
-# Process settings
-ProcessPriority = high
 """
 
 TINC_UP_TEMPLATE = """#!/bin/bash
@@ -148,6 +145,9 @@ class TincManager:
         # Generate keys if they don't exist
         if not self._private_key_path.exists():
             self.generate_keys()
+        else:
+            # Ensure local host file exists even if keys already exist
+            self._ensure_local_host_file()
 
         # Write peer host files
         if peers:
@@ -196,6 +196,18 @@ class TincManager:
         script_path = self.config.network_dir / "tinc-down"
         write_file(script_path, content, executable=True)
         logger.debug("Wrote tinc-down", path=str(script_path))
+
+    def _ensure_local_host_file(self) -> None:
+        """Ensure the local node's host file exists."""
+        host_file = self.config.hosts_dir / self.config.node_name
+        if not host_file.exists():
+            header = f"# Host file for {self.config.node_name}\n"
+            header += f"Subnet = {self.config.vpn_ip}/32\n"
+            if self.config.public_ip:
+                header += f"Address = {self.config.public_ip}\n"
+            header += f"Port = {self.config.port}\n"
+            write_file(host_file, header, mode=0o644)
+            logger.debug("Created local host file", path=str(host_file))
 
     def _write_host_file(
         self,
