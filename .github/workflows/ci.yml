@@ -148,8 +148,18 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-interaction
 
+      - name: Upgrade pip (patches pip CVEs in the runner venv)
+        run: poetry run python -m pip install --upgrade "pip>=26.1"
+
       - name: Run bandit security scan
         run: poetry run pip install bandit && poetry run bandit -r src/ -ll
 
-      - name: Check for known vulnerabilities
-        run: poetry run pip install safety && poetry run safety check
+      - name: Audit production dependencies for known vulnerabilities
+        # pip-audit (maintained, OSV-backed) replaces the deprecated `safety
+        # check`. We gate on the *shipped* dependency tree (--only main) so the
+        # build is not broken by CVEs in dev-only tooling; bandit above covers
+        # the source itself.
+        run: |
+          poetry run pip install pip-audit
+          poetry export --only main --without-hashes -f requirements.txt -o prod-requirements.txt
+          poetry run pip-audit --requirement prod-requirements.txt
