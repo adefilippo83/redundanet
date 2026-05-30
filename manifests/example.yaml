@@ -1,18 +1,19 @@
 # RedundaNet Example Manifest
-# Copy this file and customize for your network
+# Copy this file and customize for your network.
 
 network:
   name: example-network
   version: "1.0.0"
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
+  tahoe:
+    shares_needed: 3      # Minimum shares to reconstruct data
+    shares_happy: 7       # Minimum shares for a successful upload
+    shares_total: 10      # Total shares to create
+    reserved_space: 50G   # Reserved space per storage node
 
-tahoe:
-  shares_needed: 3      # Minimum shares to reconstruct data
-  shares_happy: 7       # Minimum shares for successful upload
-  shares_total: 10      # Total shares to create
-  reserved_space: 50G   # Reserved space per storage node
-  # introducer_furl will be auto-populated by the introducer node
+# Auto-populated by the introducer node once it is running.
+introducer_furl: null
 
 nodes:
   # Introducer node - coordinates the storage network
@@ -20,49 +21,50 @@ nodes:
     internal_ip: 192.168.1.10
     vpn_ip: 10.100.0.1
     public_ip: 203.0.113.10    # Optional: for publicly accessible nodes
-    gpg_key_id: ABCD1234EFGH5678
+    gpg_key_id: ABCD1234EF567890
+    region: us-east
+    status: active
     roles:
-      - introducer
-      - storage
+      - tinc_vpn
+      - tahoe_introducer
+      - tahoe_storage
     storage_contribution: 100GB
-    metadata:
-      region: us-east
-      description: Primary introducer and storage
+    is_publicly_accessible: true
 
   # Storage node example
   - name: storage-node-1
     internal_ip: 192.168.1.20
     vpn_ip: 10.100.0.2
-    gpg_key_id: IJKL9012MNOP3456
+    gpg_key_id: 1234567890ABCDEF
+    region: eu-west
+    status: active
     roles:
-      - storage
+      - tinc_vpn
+      - tahoe_storage
     storage_contribution: 500GB
-    metadata:
-      region: eu-west
-      description: European storage node
 
-  # Storage node with client access
+  # Storage node that also runs a client
   - name: storage-node-2
     internal_ip: 192.168.2.30
     vpn_ip: 10.100.0.3
-    gpg_key_id: QRST7890UVWX1234
+    gpg_key_id: FEDCBA0987654321
+    region: asia-pacific
+    status: active
     roles:
-      - storage
-      - client
+      - tinc_vpn
+      - tahoe_storage
+      - tahoe_client
     storage_contribution: 1TB
-    storage_allocation: 2TB    # Can use up to 2TB from network
-    metadata:
-      region: asia-pacific
-      description: Asia-Pacific storage and client
+    storage_allocation: 2TB    # Can use up to 2TB from the network
 
   # Client-only node
   - name: client-node
     internal_ip: 192.168.3.40
     vpn_ip: 10.100.0.4
-    gpg_key_id: YZAB5678CDEF9012
+    gpg_key_id: 0F1E2D3C4B5A6978
+    region: us-west
+    status: active
     roles:
-      - client
+      - tinc_vpn
+      - tahoe_client
     storage_allocation: 500GB
-    metadata:
-      region: us-west
-      description: Client-only access node

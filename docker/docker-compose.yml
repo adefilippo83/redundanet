@@ -77,6 +77,10 @@ services:
       - REDUNDANET_NODE_NAME=${NODE_NAME}
       - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
       - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDUNDANET_RESERVED_SPACE=${RESERVED_SPACE:-1G}
+      - REDUNDANET_SHARES_NEEDED=${SHARES_NEEDED:-3}
+      - REDUNDANET_SHARES_HAPPY=${SHARES_HAPPY:-7}
+      - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
     volumes:
       - tahoe-storage:/var/lib/tahoe-storage
       - storage-data:/data/storage
@@ -104,6 +108,9 @@ services:
       - REDUNDANET_NODE_NAME=${NODE_NAME}
       - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
       - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDUNDANET_SHARES_NEEDED=${SHARES_NEEDED:-3}
+      - REDUNDANET_SHARES_HAPPY=${SHARES_HAPPY:-7}
+      - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest

@@ -67,6 +67,12 @@ test-integration:
 test-e2e:
 	poetry run pytest tests/e2e -v -m e2e
 
+# Full bootstrap + file round-trip through real containers (tinc + tahoe grid).
+# Generates a GPG identity, builds images, starts the stack, uploads/downloads
+# a file and verifies it byte-identical. Same script CI runs.
+e2e-bootstrap:
+	bash scripts/e2e-bootstrap.sh
+
 coverage:
 	poetry run pytest --cov=redundanet --cov-report=html --cov-report=term-missing
 	@echo "Coverage report generated in htmlcov/"

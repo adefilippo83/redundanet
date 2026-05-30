@@ -85,6 +85,16 @@ class TahoeClient:
             raise StorageError("Tahoe-LAFS is not installed. Please install tahoe-lafs first.")
         return True
 
+    def is_configured(self) -> bool:
+        """Check whether this client node has already been created/configured."""
+        return self._tahoe_cfg.exists()
+
+    def update_introducer_furl(self, furl: str) -> None:
+        """Update the introducer FURL in the configuration."""
+        self.config.introducer_furl = furl
+        self._write_config()
+        logger.info("Updated introducer FURL")
+
     def create_node(self) -> None:
         """Create a new Tahoe-LAFS client node."""
         logger.info("Creating Tahoe client node", nickname=self.config.nickname)

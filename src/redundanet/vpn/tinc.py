@@ -246,10 +246,12 @@ class TincManager:
             header += f"Port = {self.config.port}\n"
             write_file(host_file, header, mode=0o644)
 
-        # Generate keys using tincd
+        # Generate keys using tincd. tincd -K prompts twice (private key path,
+        # then public key path); send two newlines to accept both defaults so
+        # the public key is written into the host file.
         result = run_command(
             f"tincd -n {self.config.network_name} -K4096",
-            input_text="\n",  # Accept defaults
+            input_text="\n\n",  # Accept defaults for both prompts
         )
 
         if not result.success:

@@ -1,0 +1,46 @@
+name: E2E Bootstrap
+
+# Full end-to-end test of the node bootstrap + operate flow:
+# generate a GPG identity, build the container images, start
+# tinc -> introducer -> storage -> client, then upload a file and
+# download it back byte-identical through the Tahoe-LAFS grid.
+#
+# Runs the exact same scripts/e2e-bootstrap.sh used locally.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  e2e-bootstrap:
+    name: Bootstrap + file round-trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show tooling versions
+        run: |
+          docker --version
+          docker compose version
+          gpg --version | head -1
+
+      - name: Ensure /dev/net/tun is available (tinc)
+        run: |
+          sudo modprobe tun || true
+          test -c /dev/net/tun && echo "tun device present"
+
+      - name: Run end-to-end bootstrap
+        run: bash scripts/e2e-bootstrap.sh
+        env:
+          KEY_LENGTH: "2048"
+          BUILD: "1"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -p redundanet-e2e -f docker/docker-compose.yml ps || true
+          docker compose -p redundanet-e2e -f docker/docker-compose.yml logs --tail=200 || true

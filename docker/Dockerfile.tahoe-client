@@ -50,7 +50,7 @@ RUN mkdir -p /var/lib/redundanet/manifest \
 
 EXPOSE 3456/tcp
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD tahoe status /var/lib/tahoe-client 2>&1 | grep -q RUNNING || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD nc -z 127.0.0.1 4456 || exit 1
 
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/tahoe-client.conf"]

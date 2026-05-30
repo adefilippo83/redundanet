@@ -13,10 +13,10 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
-log "Starting RedundaNet first boot initialization..."
+# Ensure directories exist before logging (the log file lives under one of them)
+mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$(dirname "$LOG_FILE")"
 
-# Ensure directories exist
-mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$(dirname $LOG_FILE)"
+log "Starting RedundaNet first boot initialization..."
 
 # Generate unique node name if not set
 if [ ! -f "$CONFIG_DIR/node-name" ]; then

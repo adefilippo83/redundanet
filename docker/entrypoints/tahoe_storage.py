@@ -8,36 +8,42 @@ import time
 from pathlib import Path
 
 from redundanet.utils.logging import setup_logging, get_logger
-from redundanet.storage.storage import TahoeStorage
+from redundanet.storage.storage import TahoeStorage, TahoeStorageConfig
+
+# Ports used inside the (shared) tinc network namespace. Introducer/storage/client
+# all live in the same netns when using `network_mode: service:tinc`, so these
+# must not collide.
+TUB_PORT = 3457
+WEB_PORT = 4457
 
 
-def wait_for_vpn(timeout: int = 300) -> bool:
-    """Wait for VPN interface to be available."""
+def wait_for_vpn(vpn_ip: str, timeout: int = 300) -> bool:
+    """Wait until the VPN IP is assigned to a local interface."""
     logger = get_logger()
     start_time = time.time()
 
     while time.time() - start_time < timeout:
         try:
             result = subprocess.run(
-                ["ip", "link", "show", "tinc0"],
+                ["ip", "-o", "addr", "show"],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
-                logger.info("VPN interface is available")
+            if result.returncode == 0 and vpn_ip in result.stdout:
+                logger.info("VPN interface is available", vpn_ip=vpn_ip)
                 return True
         except Exception:
             pass
 
-        logger.debug("Waiting for VPN interface...")
+        logger.debug("Waiting for VPN interface...", vpn_ip=vpn_ip)
         time.sleep(5)
 
-    logger.error("Timeout waiting for VPN interface")
+    logger.error("Timeout waiting for VPN interface", vpn_ip=vpn_ip)
     return False
 
 
 def get_introducer_furl() -> str | None:
-    """Get introducer FURL from manifest or environment."""
+    """Get introducer FURL from environment or the shared manifest volume."""
     logger = get_logger()
 
     # Check environment variable first
@@ -45,25 +51,25 @@ def get_introducer_furl() -> str | None:
     if furl:
         return furl
 
-    # Check manifest directory
+    # Check the shared manifest volume (published by the introducer container)
     manifest_dir = Path("/var/lib/redundanet/manifest")
     furl_file = manifest_dir / "introducer.furl"
 
     if furl_file.exists():
         furl = furl_file.read_text().strip()
         if furl:
-            logger.info("Found introducer FURL in manifest")
+            logger.info("Found introducer FURL in manifest volume")
             return furl
 
-    # Check manifest.yaml
+    # Check manifest.yaml (top-level introducer_furl key)
     manifest_file = manifest_dir / "manifest.yaml"
     if manifest_file.exists():
         import yaml
 
         with open(manifest_file) as f:
-            manifest = yaml.safe_load(f)
+            manifest = yaml.safe_load(f) or {}
 
-        furl = manifest.get("tahoe", {}).get("introducer_furl")
+        furl = manifest.get("introducer_furl")
         if furl:
             logger.info("Found introducer FURL in manifest.yaml")
             return furl
@@ -73,20 +79,21 @@ def get_introducer_furl() -> str | None:
 
 
 def main():
-    """Main entrypoint for Tahoe Storage container.
+    """Set up the storage node configuration, then exit.
 
-    This script sets up the storage configuration, then exits.
-    Supervisord will then start the actual tahoe process.
+    Supervisord then starts the actual `tahoe run` process.
     """
     setup_logging(level=os.environ.get("REDUNDANET_LOG_LEVEL", "INFO"))
     logger = get_logger()
 
     logger.info("Setting up RedundaNet Tahoe Storage")
 
-    # Get configuration from environment
     node_name = os.environ.get("REDUNDANET_NODE_NAME")
     vpn_ip = os.environ.get("REDUNDANET_INTERNAL_VPN_IP")
-    reserved_space = os.environ.get("REDUNDANET_RESERVED_SPACE", "50G")
+    reserved_space = os.environ.get("REDUNDANET_RESERVED_SPACE", "1G")
+    shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
+    shares_happy = int(os.environ.get("REDUNDANET_SHARES_HAPPY", "7"))
+    shares_total = int(os.environ.get("REDUNDANET_SHARES_TOTAL", "10"))
     test_mode = os.environ.get("REDUNDANET_TEST_MODE", "false").lower() == "true"
 
     if not node_name:
@@ -97,13 +104,12 @@ def main():
         logger.error("REDUNDANET_INTERNAL_VPN_IP environment variable is required")
         sys.exit(1)
 
-    # Paths
     storage_dir = Path("/var/lib/tahoe-storage")
     storage_data_dir = Path("/data/storage")
 
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
-        if not wait_for_vpn():
+        if not wait_for_vpn(vpn_ip):
             logger.error("VPN not available, cannot start storage node")
             sys.exit(1)
     else:
@@ -122,24 +128,27 @@ def main():
         logger.error("Could not obtain introducer FURL")
         sys.exit(1)
 
-    # Initialize storage node
-    storage = TahoeStorage(base_dir=storage_dir)
+    config = TahoeStorageConfig(
+        nickname=f"{node_name}-storage",
+        node_dir=storage_dir,
+        introducer_furl=introducer_furl,
+        reserved_space=reserved_space,
+        storage_dir=storage_data_dir,
+        web_port=WEB_PORT,
+        tub_port=TUB_PORT,
+        tub_location=f"tcp:{vpn_ip}:{TUB_PORT}",
+        shares_needed=shares_needed,
+        shares_happy=shares_happy,
+        shares_total=shares_total,
+    )
+    storage = TahoeStorage(config)
 
-    # Check if storage is already configured
     if not storage.is_configured():
         logger.info("Creating new Tahoe storage node", node=node_name)
-        storage.create(
-            nickname=f"{node_name}-storage",
-            introducer_furl=introducer_furl,
-            port=3457,
-            location=f"tcp:{vpn_ip}:3457",
-            reserved_space=reserved_space,
-            storage_dir=storage_data_dir,
-        )
+        storage.create_node()
     else:
         logger.info("Using existing Tahoe storage configuration")
-        # Update introducer FURL if it changed
-        storage.update_introducer(introducer_furl)
+        storage.update_introducer_furl(introducer_furl)
 
     logger.info("Tahoe storage setup complete")
 

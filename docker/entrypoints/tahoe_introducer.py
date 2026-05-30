@@ -10,28 +10,28 @@ from pathlib import Path
 from redundanet.utils.logging import setup_logging, get_logger
 
 
-def wait_for_vpn(timeout: int = 300) -> bool:
-    """Wait for VPN interface to be available."""
+def wait_for_vpn(vpn_ip: str, timeout: int = 300) -> bool:
+    """Wait until the VPN IP is assigned to a local interface."""
     logger = get_logger()
     start_time = time.time()
 
     while time.time() - start_time < timeout:
         try:
             result = subprocess.run(
-                ["ip", "link", "show", "tinc0"],
+                ["ip", "-o", "addr", "show"],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
-                logger.info("VPN interface is available")
+            if result.returncode == 0 and vpn_ip in result.stdout:
+                logger.info("VPN interface is available", vpn_ip=vpn_ip)
                 return True
         except Exception:
             pass
 
-        logger.debug("Waiting for VPN interface...")
+        logger.debug("Waiting for VPN interface...", vpn_ip=vpn_ip)
         time.sleep(5)
 
-    logger.error("Timeout waiting for VPN interface")
+    logger.error("Timeout waiting for VPN interface", vpn_ip=vpn_ip)
     return False
 
 
@@ -107,7 +107,7 @@ def main():
 
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
-        if not wait_for_vpn():
+        if not wait_for_vpn(vpn_ip):
             logger.error("VPN not available, cannot start introducer")
             sys.exit(1)
     else:

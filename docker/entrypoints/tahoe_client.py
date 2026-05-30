@@ -8,62 +8,63 @@ import time
 from pathlib import Path
 
 from redundanet.utils.logging import setup_logging, get_logger
-from redundanet.storage.client import TahoeClient
+from redundanet.storage.client import TahoeClient, TahoeClientConfig
+
+# Ports used inside the (shared) tinc network namespace.
+TUB_PORT = 3456
+WEB_PORT = 4456
 
 
-def wait_for_vpn(timeout: int = 300) -> bool:
-    """Wait for VPN interface to be available."""
+def wait_for_vpn(vpn_ip: str, timeout: int = 300) -> bool:
+    """Wait until the VPN IP is assigned to a local interface."""
     logger = get_logger()
     start_time = time.time()
 
     while time.time() - start_time < timeout:
         try:
             result = subprocess.run(
-                ["ip", "link", "show", "tinc0"],
+                ["ip", "-o", "addr", "show"],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
-                logger.info("VPN interface is available")
+            if result.returncode == 0 and vpn_ip in result.stdout:
+                logger.info("VPN interface is available", vpn_ip=vpn_ip)
                 return True
         except Exception:
             pass
 
-        logger.debug("Waiting for VPN interface...")
+        logger.debug("Waiting for VPN interface...", vpn_ip=vpn_ip)
         time.sleep(5)
 
-    logger.error("Timeout waiting for VPN interface")
+    logger.error("Timeout waiting for VPN interface", vpn_ip=vpn_ip)
     return False
 
 
 def get_introducer_furl() -> str | None:
-    """Get introducer FURL from manifest or environment."""
+    """Get introducer FURL from environment or the shared manifest volume."""
     logger = get_logger()
 
-    # Check environment variable first
     furl = os.environ.get("REDUNDANET_INTRODUCER_FURL")
     if furl:
         return furl
 
-    # Check manifest directory
     manifest_dir = Path("/var/lib/redundanet/manifest")
     furl_file = manifest_dir / "introducer.furl"
 
     if furl_file.exists():
         furl = furl_file.read_text().strip()
         if furl:
-            logger.info("Found introducer FURL in manifest")
+            logger.info("Found introducer FURL in manifest volume")
             return furl
 
-    # Check manifest.yaml
     manifest_file = manifest_dir / "manifest.yaml"
     if manifest_file.exists():
         import yaml
 
         with open(manifest_file) as f:
-            manifest = yaml.safe_load(f)
+            manifest = yaml.safe_load(f) or {}
 
-        furl = manifest.get("tahoe", {}).get("introducer_furl")
+        furl = manifest.get("introducer_furl")
         if furl:
             logger.info("Found introducer FURL in manifest.yaml")
             return furl
@@ -73,17 +74,15 @@ def get_introducer_furl() -> str | None:
 
 
 def main():
-    """Main entrypoint for Tahoe Client container.
+    """Set up the client node configuration, then exit.
 
-    This script sets up the client configuration, then exits.
-    Supervisord will then start the actual tahoe process.
+    Supervisord then starts the actual `tahoe run` process.
     """
     setup_logging(level=os.environ.get("REDUNDANET_LOG_LEVEL", "INFO"))
     logger = get_logger()
 
     logger.info("Setting up RedundaNet Tahoe Client")
 
-    # Get configuration from environment
     node_name = os.environ.get("REDUNDANET_NODE_NAME")
     vpn_ip = os.environ.get("REDUNDANET_INTERNAL_VPN_IP")
     shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
@@ -99,13 +98,11 @@ def main():
         logger.error("REDUNDANET_INTERNAL_VPN_IP environment variable is required")
         sys.exit(1)
 
-    # Paths
     client_dir = Path("/var/lib/tahoe-client")
-    mount_point = Path("/mnt/redundanet")
 
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
-        if not wait_for_vpn():
+        if not wait_for_vpn(vpn_ip):
             logger.error("VPN not available, cannot start client")
             sys.exit(1)
     else:
@@ -124,23 +121,25 @@ def main():
         logger.error("Could not obtain introducer FURL")
         sys.exit(1)
 
-    # Initialize client
-    client = TahoeClient(base_dir=client_dir)
+    config = TahoeClientConfig(
+        nickname=f"{node_name}-client",
+        node_dir=client_dir,
+        introducer_furl=introducer_furl,
+        web_port=WEB_PORT,
+        tub_port=TUB_PORT,
+        tub_location=f"tcp:{vpn_ip}:{TUB_PORT}",
+        shares_needed=shares_needed,
+        shares_happy=shares_happy,
+        shares_total=shares_total,
+    )
+    client = TahoeClient(config)
 
-    # Check if client is already configured
     if not client.is_configured():
         logger.info("Creating new Tahoe client", node=node_name)
-        client.create(
-            nickname=f"{node_name}-client",
-            introducer_furl=introducer_furl,
-            shares_needed=shares_needed,
-            shares_happy=shares_happy,
-            shares_total=shares_total,
-        )
+        client.create_node()
     else:
         logger.info("Using existing Tahoe client configuration")
-        # Update introducer FURL if it changed
-        client.update_introducer(introducer_furl)
+        client.update_introducer_furl(introducer_furl)
 
     logger.info("Tahoe client setup complete")
 

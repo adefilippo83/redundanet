@@ -1,0 +1,14 @@
+# E2E test overlay for docker-compose.yml.
+#
+# Neutralizes the tahoe-client FUSE mount point: the base compose binds the
+# host ./mount into /mnt/redundanet with `shared` propagation so a FUSE mount
+# is visible on the host. That `shared` propagation is unsupported by macOS
+# Docker Desktop file sharing, and the E2E test exercises file upload/download
+# over the Tahoe web API (no FUSE), so we replace it with an anonymous volume.
+services:
+  tahoe-client:
+    volumes:
+      - tahoe-client:/var/lib/tahoe-client
+      - manifest:/var/lib/redundanet/manifest
+      - logs:/var/log/redundanet
+      - /mnt/redundanet

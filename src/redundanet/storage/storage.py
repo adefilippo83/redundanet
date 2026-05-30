@@ -91,6 +91,10 @@ class TahoeStorage:
             raise StorageError("Tahoe-LAFS is not installed.")
         return True
 
+    def is_configured(self) -> bool:
+        """Check whether this storage node has already been created/configured."""
+        return self._tahoe_cfg.exists()
+
     def create_node(self) -> None:
         """Create a new Tahoe-LAFS storage node."""
         logger.info("Creating Tahoe storage node", nickname=self.config.nickname)
@@ -101,9 +105,11 @@ class TahoeStorage:
         if self.config.storage_dir:
             ensure_dir(self.config.storage_dir, mode=0o700)
 
-        # Create the node
+        # Create the node. Use --listen=none so node creation does not require a
+        # --hostname (Tahoe defaults create-node to --listen=tcp); the real
+        # tub.port/tub.location are written by _write_config() below.
         result = run_command(
-            f"tahoe create-node --basedir={self.config.node_dir} "
+            f"tahoe create-node --listen=none --basedir={self.config.node_dir} "
             f"--nickname={self.config.nickname}",
             check=False,
         )

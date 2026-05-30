@@ -1,0 +1,47 @@
+name: RPi Image Smoke Test
+
+# Fast smoke test of the Raspberry Pi image provisioning logic (CLI install
+# into the /opt/redundanet venv + first-boot configuration + systemd units),
+# run on arm64 via QEMU. This is NOT the full ~2h image build
+# (build-rpi-image.yml) — it validates the pieces that build relies on so
+# regressions are caught in minutes on every PR.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "rpi-image/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "scripts/rpi-smoke-test.sh"
+      - ".github/workflows/rpi-smoke.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "rpi-image/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "scripts/rpi-smoke-test.sh"
+      - ".github/workflows/rpi-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  rpi-smoke:
+    name: Provisioning smoke (arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+
+      - name: Run Raspberry Pi image smoke test
+        run: bash scripts/rpi-smoke-test.sh
