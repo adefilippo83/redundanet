@@ -12,11 +12,64 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from redundanet.core.config import AppSettings, get_default_manifest_path, load_settings
+from redundanet.core.deployment import Deployment, DeploymentError
+from redundanet.core.manifest import Manifest
+
 app = typer.Typer(help="Network management commands")
 console = Console()
 
 INSTALL_DIR = Path("/opt/redundanet")
 REPO_DIR = Path("/var/lib/redundanet/repo")
+
+
+def _deployment() -> tuple[Deployment, AppSettings]:
+    """Return a ready-to-use Deployment, or exit with a friendly error."""
+    settings = load_settings()
+    deployment = Deployment(settings)
+    try:
+        deployment.require()
+    except DeploymentError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+    return deployment, settings
+
+
+def _load_manifest(settings: AppSettings) -> Manifest | None:
+    """Load the synced manifest, or None if it is missing/unparseable."""
+    path = get_default_manifest_path(settings)
+    if not path.exists():
+        return None
+    try:
+        return Manifest.from_file(path)
+    except Exception:  # - treat any load failure as "no manifest"
+        return None
+
+
+def _print_peer_table(
+    deployment: Deployment,
+    settings: AppSettings,
+    manifest: Manifest,
+    online_only: bool = False,
+) -> None:
+    """Render a table of peers with VPN reachability."""
+    table = Table(title="Network Peers")
+    table.add_column("Node", style="cyan")
+    table.add_column("VPN IP", style="green")
+    table.add_column("Status")
+
+    for node in manifest.nodes:
+        if node.name == settings.node_name:
+            continue
+        target = node.vpn_ip or node.internal_ip
+        ping = deployment.exec(settings.tinc_service, ["ping", "-c", "1", "-W", "1", target])
+        online = ping.success
+        if online_only and not online:
+            continue
+        status = "[green]online[/green]" if online else "[red]offline[/red]"
+        table.add_row(node.name, target, status)
+
+    console.print(table)
 
 
 def _clone_or_pull_repo(repo_url: str, branch: str, target_dir: Path) -> None:
@@ -173,8 +226,6 @@ def join_network(
     ] = INSTALL_DIR,
 ) -> None:
     """Join an existing RedundaNet network."""
-    from redundanet.core.config import load_settings
-
     settings = load_settings()
     repo = manifest_repo or settings.manifest_repo
     name = node_name or settings.node_name
@@ -250,17 +301,21 @@ def leave_network(
         typer.Option("--force", "-f", help="Skip confirmation"),
     ] = False,
 ) -> None:
-    """Leave the current RedundaNet network."""
+    """Leave the network: stop and remove the local deployment."""
+    deployment, _ = _deployment()
+
     if not force:
-        confirm = typer.confirm("Are you sure you want to leave the network?")
+        confirm = typer.confirm("Stop and remove all RedundaNet containers?")
         if not confirm:
             console.print("Aborted.")
             raise typer.Exit(0)
 
-    with console.status("[bold yellow]Leaving network..."):
-        # In a real implementation, we'd stop services and cleanup
-        pass
+    with console.status("[bold yellow]Leaving network (docker compose down)..."):
+        result = deployment.down()
 
+    if not result.success:
+        console.print(f"[red]Failed to leave network:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
     console.print("[yellow]Left the RedundaNet network[/yellow]")
 
 
@@ -271,25 +326,39 @@ def network_status(
         typer.Option("--verbose", "-v", help="Show detailed status"),
     ] = False,
 ) -> None:
-    """Show the status of the network connection."""
+    """Show the status of the VPN connection."""
+    deployment, settings = _deployment()
     console.print(Panel("[bold]Network Status[/bold]", expand=False))
 
-    # VPN Status
+    tinc = deployment.service_status(settings.tinc_service)
     table = Table(title="VPN Connection", show_header=True)
     table.add_column("Property", style="cyan")
     table.add_column("Value")
+    table.add_row("Interface", "redundanet")
 
-    table.add_row("Interface", "tinc0")
-    table.add_row("Status", "[yellow]Unknown[/yellow]")
-    table.add_row("Connected Peers", "[dim]--[/dim]")
-    table.add_row("Local IP", "[dim]--[/dim]")
+    if tinc is None or tinc.state != "running":
+        table.add_row("Service", "[yellow]not running[/yellow]")
+        console.print(table)
+        return
 
+    table.add_row("Service", f"[green]{tinc.health or 'running'}[/green]")
+
+    addr = deployment.exec(settings.tinc_service, ["ip", "-o", "-4", "addr", "show", "redundanet"])
+    local_ip = ""
+    if addr.success and addr.stdout.strip():
+        local_ip = next(
+            (p.split("/")[0] for p in addr.stdout.split() if "/" in p and p[0].isdigit()), ""
+        )
+    table.add_row("Local IP", local_ip or "[dim]--[/dim]")
+
+    manifest = _load_manifest(settings)
+    peer_count = max(len(manifest.nodes) - 1, 0) if manifest else 0
+    table.add_row("Configured Peers", str(peer_count))
     console.print(table)
 
-    if verbose:
-        # Peer list
-        console.print("\n[bold]Connected Peers:[/bold]")
-        console.print("[dim]No peer information available[/dim]")
+    if verbose and manifest is not None:
+        console.print("\n[bold]Peers:[/bold]")
+        _print_peer_table(deployment, settings, manifest)
 
 
 @app.command("peers")
@@ -299,16 +368,15 @@ def list_peers(
         typer.Option("--online", "-o", help="Show only online peers"),
     ] = False,
 ) -> None:
-    """List all peers in the network."""
-    table = Table(title="Network Peers")
-    table.add_column("Node", style="cyan")
-    table.add_column("VPN IP", style="green")
-    table.add_column("Status")
-    table.add_column("Latency")
-
-    # In a real implementation, we'd query the VPN for peer info
-    console.print("[dim]Peer discovery not yet implemented[/dim]")
-    console.print(table)
+    """List peers and their reachability over the VPN."""
+    deployment, settings = _deployment()
+    manifest = _load_manifest(settings)
+    if manifest is None:
+        console.print(
+            "[red]Error:[/red] No manifest found. Run 'redundanet sync' or 'redundanet network join'."
+        )
+        raise typer.Exit(1)
+    _print_peer_table(deployment, settings, manifest, online_only=online_only)
 
 
 @app.command("ping")
@@ -319,13 +387,24 @@ def ping_node(
         typer.Option("--count", "-c", help="Number of ping packets"),
     ] = 4,
 ) -> None:
-    """Ping a node in the network."""
-    console.print(f"[bold]Pinging node: {node_name}[/bold]")
+    """Ping a node in the network over the VPN."""
+    deployment, settings = _deployment()
+    manifest = _load_manifest(settings)
+    if manifest is None:
+        console.print("[red]Error:[/red] No manifest found.")
+        raise typer.Exit(1)
 
-    # In a real implementation, we'd resolve the node IP and ping
+    node = manifest.get_node(node_name)
+    if node is None:
+        console.print(f"[red]Error:[/red] Node '{node_name}' not found in manifest")
+        raise typer.Exit(1)
 
-    # For now, just show a placeholder
-    console.print(f"[dim]Would ping {node_name} ({count} packets)[/dim]")
+    target = node.vpn_ip or node.internal_ip
+    console.print(f"[bold]Pinging {node_name} ({target})[/bold]")
+    result = deployment.exec(
+        settings.tinc_service, ["ping", "-c", str(count), target], capture=False
+    )
+    raise typer.Exit(0 if result.success else 1)
 
 
 # VPN subcommands
@@ -335,40 +414,52 @@ app.add_typer(vpn_app, name="vpn")
 
 @vpn_app.command("start")
 def vpn_start() -> None:
-    """Start the Tinc VPN connection."""
+    """Start the Tinc VPN container."""
+    deployment, settings = _deployment()
     with console.status("[bold green]Starting VPN..."):
-        # In a real implementation, we'd start tinc
-        pass
+        result = deployment.up([settings.tinc_service])
+    if not result.success:
+        console.print(f"[red]Failed to start VPN:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
     console.print("[green]VPN started[/green]")
 
 
 @vpn_app.command("stop")
 def vpn_stop() -> None:
-    """Stop the Tinc VPN connection."""
+    """Stop the Tinc VPN container."""
+    deployment, settings = _deployment()
     with console.status("[bold yellow]Stopping VPN..."):
-        # In a real implementation, we'd stop tinc
-        pass
+        result = deployment.stop([settings.tinc_service])
+    if not result.success:
+        console.print(f"[red]Failed to stop VPN:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
     console.print("[yellow]VPN stopped[/yellow]")
 
 
 @vpn_app.command("restart")
 def vpn_restart() -> None:
-    """Restart the Tinc VPN connection."""
-    vpn_stop()
-    vpn_start()
+    """Restart the Tinc VPN container."""
+    deployment, settings = _deployment()
+    with console.status("[bold green]Restarting VPN..."):
+        result = deployment.compose("restart", settings.tinc_service)
+    if not result.success:
+        console.print(f"[red]Failed to restart VPN:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
+    console.print("[green]VPN restarted[/green]")
 
 
 @vpn_app.command("status")
 def vpn_status() -> None:
     """Show VPN status."""
+    deployment, settings = _deployment()
+    tinc = deployment.service_status(settings.tinc_service)
+
     table = Table(title="VPN Status", show_header=False)
     table.add_column("Property", style="cyan")
     table.add_column("Value")
-
-    table.add_row("Service", "[yellow]Unknown[/yellow]")
-    table.add_row("Interface", "tinc0")
+    table.add_row("Service", (tinc.health or tinc.state) if tinc is not None else "not running")
+    table.add_row("Interface", "redundanet")
     table.add_row("Network", "redundanet")
-
     console.print(table)
 
 
@@ -384,6 +475,7 @@ def vpn_logs(
     ] = 50,
 ) -> None:
     """Show VPN logs."""
-    console.print(f"[dim]Would show last {lines} lines of VPN logs[/dim]")
-    if follow:
-        console.print("[dim]Following logs... (Ctrl+C to exit)[/dim]")
+    deployment, settings = _deployment()
+    result = deployment.logs(settings.tinc_service, follow=follow, tail=lines)
+    if not follow:
+        console.print(result.stdout.rstrip() or result.stderr.rstrip() or "[dim]no logs[/dim]")

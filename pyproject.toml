@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "redundanet"
-version = "2.0.13"
+version = "2.1.0"
 description = "Distributed encrypted storage on a mesh VPN network"
-authors = ["Alessandro De Filippo <alessandro@example.com>"]
+authors = ["Alessandro De Filippo <alessandro@defilippo.me>"]
 license = "GPL-3.0"
 readme = "README.md"
-homepage = "https://github.com/alessandrodefilippo/redundanet"
-repository = "https://github.com/alessandrodefilippo/redundanet"
-documentation = "https://redundanet.readthedocs.io"
+homepage = "https://redundanet.com"
+repository = "https://github.com/adefilippo83/redundanet"
+documentation = "https://redundanet.com"
 keywords = ["distributed-storage", "vpn", "encryption", "mesh-network", "tahoe-lafs"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -48,7 +48,7 @@ pytest = "^9.0.3"
 pytest-cov = "^6.0"
 pytest-asyncio = "^1.0"
 pytest-mock = "^3.14"
-mypy = "^1.8"
+mypy = "^1.14"
 ruff = "^0.1"
 pre-commit = "^3.6"
 types-PyYAML = "^6.0"

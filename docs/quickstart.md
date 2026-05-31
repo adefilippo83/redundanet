@@ -82,15 +82,17 @@ redundanet status
 ### Step 6: Verify Connection
 
 ```bash
-# Check your node status
+# Service status (tinc + tahoe containers) and VPN interface
 redundanet status
 
-# Expected output:
-# Node: node-12345678
-# VPN Status: Connected
-# Storage Status: Running
-# Network Peers: 5
+# VPN connection details and reachable peers
+redundanet network status
+redundanet network peers
 ```
+
+`redundanet status` lists each service's state/health and the VPN interface IP.
+`redundanet network peers` pings every node in the manifest over the VPN and shows
+which are online.
 
 ## Path 2: Create a Private Network
 
@@ -99,13 +101,13 @@ redundanet status
 ```bash
 pip install redundanet
 
-# Create a new network
-redundanet init --create-network --network-name my-org-network
+# Generate your node's GPG identity
+redundanet node keys generate --name node-primary --email you@myorg.com
 
-# This creates:
-# - Configuration directories
-# - Initial manifest file
-# - GPG key for your node
+# Initialize the node for your new network
+redundanet init --name node-primary --network my-org-network
+
+# This creates the local configuration and data directories.
 ```
 
 ### Step 2: Configure the Manifest
@@ -118,18 +120,20 @@ network:
   version: "1.0.0"
   domain: mynetwork.local
   vpn_network: 10.100.0.0/16
-
-tahoe:
-  shares_needed: 3
-  shares_happy: 5
-  shares_total: 7
+  tahoe:
+    shares_needed: 3
+    shares_happy: 5
+    shares_total: 7
 
 nodes:
   - name: node-primary
     internal_ip: 192.168.1.10
     vpn_ip: 10.100.0.1
     gpg_key_id: YOUR_KEY_ID
-    roles: [introducer, storage]
+    roles:
+      - tinc_vpn
+      - tahoe_introducer
+      - tahoe_storage
     storage_contribution: 500GB
 ```
 
@@ -182,19 +186,11 @@ Save the capability string - you'll need it to download the file.
 redundanet storage download URI:CHK:abc123... /path/to/output.txt
 ```
 
-### Mount as Filesystem (Advanced)
+### Mount as Filesystem
 
-```bash
-# Mount the Tahoe filesystem
-redundanet storage mount /mnt/redundanet
-
-# Access files through the mount point
-ls /mnt/redundanet
-cp /mnt/redundanet/myfile.txt ./
-
-# Unmount when done
-redundanet storage unmount /mnt/redundanet
-```
+FUSE mounting is **not available** with Tahoe-LAFS 1.20 (native FUSE support was
+removed upstream). Use `redundanet storage upload` / `download` to move files to and
+from the grid instead. Running `redundanet storage mount` prints this notice.
 
 ## Node Roles
 
