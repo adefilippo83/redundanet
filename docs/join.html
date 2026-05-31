@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-i18n-title="join.meta.title">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -329,30 +329,31 @@
                 <div class="logo-icon">R</div>
                 RedundaNet
             </a>
-            <a href="./" class="btn btn-secondary">← Back to Home</a>
+            <span data-lang-switcher class="lang-switcher"></span>
+            <a href="./" class="btn btn-secondary" data-i18n="join.nav.back">← Back to Home</a>
         </div>
     </nav>
 
     <main class="container">
         <div class="page-header">
-            <h1>Join the Network</h1>
-            <p>Apply to become a node in the RedundaNet distributed storage network. Contribute storage and help build a resilient, encrypted infrastructure.</p>
+            <h1 data-i18n="join.header.title">Join the Network</h1>
+            <p data-i18n="join.header.subtitle">Apply to become a node in the RedundaNet distributed storage network. Contribute storage and help build a resilient, encrypted infrastructure.</p>
         </div>
 
         <div class="requirements">
-            <h3>📋 Requirements</h3>
+            <h3>📋 <span data-i18n="join.req.title">Requirements</span></h3>
             <ul>
-                <li>A GPG key pair published to a public keyserver (for node authentication)</li>
-                <li>A device that can run Docker (Raspberry Pi, server, VM, etc.)</li>
-                <li>Storage space you're willing to contribute (minimum 10GB recommended)</li>
-                <li>Reliable internet connection</li>
-                <li>A GitHub account (to submit your application)</li>
+                <li data-i18n="join.req.1">A GPG key pair published to a public keyserver (for node authentication)</li>
+                <li data-i18n="join.req.2">A device that can run Docker (Raspberry Pi, server, VM, etc.)</li>
+                <li data-i18n="join.req.3">Storage space you're willing to contribute (minimum 10GB recommended)</li>
+                <li data-i18n="join.req.4">Reliable internet connection</li>
+                <li data-i18n="join.req.5">A GitHub account (to submit your application)</li>
             </ul>
         </div>
 
         <div class="requirements" style="border-color: var(--primary); background: rgba(99, 102, 241, 0.05);">
-            <h3>🔑 GPG Key Setup</h3>
-            <p style="color: var(--text-muted); margin-bottom: 16px;">Before applying, generate and publish your GPG key:</p>
+            <h3>🔑 <span data-i18n="join.gpg.title">GPG Key Setup</span></h3>
+            <p style="color: var(--text-muted); margin-bottom: 16px;" data-i18n="join.gpg.desc">Before applying, generate and publish your GPG key:</p>
             <pre style="margin: 0;"><code># Install redundanet CLI
 pip install redundanet
 
@@ -368,27 +369,27 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
         </div>
 
         <div class="steps">
-            <h3>How It Works</h3>
+            <h3 data-i18n="join.steps.title">How It Works</h3>
             <div class="steps-grid">
                 <div class="step">
                     <div class="step-number">1</div>
-                    <h4>Submit Application</h4>
-                    <p>Fill out the form below with your GPG key ID and storage contribution</p>
+                    <h4 data-i18n="join.step1.title">Submit Application</h4>
+                    <p data-i18n="join.step1.desc">Fill out the form below with your GPG key ID and storage contribution</p>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
-                    <h4>Review</h4>
-                    <p>Maintainers review your application and verify your GPG key</p>
+                    <h4 data-i18n="join.step2.title">Review</h4>
+                    <p data-i18n="join.step2.desc">Maintainers review your application and verify your GPG key</p>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
-                    <h4>Approval</h4>
-                    <p>Once approved, your node is added to the manifest with an assigned IP</p>
+                    <h4 data-i18n="join.step3.title">Approval</h4>
+                    <p data-i18n="join.step3.desc">Once approved, your node is added to the manifest with an assigned IP</p>
                 </div>
                 <div class="step">
                     <div class="step-number">4</div>
-                    <h4>Connect</h4>
-                    <p>Download the manifest and start your node to join the network</p>
+                    <h4 data-i18n="join.step4.title">Connect</h4>
+                    <p data-i18n="join.step4.desc">Download the manifest and start your node to join the network</p>
                 </div>
             </div>
         </div>
@@ -396,16 +397,16 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
         <div class="form-card">
             <form id="joinForm">
                 <div class="form-group">
-                    <label for="gpgKeyId">GPG Key ID *</label>
-                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="e.g., 0x1234ABCD5678EF90" required>
-                    <p class="hint">Your GPG public key ID (must be published to a keyserver). Run <code>redundanet node keys list</code> or <code>gpg --list-keys --keyid-format long</code> to find it.</p>
+                    <label for="gpgKeyId" data-i18n="join.form.gpg.label">GPG Key ID *</label>
+                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="e.g., 0x1234ABCD5678EF90" data-i18n-placeholder="join.form.gpg.ph" required>
+                    <p class="hint" data-i18n="join.form.gpg.hint">Your GPG public key ID (must be published to a keyserver). Run <code>redundanet node keys list</code> or <code>gpg --list-keys --keyid-format long</code> to find it.</p>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="storageContribution">Storage Contribution *</label>
+                        <label for="storageContribution" data-i18n="join.form.storage.label">Storage Contribution *</label>
                         <select id="storageContribution" name="storageContribution" required>
-                            <option value="">Select amount...</option>
+                            <option value="" data-i18n="join.form.storage.select">Select amount...</option>
                             <option value="10GB">10 GB</option>
                             <option value="50GB">50 GB</option>
                             <option value="100GB">100 GB</option>
@@ -415,58 +416,58 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
                             <option value="2TB">2 TB</option>
                             <option value="5TB">5 TB+</option>
                         </select>
-                        <p class="hint">How much storage you'll contribute to the network</p>
+                        <p class="hint" data-i18n="join.form.storage.hint">How much storage you'll contribute to the network</p>
                     </div>
 
                     <div class="form-group">
-                        <label for="region">Region</label>
+                        <label for="region" data-i18n="join.form.region.label">Region</label>
                         <select id="region" name="region">
-                            <option value="">Select region...</option>
-                            <option value="north-america">North America</option>
-                            <option value="south-america">South America</option>
-                            <option value="europe">Europe</option>
-                            <option value="asia">Asia</option>
-                            <option value="africa">Africa</option>
-                            <option value="oceania">Oceania</option>
+                            <option value="" data-i18n="join.form.region.select">Select region...</option>
+                            <option value="north-america" data-i18n="join.form.region.na">North America</option>
+                            <option value="south-america" data-i18n="join.form.region.sa">South America</option>
+                            <option value="europe" data-i18n="join.form.region.eu">Europe</option>
+                            <option value="asia" data-i18n="join.form.region.as">Asia</option>
+                            <option value="africa" data-i18n="join.form.region.af">Africa</option>
+                            <option value="oceania" data-i18n="join.form.region.oc">Oceania</option>
                         </select>
-                        <p class="hint">Your approximate geographic location</p>
+                        <p class="hint" data-i18n="join.form.region.hint">Your approximate geographic location</p>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="deviceType">Device Type</label>
+                    <label for="deviceType" data-i18n="join.form.device.label">Device Type</label>
                     <select id="deviceType" name="deviceType">
-                        <option value="">Select device...</option>
+                        <option value="" data-i18n="join.form.device.select">Select device...</option>
                         <option value="raspberry-pi">Raspberry Pi</option>
-                        <option value="server">Dedicated Server</option>
-                        <option value="vps">VPS / Cloud VM</option>
-                        <option value="desktop">Desktop / Workstation</option>
-                        <option value="other">Other</option>
+                        <option value="server" data-i18n="join.form.device.server">Dedicated Server</option>
+                        <option value="vps" data-i18n="join.form.device.vps">VPS / Cloud VM</option>
+                        <option value="desktop" data-i18n="join.form.device.desktop">Desktop / Workstation</option>
+                        <option value="other" data-i18n="join.form.device.other">Other</option>
                     </select>
-                    <p class="hint">What type of device will run your node?</p>
+                    <p class="hint" data-i18n="join.form.device.hint">What type of device will run your node?</p>
                 </div>
 
                 <div class="form-group">
-                    <label for="publicIp">Public IP (optional)</label>
-                    <input type="text" id="publicIp" name="publicIp" placeholder="e.g., 203.0.113.50">
-                    <p class="hint">If your node has a static public IP and can accept incoming connections</p>
+                    <label for="publicIp" data-i18n="join.form.ip.label">Public IP (optional)</label>
+                    <input type="text" id="publicIp" name="publicIp" placeholder="e.g., 203.0.113.50" data-i18n-placeholder="join.form.ip.ph">
+                    <p class="hint" data-i18n="join.form.ip.hint">If your node has a static public IP and can accept incoming connections</p>
                 </div>
 
                 <div class="form-group">
-                    <label for="notes">Additional Notes</label>
-                    <textarea id="notes" name="notes" rows="3" placeholder="Any additional information about your setup..."></textarea>
+                    <label for="notes" data-i18n="join.form.notes.label">Additional Notes</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="Any additional information about your setup..." data-i18n-placeholder="join.form.notes.ph"></textarea>
                 </div>
 
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="acceptTerms" name="acceptTerms" required>
-                        <label for="acceptTerms">
+                        <label for="acceptTerms" data-i18n="join.form.terms">
                             I understand that my GPG key ID will be public in the network manifest, and I agree to contribute the specified storage to the network.
                         </label>
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary submit-btn">
+                <button type="submit" class="btn btn-primary submit-btn" data-i18n="join.form.submit">
                     Submit Application →
                 </button>
             </form>
@@ -475,10 +476,11 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
 
     <footer>
         <div class="container">
-            <p>Need help with GPG keys? Check out the <a href="https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key" target="_blank">GitHub GPG guide</a> or use <code>redundanet node keys generate</code>.</p>
+            <p data-i18n="join.footer">Need help with GPG keys? Check out the <a href="https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key" target="_blank">GitHub GPG guide</a> or use <code>redundanet node keys generate</code>.</p>
         </div>
     </footer>
 
+    <script src="/i18n/i18n.js"></script>
     <script>
         const GITHUB_REPO = 'adefilippo83/redundanet';
 

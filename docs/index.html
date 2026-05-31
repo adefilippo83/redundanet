@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-i18n-title="meta.title">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -582,13 +582,14 @@
                 RedundaNet
             </a>
             <ul class="nav-links">
-                <li><a href="#features">Features</a></li>
-                <li><a href="#how-it-works">How It Works</a></li>
-                <li><a href="#join">Join</a></li>
-                <li><a href="#installation">Installation</a></li>
+                <li><a href="#features" data-i18n="nav.features">Features</a></li>
+                <li><a href="#how-it-works" data-i18n="nav.how">How It Works</a></li>
+                <li><a href="#join" data-i18n="nav.join">Join</a></li>
+                <li><a href="#installation" data-i18n="nav.install">Installation</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet">GitHub</a></li>
             </ul>
-            <a href="join.html" class="btn btn-primary">
+            <span data-lang-switcher class="lang-switcher"></span>
+            <a href="join.html" class="btn btn-primary" data-i18n="nav.joinBtn">
                 Join Network
             </a>
         </div>
@@ -596,20 +597,20 @@
 
     <section class="hero">
         <div class="container">
-            <span class="hero-badge">Open Source & Self-Hosted</span>
-            <h1>Distributed Encrypted Storage</h1>
-            <p>
+            <span class="hero-badge" data-i18n="hero.badge">Open Source &amp; Self-Hosted</span>
+            <h1 data-i18n="hero.title">Distributed Encrypted Storage</h1>
+            <p data-i18n="hero.subtitle">
                 Build your own resilient, encrypted storage network across multiple nodes.
                 Self-hosted, secure, and designed for communities and organizations.
             </p>
             <div class="hero-buttons">
-                <a href="join.html" class="btn btn-primary">
+                <a href="join.html" class="btn btn-primary" data-i18n="hero.joinBtn">
                     Join the Network
                 </a>
-                <a href="#how-it-works" class="btn btn-secondary">
+                <a href="#how-it-works" class="btn btn-secondary" data-i18n="hero.howBtn">
                     How It Works
                 </a>
-                <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary">
+                <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary" data-i18n="hero.githubBtn">
                     View on GitHub
                 </a>
             </div>
@@ -619,39 +620,39 @@
     <section class="features" id="features">
         <div class="container">
             <div class="section-title">
-                <h2>Why RedundaNet?</h2>
-                <p>A complete solution for distributed, encrypted storage</p>
+                <h2 data-i18n="features.title">Why RedundaNet?</h2>
+                <p data-i18n="features.subtitle">A complete solution for distributed, encrypted storage</p>
             </div>
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">&#128274;</div>
-                    <h3>End-to-End Encryption</h3>
-                    <p>Your data is encrypted before it leaves your device. Only you hold the keys. Storage nodes cannot read your files.</p>
+                    <h3 data-i18n="features.e2e.title">End-to-End Encryption</h3>
+                    <p data-i18n="features.e2e.desc">Your data is encrypted before it leaves your device. Only you hold the keys. Storage nodes cannot read your files.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#127760;</div>
-                    <h3>Mesh VPN Network</h3>
-                    <p>Nodes connect securely via Tinc VPN mesh network. No central server required. Works across NATs and firewalls.</p>
+                    <h3 data-i18n="features.mesh.title">Mesh VPN Network</h3>
+                    <p data-i18n="features.mesh.desc">Nodes connect securely via Tinc VPN mesh network. No central server required. Works across NATs and firewalls.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128218;</div>
-                    <h3>Erasure Coding</h3>
-                    <p>Data is split into 10 encrypted shares. Any 3 can reconstruct your file. Survives up to 7 node failures.</p>
+                    <h3 data-i18n="features.erasure.title">Erasure Coding</h3>
+                    <p data-i18n="features.erasure.desc">Data is split into 10 encrypted shares. Any 3 can reconstruct your file. Survives up to 7 node failures.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128273;</div>
-                    <h3>GPG Authentication</h3>
-                    <p>Node identity verified via public GPG keyservers. Decentralized trust with no central authority.</p>
+                    <h3 data-i18n="features.gpg.title">GPG Authentication</h3>
+                    <p data-i18n="features.gpg.desc">Node identity verified via public GPG keyservers. Decentralized trust with no central authority.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128051;</div>
-                    <h3>Docker Native</h3>
-                    <p>Fully containerized with Docker Compose. Easy deployment, updates, and management on any system.</p>
+                    <h3 data-i18n="features.docker.title">Docker Native</h3>
+                    <p data-i18n="features.docker.desc">Fully containerized with Docker Compose. Easy deployment, updates, and management on any system.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128422;</div>
-                    <h3>Raspberry Pi Ready</h3>
-                    <p>Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes.</p>
+                    <h3 data-i18n="features.rpi.title">Raspberry Pi Ready</h3>
+                    <p data-i18n="features.rpi.desc">Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes.</p>
                 </div>
             </div>
         </div>
@@ -660,27 +661,27 @@
     <section class="how-it-works" id="how-it-works">
         <div class="container">
             <div class="section-title">
-                <h2>How It Works</h2>
-                <p>Your data is encrypted, split, and distributed across multiple nodes</p>
+                <h2 data-i18n="how.title">How It Works</h2>
+                <p data-i18n="how.subtitle">Your data is encrypted, split, and distributed across multiple nodes</p>
             </div>
 
             <div class="data-flow">
-                <h3>Data Flow: Upload</h3>
+                <h3 data-i18n="how.flow.title">Data Flow: Upload</h3>
                 <div class="flow-diagram">
                     <div class="flow-row">
                         <div class="flow-box">
-                            <h5>Your File</h5>
-                            <p>Original data</p>
+                            <h5 data-i18n="how.flow.file">Your File</h5>
+                            <p data-i18n="how.flow.fileDesc">Original data</p>
                         </div>
                         <span class="flow-arrow">&#8594;</span>
                         <div class="flow-box highlight">
-                            <h5>Encrypt</h5>
+                            <h5 data-i18n="how.flow.encrypt">Encrypt</h5>
                             <p>AES-128</p>
                         </div>
                         <span class="flow-arrow">&#8594;</span>
                         <div class="flow-box highlight">
-                            <h5>Split</h5>
-                            <p>Erasure coding</p>
+                            <h5 data-i18n="how.flow.split">Split</h5>
+                            <p data-i18n="how.flow.splitDesc">Erasure coding</p>
                         </div>
                     </div>
                     <div class="flow-row">
@@ -695,7 +696,7 @@
                             <div class="flow-node">Share 10<br>Node J</div>
                         </div>
                     </div>
-                    <p style="text-align: center; margin-top: 24px; color: var(--text-muted);">
+                    <p style="text-align: center; margin-top: 24px; color: var(--text-muted);" data-i18n="how.flow.note">
                         <strong>Any 3 of 10 shares</strong> can reconstruct your original file.<br>
                         Storage nodes only see encrypted blobs - they cannot read your data.
                     </p>
@@ -705,23 +706,23 @@
             <div class="process-steps">
                 <div class="process-step">
                     <div class="step-number">1</div>
-                    <h4>Client-Side Encryption</h4>
-                    <p>Your file is encrypted on your device using AES-128. The encryption key is embedded in the capability URL.</p>
+                    <h4 data-i18n="how.step1.title">Client-Side Encryption</h4>
+                    <p data-i18n="how.step1.desc">Your file is encrypted on your device using AES-128. The encryption key is embedded in the capability URL.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">2</div>
-                    <h4>Erasure Coding</h4>
-                    <p>The encrypted file is split into 10 shares using Reed-Solomon coding. Only 3 are needed to reconstruct.</p>
+                    <h4 data-i18n="how.step2.title">Erasure Coding</h4>
+                    <p data-i18n="how.step2.desc">The encrypted file is split into 10 shares using Reed-Solomon coding. Only 3 are needed to reconstruct.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">3</div>
-                    <h4>Distributed Storage</h4>
-                    <p>Each share is sent to a different storage node over the encrypted VPN mesh network.</p>
+                    <h4 data-i18n="how.step3.title">Distributed Storage</h4>
+                    <p data-i18n="how.step3.desc">Each share is sent to a different storage node over the encrypted VPN mesh network.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">4</div>
-                    <h4>Capability URL</h4>
-                    <p>You receive a capability URL containing the encryption key. Share it to grant access to the file.</p>
+                    <h4 data-i18n="how.step4.title">Capability URL</h4>
+                    <p data-i18n="how.step4.desc">You receive a capability URL containing the encryption key. Share it to grant access to the file.</p>
                 </div>
             </div>
         </div>
@@ -730,17 +731,17 @@
     <section class="join-process" id="join">
         <div class="container">
             <div class="section-title">
-                <h2>Join the Network</h2>
-                <p>Contribute storage and become part of the distributed network</p>
+                <h2 data-i18n="joinp.title">Join the Network</h2>
+                <p data-i18n="joinp.subtitle">Contribute storage and become part of the distributed network</p>
             </div>
 
             <div class="join-steps">
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">1</div>
-                        <h4>Generate Your GPG Key</h4>
+                        <h4 data-i18n="joinp.s1.title">Generate Your GPG Key</h4>
                     </div>
-                    <p>Create a GPG key pair and publish it to a public keyserver. This is your node's identity.</p>
+                    <p data-i18n="joinp.s1.desc">Create a GPG key pair and publish it to a public keyserver. This is your node's identity.</p>
                     <pre><code>pip install redundanet
 redundanet node keys generate \
   --name my-node \
@@ -752,26 +753,26 @@ redundanet node keys publish \
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">2</div>
-                        <h4>Submit Application</h4>
+                        <h4 data-i18n="joinp.s2.title">Submit Application</h4>
                     </div>
-                    <p>Fill out the join form with your GPG key ID and storage contribution. This creates a GitHub issue.</p>
-                    <a href="join.html" class="btn btn-primary" style="margin-top: 8px;">Join Form &#8594;</a>
+                    <p data-i18n="joinp.s2.desc">Fill out the join form with your GPG key ID and storage contribution. This creates a GitHub issue.</p>
+                    <a href="join.html" class="btn btn-primary" style="margin-top: 8px;" data-i18n="joinp.s2.btn">Join Form &#8594;</a>
                 </div>
 
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">3</div>
-                        <h4>Wait for Approval</h4>
+                        <h4 data-i18n="joinp.s3.title">Wait for Approval</h4>
                     </div>
-                    <p>A maintainer reviews your application, verifies your GPG key, and merges the PR to add your node.</p>
+                    <p data-i18n="joinp.s3.desc">A maintainer reviews your application, verifies your GPG key, and merges the PR to add your node.</p>
                 </div>
 
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">4</div>
-                        <h4>Set Up Your Node</h4>
+                        <h4 data-i18n="joinp.s4.title">Set Up Your Node</h4>
                     </div>
-                    <p>Once approved, initialize your node and start the services.</p>
+                    <p data-i18n="joinp.s4.desc">Once approved, initialize your node and start the services.</p>
                     <pre><code>git clone github.com/adefilippo83/redundanet
 cd redundanet
 redundanet init --name node-XXXXX
@@ -785,38 +786,38 @@ docker compose up -d</code></pre>
     <section class="architecture" id="architecture">
         <div class="container">
             <div class="section-title">
-                <h2>Architecture</h2>
-                <p>A decentralized architecture with no single point of failure</p>
+                <h2 data-i18n="arch.title">Architecture</h2>
+                <p data-i18n="arch.subtitle">A decentralized architecture with no single point of failure</p>
             </div>
             <div class="arch-diagram">
                 <div class="arch-nodes">
                     <div class="arch-node">
                         <div class="arch-node-icon">&#128187;</div>
-                        <h4>Your Device</h4>
+                        <h4 data-i18n="arch.device">Your Device</h4>
                         <p>Tahoe-LAFS Client</p>
                     </div>
                     <div class="arch-node">
                         <div class="arch-node-icon">&#128268;</div>
-                        <h4>Introducer</h4>
-                        <p>Node Discovery</p>
+                        <h4 data-i18n="arch.introducer">Introducer</h4>
+                        <p data-i18n="arch.discovery">Node Discovery</p>
                     </div>
                     <div class="arch-node">
                         <div class="arch-node-icon">&#128190;</div>
-                        <h4>Storage Node 1</h4>
-                        <p>Encrypted Shares</p>
+                        <h4 data-i18n="arch.storage1">Storage Node 1</h4>
+                        <p data-i18n="arch.shares">Encrypted Shares</p>
                     </div>
                     <div class="arch-node">
                         <div class="arch-node-icon">&#128190;</div>
-                        <h4>Storage Node 2</h4>
-                        <p>Encrypted Shares</p>
+                        <h4 data-i18n="arch.storage2">Storage Node 2</h4>
+                        <p data-i18n="arch.shares">Encrypted Shares</p>
                     </div>
                     <div class="arch-node">
                         <div class="arch-node-icon">&#128190;</div>
-                        <h4>Storage Node N</h4>
-                        <p>Encrypted Shares</p>
+                        <h4 data-i18n="arch.storageN">Storage Node N</h4>
+                        <p data-i18n="arch.shares">Encrypted Shares</p>
                     </div>
                 </div>
-                <div class="arch-connection">
+                <div class="arch-connection" data-i18n="arch.connection">
                     All nodes connected via encrypted Tinc VPN mesh network
                 </div>
             </div>
@@ -826,33 +827,33 @@ docker compose up -d</code></pre>
     <section class="security">
         <div class="container">
             <div class="section-title">
-                <h2>Security Model</h2>
-                <p>Multiple layers of encryption protect your data</p>
+                <h2 data-i18n="sec.title">Security Model</h2>
+                <p data-i18n="sec.subtitle">Multiple layers of encryption protect your data</p>
             </div>
             <div class="security-grid">
                 <div class="security-item">
-                    <h4>&#128274; Transport Encryption</h4>
-                    <p>All network traffic is encrypted via Tinc VPN using RSA key exchange and AES encryption.</p>
+                    <h4>&#128274; <span data-i18n="sec.transport.title">Transport Encryption</span></h4>
+                    <p data-i18n="sec.transport.desc">All network traffic is encrypted via Tinc VPN using RSA key exchange and AES encryption.</p>
                 </div>
                 <div class="security-item">
-                    <h4>&#128272; Storage Encryption</h4>
-                    <p>Data is encrypted with AES-128 before upload. Storage nodes only see encrypted blobs.</p>
+                    <h4>&#128272; <span data-i18n="sec.storage.title">Storage Encryption</span></h4>
+                    <p data-i18n="sec.storage.desc">Data is encrypted with AES-128 before upload. Storage nodes only see encrypted blobs.</p>
                 </div>
                 <div class="security-item">
-                    <h4>&#128273; Identity Verification</h4>
-                    <p>Node identities are verified via GPG keys published to public keyservers. No central authority.</p>
+                    <h4>&#128273; <span data-i18n="sec.identity.title">Identity Verification</span></h4>
+                    <p data-i18n="sec.identity.desc">Node identities are verified via GPG keys published to public keyservers. No central authority.</p>
                 </div>
                 <div class="security-item">
-                    <h4>&#128736; Capability Security</h4>
-                    <p>Access is controlled by cryptographic capability URLs. Possession of the URL grants access.</p>
+                    <h4>&#128736; <span data-i18n="sec.cap.title">Capability Security</span></h4>
+                    <p data-i18n="sec.cap.desc">Access is controlled by cryptographic capability URLs. Possession of the URL grants access.</p>
                 </div>
                 <div class="security-item">
-                    <h4>&#127856; Redundant Storage</h4>
-                    <p>Erasure coding ensures data survives up to 7 node failures out of 10.</p>
+                    <h4>&#127856; <span data-i18n="sec.redundant.title">Redundant Storage</span></h4>
+                    <p data-i18n="sec.redundant.desc">Erasure coding ensures data survives up to 7 node failures out of 10.</p>
                 </div>
                 <div class="security-item">
-                    <h4>&#128065; Zero Knowledge</h4>
-                    <p>Storage nodes cannot see file contents, names, or metadata. Only encrypted shares.</p>
+                    <h4>&#128065; <span data-i18n="sec.zk.title">Zero Knowledge</span></h4>
+                    <p data-i18n="sec.zk.desc">Storage nodes cannot see file contents, names, or metadata. Only encrypted shares.</p>
                 </div>
             </div>
         </div>
@@ -861,13 +862,13 @@ docker compose up -d</code></pre>
     <section class="installation" id="installation">
         <div class="container">
             <div class="section-title">
-                <h2>Get Started</h2>
-                <p>Choose your preferred installation method</p>
+                <h2 data-i18n="install.title">Get Started</h2>
+                <p data-i18n="install.subtitle">Choose your preferred installation method</p>
             </div>
             <div class="install-options">
                 <div class="install-card">
-                    <h3>&#128051; Docker (Recommended)</h3>
-                    <p>Run RedundaNet using Docker Compose. Works on any system with Docker installed.</p>
+                    <h3>&#128051; <span data-i18n="install.docker.title">Docker (Recommended)</span></h3>
+                    <p data-i18n="install.docker.desc">Run RedundaNet using Docker Compose. Works on any system with Docker installed.</p>
                     <pre><code>git clone https://github.com/adefilippo83/redundanet.git
 cd redundanet
 redundanet init --name my-node
@@ -875,7 +876,7 @@ docker compose up -d</code></pre>
                 </div>
                 <div class="install-card">
                     <h3>&#128013; PyPI</h3>
-                    <p>Install the RedundaNet CLI tool via pip for node management.</p>
+                    <p data-i18n="install.pypi.desc">Install the RedundaNet CLI tool via pip for node management.</p>
                     <pre><code>pip install redundanet
 
 redundanet node keys generate \
@@ -885,12 +886,15 @@ redundanet status</code></pre>
                 </div>
                 <div class="install-card">
                     <h3>&#128422; Raspberry Pi</h3>
-                    <p>Download our pre-built image, flash it to an SD card, and boot.</p>
-                    <pre><code># Download from GitHub Releases
-# Flash with Raspberry Pi Imager
-# Boot and SSH in:
+                    <p data-i18n="install.rpi.desc">Download the latest pre-built image, flash it to an SD card, and boot &mdash; no setup required.</p>
+                    <pre><code># 1. Download the latest .img.xz for your Pi:
+#    64-bit (Pi 3/4/5): ...-arm64.img.xz
+#    32-bit (older):    ...-armhf.img.xz
+# 2. Flash with Raspberry Pi Imager ("Use custom")
+# 3. Boot, then SSH in:
 ssh redundanet@redundanet.local
-# Password: redundanet</code></pre>
+# Password: redundanet  (change it!)</code></pre>
+                    <a href="https://github.com/adefilippo83/redundanet/releases/latest" class="btn btn-primary" style="margin-top: 8px;" target="_blank" rel="noopener" data-i18n="install.rpi.btn">Download latest image &#8594;</a>
                 </div>
             </div>
         </div>
@@ -899,16 +903,18 @@ ssh redundanet@redundanet.local
     <footer>
         <div class="container">
             <div class="footer-links">
-                <a href="join.html">Join Network</a>
+                <a href="join.html" data-i18n="footer.join">Join Network</a>
                 <a href="https://github.com/adefilippo83/redundanet">GitHub</a>
-                <a href="https://github.com/adefilippo83/redundanet/releases">Releases</a>
-                <a href="https://github.com/adefilippo83/redundanet/issues">Issues</a>
+                <a href="https://github.com/adefilippo83/redundanet/releases" data-i18n="footer.releases">Releases</a>
+                <a href="https://github.com/adefilippo83/redundanet/issues" data-i18n="footer.issues">Issues</a>
                 <a href="https://pypi.org/project/redundanet/">PyPI</a>
             </div>
-            <p class="footer-copy">
+            <p class="footer-copy" data-i18n="footer.copy">
                 RedundaNet is open source software licensed under GPL-3.0.
             </p>
         </div>
     </footer>
+
+    <script src="/i18n/i18n.js"></script>
 </body>
 </html>
