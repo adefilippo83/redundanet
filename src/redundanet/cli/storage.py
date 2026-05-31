@@ -121,8 +121,20 @@ def storage_stop() -> None:
 @app.command("upload")
 def upload_file(
     source: Annotated[Path, typer.Argument(help="File to upload")],
+    dest: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="Optional directory destination like 'home:report.pdf' "
+            "(an alias from 'storage mkdir'). Omit for an unlinked capability.",
+        ),
+    ] = None,
 ) -> None:
-    """Upload a file to the storage grid and print its capability."""
+    """Upload a file to the grid.
+
+    With no destination the file's capability (``URI:...``) is printed. With a
+    destination of the form ``alias:name`` the file is linked into that directory
+    so it can be listed with ``storage ls alias:``.
+    """
     if not source.exists() or not source.is_file():
         console.print(f"[red]Error:[/red] File not found: {source}")
         raise typer.Exit(1)
@@ -138,14 +150,19 @@ def upload_file(
         if not copy.success:
             console.print(f"[red]Failed to copy file into client:[/red] {copy.stderr.strip()}")
             raise typer.Exit(1)
-        result = deployment.exec(
-            settings.client_service, ["tahoe", "-d", node_dir, "put", container_path]
-        )
+        put_args = ["tahoe", "-d", node_dir, "put", container_path]
+        if dest:
+            put_args.append(dest)
+        result = deployment.exec(settings.client_service, put_args)
         deployment.exec(settings.client_service, ["rm", "-f", container_path])
 
     if not result.success:
         console.print(f"[red]Upload failed:[/red] {result.stderr.strip() or result.stdout.strip()}")
         raise typer.Exit(1)
+
+    if dest:
+        console.print(f"[green]Uploaded[/green] {source.name} -> [cyan]{dest}[/cyan]")
+        return
 
     cap = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
     if not cap:
@@ -157,13 +174,16 @@ def upload_file(
 
 @app.command("download")
 def download_file(
-    cap: Annotated[str, typer.Argument(help="Capability (URI:...) of the file to download")],
+    cap: Annotated[
+        str,
+        typer.Argument(help="Capability (URI:...) or directory path like 'home:report.pdf'"),
+    ],
     destination: Annotated[
         Optional[Path],
         typer.Argument(help="Local destination path"),
     ] = None,
 ) -> None:
-    """Download a file from the storage grid by capability."""
+    """Download a file from the storage grid by capability or alias path."""
     deployment, settings = _deployment()
     dest = destination or Path("downloaded.out")
     node_dir = str(settings.client_node_dir)
@@ -188,21 +208,64 @@ def download_file(
     console.print(f"[green]Downloaded[/green] -> {dest}")
 
 
+@app.command("mkdir")
+def make_directory(
+    alias: Annotated[str, typer.Argument(help="Alias name for the new directory, e.g. 'home'")],
+) -> None:
+    """Create a directory on the grid and give it an alias.
+
+    The alias becomes a browsable namespace: upload into it with
+    ``storage upload <file> home:<name>`` and list it with ``storage ls home:``.
+    """
+    deployment, settings = _deployment()
+    node_dir = str(settings.client_node_dir)
+    result = deployment.exec(
+        settings.client_service, ["tahoe", "-d", node_dir, "create-alias", alias]
+    )
+    if not result.success:
+        combined = result.stdout + result.stderr
+        if "already" in combined.lower():
+            console.print(f"[yellow]Alias '{alias}' already exists.[/yellow]")
+        else:
+            console.print(f"[red]Failed to create directory:[/red] {combined.strip()[:200]}")
+        raise typer.Exit(1)
+    console.print(f"[green]Created directory[/green] [cyan]{alias}:[/cyan]")
+    if result.stdout.strip():
+        console.print(f"[dim]{result.stdout.strip()}[/dim]")
+
+
+@app.command("aliases")
+def list_aliases() -> None:
+    """List the directory aliases configured on this node."""
+    deployment, settings = _deployment()
+    node_dir = str(settings.client_node_dir)
+    result = deployment.exec(settings.client_service, ["tahoe", "-d", node_dir, "list-aliases"])
+    if not result.success:
+        console.print(
+            f"[red]Failed to list aliases:[/red] {result.stderr.strip() or result.stdout.strip()}"
+        )
+        raise typer.Exit(1)
+    console.print(result.stdout.rstrip() or "[dim]No aliases configured[/dim]")
+
+
 @app.command("ls")
 def list_files(
-    cap: Annotated[str, typer.Argument(help="Directory capability to list")],
+    target: Annotated[
+        str,
+        typer.Argument(help="Directory capability or alias to list, e.g. 'home:'"),
+    ],
     long: Annotated[
         bool,
         typer.Option("--long", "-l", help="Show detailed listing"),
     ] = False,
 ) -> None:
-    """List the contents of a directory capability."""
+    """List the contents of a directory capability or alias."""
     deployment, settings = _deployment()
     node_dir = str(settings.client_node_dir)
     args = ["tahoe", "-d", node_dir, "ls"]
     if long:
         args.append("--long")
-    args.append(cap)
+    args.append(target)
 
     result = deployment.exec(settings.client_service, args)
     if not result.success:

@@ -186,6 +186,33 @@ Save the capability string - you'll need it to download the file.
 redundanet storage download URI:CHK:abc123... /path/to/output.txt
 ```
 
+### Organize files in directories
+
+Tahoe addresses files by capability, but you can group them into a named,
+browsable directory (an *alias*) so you don't have to track raw caps:
+
+```bash
+# Create a directory aliased "home"
+redundanet storage mkdir home
+
+# Upload files into it (instead of getting back a bare capability)
+redundanet storage upload report.pdf home:report.pdf
+redundanet storage upload notes.txt  home:notes.txt
+
+# List what's in the directory
+redundanet storage ls home:
+redundanet storage ls --long home:
+
+# Show your directories and their capabilities
+redundanet storage aliases
+
+# Download by name
+redundanet storage download home:report.pdf ./report.pdf
+```
+
+Share a whole directory by giving someone its capability (`URI:DIR2:...` from
+`storage aliases`).
+
 ### Mount as Filesystem
 
 FUSE mounting is **not available** with Tahoe-LAFS 1.20 (native FUSE support was
