@@ -216,6 +216,25 @@ class TestManifest:
         errors = manifest.validate()
         assert any("Duplicate IP" in e for e in errors)
 
+    def test_same_internal_and_vpn_ip_not_duplicate(self):
+        """A node whose internal_ip equals its own vpn_ip is not a duplicate."""
+        manifest_data = {
+            "network": {
+                "name": "test",
+                "version": "1.0.0",
+                "domain": "test.local",
+                "vpn_network": "10.100.0.0/16",
+            },
+            "nodes": [
+                {"name": "node1", "internal_ip": "10.100.0.10", "vpn_ip": "10.100.0.10"},
+                {"name": "node2", "internal_ip": "10.100.0.11", "vpn_ip": "10.100.0.11"},
+            ],
+        }
+
+        manifest = Manifest.from_dict(manifest_data)
+        errors = manifest.validate()
+        assert not any("Duplicate IP" in e for e in errors)
+
     def test_introducer_furl(self, manifest_file: Path):
         """Test introducer FURL management."""
         manifest = Manifest.from_file(manifest_file)

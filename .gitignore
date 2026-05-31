@@ -109,3 +109,7 @@ id_rsa.pub
 *.local.yaml
 *.local.yml
 config.local.yaml
+
+# Claude Code local/runtime state
+.claude/scheduled_tasks.lock
+.claude/settings.local.json

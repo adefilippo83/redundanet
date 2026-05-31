@@ -16,6 +16,7 @@ from redundanet.cli.network import app as network_app
 from redundanet.cli.node import app as node_app
 from redundanet.cli.storage import app as storage_app
 from redundanet.core.config import load_settings
+from redundanet.core.deployment import Deployment, git_sync
 from redundanet.core.manifest import Manifest
 from redundanet.utils.logging import setup_logging
 
@@ -169,25 +170,63 @@ def status(
 
     console.print(table)
 
-    # Check VPN status
+    # Service status from the docker-compose deployment
     console.print("\n[bold]Service Status:[/bold]")
+    deployment = Deployment(settings)
 
-    services = [
-        ("Tinc VPN", "tinc"),
-        ("Tahoe Introducer", "tahoe-introducer"),
-        ("Tahoe Storage", "tahoe-storage"),
-        ("Tahoe Client", "tahoe-client"),
+    if not deployment.is_configured():
+        console.print(
+            "[dim]No deployment found "
+            "(run 'redundanet network join' or set REDUNDANET_COMPOSE_FILE).[/dim]"
+        )
+        return
+
+    statuses = {s.name: s for s in deployment.ps()}
+    display = [
+        ("Tinc VPN", settings.tinc_service),
+        ("Tahoe Introducer", settings.introducer_service),
+        ("Tahoe Storage", settings.storage_service),
+        ("Tahoe Client", settings.client_service),
     ]
 
     status_table = Table(show_header=True)
     status_table.add_column("Service")
-    status_table.add_column("Status")
+    status_table.add_column("State")
+    status_table.add_column("Health")
 
-    for name, _ in services:
-        # In a real implementation, we'd check the actual service status
-        status_table.add_row(name, "[yellow]Unknown[/yellow]")
+    for label, svc in display:
+        svc_status = statuses.get(svc)
+        if svc_status is None:
+            status_table.add_row(label, "[dim]not created[/dim]", "")
+            continue
+        state = (
+            f"[green]{svc_status.state}[/green]"
+            if svc_status.state == "running"
+            else f"[yellow]{svc_status.state}[/yellow]"
+        )
+        health = svc_status.health or "—"
+        health_disp = f"[green]{health}[/green]" if health == "healthy" else f"[dim]{health}[/dim]"
+        status_table.add_row(label, state, health_disp)
 
     console.print(status_table)
+
+    # VPN interface (best-effort, only when tinc is running)
+    tinc_status = statuses.get(settings.tinc_service)
+    if tinc_status is not None and tinc_status.state == "running":
+        result = deployment.exec(
+            settings.tinc_service, ["ip", "-o", "-4", "addr", "show", "redundanet"]
+        )
+        if result.success and result.stdout.strip():
+            ip = next(
+                (p.split("/")[0] for p in result.stdout.split() if "/" in p and p[0].isdigit()),
+                "",
+            )
+            console.print(
+                f"\n[bold]VPN:[/bold] interface [cyan]redundanet[/cyan] up, "
+                f"IP [green]{ip or 'unknown'}[/green]"
+            )
+        else:
+            console.print("\n[bold]VPN:[/bold] [yellow]interface not up yet[/yellow]")
 
 
 @app.command()
@@ -205,12 +244,28 @@ def sync(
         console.print("Set REDUNDANET_MANIFEST_REPO environment variable or run init.")
         raise typer.Exit(1)
 
-    with console.status("[bold green]Syncing manifest..."):
-        # In a real implementation, we'd clone/pull the manifest repo
-        console.print(f"[green]Syncing from:[/green] {settings.manifest_repo}")
-        console.print(f"[green]Branch:[/green] {settings.manifest_branch}")
+    manifest_dir = settings.data_dir / "manifest"
 
-    console.print("[bold green]Manifest synced successfully![/bold green]")
+    with console.status("[bold green]Syncing manifest..."):
+        result = git_sync(settings.manifest_repo, settings.manifest_branch, manifest_dir)
+
+    if not result.success:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        console.print(f"[red]Failed to sync manifest:[/red] {detail}")
+        raise typer.Exit(1)
+
+    console.print(
+        f"[green]Synced[/green] {settings.manifest_repo} "
+        f"([cyan]{settings.manifest_branch}[/cyan]) -> {manifest_dir}"
+    )
+
+    manifest_file = manifest_dir / settings.manifest_filename
+    if manifest_file.exists():
+        try:
+            manifest = Manifest.from_file(manifest_file)
+            console.print(f"[bold]Nodes in manifest:[/bold] {len(manifest.nodes)}")
+        except Exception as e:  # - summary is best-effort
+            console.print(f"[yellow]Manifest synced but could not be parsed:[/yellow] {e}")
 
 
 @app.command("validate")

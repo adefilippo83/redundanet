@@ -88,7 +88,7 @@ nodes:
 | `gpg_key_id` | string | yes | GPG key for authentication |
 | `region` | string | no | Geographic region |
 | `status` | string | no | `pending`, `active`, or `inactive` |
-| `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer` |
+| `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
 | `storage_contribution` | string | no | Storage to contribute |
 | `is_publicly_accessible` | bool | no | Can accept incoming connections |
 

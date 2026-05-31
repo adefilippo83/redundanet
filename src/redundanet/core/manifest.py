@@ -252,10 +252,17 @@ class Manifest:
         if duplicates:
             errors.append(f"Duplicate node names: {duplicates}")
 
-        # Check for duplicate IPs
-        ips = [node.internal_ip for node in self.nodes]
-        ips.extend([node.vpn_ip for node in self.nodes if node.vpn_ip])
-        duplicate_ips = [ip for ip in set(ips) if ips.count(ip) > 1]
+        # Check for IPs shared across different nodes. A node whose internal_ip
+        # equals its own vpn_ip is valid (and recommended) and must not be
+        # flagged — only an address owned by two or more distinct nodes is.
+        ip_owners: dict[str, set[str]] = {}
+        for node in self.nodes:
+            node_ips = {node.internal_ip}
+            if node.vpn_ip:
+                node_ips.add(node.vpn_ip)
+            for ip in node_ips:
+                ip_owners.setdefault(ip, set()).add(node.name)
+        duplicate_ips = sorted(ip for ip, owners in ip_owners.items() if len(owners) > 1)
         if duplicate_ips:
             errors.append(f"Duplicate IP addresses: {duplicate_ips}")
 

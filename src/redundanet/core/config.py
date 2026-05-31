@@ -177,6 +177,22 @@ class AppSettings(BaseSettings):
     enable_auto_discovery: bool = True
     sync_interval: int = 300  # seconds
 
+    # Docker Compose deployment (used by the CLI to drive the running stack)
+    compose_file: Path | None = None
+    compose_project: str = "redundanet"
+    compose_env_file: Path | None = None
+
+    # Service names within the compose deployment
+    tinc_service: str = "tinc"
+    introducer_service: str = "tahoe-introducer"
+    storage_service: str = "tahoe-storage"
+    client_service: str = "tahoe-client"
+
+    # Tahoe node directories inside the containers
+    client_node_dir: Path = Path("/var/lib/tahoe-client")
+    storage_node_dir: Path = Path("/var/lib/tahoe-storage")
+    introducer_node_dir: Path = Path("/var/lib/tahoe-introducer")
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
