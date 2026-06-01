@@ -1,0 +1,61 @@
+name: VPN Mesh Test
+
+# Brings up two independent tinc nodes, each reusing its own GPG (RSA) key as its
+# Tinc transport key, and verifies they form an authenticated mesh by pinging
+# across the VPN in both directions. Runs the same scripts/mesh-test.sh used
+# locally.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "docker/Dockerfile.tinc"
+      - "docker/entrypoints/tinc.py"
+      - "docker/docker-compose.mesh-test.yml"
+      - "src/redundanet/vpn/**"
+      - "src/redundanet/auth/**"
+      - "scripts/mesh-test.sh"
+      - "pyproject.toml"
+      - ".github/workflows/mesh-test.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "docker/Dockerfile.tinc"
+      - "docker/entrypoints/tinc.py"
+      - "docker/docker-compose.mesh-test.yml"
+      - "src/redundanet/vpn/**"
+      - "src/redundanet/auth/**"
+      - "scripts/mesh-test.sh"
+      - "pyproject.toml"
+      - ".github/workflows/mesh-test.yml"
+  workflow_dispatch:
+
+jobs:
+  mesh:
+    name: 2-node GPG-authenticated mesh
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show tooling versions
+        run: |
+          docker --version
+          docker compose version
+          gpg --version | head -1
+
+      - name: Ensure /dev/net/tun is available (tinc)
+        run: |
+          sudo modprobe tun || true
+          test -c /dev/net/tun && echo "tun device present"
+
+      - name: Run 2-node GPG-authenticated mesh test
+        run: bash scripts/mesh-test.sh
+        env:
+          BUILD: "1"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -p rn-mesh -f docker/docker-compose.mesh-test.yml ps || true
+          docker compose -p rn-mesh -f docker/docker-compose.mesh-test.yml logs --tail=200 || true

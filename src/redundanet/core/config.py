@@ -167,6 +167,10 @@ class AppSettings(BaseSettings):
     config_dir: Path = Path("/etc/redundanet")
     data_dir: Path = Path("/var/lib/redundanet")
     log_dir: Path = Path("/var/log/redundanet")
+    # Where 'node keys generate' writes the exported private key. Defaults to the
+    # container/RPi layout; overridable (REDUNDANET_SECRETS_DIR) and the CLI falls
+    # back to a writable location if this path cannot be created.
+    secrets_dir: Path = Path("/opt/redundanet/docker/secrets")
 
     # Runtime settings
     debug: bool = False

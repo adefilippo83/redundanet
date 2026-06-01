@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "redundanet"
-version = "2.2.0"
+version = "2.3.0"
 description = "Distributed encrypted storage on a mesh VPN network"
 authors = ["Alessandro De Filippo <alessandro@defilippo.me>"]
 license = "GPL-3.0"
@@ -42,6 +42,7 @@ jsonschema = "^4.21"
 gitpython = "^3.1.50"
 watchdog = "^4.0"
 psutil = "^5.9"
+pgpy = "^0.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"
@@ -113,6 +114,7 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = [
     "gnupg.*",
+    "pgpy.*",
 ]
 ignore_missing_imports = true
 

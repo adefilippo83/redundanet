@@ -1,0 +1,40 @@
+name: Validate
+
+# Produces the "validate" status check required by the repo ruleset
+# ("Main protection"). Validates the network manifests against the schema so a
+# malformed manifest can't be merged.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install project
+        run: poetry install --no-interaction
+
+      - name: Validate network manifests
+        run: |
+          for m in manifests/*.yaml; do
+            echo "== Validating $m =="
+            poetry run redundanet validate "$m"
+          done

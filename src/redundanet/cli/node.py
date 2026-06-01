@@ -323,18 +323,34 @@ def manage_keys(
             console.print(f"  Fingerprint: [dim]{key_info.fingerprint}[/dim]")
             console.print(f"  User ID:     {key_info.user_id}")
 
-            # Auto-export private key to docker secrets directory
-            secrets_dir = Path("/opt/redundanet/docker/secrets")
-            secrets_dir.mkdir(parents=True, exist_ok=True)
+            # Auto-export the private key. Prefer the configured secrets dir
+            # (the container/RPi layout); on a host where it can't be created,
+            # fall back to a writable local dir instead of crashing.
+            secrets_dir = settings.secrets_dir
+            try:
+                secrets_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                secrets_dir = Path.cwd() / "secrets"
+                secrets_dir.mkdir(parents=True, exist_ok=True)
+                console.print(
+                    f"[yellow]Note:[/yellow] {settings.secrets_dir} is not writable; "
+                    f"exporting to {secrets_dir} instead "
+                    "(set REDUNDANET_SECRETS_DIR to choose a location)."
+                )
             private_key_path = secrets_dir / "gpg_private_key.asc"
 
-            with console.status("[bold green]Exporting private key..."):
-                private_key = gpg.export_private_key(key_info.key_id)
-                private_key_path.write_text(private_key)
-                # Set secure permissions
-                private_key_path.chmod(0o600)
-
-            console.print(f"\n[green]Private key exported to:[/green] {private_key_path}")
+            try:
+                with console.status("[bold green]Exporting private key..."):
+                    private_key = gpg.export_private_key(key_info.key_id)
+                    private_key_path.write_text(private_key)
+                    private_key_path.chmod(0o600)  # secure permissions
+                console.print(f"\n[green]Private key exported to:[/green] {private_key_path}")
+            except OSError as e:
+                console.print(
+                    f"[yellow]Could not export the private key automatically:[/yellow] {e}\n"
+                    f"Export it manually with: "
+                    f"gpg --armor --export-secret-keys {key_info.key_id}"
+                )
 
             # Update .env file with the new GPG_KEY_ID if it exists
             env_file = Path("/opt/redundanet/.env")

@@ -1,0 +1,67 @@
+# Two-node Tinc mesh test.
+#
+# Proves that two nodes, each reusing its own GPG (RSA) key as its Tinc key,
+# authenticate and form a working VPN mesh. Each node is an independent tinc
+# container on a shared bridge; peers reach each other by service name
+# (used as the host-file Address). GPG public keys are provided locally under
+# the mounted manifest's gpg/ dir (test keys are not on real keyservers).
+services:
+  tinc-a:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+    image: ghcr.io/redundanet/tinc:latest
+    container_name: rn-mesh-a
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - mesh
+    environment:
+      - REDUNDANET_NODE_NAME=node-a
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.10
+      - REDUNDANET_PUBLIC_IP=tinc-a
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_DEBUG=true
+    volumes:
+      - ./mesh-test/manifest:/var/lib/redundanet/manifest:ro
+      - ./mesh-test/secrets/a.asc:/run/secrets/gpg_private_key:ro
+    healthcheck:
+      test: ["CMD", "ip", "link", "show", "redundanet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  tinc-b:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+    image: ghcr.io/redundanet/tinc:latest
+    container_name: rn-mesh-b
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    networks:
+      - mesh
+    environment:
+      - REDUNDANET_NODE_NAME=node-b
+      - REDUNDANET_INTERNAL_VPN_IP=10.100.0.11
+      - REDUNDANET_PUBLIC_IP=tinc-b
+      - REDUNDANET_LOG_LEVEL=DEBUG
+      - REDUNDANET_DEBUG=true
+    volumes:
+      - ./mesh-test/manifest:/var/lib/redundanet/manifest:ro
+      - ./mesh-test/secrets/b.asc:/run/secrets/gpg_private_key:ro
+    healthcheck:
+      test: ["CMD", "ip", "link", "show", "redundanet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+networks:
+  mesh:
+    driver: bridge
