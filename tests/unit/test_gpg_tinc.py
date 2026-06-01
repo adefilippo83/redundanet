@@ -50,12 +50,25 @@ def _gen_gpg_key(gnupg_home: Path) -> tuple[str, str]:
     )
     pub = subprocess.run(
         ["gpg", "--armor", "--export", "conv@test.local"],
-        env=env, check=True, capture_output=True, text=True,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     sec = subprocess.run(
-        ["gpg", "--batch", "--pinentry-mode", "loopback", "--armor",
-         "--export-secret-keys", "conv@test.local"],
-        env=env, check=True, capture_output=True, text=True,
+        [
+            "gpg",
+            "--batch",
+            "--pinentry-mode",
+            "loopback",
+            "--armor",
+            "--export-secret-keys",
+            "conv@test.local",
+        ],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     return pub, sec
 
@@ -73,7 +86,5 @@ def test_gpg_rsa_converts_to_consistent_tinc_pem(gnupg_home: Path):
     # The public key derived from the converted private key must match the
     # converted public key (i.e. they form a consistent keypair).
     priv = load_pem_private_key(tinc_priv.encode(), password=None)
-    derived_pub = (
-        priv.public_key().public_bytes(ser.Encoding.PEM, ser.PublicFormat.PKCS1).decode()
-    )
+    derived_pub = priv.public_key().public_bytes(ser.Encoding.PEM, ser.PublicFormat.PKCS1).decode()
     assert derived_pub.strip() == tinc_pub.strip()
