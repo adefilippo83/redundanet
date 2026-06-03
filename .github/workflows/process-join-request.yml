@@ -13,9 +13,46 @@ jobs:
   process-join-request:
     name: Process Node Application
     runs-on: ubuntu-latest
-    if: contains(github.event.issue.labels.*.name, 'join-request')
+    # GitHub drops the `labels=join-request` query param from the website's
+    # "new issue" link for applicants without triage permission, so the label is
+    # usually absent on `opened`. Match the title the join form always sets
+    # (`[Join Request] …`) as well, so processing is not blocked by the missing
+    # label. The `labeled` event still lets a maintainer re-trigger by hand.
+    if: >-
+      contains(github.event.issue.labels.*.name, 'join-request') ||
+      startsWith(github.event.issue.title, '[Join Request]')
 
     steps:
+      - name: Ensure join-request label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            // Create the label if the repo doesn't have it yet.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'join-request' });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: 'join-request',
+                  color: '0e8a16', description: 'Node join application',
+                });
+              } else {
+                throw e;
+              }
+            }
+            // Apply it to the issue if it isn't already there (for visibility
+            // and filtering). This `labeled` event won't re-trigger this
+            // workflow because it is raised by GITHUB_TOKEN.
+            const existing = (context.payload.issue.labels || [])
+              .map((l) => (typeof l === 'string' ? l : l.name));
+            if (!existing.includes('join-request')) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number, labels: ['join-request'],
+              });
+            }
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -229,7 +266,13 @@ jobs:
         id: create-pr
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # A PR opened with the default GITHUB_TOKEN does NOT trigger other
+          # workflows (GitHub's recursion guard), so the required "validate"
+          # check would never run and the PR could not be merged. Use a PAT
+          # (or GitHub App token) stored as JOIN_REQUEST_PAT so the resulting
+          # pull_request event starts validate.yml. Falls back to GITHUB_TOKEN
+          # (PR opens, but validate must then be run manually) if unset.
+          token: ${{ secrets.JOIN_REQUEST_PAT || secrets.GITHUB_TOKEN }}
           commit-message: "Add node ${{ steps.process.outputs.node_name }} to network manifest"
           title: "Add node ${{ steps.process.outputs.node_name }} (Issue #${{ github.event.issue.number }})"
           body: |
