@@ -54,7 +54,7 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
+cd redundanet/docker
 ```
 
 Start services:
@@ -67,7 +67,52 @@ docker compose --profile storage up -d
 docker compose --profile client up -d
 ```
 
+By default this **pulls prebuilt images** from the GitHub Container Registry
+(`ghcr.io/adefilippo83/redundanet-*`) — no local build, so it works on a
+low-powered device like a Raspberry Pi. The published images are multi-arch
+(`linux/amd64`, `linux/arm64`, `linux/arm/v7`), so the right architecture is
+selected automatically.
+
+To explicitly refresh to the latest published images:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+#### Choosing the image source and version
+
+Two environment variables override which images are used:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `REGISTRY_OWNER` | `adefilippo83` | GHCR namespace to pull from |
+| `VERSION` | `latest` | Image tag (e.g. a release like `2.3.0`) |
+
+```bash
+# Pin to a released version
+VERSION=2.3.0 docker compose --profile storage up -d
+```
+
+#### Building the images from source instead of pulling
+
+If you want to build the images locally (for development, an unsupported
+architecture, or air-gapped hosts), overlay `docker-compose.build.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml build
+docker compose -f docker-compose.yml -f docker-compose.build.yml --profile storage up -d
+```
+
+The locally built images are tagged with the same names as the pulled ones, so
+a later `docker compose up -d` (without the overlay) reuses them. For
+live-reload development, use `docker-compose.dev.yml` instead.
+
 ### 4. Raspberry Pi Image
+
+On first boot the Pi pulls the prebuilt container images for its architecture
+(`arm64` for 64-bit Raspberry Pi OS, `arm/v7` for 32-bit) directly from GHCR, so
+it does not have to compile anything locally.
 
 Download the pre-built image from [GitHub Releases](https://github.com/adefilippo83/redundanet/releases):
 
@@ -116,6 +161,21 @@ Supported for development and CLI usage. Docker Desktop required for containeriz
 ### Windows
 
 Supported via WSL2 (Windows Subsystem for Linux). Native Windows support is experimental.
+
+### Container Image Architectures
+
+The published container images (`ghcr.io/adefilippo83/redundanet-*`) are built
+for multiple architectures, so `docker compose pull` selects the correct one
+automatically:
+
+| Architecture | Platform | Typical hardware |
+|--------------|----------|------------------|
+| `linux/amd64` | x86-64 | Most servers, desktops, cloud VMs |
+| `linux/arm64` | ARM 64-bit | Raspberry Pi 3/4/5 (64-bit OS), Apple Silicon |
+| `linux/arm/v7` | ARM 32-bit | Raspberry Pi 2 / 32-bit Raspberry Pi OS |
+
+For any other architecture, build the images from source with the
+`docker-compose.build.yml` overlay (see Docker Deployment above).
 
 ## Network Requirements
 
@@ -199,7 +259,7 @@ redundanet --version
 # Check GPG keys
 redundanet node keys list
 
-# Check Docker (if using containers)
+# Check Docker (if using containers; run from the docker/ directory)
 docker compose config
 
 # Check status

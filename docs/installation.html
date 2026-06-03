@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-title="ig.meta.title">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Installation Guide | RedundaNet</title>
+    <meta name="description" content="Install and deploy RedundaNet: PyPI, Poetry, Docker (prebuilt multi-arch images), and Raspberry Pi.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* Header */
+        .page-header {
+            text-align: center;
+            padding: 60px 0 32px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        /* Table of contents */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 28px;
+            margin-bottom: 48px;
+        }
+
+        .toc h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .toc ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 6px 24px;
+        }
+
+        .toc a {
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .toc a:hover {
+            color: var(--primary);
+        }
+
+        /* Guide sections */
+        .guide section {
+            margin-bottom: 48px;
+            scroll-margin-top: 24px;
+        }
+
+        .guide h2 {
+            font-size: 1.6rem;
+            margin-bottom: 18px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .guide h3 {
+            font-size: 1.2rem;
+            margin: 28px 0 12px;
+        }
+
+        .guide h4 {
+            font-size: 1rem;
+            margin: 20px 0 10px;
+            color: var(--text-muted);
+        }
+
+        .guide p {
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .guide ul,
+        .guide ol {
+            color: var(--text-muted);
+            margin: 0 0 16px 22px;
+        }
+
+        .guide li {
+            margin-bottom: 6px;
+        }
+
+        .guide strong {
+            color: var(--text);
+        }
+
+        .guide a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .guide a:hover {
+            text-decoration: underline;
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 18px;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        td {
+            color: var(--text-muted);
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        /* Callout */
+        .note {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid var(--primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 0 0 18px;
+            color: var(--text-muted);
+        }
+
+        .note strong {
+            color: var(--text);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .page-header h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-container">
+            <a href="./" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <span class="nav-right">
+                <span data-lang-switcher class="lang-switcher"></span>
+                <a href="./" class="btn btn-secondary" data-i18n="ig.nav.back">← Back to Home</a>
+            </span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1 data-i18n="ig.header.title">Installation Guide</h1>
+            <p data-i18n="ig.header.subtitle">Everything you need to install and deploy RedundaNet — from a one-line CLI install to a full multi-arch Docker stack on a Raspberry Pi.</p>
+        </div>
+
+        <nav class="toc" aria-label="On this page">
+            <h2 data-i18n="ig.toc.title">On this page</h2>
+            <ul>
+                <li><a href="#prerequisites" data-i18n="ig.toc.prereq">Prerequisites</a></li>
+                <li><a href="#methods" data-i18n="ig.toc.methods">Installation methods</a></li>
+                <li><a href="#requirements" data-i18n="ig.toc.requirements">System requirements</a></li>
+                <li><a href="#platforms" data-i18n="ig.toc.platforms">Platform support</a></li>
+                <li><a href="#network" data-i18n="ig.toc.network">Network requirements</a></li>
+                <li><a href="#gpg" data-i18n="ig.toc.gpg">GPG key setup</a></li>
+                <li><a href="#verification" data-i18n="ig.toc.verify">Verification</a></li>
+            </ul>
+        </nav>
+
+        <div class="guide">
+            <section id="prerequisites">
+                <h2 data-i18n="ig.prereq.title">Prerequisites</h2>
+                <p data-i18n="ig.prereq.intro">Before installing RedundaNet, make sure you have:</p>
+                <ul>
+                    <li><strong>Python 3.11+</strong> <span data-i18n="ig.prereq.python">(for the CLI and development)</span></li>
+                    <li><strong>Docker</strong> &amp; <strong>Docker Compose</strong> <span data-i18n="ig.prereq.docker">(for containerized deployment)</span></li>
+                    <li><strong>GPG</strong> <span data-i18n="ig.prereq.gpg">(for node authentication)</span></li>
+                    <li><strong>Git</strong> <span data-i18n="ig.prereq.git">(for manifest synchronization)</span></li>
+                </ul>
+            </section>
+
+            <section id="methods">
+                <h2 data-i18n="ig.methods.title">Installation methods</h2>
+
+                <h3 data-i18n="ig.pypi.title">1. PyPI (recommended)</h3>
+                <p data-i18n="ig.pypi.desc">The simplest way to install the RedundaNet CLI:</p>
+                <pre><code>pip install redundanet
+
+# Verify
+redundanet --version</code></pre>
+
+                <h3 data-i18n="ig.poetry.title">2. Poetry (for development)</h3>
+                <p data-i18n="ig.poetry.desc">Clone the repository and install with Poetry:</p>
+                <pre><code>git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
+
+# Install Poetry if you don't have it
+curl -sSL https://install.python-poetry.org | python3 -
+
+poetry install
+poetry shell
+redundanet --version</code></pre>
+
+                <h3 data-i18n="ig.docker.title">3. Docker deployment (for running services)</h3>
+                <p data-i18n="ig.docker.desc">Clone the repository and start the services from the <code>docker/</code> directory:</p>
+                <pre><code>git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet/docker
+
+# As a storage node
+docker compose --profile storage up -d
+
+# As a client
+docker compose --profile client up -d</code></pre>
+                <div class="note">
+                    <span data-i18n="ig.docker.note">By default this <strong>pulls prebuilt images</strong> from the GitHub Container Registry (<code>ghcr.io/adefilippo83/redundanet-*</code>) — no local build, so it works on low-powered hardware like a Raspberry Pi. The images are multi-arch (<code>linux/amd64</code>, <code>linux/arm64</code>, <code>linux/arm/v7</code>), so the right architecture is selected automatically.</span>
+                </div>
+                <p data-i18n="ig.docker.refresh">To explicitly refresh to the latest published images:</p>
+                <pre><code>docker compose pull
+docker compose up -d</code></pre>
+
+                <h4 data-i18n="ig.docker.src.title">Choosing the image source and version</h4>
+                <p data-i18n="ig.docker.src.desc">Two environment variables override which images are used:</p>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="ig.docker.src.col1">Variable</th>
+                            <th data-i18n="ig.docker.src.col2">Default</th>
+                            <th data-i18n="ig.docker.src.col3">Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>REGISTRY_OWNER</code></td>
+                            <td><code>adefilippo83</code></td>
+                            <td data-i18n="ig.docker.src.owner">GHCR namespace to pull from</td>
+                        </tr>
+                        <tr>
+                            <td><code>VERSION</code></td>
+                            <td><code>latest</code></td>
+                            <td data-i18n="ig.docker.src.version">Image tag (e.g. a release like <code>2.3.0</code>)</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                <pre><code># Pin to a released version
+VERSION=2.3.0 docker compose --profile storage up -d</code></pre>
+
+                <h4 data-i18n="ig.docker.build.title">Building the images from source</h4>
+                <p data-i18n="ig.docker.build.desc">To build locally instead of pulling (for development, an unsupported architecture, or air-gapped hosts), overlay <code>docker-compose.build.yml</code>:</p>
+                <pre><code>docker compose -f docker-compose.yml -f docker-compose.build.yml build
+docker compose -f docker-compose.yml -f docker-compose.build.yml --profile storage up -d</code></pre>
+                <p data-i18n="ig.docker.build.note">The locally built images are tagged with the same names as the pulled ones, so a later <code>docker compose up -d</code> (without the overlay) reuses them. For live-reload development, use <code>docker-compose.dev.yml</code> instead.</p>
+
+                <h3 data-i18n="ig.rpi.title">4. Raspberry Pi image</h3>
+                <p data-i18n="ig.rpi.desc">On first boot the Pi pulls the prebuilt container images for its architecture (<code>arm64</code> for 64-bit Raspberry Pi OS, <code>arm/v7</code> for 32-bit) straight from GHCR, so it never has to compile anything locally.</p>
+                <ol>
+                    <li data-i18n="ig.rpi.s1">Download the pre-built image from <a href="https://github.com/adefilippo83/redundanet/releases" target="_blank" rel="noopener">GitHub Releases</a>.</li>
+                    <li data-i18n="ig.rpi.s2">Flash it to an SD card with <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener">Raspberry Pi Imager</a>.</li>
+                    <li data-i18n="ig.rpi.s3">Boot the Pi and SSH in: <code>ssh redundanet@redundanet.local</code> (password: <code>redundanet</code>).</li>
+                    <li data-i18n="ig.rpi.s4">Change the password immediately: <code>passwd</code>.</li>
+                    <li data-i18n="ig.rpi.s5">Configure the node: <code>redundanet init</code>.</li>
+                </ol>
+                <p>
+                    <a href="https://github.com/adefilippo83/redundanet/releases/latest" class="btn btn-primary" target="_blank" rel="noopener" data-i18n="ig.rpi.btn">Download latest image →</a>
+                </p>
+            </section>
+
+            <section id="requirements">
+                <h2 data-i18n="ig.req.title">System requirements</h2>
+                <h3 data-i18n="ig.req.min.title">Minimum</h3>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th data-i18n="ig.req.col.res">Resource</th><th data-i18n="ig.req.col.req">Requirement</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td data-i18n="ig.req.cpu">CPU</td><td data-i18n="ig.req.min.cpu">1 core</td></tr>
+                        <tr><td data-i18n="ig.req.ram">RAM</td><td>1 GB</td></tr>
+                        <tr><td data-i18n="ig.req.storage">Storage</td><td data-i18n="ig.req.min.storage">10 GB (+ contributed storage)</td></tr>
+                        <tr><td data-i18n="ig.req.net">Network</td><td>1 Mbps</td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <h3 data-i18n="ig.req.rec.title">Recommended</h3>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th data-i18n="ig.req.col.res">Resource</th><th data-i18n="ig.req.col.req">Requirement</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td data-i18n="ig.req.cpu">CPU</td><td data-i18n="ig.req.rec.cpu">2+ cores</td></tr>
+                        <tr><td data-i18n="ig.req.ram">RAM</td><td>2+ GB</td></tr>
+                        <tr><td data-i18n="ig.req.storage">Storage</td><td data-i18n="ig.req.rec.storage">50+ GB SSD</td></tr>
+                        <tr><td data-i18n="ig.req.net">Network</td><td>10+ Mbps</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </section>
+
+            <section id="platforms">
+                <h2 data-i18n="ig.plat.title">Platform support</h2>
+                <h3 data-i18n="ig.plat.linux.title">Linux (primary)</h3>
+                <p data-i18n="ig.plat.linux.desc">Fully supported on Ubuntu 20.04+, Debian 11+, Raspberry Pi OS, CentOS 8+, Fedora 35+, and Arch Linux.</p>
+                <h3 data-i18n="ig.plat.mac.title">macOS</h3>
+                <p data-i18n="ig.plat.mac.desc">Supported for development and CLI usage. Docker Desktop is required for containerized deployment.</p>
+                <h3 data-i18n="ig.plat.win.title">Windows</h3>
+                <p data-i18n="ig.plat.win.desc">Supported via WSL2. Native Windows support is experimental.</p>
+
+                <h3 data-i18n="ig.arch.title">Container image architectures</h3>
+                <p data-i18n="ig.arch.desc">The published images (<code>ghcr.io/adefilippo83/redundanet-*</code>) are multi-arch, so <code>docker compose pull</code> selects the correct one automatically:</p>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="ig.arch.col1">Architecture</th>
+                            <th data-i18n="ig.arch.col2">Platform</th>
+                            <th data-i18n="ig.arch.col3">Typical hardware</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>linux/amd64</code></td><td data-i18n="ig.arch.amd">x86-64</td><td data-i18n="ig.arch.amd.hw">Most servers, desktops, cloud VMs</td></tr>
+                        <tr><td><code>linux/arm64</code></td><td data-i18n="ig.arch.a64">ARM 64-bit</td><td data-i18n="ig.arch.a64.hw">Raspberry Pi 3/4/5 (64-bit OS), Apple Silicon</td></tr>
+                        <tr><td><code>linux/arm/v7</code></td><td data-i18n="ig.arch.a32">ARM 32-bit</td><td data-i18n="ig.arch.a32.hw">Raspberry Pi 2 / 32-bit Raspberry Pi OS</td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <p data-i18n="ig.arch.other">For any other architecture, build the images from source with the <code>docker-compose.build.yml</code> overlay (see above).</p>
+            </section>
+
+            <section id="network">
+                <h2 data-i18n="ig.net.title">Network requirements</h2>
+                <h3 data-i18n="ig.net.ports.title">Ports</h3>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="ig.net.col.port">Port</th>
+                            <th data-i18n="ig.net.col.proto">Protocol</th>
+                            <th data-i18n="ig.net.col.purpose">Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>655</td><td>TCP/UDP</td><td data-i18n="ig.net.tinc">Tinc VPN</td></tr>
+                        <tr><td>3456</td><td>TCP</td><td data-i18n="ig.net.client">Tahoe-LAFS Client</td></tr>
+                        <tr><td>3457</td><td>TCP</td><td data-i18n="ig.net.storage">Tahoe-LAFS Storage</td></tr>
+                        <tr><td>3458</td><td>TCP</td><td data-i18n="ig.net.introducer">Tahoe-LAFS Introducer</td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <h3 data-i18n="ig.net.fw.title">Firewall configuration</h3>
+                <p data-i18n="ig.net.fw.desc">For publicly accessible nodes, open port 655:</p>
+                <pre><code># UFW (Ubuntu)
+sudo ufw allow 655/tcp
+sudo ufw allow 655/udp
+
+# firewalld (CentOS/Fedora)
+sudo firewall-cmd --permanent --add-port=655/tcp
+sudo firewall-cmd --permanent --add-port=655/udp
+sudo firewall-cmd --reload</code></pre>
+            </section>
+
+            <section id="gpg">
+                <h2 data-i18n="ig.gpg.title">GPG key setup</h2>
+                <p data-i18n="ig.gpg.desc">GPG keys authenticate nodes and must be published to a public keyserver. The key must be <strong>RSA</strong> — it doubles as the node's Tinc transport key.</p>
+                <h3 data-i18n="ig.gpg.cli.title">Using the RedundaNet CLI (recommended)</h3>
+                <pre><code># Generate a new GPG key
+redundanet node keys generate --name my-node --email you@example.com
+
+# List your keys to get the key ID
+redundanet node keys list
+
+# Publish to keyservers
+redundanet node keys publish --key-id YOUR_KEY_ID</code></pre>
+                <h3 data-i18n="ig.gpg.std.title">Using standard GPG commands</h3>
+                <pre><code># Generate a new key — choose RSA and RSA, 4096 bits
+gpg --full-generate-key
+
+# List keys to get your key ID
+gpg --list-keys --keyid-format long
+
+# Export to a keyserver
+gpg --keyserver keys.openpgp.org --send-keys YOUR_KEY_ID</code></pre>
+            </section>
+
+            <section id="verification">
+                <h2 data-i18n="ig.verify.title">Verification</h2>
+                <p data-i18n="ig.verify.desc">After installation, confirm everything works:</p>
+                <pre><code># Check the CLI
+redundanet --version
+
+# Check GPG keys
+redundanet node keys list
+
+# Check Docker (run from the docker/ directory)
+docker compose config
+
+# Check node status
+redundanet status</code></pre>
+            </section>
+
+            <section id="next">
+                <h2 data-i18n="ig.next.title">Next steps</h2>
+                <ul>
+                    <li><a href="join.html" data-i18n="ig.next.join">Join the network</a></li>
+                    <li><a href="https://github.com/adefilippo83/redundanet" target="_blank" rel="noopener" data-i18n="ig.next.repo">Source &amp; documentation on GitHub</a></li>
+                    <li><a href="https://github.com/adefilippo83/redundanet/releases" target="_blank" rel="noopener" data-i18n="ig.next.releases">Releases</a></li>
+                </ul>
+            </section>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
+        </div>
+    </footer>
+
+    <script src="/i18n/i18n.js"></script>
+</body>
+</html>

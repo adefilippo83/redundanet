@@ -872,11 +872,12 @@ docker compose up -d</code></pre>
             <div class="install-options">
                 <div class="install-card">
                     <h3>&#128051; <span data-i18n="install.docker.title">Docker (Recommended)</span></h3>
-                    <p data-i18n="install.docker.desc">Run RedundaNet using Docker Compose. Works on any system with Docker installed.</p>
+                    <p data-i18n="install.docker.desc">Run RedundaNet using Docker Compose. Pulls prebuilt multi-arch images &mdash; no local build required.</p>
                     <pre><code>git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
-redundanet init --name my-node
-docker compose up -d</code></pre>
+cd redundanet/docker
+
+# Pulls prebuilt images from GHCR
+docker compose --profile storage up -d</code></pre>
                 </div>
                 <div class="install-card">
                     <h3>&#128013; PyPI</h3>
@@ -901,6 +902,9 @@ ssh redundanet@redundanet.local
                     <a href="https://github.com/adefilippo83/redundanet/releases/latest" class="btn btn-primary" style="margin-top: 8px;" target="_blank" rel="noopener" data-i18n="install.rpi.btn">Download latest image &#8594;</a>
                 </div>
             </div>
+            <div style="text-align: center; margin-top: 40px;">
+                <a href="installation.html" class="btn btn-primary" data-i18n="install.guideBtn">Read the full installation guide &#8594;</a>
+            </div>
         </div>
     </section>
 
@@ -908,6 +912,7 @@ ssh redundanet@redundanet.local
         <div class="container">
             <div class="footer-links">
                 <a href="join.html" data-i18n="footer.join">Join Network</a>
+                <a href="installation.html" data-i18n="footer.install">Installation</a>
                 <a href="https://github.com/adefilippo83/redundanet">GitHub</a>
                 <a href="https://github.com/adefilippo83/redundanet/releases" data-i18n="footer.releases">Releases</a>
                 <a href="https://github.com/adefilippo83/redundanet/issues" data-i18n="footer.issues">Issues</a>
