@@ -1,6 +1,10 @@
 # Tahoe-LAFS Client container for RedundaNet
 FROM python:3.11-slim AS builder
 
+# piwheels supplies prebuilt 32-bit ARM (armv7/armv6) wheels that PyPI lacks;
+# pip merges indexes per-arch, so amd64/arm64 keep using PyPI manylinux wheels.
+ENV PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libffi-dev \
@@ -10,8 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install poetry==1.7.1
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
+# Install deps via pip (not 'poetry install') so PIP_EXTRA_INDEX_URL/piwheels is
+# honored; poetry only resolves the locked versions into a requirements file.
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi
+    && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
 
 RUN pip install "tahoe-lafs==1.20.0"
 

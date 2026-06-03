@@ -1,17 +1,27 @@
 # Tinc VPN container for RedundaNet
 FROM python:3.11-slim AS builder
 
-# Install build dependencies
+# piwheels ships prebuilt wheels for 32-bit ARM (armv7/armv6), which PyPI does
+# not — without it, cffi/cryptography would compile from source. pip merges
+# indexes per-arch, so amd64/arm64 keep using PyPI's manylinux wheels.
+ENV PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
+
+# Build tools, kept as a fallback for any dependency lacking a prebuilt wheel.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libffi-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry and dependencies
 RUN pip install poetry==1.7.1
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
+# Install deps via pip (not 'poetry install') so PIP_EXTRA_INDEX_URL/piwheels is
+# honored; poetry only resolves the locked versions into a requirements file.
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi
+    && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Final stage
 FROM python:3.11-slim

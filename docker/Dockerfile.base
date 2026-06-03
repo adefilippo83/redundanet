@@ -7,14 +7,20 @@ LABEL org.opencontainers.image.description="Base image for RedundaNet containers
 LABEL org.opencontainers.image.vendor="RedundaNet"
 
 # Environment
+# piwheels supplies prebuilt 32-bit ARM (armv7/armv6) wheels that PyPI lacks;
+# pip merges indexes per-arch, so amd64/arm64 keep using PyPI manylinux wheels.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
 
-# Install system dependencies (including build tools for C extensions)
+# Install system dependencies (build tools as a fallback for any dependency
+# lacking a prebuilt wheel).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libffi-dev \
+    libssl-dev \
     curl \
     gnupg \
     iproute2 \
@@ -32,15 +38,16 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies (no dev dependencies)
+# Install dependencies via pip (not 'poetry install') so PIP_EXTRA_INDEX_URL/
+# piwheels is honored; poetry only resolves the locked versions.
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi
+    && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
+    && pip install -r /tmp/requirements.txt
 
-# Copy source code
+# Copy source code and metadata, then install the package itself (no deps).
 COPY src/ ./src/
-
-# Install the package
-RUN poetry install --only main --no-interaction --no-ansi
+COPY README.md ./
+RUN pip install --no-deps .
 
 # Create data directories
 RUN mkdir -p /var/lib/redundanet /var/log/redundanet /etc/redundanet
