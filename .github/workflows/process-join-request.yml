@@ -8,6 +8,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  checks: write
 
 jobs:
   process-join-request:
@@ -15,12 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub drops the `labels=join-request` query param from the website's
     # "new issue" link for applicants without triage permission, so the label is
-    # usually absent on `opened`. Match the title the join form always sets
-    # (`[Join Request] …`) as well, so processing is not blocked by the missing
-    # label. The `labeled` event still lets a maintainer re-trigger by hand.
+    # usually absent on `opened`. Process when a maintainer has applied the
+    # label, OR when the issue both carries the title the join form sets AND
+    # contains the form's body marker — requiring both narrows the
+    # attacker-controlled trigger surface to genuine submissions. (The issue
+    # body is still untrusted; it is strictly validated in the parse step.)
     if: >-
       contains(github.event.issue.labels.*.name, 'join-request') ||
-      startsWith(github.event.issue.title, '[Join Request]')
+      (startsWith(github.event.issue.title, '[Join Request]') &&
+       contains(github.event.issue.body, 'New Node Application'))
 
     steps:
       - name: Ensure join-request label
@@ -70,32 +74,51 @@ jobs:
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           python << 'EOF'
           import os
           import re
+          import secrets
           import yaml
           import ipaddress
           from pathlib import Path
 
+          def set_output(**kwargs):
+              # Write step outputs with the random-delimiter heredoc form so a
+              # value can never inject extra output lines, even if it somehow
+              # contained newlines (defense in depth on top of the validation
+              # below).
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                  for name, value in kwargs.items():
+                      delim = f"__EOF_{secrets.token_hex(16)}__"
+                      f.write(f"{name}<<{delim}\n{value}\n{delim}\n")
+
           issue_body = os.environ.get('ISSUE_BODY', '')
           issue_number = os.environ.get('ISSUE_NUMBER', '')
-          issue_title = os.environ.get('ISSUE_TITLE', '')
 
-          print(f"Processing issue #{issue_number}: {issue_title}")
-          print(f"Issue body:\n{issue_body}\n")
+          # Do NOT echo the untrusted issue body/title to the log: a line that
+          # begins with `::` would be interpreted as a workflow command.
+          print(f"Processing issue #{issue_number}")
 
           # Parse GPG Key ID from the issue body
           gpg_match = re.search(r'\*\*GPG Key ID\*\*\s*\|\s*`([^`]+)`', issue_body)
           if not gpg_match:
               print("::error::Could not find GPG Key ID in issue body")
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("success=false\n")
-                  f.write("error=Could not parse GPG Key ID from issue\n")
+              set_output(success="false", error="Could not parse GPG Key ID from issue")
               exit(0)
 
-          gpg_key_id = gpg_match.group(1).strip()
+          # SECURITY: the issue body is fully attacker-controlled (anyone can open
+          # an issue). Enforce a strict GPG key-id format (8/16/40 hex, optional
+          # 0x) BEFORE the value is used or written anywhere, so it can contain no
+          # newlines or quotes that could inject GITHUB_OUTPUT entries or break
+          # out of a later github-script string.
+          gpg_key_id = gpg_match.group(1).strip().replace(" ", "").upper()
+          if gpg_key_id.startswith("0X"):
+              gpg_key_id = gpg_key_id[2:]
+          if not re.fullmatch(r'[A-F0-9]{8}|[A-F0-9]{16}|[A-F0-9]{40}', gpg_key_id):
+              print("::error::Invalid GPG Key ID format")
+              set_output(success="false", error="Invalid GPG Key ID format (expected 8, 16, or 40 hexadecimal characters)")
+              exit(0)
           print(f"Found GPG Key ID: {gpg_key_id}")
 
           # Verify GPG key exists on keyserver
@@ -180,9 +203,7 @@ jobs:
           for node in nodes:
               if node.get('gpg_key_id', '').lower() == gpg_key_id.lower():
                   print(f"::error::Node with GPG key {gpg_key_id} already exists")
-                  with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                      f.write("success=false\n")
-                      f.write(f"error=Node with GPG key {gpg_key_id} already exists\n")
+                  set_output(success="false", error=f"Node with GPG key {gpg_key_id} already exists")
                   exit(0)
 
           # Calculate next available IP
@@ -207,9 +228,7 @@ jobs:
 
           if not next_ip:
               print("::error::No available IP addresses in the VPN network")
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  f.write("success=false\n")
-                  f.write("error=No available IP addresses\n")
+              set_output(success="false", error="No available IP addresses")
               exit(0)
 
           print(f"Assigned VPN IP: {next_ip}")
@@ -251,12 +270,13 @@ jobs:
           print(f"Updated manifest with new node: {node_name}")
 
           # Set outputs
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write("success=true\n")
-              f.write(f"node_name={node_name}\n")
-              f.write(f"vpn_ip={next_ip}\n")
-              f.write(f"gpg_key_id={gpg_key_id}\n")
-              f.write(f"storage={storage}\n")
+          set_output(
+              success="true",
+              node_name=node_name,
+              vpn_ip=next_ip,
+              gpg_key_id=gpg_key_id,
+              storage=storage,
+          )
 
           print("Done!")
           EOF
@@ -266,13 +286,12 @@ jobs:
         id: create-pr
         uses: peter-evans/create-pull-request@v6
         with:
-          # A PR opened with the default GITHUB_TOKEN does NOT trigger other
-          # workflows (GitHub's recursion guard), so the required "validate"
-          # check would never run and the PR could not be merged. Use a PAT
-          # (or GitHub App token) stored as JOIN_REQUEST_PAT so the resulting
-          # pull_request event starts validate.yml. Falls back to GITHUB_TOKEN
-          # (PR opens, but validate must then be run manually) if unset.
-          token: ${{ secrets.JOIN_REQUEST_PAT || secrets.GITHUB_TOKEN }}
+          # A PR opened with GITHUB_TOKEN cannot trigger the pull_request-based
+          # validate.yml (GitHub's recursion guard), so that required check
+          # would stay "Expected — waiting for status to be reported". Rather
+          # than require a PAT, the steps below validate the manifest inline and
+          # report the "validate" check directly onto this PR's head commit.
+          token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: "Add node ${{ steps.process.outputs.node_name }} to network manifest"
           title: "Add node ${{ steps.process.outputs.node_name }} (Issue #${{ github.event.issue.number }})"
           body: |
@@ -302,14 +321,69 @@ jobs:
             node-addition
             automated
 
+      # validate.yml (pull_request) does not run on this bot-created PR, so the
+      # required "validate" check is reported from here instead: run the real
+      # validation, then publish a check run named "validate" on the PR head.
+      - name: Validate generated manifest
+        if: steps.process.outputs.success == 'true'
+        id: validate
+        continue-on-error: true
+        run: |
+          pip install . --quiet
+          for m in manifests/*.yaml; do
+            echo "== Validating $m =="
+            redundanet validate "$m"
+          done
+
+      - name: Report the required "validate" check on the PR
+        if: steps.process.outputs.success == 'true'
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const sha = process.env.HEAD_SHA;
+            if (!sha) {
+              core.setFailed('No PR head SHA available to report the check on.');
+              return;
+            }
+            const ok = process.env.VALIDATE_OUTCOME === 'success';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'validate',
+              head_sha: sha,
+              status: 'completed',
+              conclusion: ok ? 'success' : 'failure',
+              output: {
+                title: ok ? 'Manifest valid' : 'Manifest validation failed',
+                summary: ok
+                  ? 'Validated inline by the join workflow; validate.yml (pull_request) does not run on bot-created PRs.'
+                  : 'redundanet validate reported errors on the network manifest. See the "Validate generated manifest" step log.',
+              },
+            });
+            if (!ok) {
+              core.setFailed('Manifest validation failed; reported a failing "validate" check.');
+            }
+
       - name: Close issue
         if: steps.process.outputs.success == 'true'
         uses: actions/github-script@v7
+        # Pass values through env and read them with process.env rather than
+        # interpolating ${{ … }} into the script body, so a value can never be
+        # parsed as JavaScript.
+        env:
+          NODE_NAME: ${{ steps.process.outputs.node_name }}
+          VPN_IP: ${{ steps.process.outputs.vpn_ip }}
+          PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         with:
           script: |
-            const nodeName = '${{ steps.process.outputs.node_name }}';
-            const vpnIp = '${{ steps.process.outputs.vpn_ip }}';
-            const prUrl = '${{ steps.create-pr.outputs.pull-request-url }}';
+            const nodeName = process.env.NODE_NAME;
+            const vpnIp = process.env.VPN_IP;
+            const prUrl = process.env.PR_URL;
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
 
             const comment = `✅ **Application processed successfully!**
 
@@ -343,14 +417,14 @@ jobs:
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: ${{ github.event.issue.number }},
+              issue_number: issueNumber,
               body: comment
             });
 
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: ${{ github.event.issue.number }},
+              issue_number: issueNumber,
               state: 'closed'
             });
 
