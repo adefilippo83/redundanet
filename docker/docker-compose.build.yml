@@ -1,0 +1,32 @@
+# RedundaNet Docker Compose - Build-from-source overlay
+#
+# The base docker-compose.yml pulls prebuilt images from GHCR. Overlay this file
+# to build the production images locally from the Dockerfiles instead:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
+#
+# The built images are tagged with the same names as the base file's `image:`
+# keys, so a later `up` (without this overlay) reuses them. For live-reload
+# development use docker-compose.dev.yml instead.
+
+services:
+  tinc:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tinc
+
+  tahoe-introducer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-introducer
+
+  tahoe-storage:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-storage
+
+  tahoe-client:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-client

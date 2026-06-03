@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 from enum import Enum
 from pathlib import Path
@@ -10,6 +11,10 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Default location of the persisted node configuration (a .env that `init`
+# writes and `load_settings` reads).
+DEFAULT_CONFIG_DIR = Path("/etc/redundanet")
 
 
 class NodeRole(str, Enum):
@@ -164,7 +169,7 @@ class AppSettings(BaseSettings):
     manifest_filename: str = "manifest.yaml"
 
     # Paths
-    config_dir: Path = Path("/etc/redundanet")
+    config_dir: Path = DEFAULT_CONFIG_DIR
     data_dir: Path = Path("/var/lib/redundanet")
     log_dir: Path = Path("/var/log/redundanet")
     # Where 'node keys generate' writes the exported private key. Defaults to the
@@ -209,8 +214,14 @@ class AppSettings(BaseSettings):
 
 
 def load_settings() -> AppSettings:
-    """Load application settings from environment."""
-    return AppSettings()
+    """Load application settings.
+
+    Sources, in increasing precedence: a ``.env`` in the current directory, the
+    persisted node config at ``<config_dir>/.env`` (written by ``redundanet
+    init``), then real ``REDUNDANET_*`` environment variables.
+    """
+    config_dir = Path(os.environ.get("REDUNDANET_CONFIG_DIR", str(DEFAULT_CONFIG_DIR)))
+    return AppSettings(_env_file=(".env", str(config_dir / ".env")))
 
 
 def get_default_manifest_path(settings: AppSettings | None = None) -> Path:

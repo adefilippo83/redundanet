@@ -28,7 +28,9 @@ cd "$REPO_ROOT"
 # Configuration
 # ----------------------------------------------------------------------------
 PROJECT="redundanet-e2e"
-COMPOSE=(docker compose -p "$PROJECT" -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml)
+# The base compose pulls from GHCR; overlay the build file so the E2E test builds
+# the images locally from the Dockerfiles instead of pulling.
+COMPOSE=(docker compose -p "$PROJECT" -f docker/docker-compose.yml -f docker/docker-compose.build.yml -f docker/docker-compose.e2e.yml)
 export COMPOSE_PROFILES="introducer,storage,client"
 
 export VPN_IP="${VPN_IP:-10.100.0.10}"

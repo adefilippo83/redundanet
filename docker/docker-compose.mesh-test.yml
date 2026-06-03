@@ -10,7 +10,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tinc
-    image: ghcr.io/redundanet/tinc:latest
+    image: ghcr.io/${REGISTRY_OWNER:-adefilippo83}/redundanet-tinc:latest
     container_name: rn-mesh-a
     cap_add:
       - NET_ADMIN
@@ -38,7 +38,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tinc
-    image: ghcr.io/redundanet/tinc:latest
+    image: ghcr.io/${REGISTRY_OWNER:-adefilippo83}/redundanet-tinc:latest
     container_name: rn-mesh-b
     cap_add:
       - NET_ADMIN

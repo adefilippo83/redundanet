@@ -51,6 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # QEMU enables cross-building the arm64/arm32 images on the amd64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -70,6 +74,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.${{ matrix.image }}
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:${{ steps.version.outputs.VERSION }}

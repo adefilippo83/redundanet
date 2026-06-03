@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -125,8 +126,24 @@ def init(
         (data_dir / "tinc").mkdir(exist_ok=True)
         (data_dir / "tahoe").mkdir(exist_ok=True)
 
+        # Persist the configuration so later commands (sync, status, network)
+        # can read it via load_settings() without re-passing flags.
+        config_env = config_dir / ".env"
+        env_lines = [f"REDUNDANET_NODE_NAME={node_name}"]
+        if manifest_repo:
+            env_lines.append(f"REDUNDANET_MANIFEST_REPO={manifest_repo}")
+        try:
+            config_env.write_text("\n".join(env_lines) + "\n")
+            config_saved = True
+        except OSError:
+            config_saved = False
+
         console.print(f"[green]Created configuration directory:[/green] {config_dir}")
         console.print(f"[green]Created data directory:[/green] {data_dir}")
+        if config_saved:
+            console.print(f"[green]Saved configuration:[/green] {config_env}")
+        else:
+            console.print(f"[yellow]Could not save configuration to:[/yellow] {config_env}")
 
     # Generate node configuration
     console.print("\n[bold]Node Configuration:[/bold]")
@@ -244,15 +261,24 @@ def sync(
         console.print("Set REDUNDANET_MANIFEST_REPO environment variable or run init.")
         raise typer.Exit(1)
 
+    repo_dir = settings.data_dir / "repo"
     manifest_dir = settings.data_dir / "manifest"
 
     with console.status("[bold green]Syncing manifest..."):
-        result = git_sync(settings.manifest_repo, settings.manifest_branch, manifest_dir)
+        result = git_sync(settings.manifest_repo, settings.manifest_branch, repo_dir)
 
     if not result.success:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
         console.print(f"[red]Failed to sync manifest:[/red] {detail}")
         raise typer.Exit(1)
+
+    # The manifest lives under the repo's manifests/ directory; copy it into the
+    # manifest dir where the rest of the CLI (node list/info, network) looks.
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    src = repo_dir / "manifests"
+    if src.is_dir():
+        for f in sorted([*src.glob("*.yaml"), *src.glob("*.json")]):
+            shutil.copy(f, manifest_dir / f.name)
 
     console.print(
         f"[green]Synced[/green] {settings.manifest_repo} "
@@ -264,8 +290,13 @@ def sync(
         try:
             manifest = Manifest.from_file(manifest_file)
             console.print(f"[bold]Nodes in manifest:[/bold] {len(manifest.nodes)}")
-        except Exception as e:  # - summary is best-effort
+        except Exception as e:  # summary is best-effort
             console.print(f"[yellow]Manifest synced but could not be parsed:[/yellow] {e}")
+    else:
+        console.print(
+            f"[yellow]Note:[/yellow] {settings.manifest_filename} not found in the "
+            "repo's manifests/ directory."
+        )
 
 
 @app.command("validate")
