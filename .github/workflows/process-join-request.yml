@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Ensure join-request label
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -337,7 +337,7 @@ jobs:
 
       - name: Report the required "validate" check on the PR
         if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
@@ -369,7 +369,7 @@ jobs:
 
       - name: Close issue
         if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         # Pass values through env and read them with process.env rather than
         # interpolating ${{ … }} into the script body, so a value can never be
         # parsed as JavaScript.
@@ -447,7 +447,7 @@ jobs:
 
       - name: Add failure label
         if: steps.process.outputs.success == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.addLabels({
