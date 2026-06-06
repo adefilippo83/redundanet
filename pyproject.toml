@@ -75,6 +75,7 @@ select = [
     "F",      # Pyflakes
     "I",      # isort
     "B",      # flake8-bugbear
+    "S",      # flake8-bandit (security)
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
     "ARG",    # flake8-unused-arguments
@@ -86,6 +87,8 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
+    "S603",   # subprocess call: low-signal, fires on every subprocess.run(list); this is a process-orchestration tool
+    "S607",   # partial executable path: binaries (git/docker/tahoe/tinc) are intentionally resolved via PATH
     "TCH001", # Move application import into type-checking block (breaks runtime)
     "TCH002", # Move third-party import into type-checking block (breaks runtime)
     "TCH003", # Move stdlib import into type-checking block (breaks runtime)

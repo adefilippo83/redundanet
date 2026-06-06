@@ -142,7 +142,7 @@ def upload_file(
     deployment, settings = _deployment()
     # Staging path inside the ephemeral, single-tenant client container (created
     # and removed by us); not a host temp file, so B108's symlink risk doesn't apply.
-    container_path = f"/tmp/{source.name}"  # nosec B108
+    container_path = f"/tmp/{source.name}"  # noqa: S108  # nosec B108
     node_dir = str(settings.client_node_dir)
 
     with console.status(f"[bold green]Uploading {source.name}..."):
@@ -188,7 +188,7 @@ def download_file(
     dest = destination or Path("downloaded.out")
     node_dir = str(settings.client_node_dir)
     # Staging path inside the ephemeral, single-tenant client container (see above).
-    container_path = "/tmp/redundanet-download"  # nosec B108
+    container_path = "/tmp/redundanet-download"  # noqa: S108  # nosec B108
 
     with console.status(f"[bold green]Downloading to {dest}..."):
         result = deployment.exec(
