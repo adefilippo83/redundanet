@@ -46,21 +46,21 @@ pgpy = "^0.6"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"
-pytest-cov = "^6.0"
+pytest-cov = ">=6,<8"
 pytest-asyncio = "^1.0"
 pytest-mock = "^3.14"
-mypy = "^1.14"
-ruff = "^0.1"
-pre-commit = "^3.6"
+mypy = ">=1.14,<3.0"
+ruff = ">=0.1,<0.16"
+pre-commit = ">=3.6,<5.0"
 types-PyYAML = "^6.0"
 types-jsonschema = "^4.21"
 hypothesis = "^6.92"
-faker = "^22.0"
+faker = ">=22,<41"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.5"
 mkdocs-material = "^9.5"
-mkdocstrings = {extras = ["python"], version = "^0.24"}
+mkdocstrings = {extras = ["python"], version = ">=0.24,<1.1"}
 
 [build-system]
 requires = ["poetry-core"]
