@@ -125,9 +125,10 @@ class TestRunOnce:
         assert changed
         assert reloads == [True]
         assert not (config_dir / "hosts" / "peer_a").exists()
-        assert "ConnectTo" not in (config_dir / "tinc.conf").read_text().replace(
-            "# ", ""
-        ) or "ConnectTo = peer_a" not in (config_dir / "tinc.conf").read_text()
+        assert (
+            "ConnectTo" not in (config_dir / "tinc.conf").read_text().replace("# ", "")
+            or "ConnectTo = peer_a" not in (config_dir / "tinc.conf").read_text()
+        )
 
     def test_missing_manifest_is_a_noop(self, tmp_path):
         changed = manifest_sync.run_once(
