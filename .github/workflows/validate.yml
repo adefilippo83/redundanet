@@ -9,6 +9,9 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Manual runs: lets a maintainer re-run the required check when a push event
+  # is dropped by GitHub without crafting an empty commit.
+  workflow_dispatch:
 
 jobs:
   validate:
