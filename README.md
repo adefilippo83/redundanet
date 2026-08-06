@@ -169,10 +169,11 @@ Commands:
 
   storage     Storage management
     status    Show storage status
-    mount     Mount Tahoe filesystem
-    unmount   Unmount filesystem
     upload    Upload a file
     download  Download a file
+    mkdir     Create an aliased directory on the grid
+    ls        List a directory capability or alias
+    repair    Check/repair the redundancy of a capability
 ```
 
 ## Raspberry Pi

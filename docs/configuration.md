@@ -245,7 +245,6 @@ redundanet node keys import --input peer-key.asc
 
 - Runs Tahoe-LAFS client service
 - Can upload and download files
-- Can mount FUSE filesystem
 - Encrypts data before sending to network
 
 ## Network Topology
