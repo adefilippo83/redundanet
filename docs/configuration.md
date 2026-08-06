@@ -36,9 +36,11 @@ introducer_furl: pb://...
 nodes:
   - name: node-12345678         # Unique node name
     internal_ip: 10.100.0.10    # VPN IP address
-    vpn_ip: 10.100.0.10         # Same as internal_ip for VPN
+    vpn_ip: 10.100.0.10         # Optional; defaults to internal_ip
     public_ip: 1.2.3.4          # Public IP (optional)
-    gpg_key_id: 0xABCD1234      # GPG key identifier
+    # GPG key identifier: 8, 16, or 40 hex chars, no 0x prefix. Use the full
+    # 40-character fingerprint — short ids are collision-prone.
+    gpg_key_id: 1234567890ABCDEF1234567890ABCDEF12345678
     region: north-america       # Geographic region
     status: active              # Node status (pending/active/inactive)
     roles:                      # Node roles
@@ -83,9 +85,9 @@ nodes:
 |-------|------|----------|-------------|
 | `name` | string | yes | Unique node identifier |
 | `internal_ip` | string | yes | VPN IP address |
-| `vpn_ip` | string | yes | VPN IP address (same as internal_ip) |
+| `vpn_ip` | string | no | Defaults to `internal_ip` |
 | `public_ip` | string | no | Public IP for external access |
-| `gpg_key_id` | string | yes | GPG key for authentication |
+| `gpg_key_id` | string | yes | 8/16/40 hex chars, no `0x` prefix; full fingerprint preferred |
 | `region` | string | no | Geographic region |
 | `status` | string | no | `pending`, `active`, or `inactive` |
 | `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
@@ -101,8 +103,9 @@ Environment variables override manifest settings and configure runtime behavior.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REDUNDANET_NODE_NAME` | - | Node identifier |
-| `REDUNDANET_CONFIG_DIR` | `~/.config/redundanet` | Config directory |
-| `REDUNDANET_DATA_DIR` | `~/.local/share/redundanet` | Data directory |
+| `REDUNDANET_CONFIG_DIR` | `/etc/redundanet` | Config directory (holds the persisted `.env` written by `init`) |
+| `REDUNDANET_DATA_DIR` | `/var/lib/redundanet` | Data directory (synced manifest, repo clone) |
+| `REDUNDANET_SECRETS_DIR` | `/opt/redundanet/docker/secrets` | Where `node keys generate` exports the private key |
 | `REDUNDANET_DEBUG` | `false` | Enable debug mode |
 | `REDUNDANET_LOG_LEVEL` | `INFO` | Logging level |
 
@@ -112,7 +115,25 @@ Environment variables override manifest settings and configure runtime behavior.
 |----------|---------|-------------|
 | `REDUNDANET_MANIFEST_REPO` | - | Git repository URL |
 | `REDUNDANET_MANIFEST_BRANCH` | `main` | Git branch |
-| `REDUNDANET_MANIFEST_PATH` | - | Local manifest path |
+| `REDUNDANET_MANIFEST_FILENAME` | `manifest.yaml` | Manifest file name inside the repo's `manifests/` dir |
+| `REDUNDANET_SYNC_INTERVAL` | `300` | Seconds between manifest re-syncs in the tinc container (see below) |
+
+The tinc container runs a manifest-sync sidecar: every `REDUNDANET_SYNC_INTERVAL`
+seconds it re-syncs the manifest repository, refreshes the Tinc peer host files
+(adding newly joined nodes, removing revoked ones), and reloads tincd — so
+membership changes reach running nodes without a restart. Set it via
+`SYNC_INTERVAL` in the compose `.env`.
+
+### Deployment Settings (host CLI)
+
+The `redundanet network`/`storage` commands drive the docker-compose stack;
+these tell the CLI where it is:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDUNDANET_COMPOSE_FILE` | auto-detected | Path to `docker-compose.yml` |
+| `REDUNDANET_COMPOSE_PROJECT` | `redundanet` | Compose project name |
+| `REDUNDANET_COMPOSE_ENV_FILE` | `/opt/redundanet/.env` | Compose env file |
 
 ### Tahoe Settings
 
@@ -159,45 +180,58 @@ docker compose --profile introducer --profile storage up -d
 | `tahoe-storage` | Storage node state |
 | `tahoe-client` | Client state |
 | `storage-data` | Actual stored data |
-| `manifest` | Manifest files |
+| `manifest` | Manifest files (shared; also carries the introducer FURL) |
+| `logs` | Service logs |
 
 ### Environment File
 
-Create a `.env` file in the project root:
+`redundanet network join` generates `/opt/redundanet/.env` from your manifest
+entry — you normally never write it by hand. It looks like:
 
 ```bash
 NODE_NAME=node-12345678
-REDUNDANET_MANIFEST_REPO=https://github.com/adefilippo83/redundanet.git
-REDUNDANET_LOG_LEVEL=INFO
+VPN_IP=10.100.0.10
+PUBLIC_IP=auto
+GPG_KEY_ID=1234567890ABCDEF1234567890ABCDEF12345678
+GPG_KEY_FILE=/opt/redundanet/docker/secrets/gpg_private_key.asc
+MANIFEST_REPO=https://github.com/adefilippo83/redundanet.git
+MANIFEST_BRANCH=main
+TINC_PORT=655
+SHARES_NEEDED=3
+SHARES_HAPPY=7
+SHARES_TOTAL=10
+RESERVED_SPACE=1G
 ```
+
+Pass it to every compose command:
+`docker compose --env-file /opt/redundanet/.env --profile storage up -d`.
 
 ## CLI Configuration
 
-The CLI reads configuration from multiple sources in order:
+The CLI reads configuration from these sources, in decreasing precedence:
 
-1. Command-line arguments (highest priority)
-2. Environment variables
-3. Config file (`~/.config/redundanet/config.yaml`)
-4. Manifest file
-5. Default values (lowest priority)
+1. Command-line arguments
+2. `REDUNDANET_*` environment variables
+3. The persisted node config `<config_dir>/.env` (default
+   `/etc/redundanet/.env`, written by `redundanet init`)
+4. A `.env` file in the current directory
+5. Built-in defaults
 
-### Config File
-
-```yaml
-# ~/.config/redundanet/config.yaml
-node_name: node-12345678
-log_level: INFO
-debug: false
-manifest_repo: https://github.com/adefilippo83/redundanet.git
-manifest_branch: main
-```
+There is no YAML config file — persistent settings live in the `.env` written
+by `init`, using the same `REDUNDANET_*` names as the environment variables.
 
 ## GPG Key Configuration
 
 ### Key Requirements
 
-- **Algorithm**: RSA (4096 bits recommended)
+- **Algorithm**: RSA (4096 bits recommended) — the GPG key doubles as the
+  node's Tinc transport key, and Tinc requires RSA
+- **No passphrase** on the node key (the raw RSA parameters are needed to
+  derive the Tinc key; `redundanet node keys generate` does this correctly)
 - **Publication**: Must be on a public keyserver
+- **Identity in the manifest**: use the full 40-character fingerprint as
+  `gpg_key_id` — peers verify fetched keys against it (fingerprint pinning),
+  and short ids are collision-prone
 - **Supported keyservers**:
   - keys.openpgp.org (recommended)
   - keyserver.ubuntu.com

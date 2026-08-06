@@ -91,18 +91,16 @@ A maintainer will review your application and merge the PR that adds your node t
 Once approved:
 
 ```bash
-# Clone the repository
-git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
-
 # Initialize your node (use the name assigned to you)
 redundanet init --name node-XXXXXXXX
 
-# Sync the manifest
-redundanet sync
+# Join the network: clones the manifest repo, installs the docker files and
+# generates /opt/redundanet/.env from your manifest entry
+redundanet network join --repo https://github.com/adefilippo83/redundanet.git --name node-XXXXXXXX
 
-# Start services
-docker compose up -d
+# Start services (storage node)
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile storage up -d
 
 # Check status
 redundanet status
@@ -124,12 +122,15 @@ pip install redundanet
 
 ### Start Services
 
+Run from `/opt/redundanet/docker` (installed by `redundanet network join`,
+which also generates the required env file):
+
 ```bash
 # As a storage node (contributes storage)
-docker compose --profile storage up -d
+docker compose --env-file /opt/redundanet/.env --profile storage up -d
 
 # As a client only (uses storage)
-docker compose --profile client up -d
+docker compose --env-file /opt/redundanet/.env --profile client up -d
 ```
 
 ### Upload and Download Files

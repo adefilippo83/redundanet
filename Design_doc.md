@@ -1,5 +1,14 @@
 # Project Earthgrid: Distributed Storage System Design Document
 
+> **Historical note:** this is the original design document for the project
+> (then called *Project Earthgrid*), kept for reference. Parts of it are
+> aspirational and no longer match the implementation — notably: nodes reuse
+> their GPG key directly as the Tinc transport key (no separate Tinc keypair),
+> there is no node-manager or web-interface container, FUSE mounting was
+> removed with Tahoe-LAFS 1.20, and storage quotas / the 300GB-per-1TB
+> exchange are not enforced. For the current architecture see
+> [docs/architecture.md](docs/architecture.md).
+
 ## 1. Executive Summary
 
 Project Earthgrid is a distributed, encrypted storage system built on Tahoe-LAFS (Least-Authority File System) that leverages user-contributed resources to create a highly resilient and private storage network. Users contribute computational resources (Raspberry Pi or similar hardware) and storage space (ideally 1TB) to the network, and in return receive 300GB of secure, distributed storage capacity. All data is encrypted client-side and distributed across the network using erasure coding, ensuring that files remain accessible even when multiple nodes are offline. The network connectivity between nodes is provided by Tinc, a mesh VPN that enables secure peer-to-peer connections.
