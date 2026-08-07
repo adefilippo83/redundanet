@@ -26,12 +26,12 @@ Your GPG key is your node's identity. It must be published to a public keyserver
 redundanet node keys generate --name my-node --email you@example.com
 
 # You'll see output like:
-#   Key ID:      0x1234ABCD5678EF90
-#   Fingerprint: ABCD 1234 5678 EF90 ...
+#   Key ID:      1234ABCD5678EF90
+#   Fingerprint: ABCD1234...5678EF90
 #   User ID:     RedundaNet Node my-node <you@example.com>
 
 # Publish your key to public keyservers
-redundanet node keys publish --key-id 0x1234ABCD5678EF90
+redundanet node keys publish --key-id 1234ABCD5678EF90
 ```
 
 ### Step 3: Submit Your Application
@@ -40,7 +40,7 @@ Visit [redundanet.com/join.html](https://redundanet.com/join.html) and fill out 
 
 | Field | Description |
 |-------|-------------|
-| **GPG Key ID** | The key ID from step 2 (e.g., `0x1234ABCD5678EF90`) |
+| **GPG Key ID** | The key ID from step 2 (e.g., `1234ABCD5678EF90`; the full 40-character fingerprint is preferred) |
 | **Storage Contribution** | How much disk space you'll share (e.g., 100GB) |
 | **Region** | Your geographic location |
 | **Device Type** | Raspberry Pi, server, VPS, etc. |
@@ -62,18 +62,18 @@ You'll receive a comment on the issue with your assigned node name and VPN IP.
 Once your application is approved:
 
 ```bash
-# Clone the repository
-git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
-
 # Initialize your node (use the name from your approval)
 redundanet init --name node-12345678
 
-# Sync the network manifest
-redundanet sync
+# Join the network. This clones the manifest repository, installs the docker
+# files to /opt/redundanet, and generates /opt/redundanet/.env from your
+# manifest entry (node name, VPN IP, GPG key, tahoe encoding parameters).
+redundanet network join --repo https://github.com/adefilippo83/redundanet.git --name node-12345678
 
-# Start the services
-docker compose up -d
+# Start the services (storage node). The profile picks your role; the env file
+# is required — without it the containers have no node identity.
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile storage up -d
 
 # Check everything is running
 redundanet status
@@ -110,9 +110,11 @@ redundanet init --name node-primary --network my-org-network
 # This creates the local configuration and data directories.
 ```
 
-### Step 2: Configure the Manifest
+### Step 2: Create the Manifest
 
-Edit the generated manifest file (`manifests/manifest.yaml`):
+`init` does not create a manifest — write one for your network (start from
+`manifests/example.yaml` in the repository) and keep it in a Git repository
+your nodes can pull from:
 
 ```yaml
 network:
@@ -139,10 +141,14 @@ nodes:
 
 ### Step 3: Start the Introducer
 
-On your first node (which runs the introducer):
+On your first node (which runs the introducer), join against your manifest
+repository — this generates the `/opt/redundanet/.env` the containers need —
+then start with the introducer profile:
 
 ```bash
-docker compose --profile introducer --profile storage up -d
+redundanet network join --repo https://github.com/myorg/network-manifest.git --name node-primary
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile introducer --profile storage up -d
 ```
 
 ### Step 4: Add More Nodes
@@ -156,12 +162,13 @@ pip install redundanet
 # Generate GPG key
 redundanet node keys generate --name node-2 --email node2@myorg.com
 
-# Initialize with your network's manifest repo
-redundanet init --manifest-repo https://github.com/myorg/network-manifest.git
+# Initialize and join with your network's manifest repo
+redundanet init --name node-2 --manifest-repo https://github.com/myorg/network-manifest.git
+redundanet network join --repo https://github.com/myorg/network-manifest.git --name node-2
 
-# Sync and start
-redundanet sync
-docker compose --profile storage up -d
+# Start
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile storage up -d
 ```
 
 ## Using Storage

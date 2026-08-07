@@ -18,36 +18,44 @@ def temp_dir() -> Generator[Path, None, None]:
 
 @pytest.fixture
 def sample_manifest_data() -> dict:
-    """Return sample manifest data for testing."""
+    """Canonical, schema-valid manifest data for testing.
+
+    Keep this in sync with manifests/schema.json / core.manifest.MANIFEST_SCHEMA —
+    it is the reference shape tests should build on.
+    """
     return {
         "network": {
             "name": "test-network",
             "version": "1.0.0",
             "domain": "test.local",
             "vpn_network": "10.100.0.0/16",
+            "tahoe": {
+                "shares_needed": 3,
+                "shares_happy": 7,
+                "shares_total": 10,
+                "reserved_space": "1G",
+            },
         },
-        "tahoe": {
-            "shares_needed": 3,
-            "shares_happy": 7,
-            "shares_total": 10,
-            "introducer_furl": "pb://test@tcp:10.100.0.1:3458/introducer",
-        },
+        "introducer_furl": "pb://abc234def@tcp:10.100.0.1:3458/introducerswiss",
         "nodes": [
             {
                 "name": "node1",
-                "internal_ip": "192.168.1.10",
+                "internal_ip": "10.100.0.1",
                 "vpn_ip": "10.100.0.1",
-                "public_ip": "1.2.3.4",
-                "gpg_key_id": "ABCD1234",
-                "roles": ["introducer", "storage"],
+                "public_ip": "203.0.113.1",
+                "gpg_key_id": "1234567890ABCDEF1234567890ABCDEF12345678",
+                "status": "active",
+                "roles": ["tinc_vpn", "tahoe_introducer", "tahoe_storage"],
                 "storage_contribution": "100GB",
+                "is_publicly_accessible": True,
             },
             {
                 "name": "node2",
-                "internal_ip": "192.168.1.11",
+                "internal_ip": "10.100.0.2",
                 "vpn_ip": "10.100.0.2",
-                "gpg_key_id": "EFGH5678",
-                "roles": ["storage", "client"],
+                "gpg_key_id": "ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                "status": "pending",
+                "roles": ["tinc_vpn", "tahoe_storage", "tahoe_client"],
                 "storage_contribution": "500GB",
             },
         ],

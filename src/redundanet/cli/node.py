@@ -481,17 +481,19 @@ def manage_keys(
             from redundanet.core.exceptions import KeyServerError
 
             gpg = GPGManager()
-            keyserver_client = KeyServerClient(gpg)
-
-            with console.status("[bold green]Uploading to keyservers..."):
+            with (
+                KeyServerClient(gpg) as keyserver_client,
+                console.status("[bold green]Uploading to keyservers..."),
+            ):
                 success = keyserver_client.upload_key(key_id)
+                keyservers = keyserver_client.keyservers
 
             if success:
                 console.print("[green]Key published successfully![/green]")
                 console.print("\nYour key is now available on public keyservers.")
                 console.print("Note: It may take a few minutes for the key to propagate.")
                 console.print("\n[bold]Keyservers used:[/bold]")
-                for server in keyserver_client.keyservers:
+                for server in keyservers:
                     console.print(f"  - {server}")
             else:
                 console.print("[yellow]Warning:[/yellow] Failed to upload to any keyserver")
@@ -514,9 +516,10 @@ def manage_keys(
             from redundanet.auth.keyserver import KeyServerClient
 
             gpg = GPGManager()
-            keyserver_client = KeyServerClient(gpg)
-
-            with console.status("[bold green]Searching keyservers..."):
+            with (
+                KeyServerClient(gpg) as keyserver_client,
+                console.status("[bold green]Searching keyservers..."),
+            ):
                 success = keyserver_client.import_key_from_server(key_id)
 
             if success:

@@ -777,11 +777,13 @@ redundanet node keys publish \
                         <h4 data-i18n="joinp.s4.title">Set Up Your Node</h4>
                     </div>
                     <p data-i18n="joinp.s4.desc">Once approved, initialize your node and start the services.</p>
-                    <pre><code>git clone github.com/adefilippo83/redundanet
-cd redundanet
-redundanet init --name node-XXXXX
-redundanet sync
-docker compose up -d</code></pre>
+                    <pre><code>redundanet init --name node-XXXXX
+redundanet network join \
+  --repo https://github.com/adefilippo83/redundanet.git \
+  --name node-XXXXX
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env \
+  --profile storage up -d</code></pre>
                 </div>
             </div>
         </div>

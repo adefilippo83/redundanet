@@ -21,7 +21,13 @@ RUN poetry config virtualenvs.create false \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Install Tahoe-LAFS
-RUN pip install "tahoe-lafs==1.20.0"
+# pyOpenSSL >= 25 removed OpenSSL.crypto.X509Req, which foolscap (Tahoe's RPC
+# layer) still uses via Twisted's certificateRequest — an unpinned install
+# crashes every Tahoe node at startup with
+# "AttributeError: module 'OpenSSL.crypto' has no attribute 'X509Req'".
+# service-identity is pinned alongside because its newer releases require a
+# cryptography newer than the one pyopenssl<25 resolves to.
+RUN pip install "tahoe-lafs==1.20.0" "pyopenssl<25" "service-identity<25"
 
 # Final stage
 FROM python:3.11-slim

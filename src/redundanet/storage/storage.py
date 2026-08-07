@@ -141,58 +141,8 @@ class TahoeStorage:
         write_file(self._tahoe_cfg, content, mode=0o600)
         logger.debug("Wrote tahoe.cfg", path=str(self._tahoe_cfg))
 
-    def start(self) -> bool:
-        """Start the Tahoe storage node."""
-        logger.info("Starting Tahoe storage", nickname=self.config.nickname)
-
-        result = run_command(f"tahoe start {self.config.node_dir}", check=False)
-
-        if not result.success:
-            logger.error("Failed to start Tahoe storage", error=result.stderr)
-            return False
-
-        logger.info("Tahoe storage started")
-        return True
-
-    def stop(self) -> bool:
-        """Stop the Tahoe storage node."""
-        logger.info("Stopping Tahoe storage", nickname=self.config.nickname)
-
-        result = run_command(f"tahoe stop {self.config.node_dir}", check=False)
-
-        if not result.success:
-            logger.error("Failed to stop Tahoe storage", error=result.stderr)
-            return False
-
-        logger.info("Tahoe storage stopped")
-        return True
-
-    def restart(self) -> bool:
-        """Restart the Tahoe storage node."""
-        result = run_command(f"tahoe restart {self.config.node_dir}", check=False)
-        return result.success
-
-    def is_running(self) -> bool:
-        """Check if the Tahoe storage node is running."""
-        result = run_command(f"tahoe status {self.config.node_dir}", check=False)
-        return result.success and "RUNNING" in result.stdout
-
-    def get_stats(self) -> dict[str, object]:
-        """Get storage statistics."""
-        stats: dict[str, object] = {
-            "running": self.is_running(),
-            "node_dir": str(self.config.node_dir),
-            "reserved_space": self.config.reserved_space,
-        }
-
-        # Try to get disk usage
-        storage_path = self.config.storage_dir or (self.config.node_dir / "storage" / "shares")
-        if storage_path.exists():
-            result = run_command(f"du -sh {storage_path}", check=False)
-            if result.success:
-                stats["used_space"] = result.stdout.split()[0]
-
-        return stats
+    # NOTE: the tahoe daemon itself is run by supervisord inside the storage
+    # container (`tahoe run`); this class only creates and configures the node.
 
     def update_introducer_furl(self, furl: str) -> None:
         """Update the introducer FURL in the configuration."""
