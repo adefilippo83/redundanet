@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from redundanet import __version__
@@ -134,6 +135,68 @@ class TestNodeCommands:
         assert result.exit_code == 0
         listing = runner.invoke(app, ["node", "list", "--manifest", str(sample_manifest_file)])
         assert "node2" not in listing.output
+
+
+class FakeKeyServerClient:
+    """Configurable KeyServerClient stand-in for publish-flow tests."""
+
+    upload_result = True
+    verify_result = True
+    verify_calls = 0
+
+    def __init__(self, gpg_manager, keyservers=None, timeout=30.0):
+        self.keyservers = keyservers or ["ks.example"]
+        type(self).verify_calls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+    def upload_key(self, key_id):
+        return type(self).upload_result
+
+    def verify_key_on_server(self, key_id):
+        type(self).verify_calls += 1
+        return type(self).verify_result
+
+
+class TestKeysPublish:
+    """'node keys publish' must verify the key is actually fetchable.
+
+    An accepted upload is not enough: a key that peers cannot FETCH cannot
+    authenticate the node (this happened to a real manifest node).
+    """
+
+    @pytest.fixture(autouse=True)
+    def fake_keyserver(self, monkeypatch):
+        monkeypatch.setattr("redundanet.auth.keyserver.KeyServerClient", FakeKeyServerClient)
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", lambda *_a, **_k: object())
+        monkeypatch.setattr("redundanet.cli.node.time.sleep", lambda _s: None)
+
+    def test_upload_and_verify_ok(self):
+        FakeKeyServerClient.upload_result = True
+        FakeKeyServerClient.verify_result = True
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 0, result.output
+        assert "verified fetchable" in result.output
+
+    def test_upload_ok_but_unfetchable_fails_loudly(self):
+        FakeKeyServerClient.upload_result = True
+        FakeKeyServerClient.verify_result = False
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 1
+        assert "cannot be fetched back" in result.output
+        assert "cannot authenticate" in result.output
+        # Retries before giving up (transient indexing delays).
+        assert FakeKeyServerClient.verify_calls == 3
+
+    def test_upload_failure_exits_nonzero(self):
+        FakeKeyServerClient.upload_result = False
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 1
+        assert "Failed to upload" in result.output
 
 
 class TestSubcommandHelp:
