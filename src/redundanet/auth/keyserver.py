@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import httpx
+import pgpy
 
 from redundanet.core.exceptions import KeyServerError
 from redundanet.utils.logging import get_logger
@@ -20,6 +21,43 @@ DEFAULT_KEYSERVERS = [
     "keyserver.ubuntu.com",
     "pgp.mit.edu",
 ]
+
+
+def normalize_key_id(key_id: str) -> str:
+    """Normalize a key id/fingerprint: uppercase hex, no spaces, no 0x prefix."""
+    kid = key_id.replace(" ", "").upper()
+    return kid.removeprefix("0X")
+
+
+def armored_key_fingerprint(armored: str) -> str | None:
+    """Return the primary-key fingerprint (40-char uppercase hex) of an armored key.
+
+    Returns None if the blob cannot be parsed as an OpenPGP key.
+    """
+    try:
+        key, _ = pgpy.PGPKey.from_blob(armored)
+    except Exception:
+        return None
+    return str(key.fingerprint).replace(" ", "").upper()
+
+
+def armored_key_matches_id(armored: str, key_id: str) -> bool:
+    """Check that an armored key's primary fingerprint matches ``key_id``.
+
+    SECURITY: anyone can upload any key to the SKS-style keyservers, so a
+    fetched key must never be trusted just because the server returned it for
+    a lookup. A 40-char id (full fingerprint) must match exactly; shorter
+    (8/16-char) ids are matched as a fingerprint suffix. Note that short key
+    ids are brute-forceable (fingerprint-suffix collisions), so manifests
+    should carry full fingerprints.
+    """
+    fingerprint = armored_key_fingerprint(armored)
+    if not fingerprint:
+        return False
+    kid = normalize_key_id(key_id)
+    if len(kid) == 40:
+        return fingerprint == kid
+    return fingerprint.endswith(kid)
 
 
 class KeyServerClient:
@@ -43,8 +81,18 @@ class KeyServerClient:
         self.timeout = timeout
         self._client = httpx.Client(timeout=timeout)
 
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._client.close()
+
+    def __enter__(self) -> KeyServerClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def __del__(self) -> None:
-        """Clean up HTTP client."""
+        # Fallback only — prefer close() or using the client as a context manager.
         if hasattr(self, "_client"):
             self._client.close()
 
@@ -98,40 +146,55 @@ class KeyServerClient:
         return results
 
     def fetch_key(self, key_id: str) -> str | None:
-        """Fetch a key from keyservers.
+        """Fetch a key from keyservers, verifying it matches the requested id.
+
+        The fetched blob is only returned if its primary-key fingerprint
+        matches ``key_id`` (exact match for 40-char fingerprints, suffix match
+        for shorter key ids) — a keyserver response is attacker-uploadable
+        content, not an authority.
 
         Args:
             key_id: Key ID or fingerprint
 
         Returns:
-            ASCII-armored public key, or None if not found
+            ASCII-armored public key, or None if not found or mismatched
         """
-        # Clean up key ID
-        key_id = key_id.replace(" ", "").upper()
-        if not key_id.startswith("0x"):
-            key_id = f"0x{key_id}"
+        kid = normalize_key_id(key_id)
+        search = f"0x{kid}"
 
         for server in self.keyservers:
             try:
                 url = f"https://{server}/pks/lookup"
                 params = {
                     "op": "get",
-                    "search": key_id,
+                    "search": search,
                     "options": "mr",
                 }
 
                 response = self._client.get(url, params=params)
                 response.raise_for_status()
 
-                if "BEGIN PGP PUBLIC KEY BLOCK" in response.text:
-                    logger.info("Fetched key from keyserver", key_id=key_id, server=server)
-                    return response.text
+                if "BEGIN PGP PUBLIC KEY BLOCK" not in response.text:
+                    continue
+
+                if not armored_key_matches_id(response.text, kid):
+                    logger.warning(
+                        "Keyserver returned a key whose fingerprint does not "
+                        "match the requested id; discarding it",
+                        key_id=kid,
+                        server=server,
+                        fingerprint=armored_key_fingerprint(response.text),
+                    )
+                    continue
+
+                logger.info("Fetched key from keyserver", key_id=kid, server=server)
+                return response.text
 
             except httpx.HTTPError as e:
                 logger.debug("Keyserver fetch failed", server=server, error=str(e))
                 continue
 
-        logger.warning("Key not found on any keyserver", key_id=key_id)
+        logger.warning("Key not found on any keyserver", key_id=kid)
         return None
 
     def upload_key(self, key_id: str) -> bool:

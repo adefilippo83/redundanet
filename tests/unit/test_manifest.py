@@ -244,3 +244,44 @@ class TestManifest:
         manifest.update_introducer_furl(new_furl)
 
         assert manifest.introducer_furl == new_furl
+
+    def test_no_introducer_and_no_furl_is_flagged(self, valid_manifest_data: dict):
+        """A grid with neither an introducer node nor a FURL cannot bootstrap."""
+        data = dict(valid_manifest_data)
+        data["introducer_furl"] = None
+        data["nodes"] = [
+            {
+                "name": "node1",
+                "internal_ip": "10.100.0.10",
+                "roles": ["tahoe_storage"],
+            }
+        ]
+        manifest = Manifest.from_dict(data)
+        errors = manifest.validate()
+        assert any("No introducer configured" in e for e in errors)
+
+    def test_external_furl_satisfies_introducer_check(self, valid_manifest_data: dict):
+        data = dict(valid_manifest_data)
+        data["nodes"] = [
+            {
+                "name": "node1",
+                "internal_ip": "10.100.0.10",
+                "roles": ["tahoe_storage"],
+            }
+        ]
+        # introducer_furl is set in the fixture -> no bootstrap error.
+        manifest = Manifest.from_dict(data)
+        errors = manifest.validate()
+        assert not any("No introducer configured" in e for e in errors)
+
+    def test_malformed_introducer_furl_is_flagged(self, valid_manifest_data: dict):
+        data = dict(valid_manifest_data)
+        data["introducer_furl"] = "http://not-a-furl"
+        manifest = Manifest.from_dict(data)
+        errors = manifest.validate()
+        assert any("Invalid introducer_furl" in e for e in errors)
+
+    def test_short_gpg_key_ids_are_flagged(self, manifest_file: Path):
+        manifest = Manifest.from_file(manifest_file)
+        errors = manifest.validate()
+        assert any("short GPG key ids" in e for e in errors)

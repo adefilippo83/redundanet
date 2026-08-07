@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING
 from jinja2 import Template
 
 from redundanet.core.exceptions import VPNError
-from redundanet.utils.files import ensure_dir, read_file, write_file
+from redundanet.utils.files import ensure_dir, write_file
 from redundanet.utils.logging import get_logger
-from redundanet.utils.process import is_command_available, run_command
 
 if TYPE_CHECKING:
     from redundanet.core.config import NodeConfig
@@ -109,13 +108,6 @@ class TincManager:
     def __init__(self, config: TincConfig) -> None:
         self.config = config
         self._private_key_path = self.config.network_dir / "rsa_key.priv"
-        self._public_key_path = self.config.hosts_dir / self.config.node_name
-
-    def ensure_tinc_installed(self) -> bool:
-        """Check if tinc is installed."""
-        if not is_command_available("tincd"):
-            raise VPNError("Tinc is not installed. Please install tinc first.")
-        return True
 
     def setup(self, peers: list[NodeConfig] | None = None) -> None:
         """Set up the complete Tinc configuration.
@@ -144,12 +136,17 @@ class TincManager:
         self._write_tinc_up()
         self._write_tinc_down()
 
-        # Generate keys if they don't exist
+        # The node's Tinc key is derived from its GPG identity key and must be
+        # written (rsa_key.priv) before setup is called. Generating a fresh
+        # standalone keypair here would silently produce a node no peer can
+        # authenticate, so a missing key is an error, not a fallback.
         if not self._private_key_path.exists():
-            self.generate_keys()
-        else:
-            # Ensure local host file exists even if keys already exist
-            self._ensure_local_host_file()
+            raise VPNError(
+                f"Tinc private key not found: {self._private_key_path}. "
+                "Derive it from the node's GPG key first "
+                "(see redundanet.vpn.gpg_tinc.gpg_secret_to_tinc_priv)."
+            )
+        self._ensure_local_host_file()
 
         # Write peer host files
         if peers:
@@ -230,110 +227,6 @@ class TincManager:
         write_file(host_path, content, mode=0o644)
         logger.debug("Wrote host file", node=node.name, path=str(host_path))
 
-    def generate_keys(self) -> str:
-        """Generate Tinc RSA keypair.
-
-        Returns:
-            The public key as a string
-        """
-        logger.info("Generating Tinc keys", node=self.config.node_name)
-
-        # Create empty host file for key generation
-        host_file = self.config.hosts_dir / self.config.node_name
-        if not host_file.exists():
-            header = f"# Host file for {self.config.node_name}\n"
-            header += f"Subnet = {self.config.vpn_ip}/32\n"
-            if self.config.public_ip:
-                header += f"Address = {self.config.public_ip}\n"
-            header += f"Port = {self.config.port}\n"
-            write_file(host_file, header, mode=0o644)
-
-        # Generate keys using tincd. tincd -K prompts twice (private key path,
-        # then public key path); send two newlines to accept both defaults so
-        # the public key is written into the host file.
-        result = run_command(
-            f"tincd -n {self.config.network_name} -K4096",
-            input_text="\n\n",  # Accept defaults for both prompts
-        )
-
-        if not result.success:
-            raise VPNError(f"Failed to generate keys: {result.stderr}")
-
-        # Read and return the public key
-        return self.get_public_key()
-
-    def get_public_key(self) -> str:
-        """Get the public key for this node."""
-        host_file = self.config.hosts_dir / self.config.node_name
-        if not host_file.exists():
-            raise VPNError(f"Host file not found: {host_file}")
-
-        content = read_file(host_file)
-
-        # Extract the public key portion
-        lines = content.split("\n")
-        in_key = False
-        key_lines = []
-
-        for line in lines:
-            if "BEGIN RSA PUBLIC KEY" in line:
-                in_key = True
-            if in_key:
-                key_lines.append(line)
-            if "END RSA PUBLIC KEY" in line:
-                break
-
-        if not key_lines:
-            raise VPNError("No public key found in host file")
-
-        return "\n".join(key_lines)
-
-    def start(self) -> bool:
-        """Start the Tinc VPN daemon."""
-        logger.info("Starting Tinc VPN", network=self.config.network_name)
-
-        result = run_command(f"tincd -n {self.config.network_name}")
-        if not result.success:
-            logger.error("Failed to start Tinc", error=result.stderr)
-            return False
-
-        logger.info("Tinc VPN started")
-        return True
-
-    def stop(self) -> bool:
-        """Stop the Tinc VPN daemon."""
-        logger.info("Stopping Tinc VPN", network=self.config.network_name)
-
-        result = run_command(f"tincd -n {self.config.network_name} -k")
-        if not result.success:
-            logger.error("Failed to stop Tinc", error=result.stderr)
-            return False
-
-        logger.info("Tinc VPN stopped")
-        return True
-
-    def reload(self) -> bool:
-        """Reload Tinc VPN configuration."""
-        logger.info("Reloading Tinc VPN", network=self.config.network_name)
-
-        result = run_command(f"tincd -n {self.config.network_name} -kHUP")
-        return result.success
-
-    def is_running(self) -> bool:
-        """Check if Tinc is running."""
-        pid_file = Path(f"/var/run/tinc.{self.config.network_name}.pid")
-        if not pid_file.exists():
-            return False
-
-        pid = int(pid_file.read_text().strip())
-        return Path(f"/proc/{pid}").exists()
-
-    def get_status(self) -> dict[str, object]:
-        """Get the current status of Tinc VPN."""
-        return {
-            "running": self.is_running(),
-            "network": self.config.network_name,
-            "node": self.config.node_name,
-            "vpn_ip": self.config.vpn_ip,
-            "config_dir": str(self.config.network_dir),
-        }
+    # NOTE: tincd itself is exec'd by the container entrypoint
+    # (docker/entrypoints/tinc.py); the CLI drives it through docker compose.
+    # This class only generates configuration.

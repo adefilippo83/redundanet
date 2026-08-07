@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Ensure join-request label
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -67,219 +67,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyyaml httpx
+          pip install pyyaml httpx pgpy
 
+      # The parsing/allocation logic lives in .github/scripts/process_join.py so
+      # it is unit-tested (tests/unit/test_process_join.py). It strictly
+      # validates every attacker-controlled value before use, pins the key's
+      # full fingerprint when the key is found on the keyservers, and writes
+      # outputs with random-delimiter heredocs.
       - name: Parse issue and update manifest
         id: process
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          python << 'EOF'
-          import os
-          import re
-          import secrets
-          import yaml
-          import ipaddress
-          from pathlib import Path
-
-          def set_output(**kwargs):
-              # Write step outputs with the random-delimiter heredoc form so a
-              # value can never inject extra output lines, even if it somehow
-              # contained newlines (defense in depth on top of the validation
-              # below).
-              with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                  for name, value in kwargs.items():
-                      delim = f"__EOF_{secrets.token_hex(16)}__"
-                      f.write(f"{name}<<{delim}\n{value}\n{delim}\n")
-
-          issue_body = os.environ.get('ISSUE_BODY', '')
-          issue_number = os.environ.get('ISSUE_NUMBER', '')
-
-          # Do NOT echo the untrusted issue body/title to the log: a line that
-          # begins with `::` would be interpreted as a workflow command.
-          print(f"Processing issue #{issue_number}")
-
-          # Parse GPG Key ID from the issue body
-          gpg_match = re.search(r'\*\*GPG Key ID\*\*\s*\|\s*`([^`]+)`', issue_body)
-          if not gpg_match:
-              print("::error::Could not find GPG Key ID in issue body")
-              set_output(success="false", error="Could not parse GPG Key ID from issue")
-              exit(0)
-
-          # SECURITY: the issue body is fully attacker-controlled (anyone can open
-          # an issue). Enforce a strict GPG key-id format (8/16/40 hex, optional
-          # 0x) BEFORE the value is used or written anywhere, so it can contain no
-          # newlines or quotes that could inject GITHUB_OUTPUT entries or break
-          # out of a later github-script string.
-          gpg_key_id = gpg_match.group(1).strip().replace(" ", "").upper()
-          if gpg_key_id.startswith("0X"):
-              gpg_key_id = gpg_key_id[2:]
-          if not re.fullmatch(r'[A-F0-9]{8}|[A-F0-9]{16}|[A-F0-9]{40}', gpg_key_id):
-              print("::error::Invalid GPG Key ID format")
-              set_output(success="false", error="Invalid GPG Key ID format (expected 8, 16, or 40 hexadecimal characters)")
-              exit(0)
-          print(f"Found GPG Key ID: {gpg_key_id}")
-
-          # Verify GPG key exists on keyserver
-          import httpx
-
-          def verify_key_on_keyserver(key_id):
-              """Check if a GPG key exists on public keyservers."""
-              key_id_clean = key_id.replace(" ", "").upper()
-              if not key_id_clean.startswith("0x"):
-                  key_id_clean = f"0x{key_id_clean}"
-
-              keyservers = [
-                  "keys.openpgp.org",
-                  "keyserver.ubuntu.com",
-              ]
-
-              for server in keyservers:
-                  try:
-                      url = f"https://{server}/pks/lookup"
-                      params = {"op": "get", "search": key_id_clean, "options": "mr"}
-                      response = httpx.get(url, params=params, timeout=10.0)
-                      if response.status_code == 200 and "BEGIN PGP PUBLIC KEY BLOCK" in response.text:
-                          print(f"✓ Key found on {server}")
-                          return True
-                  except Exception as e:
-                      print(f"  Could not check {server}: {e}")
-                      continue
-              return False
-
-          print("Verifying GPG key on keyservers...")
-          key_verified = verify_key_on_keyserver(gpg_key_id)
-          if not key_verified:
-              print("::warning::GPG key not found on keyservers. Proceeding anyway, but verification is recommended.")
-              print("The applicant should publish their key using: redundanet node keys publish --key-id <key-id>")
-
-          # Parse Storage Contribution
-          storage_match = re.search(r'\*\*Storage Contribution\*\*\s*\|\s*(\d+\s*[GMTP]B)', issue_body)
-          storage = storage_match.group(1) if storage_match else "100GB"
-          print(f"Storage contribution: {storage}")
-
-          # Parse Region
-          region_match = re.search(r'\*\*Region\*\*\s*\|\s*([^\n|]+)', issue_body)
-          region = region_match.group(1).strip() if region_match else "unknown"
-          if region == "Not specified":
-              region = "unknown"
-          print(f"Region: {region}")
-
-          # Parse Public IP
-          public_ip_match = re.search(r'\*\*Public IP\*\*\s*\|\s*([^\n|]+)', issue_body)
-          public_ip = public_ip_match.group(1).strip() if public_ip_match else None
-          if public_ip in ["None", "Not specified", ""]:
-              public_ip = None
-          print(f"Public IP: {public_ip}")
-
-          # Load or create manifest
-          manifest_path = Path('manifests/manifest.yaml')
-          if manifest_path.exists():
-              with open(manifest_path) as f:
-                  manifest = yaml.safe_load(f) or {}
-          else:
-              manifest_path.parent.mkdir(parents=True, exist_ok=True)
-              manifest = {
-                  'network': {
-                      'name': 'redundanet',
-                      'version': '2.0.0',
-                      'domain': 'redundanet.local',
-                      'vpn_network': '10.100.0.0/16',
-                      'tahoe': {
-                          'shares_needed': 3,
-                          'shares_happy': 7,
-                          'shares_total': 10,
-                          'reserved_space': '1G'
-                      }
-                  },
-                  'introducer_furl': None,
-                  'nodes': []
-              }
-
-          nodes = manifest.get('nodes', [])
-
-          # Check for duplicate GPG key
-          for node in nodes:
-              if node.get('gpg_key_id', '').lower() == gpg_key_id.lower():
-                  print(f"::error::Node with GPG key {gpg_key_id} already exists")
-                  set_output(success="false", error=f"Node with GPG key {gpg_key_id} already exists")
-                  exit(0)
-
-          # Calculate next available IP
-          vpn_network = manifest.get('network', {}).get('vpn_network', '10.100.0.0/16')
-          network = ipaddress.ip_network(vpn_network)
-
-          used_ips = set()
-          for node in nodes:
-              if node.get('vpn_ip'):
-                  used_ips.add(ipaddress.ip_address(node['vpn_ip']))
-              if node.get('internal_ip'):
-                  used_ips.add(ipaddress.ip_address(node['internal_ip']))
-
-          # Start from .10 to reserve some IPs for infrastructure
-          next_ip = None
-          for ip in network.hosts():
-              if int(ip) % 256 < 10:  # Skip first 10 IPs in each subnet
-                  continue
-              if ip not in used_ips:
-                  next_ip = str(ip)
-                  break
-
-          if not next_ip:
-              print("::error::No available IP addresses in the VPN network")
-              set_output(success="false", error="No available IP addresses")
-              exit(0)
-
-          print(f"Assigned VPN IP: {next_ip}")
-
-          # Generate node name from GPG key (last 8 chars)
-          node_name = f"node-{gpg_key_id[-8:].lower()}"
-          print(f"Node name: {node_name}")
-
-          # Create new node entry
-          new_node = {
-              'name': node_name,
-              'internal_ip': next_ip,
-              'vpn_ip': next_ip,
-              'gpg_key_id': gpg_key_id,
-              'region': region,
-              'status': 'pending',
-              'roles': ['tinc_vpn', 'tahoe_storage'],
-              'ports': {
-                  'tinc': 655,
-                  'tahoe_storage': 3457,
-                  'tahoe_client': 3456,
-                  'tahoe_introducer': 3458
-              },
-              'storage_contribution': storage,
-              'is_publicly_accessible': public_ip is not None
-          }
-
-          if public_ip:
-              new_node['public_ip'] = public_ip
-
-          # Add node to manifest
-          nodes.append(new_node)
-          manifest['nodes'] = nodes
-
-          # Write updated manifest
-          with open(manifest_path, 'w') as f:
-              yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
-
-          print(f"Updated manifest with new node: {node_name}")
-
-          # Set outputs
-          set_output(
-              success="true",
-              node_name=node_name,
-              vpn_ip=next_ip,
-              gpg_key_id=gpg_key_id,
-              storage=storage,
-          )
-
-          print("Done!")
-          EOF
+        run: python .github/scripts/process_join.py
 
       - name: Create Pull Request
         if: steps.process.outputs.success == 'true'
@@ -333,11 +133,12 @@ jobs:
           for m in manifests/*.yaml; do
             echo "== Validating $m =="
             redundanet validate "$m"
+            python .github/scripts/validate_pr.py "$m"
           done
 
       - name: Report the required "validate" check on the PR
         if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
@@ -369,7 +170,7 @@ jobs:
 
       - name: Close issue
         if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         # Pass values through env and read them with process.env rather than
         # interpolating ${{ … }} into the script body, so a value can never be
         # parsed as JavaScript.
@@ -447,7 +248,7 @@ jobs:
 
       - name: Add failure label
         if: steps.process.outputs.success == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             github.rest.issues.addLabels({

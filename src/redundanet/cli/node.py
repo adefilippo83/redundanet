@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -481,23 +482,56 @@ def manage_keys(
             from redundanet.core.exceptions import KeyServerError
 
             gpg = GPGManager()
-            keyserver_client = KeyServerClient(gpg)
+            with KeyServerClient(gpg) as keyserver_client:
+                with console.status("[bold green]Uploading to keyservers..."):
+                    success = keyserver_client.upload_key(key_id)
+                keyservers = keyserver_client.keyservers
 
-            with console.status("[bold green]Uploading to keyservers..."):
-                success = keyserver_client.upload_key(key_id)
+                # An accepted upload does NOT guarantee the key is servable:
+                # keyservers can accept and then drop or not index a key
+                # (keys.openpgp.org, for instance, applies its own policies).
+                # A peer that cannot FETCH this key cannot authenticate this
+                # node, so verify by fetching it back before declaring success.
+                verified = False
+                if success:
+                    with console.status("[bold green]Verifying the key is fetchable..."):
+                        for attempt in range(3):
+                            if keyserver_client.verify_key_on_server(key_id):
+                                verified = True
+                                break
+                            if attempt < 2:
+                                time.sleep(5)
 
-            if success:
-                console.print("[green]Key published successfully![/green]")
-                console.print("\nYour key is now available on public keyservers.")
-                console.print("Note: It may take a few minutes for the key to propagate.")
+            if success and verified:
+                console.print("[green]Key published and verified fetchable![/green]")
+                console.print("\nPeers can now retrieve your key from the public keyservers.")
                 console.print("\n[bold]Keyservers used:[/bold]")
-                for server in keyserver_client.keyservers:
+                for server in keyservers:
                     console.print(f"  - {server}")
+            elif success:
+                console.print(
+                    "[red]Warning:[/red] the upload was accepted, but the key "
+                    "[bold]cannot be fetched back[/bold] from any keyserver."
+                )
+                console.print(
+                    "Until it is fetchable, [bold]peers cannot authenticate your "
+                    "node[/bold] and it cannot join the VPN mesh."
+                )
+                console.print("\nLikely causes and fixes:")
+                console.print(
+                    "  - keys.openpgp.org sent a verification email to the key's "
+                    "address — confirm it, then re-check"
+                )
+                console.print("  - Propagation delay — re-check in a few minutes with:")
+                console.print(f"    [cyan]redundanet node keys fetch --key-id {key_id}[/cyan]")
+                console.print("  - Or upload manually at https://keys.openpgp.org/upload")
+                raise typer.Exit(1)
             else:
                 console.print("[yellow]Warning:[/yellow] Failed to upload to any keyserver")
                 console.print("You may need to manually upload your key at:")
                 console.print("  - https://keys.openpgp.org/upload")
                 console.print("  - https://keyserver.ubuntu.com/")
+                raise typer.Exit(1)
 
         except (GPGError, KeyServerError) as e:
             console.print(f"[red]Error publishing key:[/red] {e}")
@@ -514,9 +548,10 @@ def manage_keys(
             from redundanet.auth.keyserver import KeyServerClient
 
             gpg = GPGManager()
-            keyserver_client = KeyServerClient(gpg)
-
-            with console.status("[bold green]Searching keyservers..."):
+            with (
+                KeyServerClient(gpg) as keyserver_client,
+                console.status("[bold green]Searching keyservers..."),
+            ):
                 success = keyserver_client.import_key_from_server(key_id)
 
             if success:
