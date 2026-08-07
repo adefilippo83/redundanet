@@ -55,6 +55,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY src/ ./src/
 COPY docker/entrypoints/tinc.py ./entrypoint.py
+COPY docker/entrypoints/manifest_sync.py ./manifest_sync.py
 COPY docker/supervisord/tinc.conf /etc/supervisor/conf.d/tinc.conf
 
 # Create directories
