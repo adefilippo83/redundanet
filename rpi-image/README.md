@@ -78,13 +78,14 @@ If you've already been approved:
 # Initialize with your assigned node name
 redundanet init --name node-XXXXXXXX
 
-# Sync the manifest
-redundanet sync
+# Join the network: clones the manifest repo, installs the docker files and
+# generates /opt/redundanet/.env from your manifest entry
+redundanet network join --repo https://github.com/adefilippo83/redundanet.git --name node-XXXXXXXX
 
 # Start services
 sudo systemctl enable --now redundanet-docker
 # Or manually:
-cd /opt/redundanet && docker compose up -d
+cd /opt/redundanet/docker && docker compose --env-file /opt/redundanet/.env --profile storage up -d
 ```
 
 ### 6. Verify
@@ -131,22 +132,18 @@ sudo systemctl status redundanet-docker
 sudo journalctl -u redundanet-docker -f
 ```
 
-## Building the Image Locally
+## Building the Image
 
-To build the image yourself (requires Linux with Docker):
+Images are built by the **Build RPi Image** GitHub Actions workflow
+(`.github/workflows/build-rpi-image.yml`), which uses
+[arm-runner-action](https://github.com/pguyot/arm-runner-action) to customize
+an official Raspberry Pi OS image under QEMU with the stages in
+`rpi-image/stage-redundanet/`. There is no local build script.
 
-```bash
-# Clone the repository
-git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
-
-# Run the build script (uses QEMU via Docker)
-./rpi-image/build.sh
-```
-
-Or trigger a build via GitHub Actions:
-1. Go to Actions > Build RPi Image
-2. Click "Run workflow"
+To build one yourself:
+1. Fork the repository (or use your push access)
+2. Go to **Actions → Build RPi Image**
+3. Click **"Run workflow"** and download the resulting image artifact
 
 ## Troubleshooting
 

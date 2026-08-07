@@ -5,6 +5,9 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Manual runs: lets a maintainer re-run the suite when a push event is
+  # dropped by GitHub (it happens) without crafting an empty commit.
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.11"
@@ -118,11 +121,16 @@ jobs:
       - name: Install project
         run: poetry install --no-interaction
 
-      - name: Run tests
-        run: poetry run pytest tests/ -v --cov=redundanet --cov-report=xml
+      # Unit tests only: the docker-based integration/e2e suites are exercised
+      # by their dedicated workflows (build-containers, mesh-test, grid-test,
+      # e2e-bootstrap) — running them here would rebuild images inside the test
+      # matrix for no extra signal. The coverage floor is a ratchet: raise it
+      # as coverage grows, never lower it to make a PR pass.
+      - name: Run unit tests
+        run: poetry run pytest tests/unit -v --cov=redundanet --cov-report=xml --cov-fail-under=45
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
