@@ -1,0 +1,130 @@
+# Multi-node Tahoe grid test: erasure coding + node-failure survival.
+#
+# Brings up one introducer, THREE independent storage nodes, and a client on a
+# plain bridge network (static IPs; REDUNDANET_TEST_MODE skips the VPN wait —
+# the VPN transport is covered by docker-compose.mesh-test.yml). The client is
+# configured with shares 2-of-3 (happy=3), so a successful upload proves the
+# shares landed on three distinct servers, and a download after stopping one
+# storage node proves erasure-coded reconstruction works.
+#
+# Driven by scripts/grid-test.sh.
+
+x-storage-common: &storage-common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.tahoe-storage
+  image: redundanet-grid-storage:latest
+  environment: &storage-env
+    REDUNDANET_TEST_MODE: "true"
+    REDUNDANET_LOG_LEVEL: INFO
+    REDUNDANET_RESERVED_SPACE: 10M
+    REDUNDANET_SHARES_NEEDED: "2"
+    REDUNDANET_SHARES_HAPPY: "3"
+    REDUNDANET_SHARES_TOTAL: "3"
+  networks:
+    grid: {}
+
+services:
+  introducer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-introducer
+    image: redundanet-grid-introducer:latest
+    container_name: rn-grid-introducer
+    environment:
+      REDUNDANET_NODE_NAME: grid-introducer
+      REDUNDANET_INTERNAL_VPN_IP: 172.30.0.10
+      REDUNDANET_TEST_MODE: "true"
+      REDUNDANET_LOG_LEVEL: INFO
+    volumes:
+      - introducer-node:/var/lib/tahoe-introducer
+      - manifest:/var/lib/redundanet/manifest
+    networks:
+      grid:
+        ipv4_address: 172.30.0.10
+
+  storage-1:
+    <<: *storage-common
+    container_name: rn-grid-storage-1
+    environment:
+      <<: *storage-env
+      REDUNDANET_NODE_NAME: grid-storage-1
+      REDUNDANET_INTERNAL_VPN_IP: 172.30.0.11
+    volumes:
+      - storage-1-node:/var/lib/tahoe-storage
+      - storage-1-data:/data/storage
+      - manifest:/var/lib/redundanet/manifest
+    networks:
+      grid:
+        ipv4_address: 172.30.0.11
+
+  storage-2:
+    <<: *storage-common
+    container_name: rn-grid-storage-2
+    environment:
+      <<: *storage-env
+      REDUNDANET_NODE_NAME: grid-storage-2
+      REDUNDANET_INTERNAL_VPN_IP: 172.30.0.12
+    volumes:
+      - storage-2-node:/var/lib/tahoe-storage
+      - storage-2-data:/data/storage
+      - manifest:/var/lib/redundanet/manifest
+    networks:
+      grid:
+        ipv4_address: 172.30.0.12
+
+  storage-3:
+    <<: *storage-common
+    container_name: rn-grid-storage-3
+    environment:
+      <<: *storage-env
+      REDUNDANET_NODE_NAME: grid-storage-3
+      REDUNDANET_INTERNAL_VPN_IP: 172.30.0.13
+    volumes:
+      - storage-3-node:/var/lib/tahoe-storage
+      - storage-3-data:/data/storage
+      - manifest:/var/lib/redundanet/manifest
+    networks:
+      grid:
+        ipv4_address: 172.30.0.13
+
+  client:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tahoe-client
+    image: redundanet-grid-client:latest
+    container_name: rn-grid-client
+    environment:
+      REDUNDANET_NODE_NAME: grid-client
+      REDUNDANET_INTERNAL_VPN_IP: 172.30.0.20
+      REDUNDANET_TEST_MODE: "true"
+      REDUNDANET_LOG_LEVEL: INFO
+      REDUNDANET_SHARES_NEEDED: "2"
+      REDUNDANET_SHARES_HAPPY: "3"
+      REDUNDANET_SHARES_TOTAL: "3"
+    volumes:
+      - client-node:/var/lib/tahoe-client
+      - manifest:/var/lib/redundanet/manifest
+      - /mnt/redundanet
+    networks:
+      grid:
+        ipv4_address: 172.30.0.20
+
+networks:
+  grid:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  manifest:
+  introducer-node:
+  storage-1-node:
+  storage-1-data:
+  storage-2-node:
+  storage-2-data:
+  storage-3-node:
+  storage-3-data:
+  client-node:

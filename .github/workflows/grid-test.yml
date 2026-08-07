@@ -1,0 +1,59 @@
+name: Grid Erasure-Coding Test
+
+# Brings up one introducer, three independent Tahoe storage nodes, and a client
+# (shares 2-of-3, happy=3), uploads a file, verifies the shares are spread over
+# three distinct storage hosts, stops one storage node, and proves the file is
+# still downloadable byte-identical. This tests the project's core promise:
+# erasure-coded data survives node failure. Runs the same scripts/grid-test.sh
+# used locally.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "docker/Dockerfile.tahoe-*"
+      - "docker/Dockerfile.base"
+      - "docker/entrypoints/tahoe_*.py"
+      - "docker/supervisord/tahoe-*.conf"
+      - "docker/docker-compose.grid-test.yml"
+      - "src/redundanet/storage/**"
+      - "scripts/grid-test.sh"
+      - "pyproject.toml"
+      - ".github/workflows/grid-test.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "docker/Dockerfile.tahoe-*"
+      - "docker/Dockerfile.base"
+      - "docker/entrypoints/tahoe_*.py"
+      - "docker/supervisord/tahoe-*.conf"
+      - "docker/docker-compose.grid-test.yml"
+      - "src/redundanet/storage/**"
+      - "scripts/grid-test.sh"
+      - "pyproject.toml"
+      - ".github/workflows/grid-test.yml"
+  workflow_dispatch:
+
+jobs:
+  grid:
+    name: 3-storage-node grid survives node failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show tooling versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Run grid erasure-coding test
+        run: bash scripts/grid-test.sh
+        env:
+          BUILD: "1"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -p rn-grid -f docker/docker-compose.grid-test.yml ps || true
+          docker compose -p rn-grid -f docker/docker-compose.grid-test.yml logs --tail=200 || true

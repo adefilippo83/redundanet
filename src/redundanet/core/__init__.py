@@ -1,6 +1,12 @@
 """Core business logic for RedundaNet."""
 
-from redundanet.core.config import NetworkConfig, NodeConfig, NodeRole, TahoeConfig
+from redundanet.core.config import (
+    NetworkConfig,
+    NodeConfig,
+    NodeRole,
+    NodeStatus,
+    TahoeConfig,
+)
 from redundanet.core.exceptions import (
     ConfigurationError,
     ManifestError,
@@ -11,7 +17,6 @@ from redundanet.core.exceptions import (
     VPNError,
 )
 from redundanet.core.manifest import Manifest
-from redundanet.core.node import Node, NodeStatus
 
 __all__ = [
     "ConfigurationError",
@@ -19,7 +24,6 @@ __all__ = [
     "ManifestError",
     "NetworkConfig",
     "NetworkError",
-    "Node",
     "NodeConfig",
     "NodeError",
     "NodeRole",

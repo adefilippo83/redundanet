@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ipaddress
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -31,19 +32,24 @@ def _is_gpg_key_id(value: str) -> bool:
     return len(v) in (8, 16, 40) and all(c in "0123456789ABCDEF" for c in v)
 
 
-def validate(manifest_path: str) -> list[str]:
+def validate(manifest_path: str) -> tuple[list[str], list[str]]:
+    """Validate a manifest; returns (errors, warnings).
+
+    Errors fail the check; warnings are advisory (printed, exit 0).
+    """
     errors: list[str] = []
+    warnings: list[str] = []
 
     try:
-        with open(manifest_path) as f:
+        with Path(manifest_path).open() as f:
             manifest = yaml.safe_load(f)
     except FileNotFoundError:
-        return [f"Manifest not found: {manifest_path}"]
+        return [f"Manifest not found: {manifest_path}"], warnings
     except yaml.YAMLError as e:
-        return [f"Failed to parse {manifest_path}: {e}"]
+        return [f"Failed to parse {manifest_path}: {e}"], warnings
 
     if not isinstance(manifest, dict):
-        return [f"{manifest_path}: top-level document must be a mapping"]
+        return [f"{manifest_path}: top-level document must be a mapping"], warnings
 
     # --- network section ---
     network = manifest.get("network")
@@ -92,6 +98,13 @@ def validate(manifest_path: str) -> list[str]:
                 f"Node {name or where}: invalid gpg_key_id '{gpg_key_id}' "
                 "(expected an 8/16/40-character hex key id)"
             )
+        elif len(str(gpg_key_id).replace(" ", "")) < 40:
+            # Short key ids are brute-forceable (fingerprint-suffix collisions).
+            # Advisory only: existing manifest entries still use 16-char ids.
+            warnings.append(
+                f"Node {name or where}: gpg_key_id is a short key id; prefer the "
+                "full 40-character fingerprint (short ids are collision-prone)"
+            )
 
         # IPs: must be valid, inside the VPN network, and unique across nodes.
         node_ips: set[str] = set()
@@ -135,12 +148,14 @@ def validate(manifest_path: str) -> list[str]:
         if len(owners) > 1:
             errors.append(f"IP {ip} is used by multiple nodes: {', '.join(sorted(owners))}")
 
-    return errors
+    return errors, warnings
 
 
 def main() -> None:
     manifest_path = sys.argv[1] if len(sys.argv) > 1 else "manifests/manifest.yaml"
-    errors = validate(manifest_path)
+    errors, warnings = validate(manifest_path)
+    for warning in warnings:
+        print(f"⚠️  {warning}")
     if errors:
         print(f"❌ Manifest validation failed for {manifest_path}:")
         for error in errors:

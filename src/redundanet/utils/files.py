@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -71,30 +70,6 @@ def write_yaml(path: Path | str, data: dict[str, Any], mode: int = 0o644) -> Non
     logger.debug("Wrote YAML file", path=str(path))
 
 
-def safe_copy(src: Path | str, dst: Path | str, mode: int | None = None) -> Path:
-    """Safely copy a file, preserving permissions.
-
-    Args:
-        src: Source file path
-        dst: Destination file path
-        mode: Optional permission mode to set on destination
-
-    Returns:
-        Path to the destination file
-    """
-    src = Path(src)
-    dst = Path(dst)
-
-    ensure_dir(dst.parent)
-    shutil.copy2(src, dst)
-
-    if mode is not None:
-        dst.chmod(mode)
-
-    logger.debug("Copied file", src=str(src), dst=str(dst))
-    return dst
-
-
 def read_file(path: Path | str) -> str:
     """Read a text file.
 
@@ -136,30 +111,3 @@ def write_file(
     path.chmod(mode)
     logger.debug("Wrote file", path=str(path))
     return path
-
-
-def remove_path(path: Path | str, ignore_errors: bool = False) -> bool:
-    """Remove a file or directory.
-
-    Args:
-        path: Path to remove
-        ignore_errors: If True, don't raise errors
-
-    Returns:
-        True if removal succeeded, False otherwise
-    """
-    path = Path(path)
-    try:
-        if path.is_file():
-            path.unlink()
-        elif path.is_dir():
-            shutil.rmtree(path)
-        else:
-            return False
-        logger.debug("Removed path", path=str(path))
-        return True
-    except (OSError, PermissionError) as e:
-        if ignore_errors:
-            logger.warning("Failed to remove path", path=str(path), error=str(e))
-            return False
-        raise
