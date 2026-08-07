@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import sys
-from typing import Any
 
 import structlog
 from structlog.typing import Processor
@@ -80,14 +78,3 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
         A configured structlog logger
     """
     return structlog.get_logger(name)  # type: ignore[no-any-return]
-
-
-def log_context(**kwargs: Any) -> contextlib.AbstractContextManager[None]:
-    """Context manager to add context to all logs within the block.
-
-    Example:
-        with log_context(node_name="node1", operation="sync"):
-            logger.info("Starting operation")
-            # All logs here will include node_name and operation
-    """
-    return structlog.contextvars.bound_contextvars(**kwargs)

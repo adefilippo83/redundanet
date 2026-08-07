@@ -1,88 +1,213 @@
-"""Unit tests for CLI module."""
+"""Unit tests for the CLI commands (real assertions against real behavior)."""
 
+from pathlib import Path
+
+import pytest
 from typer.testing import CliRunner
 
+from redundanet import __version__
 from redundanet.cli.main import app
 
 runner = CliRunner()
 
 
 class TestMainCLI:
-    """Tests for main CLI commands."""
-
-    def test_app_exists(self):
-        """Test CLI app is importable."""
-        assert app is not None
-
-    def test_app_help(self):
-        """Test CLI help output."""
+    def test_help_lists_subcommands(self):
         result = runner.invoke(app, ["--help"])
-        # Typer may return exit code 0 or 1 for help depending on version
-        assert "RedundaNet" in result.output or "redundanet" in result.output.lower()
+        assert result.exit_code == 0
+        for command in ("init", "status", "sync", "validate", "node", "network", "storage"):
+            assert command in result.output
 
-    def test_version(self):
-        """Test version callback is handled."""
+    def test_version_flag(self):
         result = runner.invoke(app, ["--version"])
-        # --version may not be implemented, check it doesn't crash unexpectedly
-        # Exit code 2 means unrecognized option (not implemented yet)
-        # Exit code 0 means it worked
-        assert result.exit_code in [0, 2] or "version" in result.output.lower()
-
-    def test_validate_command_exists(self):
-        """Test validate command is registered."""
-        # Just verify the app has commands registered
-        assert hasattr(app, "registered_commands") or app is not None
+        assert result.exit_code == 0
+        assert __version__ in result.output
 
 
-class TestNodeCLI:
-    """Tests for node subcommands."""
+class TestValidateCommand:
+    def test_valid_manifest_passes(self, sample_manifest_file: Path):
+        result = runner.invoke(app, ["validate", str(sample_manifest_file)])
+        assert result.exit_code == 0
+        assert "test-network" in result.output
+        assert "Nodes:" in result.output
 
-    def test_node_module_exists(self):
-        """Test node subcommand module is importable."""
-        from redundanet.cli import node
+    def test_semantic_problems_are_reported_as_warnings(self, sample_manifest_file: Path):
+        # 2 storage nodes < shares_happy=7 -> the validate() warning must surface.
+        result = runner.invoke(app, ["validate", str(sample_manifest_file)])
+        assert "Not enough storage nodes" in result.output
 
-        assert node is not None
+    def test_schema_invalid_manifest_fails(self, tmp_path: Path):
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("network:\n  name: broken\nnodes: []\n")
+        result = runner.invoke(app, ["validate", str(bad)])
+        assert result.exit_code == 1
+        assert "Validation failed" in result.output
 
-    def test_node_help(self):
-        """Test node subcommand help."""
-        result = runner.invoke(app, ["node", "--help"])
-        # Check help content is shown
-        assert "list" in result.output.lower() or "node" in result.output.lower()
-
-    def test_node_list(self):
-        """Test node list command."""
-        result = runner.invoke(app, ["node", "list"])
-        # May fail without proper manifest path config, that's ok
-        assert result is not None
+    def test_missing_file_fails(self, tmp_path: Path):
+        result = runner.invoke(app, ["validate", str(tmp_path / "nope.yaml")])
+        assert result.exit_code == 1
 
 
-class TestNetworkCLI:
-    """Tests for network subcommands."""
+class TestNodeCommands:
+    def test_node_list_shows_manifest_nodes(self, sample_manifest_file: Path):
+        result = runner.invoke(app, ["node", "list", "--manifest", str(sample_manifest_file)])
+        assert result.exit_code == 0
+        assert "node1" in result.output
+        assert "node2" in result.output
 
-    def test_network_module_exists(self):
-        """Test network subcommand module is importable."""
-        from redundanet.cli import network
+    def test_node_list_role_filter(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app,
+            [
+                "node",
+                "list",
+                "--manifest",
+                str(sample_manifest_file),
+                "--role",
+                "tahoe_introducer",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "node1" in result.output
+        assert "node2" not in result.output
 
-        assert network is not None
+    def test_node_list_missing_manifest_fails(self, tmp_path: Path):
+        result = runner.invoke(app, ["node", "list", "--manifest", str(tmp_path / "no.yaml")])
+        assert result.exit_code == 1
 
+    def test_node_info_shows_details(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app, ["node", "info", "node1", "--manifest", str(sample_manifest_file)]
+        )
+        assert result.exit_code == 0
+        assert "10.100.0.1" in result.output
+        assert "tahoe_introducer" in result.output
+
+    def test_node_info_unknown_node_fails(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app, ["node", "info", "ghost", "--manifest", str(sample_manifest_file)]
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_node_add_appends_to_manifest(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app,
+            [
+                "node",
+                "add",
+                "--name",
+                "node3",
+                "--ip",
+                "10.100.0.3",
+                "--role",
+                "tahoe_storage",
+                "--manifest",
+                str(sample_manifest_file),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        listing = runner.invoke(app, ["node", "list", "--manifest", str(sample_manifest_file)])
+        assert "node3" in listing.output
+
+    def test_node_add_duplicate_name_fails(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app,
+            [
+                "node",
+                "add",
+                "--name",
+                "node1",
+                "--ip",
+                "10.100.0.99",
+                "--manifest",
+                str(sample_manifest_file),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "already exists" in result.output
+
+    def test_node_remove(self, sample_manifest_file: Path):
+        result = runner.invoke(
+            app,
+            ["node", "remove", "node2", "--force", "--manifest", str(sample_manifest_file)],
+        )
+        assert result.exit_code == 0
+        listing = runner.invoke(app, ["node", "list", "--manifest", str(sample_manifest_file)])
+        assert "node2" not in listing.output
+
+
+class FakeKeyServerClient:
+    """Configurable KeyServerClient stand-in for publish-flow tests."""
+
+    upload_result = True
+    verify_result = True
+    verify_calls = 0
+
+    def __init__(self, gpg_manager, keyservers=None, timeout=30.0):
+        self.keyservers = keyservers or ["ks.example"]
+        type(self).verify_calls = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        pass
+
+    def upload_key(self, key_id):
+        return type(self).upload_result
+
+    def verify_key_on_server(self, key_id):
+        type(self).verify_calls += 1
+        return type(self).verify_result
+
+
+class TestKeysPublish:
+    """'node keys publish' must verify the key is actually fetchable.
+
+    An accepted upload is not enough: a key that peers cannot FETCH cannot
+    authenticate the node (this happened to a real manifest node).
+    """
+
+    @pytest.fixture(autouse=True)
+    def fake_keyserver(self, monkeypatch):
+        monkeypatch.setattr("redundanet.auth.keyserver.KeyServerClient", FakeKeyServerClient)
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", lambda *_a, **_k: object())
+        monkeypatch.setattr("redundanet.cli.node.time.sleep", lambda _s: None)
+
+    def test_upload_and_verify_ok(self):
+        FakeKeyServerClient.upload_result = True
+        FakeKeyServerClient.verify_result = True
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 0, result.output
+        assert "verified fetchable" in result.output
+
+    def test_upload_ok_but_unfetchable_fails_loudly(self):
+        FakeKeyServerClient.upload_result = True
+        FakeKeyServerClient.verify_result = False
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 1
+        assert "cannot be fetched back" in result.output
+        assert "cannot authenticate" in result.output
+        # Retries before giving up (transient indexing delays).
+        assert FakeKeyServerClient.verify_calls == 3
+
+    def test_upload_failure_exits_nonzero(self):
+        FakeKeyServerClient.upload_result = False
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 1
+        assert "Failed to upload" in result.output
+
+
+class TestSubcommandHelp:
     def test_network_help(self):
-        """Test network subcommand help."""
         result = runner.invoke(app, ["network", "--help"])
-        # Check it produces output
-        assert len(result.output) > 0
-
-
-class TestStorageCLI:
-    """Tests for storage subcommands."""
-
-    def test_storage_module_exists(self):
-        """Test storage subcommand module is importable."""
-        from redundanet.cli import storage
-
-        assert storage is not None
+        assert result.exit_code == 0
+        for command in ("join", "leave", "peers", "vpn"):
+            assert command in result.output
 
     def test_storage_help(self):
-        """Test storage subcommand help."""
         result = runner.invoke(app, ["storage", "--help"])
-        # Check it produces output
-        assert len(result.output) > 0
+        assert result.exit_code == 0
+        for command in ("upload", "download", "status"):
+            assert command in result.output
