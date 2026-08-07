@@ -17,26 +17,37 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from redundanet.core.exceptions import VPNError
 
 
-def _rsa_keymaterial(armored: str) -> object:
-    """Parse an armored GPG key and return its RSA key material, or raise."""
+def _parse_key(armored: str) -> pgpy.PGPKey:
+    """Parse an armored GPG key, or raise VPNError."""
     try:
         key, _ = pgpy.PGPKey.from_blob(armored)
     except Exception as e:  # PGPy raises a variety of parse errors
         raise VPNError(f"Could not parse GPG key: {e}") from e
+    return key
 
+
+def _rsa_keymaterial(key: pgpy.PGPKey) -> object:
+    """Return the primary key's RSA key material, or raise for non-RSA keys."""
     keymaterial = key._key.keymaterial
     # RSA key material exposes the modulus ``n`` and public exponent ``e``.
     if not hasattr(keymaterial, "n") or not hasattr(keymaterial, "e"):
         raise VPNError(
-            "GPG key is not RSA. Tinc requires an RSA key; generate your node key "
-            "with 'redundanet node keys generate' (RSA is the default)."
+            f"GPG key is {key.key_algorithm.name}, not RSA. Tinc requires an RSA "
+            "key; generate your node key with 'redundanet node keys generate' "
+            "(RSA is the default)."
         )
     return keymaterial
 
 
+def gpg_key_fingerprint(armored: str) -> str:
+    """Return the primary key fingerprint (40-char uppercase hex, no spaces)."""
+    key = _parse_key(armored)
+    return str(key.fingerprint).replace(" ", "").upper()
+
+
 def gpg_public_to_tinc_pub(armored_public: str) -> str:
     """Convert an armored GPG public key to a PKCS#1 PEM public key (Tinc host file)."""
-    km = _rsa_keymaterial(armored_public)
+    km = _rsa_keymaterial(_parse_key(armored_public))
     public = rsa.RSAPublicNumbers(int(km.e), int(km.n)).public_key()  # type: ignore[attr-defined]
     return public.public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.PKCS1
@@ -45,9 +56,19 @@ def gpg_public_to_tinc_pub(armored_public: str) -> str:
 
 def gpg_secret_to_tinc_priv(armored_secret: str) -> str:
     """Convert an armored GPG secret key to a PKCS#1 PEM private key (Tinc rsa_key.priv)."""
-    km = _rsa_keymaterial(armored_secret)
-    if not hasattr(km, "d"):
+    key = _parse_key(armored_secret)
+    km = _rsa_keymaterial(key)
+
+    if key.is_public or not hasattr(km, "d"):
         raise VPNError("GPG key has no secret material (provide the private key).")
+    if key.is_protected:
+        raise VPNError(
+            "GPG secret key is passphrase-protected. Tinc needs the raw RSA "
+            "parameters, so export the key without a passphrase "
+            "(gpg --export-secret-keys after removing the passphrase, or "
+            "generate the node key with 'redundanet node keys generate', "
+            "which uses no passphrase)."
+        )
 
     n, e = int(km.n), int(km.e)  # type: ignore[attr-defined]
     d, p, q = int(km.d), int(km.p), int(km.q)  # type: ignore[attr-defined]

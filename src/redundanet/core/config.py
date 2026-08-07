@@ -182,9 +182,9 @@ class AppSettings(BaseSettings):
     test_mode: bool = False
     log_level: str = "INFO"
 
-    # Network settings
-    enable_auto_discovery: bool = True
-    sync_interval: int = 300  # seconds
+    # How often the tinc container re-syncs the manifest and refreshes peer
+    # host files (docker/entrypoints/manifest_sync.py), in seconds.
+    sync_interval: int = 300
 
     # Docker Compose deployment (used by the CLI to drive the running stack)
     compose_file: Path | None = None

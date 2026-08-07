@@ -169,7 +169,9 @@ def upload_file(
         console.print("[red]Upload failed:[/red] no capability returned")
         raise typer.Exit(1)
     console.print(f"[green]Uploaded[/green] {source.name}")
-    console.print(cap)
+    # soft_wrap: a capability must come out as ONE line — rich would otherwise
+    # hard-wrap it at the terminal width, truncating what scripts capture.
+    console.print(cap, soft_wrap=True)
 
 
 @app.command("download")
@@ -231,7 +233,7 @@ def make_directory(
         raise typer.Exit(1)
     console.print(f"[green]Created directory[/green] [cyan]{alias}:[/cyan]")
     if result.stdout.strip():
-        console.print(f"[dim]{result.stdout.strip()}[/dim]")
+        console.print(f"[dim]{result.stdout.strip()}[/dim]", soft_wrap=True)
 
 
 @app.command("aliases")
@@ -245,7 +247,7 @@ def list_aliases() -> None:
             f"[red]Failed to list aliases:[/red] {result.stderr.strip() or result.stdout.strip()}"
         )
         raise typer.Exit(1)
-    console.print(result.stdout.rstrip() or "[dim]No aliases configured[/dim]")
+    console.print(result.stdout.rstrip() or "[dim]No aliases configured[/dim]", soft_wrap=True)
 
 
 @app.command("ls")
@@ -271,7 +273,7 @@ def list_files(
     if not result.success:
         console.print(f"[red]List failed:[/red] {result.stderr.strip() or result.stdout.strip()}")
         raise typer.Exit(1)
-    console.print(result.stdout.rstrip() or "[dim](empty)[/dim]")
+    console.print(result.stdout.rstrip() or "[dim](empty)[/dim]", soft_wrap=True)
 
 
 @app.command("info")

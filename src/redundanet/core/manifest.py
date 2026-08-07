@@ -266,12 +266,36 @@ class Manifest:
         if duplicate_ips:
             errors.append(f"Duplicate IP addresses: {duplicate_ips}")
 
-        # Check introducer count
+        # Check introducer presence/count. Without exactly one introducer (or an
+        # externally provided FURL) the Tahoe grid cannot bootstrap: storage and
+        # client nodes wait for an introducer FURL and give up.
         introducers = [n for n in self.nodes if "tahoe_introducer" in [r.value for r in n.roles]]
         if len(introducers) > 1:
             errors.append(
                 f"Found {len(introducers)} introducer nodes. "
                 "Having more than one introducer is unusual."
+            )
+        elif not introducers and not self.introducer_furl:
+            errors.append(
+                "No introducer configured: no node has the 'tahoe_introducer' role "
+                "and 'introducer_furl' is not set. Storage and client nodes will "
+                "not be able to join the grid."
+            )
+
+        # An introducer_furl, when present, must be a well-formed Tahoe FURL.
+        if self.introducer_furl:
+            from redundanet.storage.furl import validate_furl
+
+            if not validate_furl(self.introducer_furl):
+                errors.append(f"Invalid introducer_furl: {self.introducer_furl!r}")
+
+        # Short GPG key ids are brute-forceable (fingerprint-suffix collisions);
+        # nudge networks toward full 40-char fingerprints.
+        short_key_nodes = [n.name for n in self.nodes if n.gpg_key_id and len(n.gpg_key_id) < 40]
+        if short_key_nodes:
+            errors.append(
+                "Nodes using short GPG key ids instead of full 40-char fingerprints "
+                f"(collision-prone): {short_key_nodes}"
             )
 
         # Check storage node count vs shares_happy

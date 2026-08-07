@@ -73,6 +73,11 @@ test-e2e:
 e2e-bootstrap:
 	bash scripts/e2e-bootstrap.sh
 
+# Multi-node erasure-coding test: 3 storage nodes, shares 2-of-3, upload,
+# stop one node, download byte-identical. Same script CI runs.
+grid-test:
+	bash scripts/grid-test.sh
+
 coverage:
 	poetry run pytest --cov=redundanet --cov-report=html --cov-report=term-missing
 	@echo "Coverage report generated in htmlcov/"
