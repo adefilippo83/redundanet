@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Self
 
@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_CONFIG_DIR = Path("/etc/redundanet")
 
 
-class NodeRole(str, Enum):
+class NodeRole(StrEnum):
     """Available roles for a RedundaNet node."""
 
     TINC_VPN = "tinc_vpn"
@@ -26,7 +26,7 @@ class NodeRole(str, Enum):
     TAHOE_CLIENT = "tahoe_client"
 
 
-class NodeStatus(str, Enum):
+class NodeStatus(StrEnum):
     """Status of a node in the network."""
 
     ACTIVE = "active"

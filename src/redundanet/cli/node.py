@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -20,15 +20,15 @@ console = Console()
 @app.command("list")
 def list_nodes(
     manifest_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--manifest", "-m", help="Path to manifest file"),
     ] = None,
     role: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--role", "-r", help="Filter by role"),
     ] = None,
     status: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--status", "-s", help="Filter by status"),
     ] = None,
 ) -> None:
@@ -83,7 +83,7 @@ def list_nodes(
 def node_info(
     node_name: Annotated[str, typer.Argument(help="Name of the node")],
     manifest_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--manifest", "-m", help="Path to manifest file"),
     ] = None,
 ) -> None:
@@ -140,23 +140,23 @@ def add_node(
         typer.Option("--ip", "-i", prompt=True, help="Internal/VPN IP address"),
     ],
     public_ip: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--public-ip", "-p", help="Public IP address"),
     ] = None,
     gpg_key_id: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--gpg-key", "-g", help="GPG key ID"),
     ] = None,
     region: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--region", "-r", help="Geographic region"),
     ] = None,
     roles: Annotated[
-        Optional[list[str]],
+        list[str] | None,
         typer.Option("--role", help="Node roles (can be specified multiple times)"),
     ] = None,
     storage: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--storage", "-s", help="Storage contribution"),
     ] = None,
     publicly_accessible: Annotated[
@@ -164,7 +164,7 @@ def add_node(
         typer.Option("--public", help="Node is publicly accessible"),
     ] = False,
     manifest_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--manifest", "-m", help="Path to manifest file"),
     ] = None,
 ) -> None:
@@ -227,7 +227,7 @@ def add_node(
 def remove_node(
     node_name: Annotated[str, typer.Argument(help="Name of the node to remove")],
     manifest_path: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--manifest", "-m", help="Path to manifest file"),
     ] = None,
     force: Annotated[
@@ -270,23 +270,23 @@ def manage_keys(
         typer.Argument(help="Action: generate, export, import, list, publish, fetch"),
     ],
     node_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--name", "-n", help="Node name"),
     ] = None,
     email: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--email", "-e", help="Email address for the GPG key"),
     ] = None,
     key_id: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--key-id", "-k", help="Key ID for export/import operations"),
     ] = None,
     output_file: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--output", "-o", help="Output file for export"),
     ] = None,
     input_file: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--input", "-i", help="Input file for import"),
     ] = None,
 ) -> None:

@@ -99,9 +99,9 @@ class TestIPAllocation:
 
     def test_exhaustion_returns_none(self):
         manifest = process_join.default_manifest()
-        manifest["network"][
-            "vpn_network"
-        ] = "10.200.0.0/28"  # hosts .1-.14, all < .10 skipped except none
+        manifest["network"]["vpn_network"] = (
+            "10.200.0.0/28"  # hosts .1-.14, all < .10 skipped except none
+        )
         manifest["nodes"] = [
             {"name": f"n{i}", "internal_ip": f"10.200.0.{i}"} for i in range(10, 15)
         ]
