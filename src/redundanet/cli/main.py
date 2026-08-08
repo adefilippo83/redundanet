@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich import print as rprint
@@ -47,7 +47,7 @@ def version_callback(value: bool) -> None:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option(
             "--version",
             "-v",
@@ -61,7 +61,7 @@ def main(
         typer.Option("--debug", "-d", help="Enable debug logging"),
     ] = False,
     config_dir: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--config-dir", "-c", help="Configuration directory"),
     ] = None,
 ) -> None:
@@ -93,7 +93,7 @@ def init(
         ),
     ] = "1TB",
     manifest_repo: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--manifest-repo",
             prompt="Manifest repository URL (or press Enter to skip)",

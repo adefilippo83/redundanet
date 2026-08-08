@@ -28,8 +28,10 @@ ENV/
 env/
 .env
 
-# Poetry
-poetry.lock
+# Poetry: poetry.lock is COMMITTED on purpose (applications lock their
+# dependencies). Ignoring it left CI and the Docker images resolving fresh on
+# every run — unpinned tool versions in CI and the pyOpenSSL breakage in the
+# Tahoe images both came from that.
 
 # Testing
 .pytest_cache/

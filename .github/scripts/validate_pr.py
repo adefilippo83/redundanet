@@ -121,9 +121,7 @@ def validate(manifest_path: str) -> tuple[list[str], list[str]]:
                 continue
             node_ips.add(str(addr))
             if vpn_network is not None and addr not in vpn_network and field == "vpn_ip":
-                errors.append(
-                    f"Node {name or where}: vpn_ip {value} is outside {vpn_network}"
-                )
+                errors.append(f"Node {name or where}: vpn_ip {value} is outside {vpn_network}")
         for ip in node_ips:
             ip_owners.setdefault(ip, set()).add(name or where)
 

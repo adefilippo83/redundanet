@@ -7,7 +7,7 @@ docker-compose deployment (see :class:`redundanet.core.deployment.Deployment`).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -122,7 +122,7 @@ def storage_stop() -> None:
 def upload_file(
     source: Annotated[Path, typer.Argument(help="File to upload")],
     dest: Annotated[
-        Optional[str],
+        str | None,
         typer.Argument(
             help="Optional directory destination like 'home:report.pdf' "
             "(an alias from 'storage mkdir'). Omit for an unlinked capability.",
@@ -181,7 +181,7 @@ def download_file(
         typer.Argument(help="Capability (URI:...) or directory path like 'home:report.pdf'"),
     ],
     destination: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Argument(help="Local destination path"),
     ] = None,
 ) -> None:
