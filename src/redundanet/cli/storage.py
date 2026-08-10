@@ -309,6 +309,65 @@ def repair_file(
     _report_check(result)
 
 
+@app.command("renew")
+def renew_leases(
+    target: Annotated[
+        str | None,
+        typer.Argument(
+            help="Alias (e.g. 'home:') or capability to renew. Omit to renew every alias."
+        ),
+    ] = None,
+) -> None:
+    """Renew storage leases so shares are not garbage-collected.
+
+    Storage nodes expire shares whose lease is older than the network's lease
+    duration (default 90 days). The client container renews all aliases
+    automatically once a week; use this command for manual renewal or for bare
+    capabilities that are not linked into an alias.
+    """
+    deployment, settings = _deployment()
+    node_dir = str(settings.client_node_dir)
+
+    if target:
+        targets = [target]
+    else:
+        listing = deployment.exec(
+            settings.client_service, ["tahoe", "-d", node_dir, "list-aliases"]
+        )
+        if not listing.success:
+            console.print(
+                f"[red]Failed to list aliases:[/red] "
+                f"{listing.stderr.strip() or listing.stdout.strip()}"
+            )
+            raise typer.Exit(1)
+        targets = [
+            line.split(":", 1)[0].strip() + ":"
+            for line in listing.stdout.splitlines()
+            if ":" in line
+        ]
+        if not targets:
+            console.print("[dim]No aliases configured; nothing to renew.[/dim]")
+            return
+
+    failures = 0
+    for item in targets:
+        with console.status(f"[bold green]Renewing leases for {item}..."):
+            result = deployment.exec(
+                settings.client_service,
+                ["tahoe", "-d", node_dir, "deep-check", "--add-lease", item],
+                timeout=600,
+            )
+        if result.success:
+            console.print(f"[green]Renewed[/green] {item}")
+        else:
+            failures += 1
+            detail = (result.stderr.strip() or result.stdout.strip())[:200]
+            console.print(f"[red]Failed to renew {item}:[/red] {detail}")
+
+    if failures:
+        raise typer.Exit(1)
+
+
 @app.command("mount")
 def mount_storage(
     mountpoint: Annotated[

@@ -115,16 +115,28 @@ def init(
     )
 
     with console.status("[bold green]Initializing node..."):
-        # Create configuration directories
+        # Create configuration directories. The defaults (/etc/redundanet,
+        # /var/lib/redundanet) need root; on a workstation fall back to
+        # per-user directories instead of crashing. The persisted .env then
+        # records the data dir so every later command agrees on the location.
         settings = load_settings()
         config_dir = settings.config_dir
         data_dir = settings.data_dir
 
-        config_dir.mkdir(parents=True, exist_ok=True)
-        data_dir.mkdir(parents=True, exist_ok=True)
-        (data_dir / "manifest").mkdir(exist_ok=True)
-        (data_dir / "tinc").mkdir(exist_ok=True)
-        (data_dir / "tahoe").mkdir(exist_ok=True)
+        fell_back = False
+        try:
+            config_dir.mkdir(parents=True, exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            from redundanet.core.config import user_config_dir, user_data_dir
+
+            config_dir = user_config_dir()
+            data_dir = user_data_dir()
+            config_dir.mkdir(parents=True, exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
+            fell_back = True
+        for sub in ("manifest", "tinc", "tahoe"):
+            (data_dir / sub).mkdir(exist_ok=True)
 
         # Persist the configuration so later commands (sync, status, network)
         # can read it via load_settings() without re-passing flags.
@@ -132,12 +144,19 @@ def init(
         env_lines = [f"REDUNDANET_NODE_NAME={node_name}"]
         if manifest_repo:
             env_lines.append(f"REDUNDANET_MANIFEST_REPO={manifest_repo}")
+        if fell_back:
+            env_lines.append(f"REDUNDANET_DATA_DIR={data_dir}")
         try:
             config_env.write_text("\n".join(env_lines) + "\n")
             config_saved = True
         except OSError:
             config_saved = False
 
+        if fell_back:
+            console.print(
+                f"[yellow]Note:[/yellow] {settings.config_dir} is not writable "
+                "(no root); using per-user directories instead."
+            )
         console.print(f"[green]Created configuration directory:[/green] {config_dir}")
         console.print(f"[green]Created data directory:[/green] {data_dir}")
         if config_saved:

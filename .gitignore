@@ -28,6 +28,9 @@ ENV/
 env/
 .env
 
+# Local bootstrap-hub state (GPG keyring + exported private key)
+.bootstrap/
+
 # Poetry: poetry.lock is COMMITTED on purpose (applications lock their
 # dependencies). Ignoring it left CI and the Docker images resolving fresh on
 # every run — unpinned tool versions in CI and the pyOpenSSL breakage in the
