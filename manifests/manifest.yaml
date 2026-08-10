@@ -1,18 +1,9 @@
-# RedundaNet network manifest — fresh network, anchored on the bootstrap hub.
-#
-# Genesis state: one node (the hub) providing the Tinc VPN entry point and the
-# Tahoe introducer. Storage nodes join via https://redundanet.com/join.html.
-# The gpg_key_id / public_ip placeholders below are filled by
-# scripts/bootstrap-hub.sh; introducer_furl is filled after the hub's first
-# boot (see docs/bootstrap-hub.md).
 network:
   name: redundanet
   version: 2.0.0
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
   tahoe:
-    # Genesis encoding for a small fleet: raise via PR as storage nodes join
-    # (changes apply to NEW uploads only).
     shares_needed: 1
     shares_happy: 1
     shares_total: 2
@@ -22,11 +13,8 @@ nodes:
 - name: hub-fly
   internal_ip: 10.100.0.1
   vpn_ip: 10.100.0.1
-  # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the dedicated IPv4
   public_ip: 149.248.198.15
-  # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the hub key's
-  # full 40-char fingerprint
-  gpg_key_id: 'F9151151771C34F4E23BB64BF16283B50D5AD27F'
+  gpg_key_id: F9151151771C34F4E23BB64BF16283B50D5AD27F
   region: europe
   status: active
   roles:
@@ -38,3 +26,19 @@ nodes:
     tahoe_client: 3456
     tahoe_introducer: 3458
   is_publicly_accessible: true
+- name: node-2680cd08
+  internal_ip: 10.100.0.10
+  vpn_ip: 10.100.0.10
+  gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 900GB
+  is_publicly_accessible: false
