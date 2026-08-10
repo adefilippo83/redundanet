@@ -76,8 +76,13 @@ def resolve_peer_pubkey(
     the manifest's gpg_key_id — a mismatched key would let an attacker hijack
     the peer's Tinc identity.
     """
-    local = manifest_dir / "gpg" / f"{gpg_key_id}.asc"
-    if local.exists():
+    # The manifest dir may be a plain dir (gpg/) or a repo clone (manifests/gpg/).
+    for local in (
+        manifest_dir / "gpg" / f"{gpg_key_id}.asc",
+        manifest_dir / "manifests" / "gpg" / f"{gpg_key_id}.asc",
+    ):
+        if not local.exists():
+            continue
         armored = local.read_text()
         if armored_key_matches_id(armored, gpg_key_id):
             logger.debug("Using local GPG public key", gpg_key_id=gpg_key_id)

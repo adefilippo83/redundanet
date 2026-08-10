@@ -61,12 +61,15 @@ def get_introducer_furl() -> str | None:
             logger.info("Found introducer FURL in manifest volume")
             return furl
 
-    # Check manifest.yaml (top-level introducer_furl key)
-    manifest_file = manifest_dir / "manifest.yaml"
-    if manifest_file.exists():
+    # Check manifest.yaml (top-level introducer_furl key); the manifest dir may
+    # be a plain dir or a full repo clone (manifests/manifest.yaml).
+    from redundanet.core.manifest import locate_manifest
+
+    manifest_file = locate_manifest(manifest_dir)
+    if manifest_file is not None:
         import yaml
 
-        with open(manifest_file) as f:
+        with manifest_file.open() as f:
             manifest = yaml.safe_load(f) or {}
 
         furl = manifest.get("introducer_furl")

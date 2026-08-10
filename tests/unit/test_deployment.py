@@ -81,7 +81,12 @@ def test_exec_builds_command(tmp_path, monkeypatch):
     assert cmd[-5:] == ["tahoe", "-d", "/d", "put", "/f"]
 
 
-def test_git_sync_clone(tmp_path, monkeypatch):
+def test_git_sync_initializes_in_place_never_clones(tmp_path, monkeypatch):
+    """git_sync must work in a NON-EMPTY dir (the shared manifest volume can
+    already hold e.g. introducer.furl) — `git clone` would refuse it."""
+    target = tmp_path / "manifest"
+    target.mkdir()
+    (target / "introducer.furl").write_text("pb://x")  # concurrent writer won the race
     calls: list[list[str]] = []
 
     def fake(command, **kwargs):
@@ -89,12 +94,16 @@ def test_git_sync_clone(tmp_path, monkeypatch):
         return CommandResult(0, "", "", "")
 
     monkeypatch.setattr("redundanet.core.deployment.run_command", fake)
-    git_sync("https://example.com/repo.git", "main", tmp_path / "manifest")
-    assert calls[-1][:2] == ["git", "clone"]
-    assert "main" in calls[-1]
+    result = git_sync("https://example.com/repo.git", "main", target)
+
+    assert result.success
+    assert not any("clone" in c for c in calls)
+    assert [*["git", "-C", str(target)], "init", "-q"] in calls
+    assert any("fetch" in c and "main" in c for c in calls)
+    assert calls[-1][-2:] == ["--hard", "FETCH_HEAD"]
 
 
-def test_git_sync_pull_existing(tmp_path, monkeypatch):
+def test_git_sync_existing_repo_skips_init(tmp_path, monkeypatch):
     target = tmp_path / "manifest"
     (target / ".git").mkdir(parents=True)
     calls: list[list[str]] = []
@@ -105,5 +114,46 @@ def test_git_sync_pull_existing(tmp_path, monkeypatch):
 
     monkeypatch.setattr("redundanet.core.deployment.run_command", fake)
     git_sync("repo", "develop", target)
-    assert ["git", "-C", str(target), "fetch", "origin"] in calls
-    assert any("reset" in c for c in calls)
+    assert not any("init" in c for c in calls)
+    assert any("fetch" in c and "develop" in c for c in calls)
+    assert calls[-1][-2:] == ["--hard", "FETCH_HEAD"]
+
+
+def test_git_sync_real_end_to_end(tmp_path):
+    """Real git: sync from a local origin into a dir pre-polluted with an
+    untracked file; the file must survive and the checkout must appear."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    run = __import__("subprocess").run
+    run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    (origin / "manifests").mkdir()
+    (origin / "manifests" / "manifest.yaml").write_text("network: {}\n")
+    run(["git", "-C", str(origin), "add", "-A"], check=True)
+    run(
+        [
+            "git",
+            "-C",
+            str(origin),
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+        check=True,
+    )
+
+    target = tmp_path / "manifest"
+    target.mkdir()
+    (target / "introducer.furl").write_text("pb://x")
+
+    result = git_sync(str(origin), "main", target)
+    assert result.success, result.stderr
+    assert (target / "manifests" / "manifest.yaml").exists()
+    assert (target / "introducer.furl").read_text() == "pb://x"  # untracked survives
+
+    # Second sync (repo now exists) also works.
+    assert git_sync(str(origin), "main", target).success
