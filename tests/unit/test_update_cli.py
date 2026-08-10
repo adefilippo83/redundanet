@@ -55,7 +55,7 @@ def patch_deployment(monkeypatch):
 
     def install(dep):
         holder["dep"] = dep
-        monkeypatch.setattr("redundanet.cli.main.Deployment", lambda settings: dep)
+        monkeypatch.setattr("redundanet.cli.main.Deployment", lambda _settings: dep)
         return dep
 
     holder["install"] = install
@@ -91,7 +91,7 @@ class TestUpdate:
         assert dep.recreated is None
 
     def test_no_running_services_errors(self, patch_deployment):
-        dep = patch_deployment["install"](FakeDeployment({}, {}, running=[]))
+        patch_deployment["install"](FakeDeployment({}, {}, running=[]))
         result = runner.invoke(app, ["update", "--yes"])
         assert result.exit_code == 1
         assert "No running services" in result.output
