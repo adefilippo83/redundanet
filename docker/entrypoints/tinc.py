@@ -86,14 +86,19 @@ def main() -> None:
             public_ip = ""
             logger.warning("Could not detect public IP")
 
-    # Load the manifest (peers + ports).
+    # Load the manifest (peers + ports). locate_manifest handles both a plain
+    # manifest dir and a full repo clone (manifests/manifest.yaml).
+    from redundanet.core.manifest import locate_manifest
+
     nodes: list[dict] = []
-    manifest_file = MANIFEST_DIR / "manifest.yaml"
-    if manifest_file.exists():
+    manifest_file = locate_manifest(MANIFEST_DIR)
+    if manifest_file is not None:
         import yaml
 
         manifest = yaml.safe_load(manifest_file.read_text()) or {}
         nodes = manifest.get("nodes", [])
+    else:
+        logger.warning("No manifest found in %s; starting with no peers", str(MANIFEST_DIR))
 
     self_entry = next((n for n in nodes if n.get("name") == node_name), {})
     self_port = int(self_entry.get("ports", {}).get("tinc", 655))

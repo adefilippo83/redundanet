@@ -1,4 +1,10 @@
-# Tahoe-LAFS Client container for RedundaNet
+# RedundaNet bootstrap hub: Tinc VPN entry point + Tahoe introducer in ONE image.
+#
+# Built for single-VM platforms (fly.io Machines, any small VPS with Docker):
+# a VM is one network namespace, which is exactly what the compose stack
+# emulates with `network_mode: service:tinc` — so tincd, the manifest-sync
+# sidecar, the Tahoe introducer, and the FURL publisher all run here under one
+# supervisord. See docs/bootstrap-hub.md for the deployment runbook.
 FROM python:3.11-slim AS builder
 
 # piwheels supplies prebuilt 32-bit ARM (armv7/armv6) wheels that PyPI lacks;
@@ -20,18 +26,19 @@ RUN poetry config virtualenvs.create false \
     && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Install Tahoe-LAFS
 # pyOpenSSL >= 25 removed OpenSSL.crypto.X509Req, which foolscap (Tahoe's RPC
 # layer) still uses via Twisted's certificateRequest — an unpinned install
-# crashes every Tahoe node at startup with
-# "AttributeError: module 'OpenSSL.crypto' has no attribute 'X509Req'".
-# service-identity is pinned alongside because its newer releases require a
-# cryptography newer than the one pyopenssl<25 resolves to.
+# crashes every Tahoe node at startup. service-identity is pinned alongside
+# because its newer releases require a newer cryptography than pyopenssl<25
+# resolves to.
 RUN pip install "tahoe-lafs==1.20.0" "pyopenssl<25" "service-identity<25"
 
+# Final stage
 FROM python:3.11-slim
 
-LABEL org.opencontainers.image.title="RedundaNet Tahoe Client"
-LABEL org.opencontainers.image.description="Tahoe-LAFS client for RedundaNet"
+LABEL org.opencontainers.image.title="RedundaNet Bootstrap Hub"
+LABEL org.opencontainers.image.description="Tinc VPN entry node + Tahoe introducer for RedundaNet"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -39,13 +46,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     REDUNDANET_LOG_LEVEL=INFO
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libffi8 \
-    fuse \
+    tinc \
+    gnupg \
     iproute2 \
     iputils-ping \
     netcat-openbsd \
     procps \
+    git \
     supervisor \
+    libffi8 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
@@ -53,18 +62,24 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
 COPY src/ ./src/
-COPY docker/entrypoints/tahoe_client.py ./entrypoint.py
-COPY docker/entrypoints/lease_renew.sh ./lease_renew.sh
-COPY docker/supervisord/tahoe-client.conf /etc/supervisor/conf.d/tahoe-client.conf
+COPY docker/entrypoints/tinc.py ./entrypoint.py
+COPY docker/entrypoints/manifest_sync.py ./manifest_sync.py
+COPY docker/entrypoints/tahoe_introducer.py ./introducer_entrypoint.py
+COPY docker/entrypoints/hub_boot.sh ./hub_boot.sh
+COPY docker/supervisord/bootstrap.conf /etc/supervisor/conf.d/bootstrap.conf
+RUN chmod +x ./hub_boot.sh
 
 RUN mkdir -p /var/lib/redundanet/manifest \
-    /var/lib/tahoe-client \
+    /var/lib/tahoe-introducer \
     /var/log/redundanet \
-    /mnt/redundanet
+    /etc/tinc/redundanet/hosts \
+    /root/.gnupg
 
-EXPOSE 3456/tcp
+EXPOSE 655/tcp 655/udp 3458/tcp
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-    CMD nc -z 127.0.0.1 4456 || exit 1
+# Healthy = the VPN interface is up AND the introducer published its FURL.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+    CMD ip link show redundanet | grep -q UP \
+        && test -s /var/lib/tahoe-introducer/private/introducer.furl || exit 1
 
-CMD ["supervisord", "-c", "/etc/supervisor/conf.d/tahoe-client.conf"]
+CMD ["/app/hub_boot.sh"]

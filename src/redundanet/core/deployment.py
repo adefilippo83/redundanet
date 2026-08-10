@@ -182,12 +182,26 @@ class Deployment:
 
 
 def git_sync(repo: str, branch: str, target_dir: Path) -> CommandResult:
-    """Clone or hard-reset a manifest git repository into ``target_dir``."""
-    if (target_dir / ".git").exists():
-        run_command(["git", "-C", str(target_dir), "fetch", "origin"], check=False)
-        return run_command(
-            ["git", "-C", str(target_dir), "reset", "--hard", f"origin/{branch}"],
-            check=False,
-        )
-    target_dir.mkdir(parents=True, exist_ok=True)
-    return run_command(["git", "clone", "-b", branch, repo, str(target_dir)], check=False)
+    """Sync a manifest git repository into ``target_dir`` (init/fetch/reset).
+
+    Deliberately avoids ``git clone``: the target may already contain
+    unrelated files (e.g. the shared manifest volume, where the introducer
+    FURL is published by a concurrent process), and clone refuses non-empty
+    directories — a race that left a live hub unable to sync at all.
+    Initializing in place and hard-resetting to the fetched branch works for
+    empty, non-empty, and already-cloned directories alike; untracked files
+    are left alone.
+    """
+    git = ["git", "-C", str(target_dir)]
+    if not (target_dir / ".git").exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        result = run_command([*git, "init", "-q"], check=False)
+        if not result.success:
+            return result
+    # add-or-update the remote (idempotent across both paths)
+    run_command([*git, "remote", "add", "origin", repo], check=False)
+    run_command([*git, "remote", "set-url", "origin", repo], check=False)
+    result = run_command([*git, "fetch", "-q", "origin", branch], check=False)
+    if not result.success:
+        return result
+    return run_command([*git, "reset", "--hard", "FETCH_HEAD"], check=False)

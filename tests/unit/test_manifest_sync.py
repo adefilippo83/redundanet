@@ -130,6 +130,22 @@ class TestRunOnce:
             or "ConnectTo = peer_a" not in (config_dir / "tinc.conf").read_text()
         )
 
+    def test_repo_clone_layout_is_found(self, tmp_path, monkeypatch, peer_key):
+        """When the manifest dir is a repo clone, the manifest lives under
+        manifests/ — the sync must still find it (the bug that left the live
+        hub blind to new peers)."""
+        monkeypatch.setenv("REDUNDANET_INTERNAL_VPN_IP", "10.100.0.1")
+        manifest_dir, config_dir = write_env(tmp_path, peer_key, include_peer=True)
+        # Move the manifest into the repo-clone layout.
+        (manifest_dir / "manifests").mkdir()
+        (manifest_dir / "manifest.yaml").rename(manifest_dir / "manifests" / "manifest.yaml")
+
+        changed = manifest_sync.run_once(
+            "self-node", "", "main", manifest_dir, config_dir, reload_tincd=lambda: True
+        )
+        assert changed
+        assert (config_dir / "hosts" / "peer_a").exists()
+
     def test_missing_manifest_is_a_noop(self, tmp_path):
         changed = manifest_sync.run_once(
             "self-node",

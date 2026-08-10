@@ -80,6 +80,8 @@ services:
       - REDUNDANET_SHARES_NEEDED=${SHARES_NEEDED:-3}
       - REDUNDANET_SHARES_HAPPY=${SHARES_HAPPY:-7}
       - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
+      - REDUNDANET_EXPIRE_ENABLED=${EXPIRE_ENABLED:-true}
+      - REDUNDANET_LEASE_DURATION=${LEASE_DURATION:-90 days}
     volumes:
       - tahoe-storage:/var/lib/tahoe-storage
       - storage-data:/data/storage
