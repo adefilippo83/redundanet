@@ -5,7 +5,7 @@ network:
   vpn_network: 10.100.0.0/16
   tahoe:
     shares_needed: 1
-    shares_happy: 1
+    shares_happy: 2
     shares_total: 2
     reserved_space: 1G
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
