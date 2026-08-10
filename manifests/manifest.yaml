@@ -23,10 +23,10 @@ nodes:
   internal_ip: 10.100.0.1
   vpn_ip: 10.100.0.1
   # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the dedicated IPv4
-  public_ip: 0.0.0.0
+  public_ip: 149.248.198.15
   # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the hub key's
   # full 40-char fingerprint
-  gpg_key_id: '0000000000000000000000000000000000000000'
+  gpg_key_id: 'F9151151771C34F4E23BB64BF16283B50D5AD27F'
   region: europe
   status: active
   roles:

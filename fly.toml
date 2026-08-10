@@ -19,7 +19,7 @@ primary_region = "fra"
   # inside the machine sees the egress IP, not the anycast address; harmless
   # for the hub itself — peers use the manifest's public_ip — but explicit is
   # cleaner).
-  REDUNDANET_PUBLIC_IP = "auto"
+  REDUNDANET_PUBLIC_IP = "149.248.198.15"
   REDUNDANET_MANIFEST_REPO = "https://github.com/adefilippo83/redundanet.git"
   REDUNDANET_MANIFEST_BRANCH = "main"
   REDUNDANET_SYNC_INTERVAL = "300"
