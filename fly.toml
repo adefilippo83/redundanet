@@ -42,6 +42,12 @@ primary_region = "fra"
   [[services.ports]]
     port = 655
 
+  # Fly ignores the image's Docker HEALTHCHECK; checks must live here.
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"

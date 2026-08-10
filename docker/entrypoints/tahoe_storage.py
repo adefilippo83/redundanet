@@ -107,6 +107,16 @@ def main():
     storage_dir = Path("/var/lib/tahoe-storage")
     storage_data_dir = Path("/data/storage")
 
+    # Fresh ext4 volumes contain lost+found, which makes `tahoe create-node`
+    # refuse the "non-empty" base directory (see tahoe_introducer.py).
+    lost_found = storage_dir / "lost+found"
+    if lost_found.is_dir():
+        try:
+            lost_found.rmdir()
+            logger.info("Removed empty lost+found from fresh volume")
+        except OSError:
+            logger.warning("lost+found is not empty; not touching it")
+
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
         if not wait_for_vpn(vpn_ip):

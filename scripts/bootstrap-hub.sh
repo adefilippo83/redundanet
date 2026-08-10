@@ -46,7 +46,9 @@ command -v poetry >/dev/null || { echo "poetry is required (run from the repo)" 
 log "Step 1/4 — Generate the hub GPG identity (RSA-4096)"
 mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
 
-FPR="$(gpg --list-keys --with-colons "$EMAIL" 2>/dev/null | awk -F: '/^fpr:/{print $10; exit}')"
+# gpg exits non-zero when the key doesn't exist yet (the normal first run) —
+# guard it so set -e/pipefail don't abort the probe.
+FPR="$( (gpg --list-keys --with-colons "$EMAIL" 2>/dev/null || true) | awk -F: '/^fpr:/{print $10; exit}')"
 if [ -n "$FPR" ]; then
   ok "Reusing existing key for $EMAIL: $FPR"
 else
