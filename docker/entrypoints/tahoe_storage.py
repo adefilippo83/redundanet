@@ -94,6 +94,8 @@ def main():
     shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
     shares_happy = int(os.environ.get("REDUNDANET_SHARES_HAPPY", "7"))
     shares_total = int(os.environ.get("REDUNDANET_SHARES_TOTAL", "10"))
+    expire_enabled = os.environ.get("REDUNDANET_EXPIRE_ENABLED", "true").lower() == "true"
+    lease_duration = os.environ.get("REDUNDANET_LEASE_DURATION", "90 days")
     test_mode = os.environ.get("REDUNDANET_TEST_MODE", "false").lower() == "true"
 
     if not node_name:
@@ -150,6 +152,8 @@ def main():
         shares_needed=shares_needed,
         shares_happy=shares_happy,
         shares_total=shares_total,
+        expire_enabled=expire_enabled,
+        lease_duration=lease_duration,
     )
     storage = TahoeStorage(config)
 
