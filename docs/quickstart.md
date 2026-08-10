@@ -264,9 +264,34 @@ docker compose --profile introducer --profile storage up -d
 
 ### Can't Upload Files
 
-1. **Check storage nodes** - Need at least 7 online for successful uploads
+1. **Check storage nodes** - Enough servers must be online to satisfy
+   `shares.happy` (see the network's manifest)
 2. **Check client logs**: `docker compose logs tahoe-client`
 3. **Verify connection**: `redundanet network peers`
+
+### Client shows "0 shares" / "no recoverable versions" after an update
+
+The `tahoe-storage`, `tahoe-client`, and `tahoe-introducer` containers share the
+**`tinc` container's network namespace** (`network_mode: service:tinc`) — that is
+how they reach the VPN. If the `tinc` container is **recreated** (for example by
+`docker compose pull` fetching a new image), the tahoe containers stay attached
+to the *old*, now-deleted namespace and lose all network — the client then
+reports `0 shares` or `no recoverable versions` even though the data is safe on
+disk.
+
+Whenever the tinc image changes, recreate the tahoe containers so they rejoin the
+current namespace:
+
+```bash
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile storage --profile client \
+  up -d --force-recreate
+```
+
+A plain `docker restart tahoe-client` will **fail** in this state
+(`joining network namespace ... No such container`) — use `up -d --force-recreate`
+(or a full `down` then `up`). After the tinc containers restart, allow a minute
+for the mesh to reconverge before the client reconnects to the grid.
 
 ### General Debugging
 
