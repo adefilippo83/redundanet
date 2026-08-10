@@ -81,6 +81,47 @@ def test_exec_builds_command(tmp_path, monkeypatch):
     assert cmd[-5:] == ["tahoe", "-d", "/d", "put", "/f"]
 
 
+class FakeCompose:
+    """Deployment.compose stand-in scripted by subcommand."""
+
+    def __init__(self, responses: dict) -> None:
+        self.responses = responses
+        self.calls: list[tuple[str, ...]] = []
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append(args)
+        for key, result in self.responses.items():
+            if args[: len(key)] == key:
+                return result() if callable(result) else result
+        return CommandResult(0, "", "", "")
+
+
+def test_image_ids_parses_json_array(tmp_path, monkeypatch):
+    dep = Deployment(make_settings(tmp_path))
+    payload = '[{"Service":"tinc","ID":"sha256:aaa"},{"Service":"tahoe-storage","ID":"sha256:bbb"}]'
+    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    assert dep.image_ids() == {"tinc": "sha256:aaa", "tahoe-storage": "sha256:bbb"}
+
+
+def test_image_ids_parses_ndjson(tmp_path):
+    dep = Deployment(make_settings(tmp_path))
+    payload = '{"Service":"tinc","ID":"a"}\n{"Service":"tahoe-storage","ID":"b"}'
+    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    assert dep.image_ids() == {"tinc": "a", "tahoe-storage": "b"}
+
+
+def test_recreate_forces_and_names_services(tmp_path):
+    dep = Deployment(make_settings(tmp_path))
+    fake = FakeCompose({})
+    dep.compose = fake  # type: ignore[assignment]
+    dep.recreate(["tinc", "tahoe-storage", "tahoe-client"])
+    call = fake.calls[-1]
+    assert call[:3] == ("up", "-d", "--force-recreate")
+    # tinc named first so it is recreated before the tahoe services (netns).
+    assert call[3] == "tinc"
+    assert "tahoe-storage" in call and "tahoe-client" in call
+
+
 def test_git_sync_initializes_in_place_never_clones(tmp_path, monkeypatch):
     """git_sync must work in a NON-EMPTY dir (the shared manifest volume can
     already hold e.g. introducer.furl) — `git clone` would refuse it."""

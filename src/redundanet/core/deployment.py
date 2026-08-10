@@ -160,6 +160,48 @@ class Deployment:
         """Start (creating if needed) all or some services, detached."""
         return self.compose("up", "-d", *(services or []), timeout=300)
 
+    def running_services(self) -> list[str]:
+        """Names of the services whose containers currently exist (any state)."""
+        return [s.name for s in self.ps() if s.name]
+
+    def image_ids(self) -> dict[str, str]:
+        """Map each service to the image ID its container is using."""
+        result = self.compose("images", "--format", "json")
+        ids: dict[str, str] = {}
+        if not result.success:
+            return ids
+        try:
+            parsed: Any = json.loads(result.stdout or "[]")
+        except json.JSONDecodeError:
+            # Older compose emits one JSON object per line.
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ids[str(entry.get("Service", ""))] = str(entry.get("ID", ""))
+            return ids
+        for entry in parsed if isinstance(parsed, list) else [parsed]:
+            ids[str(entry.get("Service", ""))] = str(entry.get("ID", ""))
+        return ids
+
+    def pull(self, services: list[str] | None = None) -> CommandResult:
+        """Pull the latest images for all or some services."""
+        return self.compose("pull", *(services or []), timeout=1800)
+
+    def recreate(self, services: list[str]) -> CommandResult:
+        """Force-recreate the named services from their current images.
+
+        Naming the services explicitly auto-enables their compose profiles, and
+        depends_on ordering means tinc is recreated before the tahoe services —
+        so those rejoin tinc's *new* network namespace instead of the dead one
+        (see docs/quickstart.md: '0 shares after an update').
+        """
+        return self.compose("up", "-d", "--force-recreate", *services, timeout=600)
+
     def start(self, services: list[str]) -> CommandResult:
         """Start existing service containers."""
         return self.compose("start", *services)
