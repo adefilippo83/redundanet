@@ -65,6 +65,7 @@ COPY src/ ./src/
 COPY docker/entrypoints/tinc.py ./entrypoint.py
 COPY docker/entrypoints/manifest_sync.py ./manifest_sync.py
 COPY docker/entrypoints/tahoe_introducer.py ./introducer_entrypoint.py
+COPY docker/entrypoints/status_server.py ./status_server.py
 COPY docker/entrypoints/hub_boot.sh ./hub_boot.sh
 COPY docker/supervisord/bootstrap.conf /etc/supervisor/conf.d/bootstrap.conf
 RUN chmod +x ./hub_boot.sh
