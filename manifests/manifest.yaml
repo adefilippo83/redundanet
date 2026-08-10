@@ -1,110 +1,40 @@
+# RedundaNet network manifest — fresh network, anchored on the bootstrap hub.
+#
+# Genesis state: one node (the hub) providing the Tinc VPN entry point and the
+# Tahoe introducer. Storage nodes join via https://redundanet.com/join.html.
+# The gpg_key_id / public_ip placeholders below are filled by
+# scripts/bootstrap-hub.sh; introducer_furl is filled after the hub's first
+# boot (see docs/bootstrap-hub.md).
 network:
   name: redundanet
   version: 2.0.0
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
   tahoe:
-    shares_needed: 3
-    shares_happy: 7
-    shares_total: 10
+    # Genesis encoding for a small fleet: raise via PR as storage nodes join
+    # (changes apply to NEW uploads only).
+    shares_needed: 1
+    shares_happy: 1
+    shares_total: 2
     reserved_space: 1G
 introducer_furl: null
 nodes:
-- name: node-dd2be971
-  internal_ip: 10.100.0.10
-  vpn_ip: 10.100.0.10
-  gpg_key_id: 333BEC68DD2BE971
+- name: hub-fly
+  internal_ip: 10.100.0.1
+  vpn_ip: 10.100.0.1
+  # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the dedicated IPv4
+  public_ip: 0.0.0.0
+  # PLACEHOLDER — replaced by scripts/bootstrap-hub.sh with the hub key's
+  # full 40-char fingerprint
+  gpg_key_id: '0000000000000000000000000000000000000000'
   region: europe
-  status: pending
+  status: active
   roles:
   - tinc_vpn
-  - tahoe_storage
+  - tahoe_introducer
   ports:
     tinc: 655
     tahoe_storage: 3457
     tahoe_client: 3456
     tahoe_introducer: 3458
-  storage_contribution: 100GB
-  is_publicly_accessible: false
-- name: node-8285cf34
-  internal_ip: 10.100.0.11
-  vpn_ip: 10.100.0.11
-  gpg_key_id: 5A1494688285CF34
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
   is_publicly_accessible: true
-  public_ip: 168.119.173.11
-- name: node-175328d4
-  internal_ip: 10.100.0.12
-  vpn_ip: 10.100.0.12
-  gpg_key_id: 88139A43175328D4
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: false
-- name: node-68ca04b0
-  internal_ip: 10.100.0.13
-  vpn_ip: 10.100.0.13
-  gpg_key_id: F8A1B80668CA04B0
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: false
-- name: node-cafe1234
-  internal_ip: 10.100.0.14
-  vpn_ip: 10.100.0.14
-  gpg_key_id: DEADBEEFCAFE1234
-  region: unknown
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 100GB
-  is_publicly_accessible: false
-- name: node-6163c200
-  internal_ip: 10.100.0.15
-  vpn_ip: 10.100.0.15
-  gpg_key_id: 9490E9D46163C200
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: true
-  public_ip: 167.233.118.253
