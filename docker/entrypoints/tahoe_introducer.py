@@ -46,6 +46,18 @@ def create_introducer(node_dir: Path, nickname: str, vpn_ip: str, port: int) -> 
         logger.info("Introducer already configured")
         return True
 
+    # Fresh ext4 volumes (fly.io mounts, bare-metal disks) contain a
+    # lost+found directory, which makes `tahoe create-introducer` refuse the
+    # "non-empty" base directory. It is empty on a fresh volume; if fsck ever
+    # put recovered files in it, leave it alone and let tahoe complain.
+    lost_found = node_dir / "lost+found"
+    if lost_found.is_dir():
+        try:
+            lost_found.rmdir()
+            logger.info("Removed empty lost+found from fresh volume")
+        except OSError:
+            logger.warning("lost+found is not empty; not touching it")
+
     logger.info("Creating new Tahoe introducer", nickname=nickname)
 
     # Create the introducer node structure

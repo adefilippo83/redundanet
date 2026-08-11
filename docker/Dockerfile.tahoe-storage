@@ -53,6 +53,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY src/ ./src/
 COPY docker/entrypoints/tahoe_storage.py ./entrypoint.py
+COPY docker/entrypoints/share_census.py ./share_census.py
 COPY docker/supervisord/tahoe-storage.conf /etc/supervisor/conf.d/tahoe-storage.conf
 
 RUN mkdir -p /var/lib/redundanet/manifest \
