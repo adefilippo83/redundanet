@@ -368,6 +368,142 @@ def renew_leases(
         raise typer.Exit(1)
 
 
+SFTP_ACCOUNTS = "/var/lib/tahoe-client/private/sftp_accounts"
+
+
+def parse_pubkey(pubkey: str) -> str:
+    """Return the 'ssh-rsa <blob>' pair from a public key line, or raise."""
+    parts = pubkey.split()
+    if len(parts) < 2 or not parts[0].startswith(("ssh-", "ecdsa-")):
+        raise ValueError("not a valid SSH public key (expected 'ssh-rsa AAAA...')")
+    return f"{parts[0]} {parts[1]}"
+
+
+def _sftp_root_cap(deployment: Deployment, settings: AppSettings) -> str:
+    """The DIR2 capability of the dedicated 'sftp' alias, creating it if needed."""
+    node_dir = str(settings.client_node_dir)
+    listing = deployment.exec(settings.client_service, ["tahoe", "-d", node_dir, "list-aliases"])
+    for line in listing.stdout.splitlines() if listing.success else []:
+        name, _, cap = line.partition(":")
+        if name.strip() == "sftp" and cap.strip().startswith("URI:"):
+            return cap.strip()
+    created = deployment.exec(
+        settings.client_service, ["tahoe", "-d", node_dir, "create-alias", "sftp"]
+    )
+    if not created.success:
+        raise RuntimeError(created.stderr.strip() or created.stdout.strip())
+    listing = deployment.exec(settings.client_service, ["tahoe", "-d", node_dir, "list-aliases"])
+    for line in listing.stdout.splitlines():
+        name, _, cap = line.partition(":")
+        if name.strip() == "sftp":
+            return cap.strip()
+    raise RuntimeError("could not resolve the 'sftp' alias after creating it")
+
+
+sftp_app = typer.Typer(help="SFTP frontend: mount the grid as a filesystem")
+app.add_typer(sftp_app, name="sftp")
+
+
+@sftp_app.command("adduser")
+def sftp_adduser(
+    user: Annotated[str, typer.Option("--user", "-u", help="SFTP username")],
+    pubkey_file: Annotated[
+        Path, typer.Argument(help="Path to the user's SSH public key (e.g. ~/.ssh/id_ed25519.pub)")
+    ],
+) -> None:
+    """Grant an SSH public key SFTP access to the shared 'sftp' directory.
+
+    Requires SFTP to be enabled on the node (SFTP_ENABLED=true in the .env, then
+    recreate the stack). The user then connects with:
+        sftp -P <port> <user>@<node-lan-ip>
+    """
+    if not pubkey_file.exists():
+        console.print(f"[red]Error:[/red] public key file not found: {pubkey_file}")
+        raise typer.Exit(1)
+    try:
+        keypair = parse_pubkey(pubkey_file.read_text())
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+    deployment, settings = _deployment()
+    # Confirm SFTP is actually enabled (the accounts file only exists then).
+    check = deployment.exec(settings.client_service, ["test", "-f", SFTP_ACCOUNTS])
+    if not check.success:
+        console.print(
+            "[red]SFTP is not enabled on this node.[/red]\n"
+            "Enable it first: set [cyan]SFTP_ENABLED=true[/cyan] (and "
+            "[cyan]SFTP_BIND=0.0.0.0[/cyan] for LAN access) in "
+            "/opt/redundanet/.env, then [cyan]redundanet update[/cyan] "
+            "(or recreate the stack)."
+        )
+        raise typer.Exit(1)
+
+    try:
+        rootcap = _sftp_root_cap(deployment, settings)
+    except RuntimeError as e:
+        console.print(f"[red]Error preparing the sftp directory:[/red] {e}")
+        raise typer.Exit(1) from None
+
+    # Remove any existing line for this user, then append the new one.
+    line = f"{user} {keypair} {rootcap}"
+    script = (
+        f"touch {SFTP_ACCOUNTS}; "
+        f"grep -v '^{user} ' {SFTP_ACCOUNTS} > {SFTP_ACCOUNTS}.tmp || true; "
+        f"mv {SFTP_ACCOUNTS}.tmp {SFTP_ACCOUNTS}; "
+        f"printf '%s\\n' {line!r} >> {SFTP_ACCOUNTS}"
+    )
+    result = deployment.exec(settings.client_service, ["sh", "-c", script])
+    if not result.success:
+        console.print(f"[red]Failed to write account:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
+
+    with console.status("[bold green]Restarting client to load the account..."):
+        deployment.compose("restart", settings.client_service)
+    console.print(
+        f"[green]SFTP access granted to [cyan]{user}[/cyan][/green] on the 'sftp:' directory."
+    )
+    console.print(
+        "\nConnect (from a machine on the node's LAN, default port 8022):\n"
+        f"  [cyan]sftp -P 8022 {user}@<node-lan-ip>[/cyan]\n"
+        f"  or mount it:  [cyan]sshfs -p 8022 {user}@<node-lan-ip>:/ /mnt/grid[/cyan]"
+    )
+
+
+@sftp_app.command("listusers")
+def sftp_listusers() -> None:
+    """List the SFTP usernames configured on this node."""
+    deployment, settings = _deployment()
+    result = deployment.exec(settings.client_service, ["cat", SFTP_ACCOUNTS])
+    if not result.success:
+        console.print("[yellow]SFTP is not enabled (no accounts file).[/yellow]")
+        raise typer.Exit(1)
+    users = [
+        line.split()[0]
+        for line in result.stdout.splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    console.print("[bold]SFTP users:[/bold] " + (", ".join(users) if users else "[dim]none[/dim]"))
+
+
+@sftp_app.command("removeuser")
+def sftp_removeuser(
+    user: Annotated[str, typer.Option("--user", "-u", help="SFTP username to remove")],
+) -> None:
+    """Remove an SFTP user's access."""
+    deployment, settings = _deployment()
+    script = (
+        f"grep -v '^{user} ' {SFTP_ACCOUNTS} > {SFTP_ACCOUNTS}.tmp && "
+        f"mv {SFTP_ACCOUNTS}.tmp {SFTP_ACCOUNTS}"
+    )
+    result = deployment.exec(settings.client_service, ["sh", "-c", script])
+    if not result.success:
+        console.print(f"[red]Failed:[/red] {result.stderr.strip() or 'SFTP not enabled?'}")
+        raise typer.Exit(1)
+    deployment.compose("restart", settings.client_service)
+    console.print(f"[green]Removed SFTP access for [cyan]{user}[/cyan].[/green]")
+
+
 @app.command("mount")
 def mount_storage(
     mountpoint: Annotated[
