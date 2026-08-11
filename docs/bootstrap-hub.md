@@ -81,6 +81,18 @@ Losing either of these strands every node until the manifest is re-anchored:
    `fly volumes snapshots create <volume-id>` (find the id with
    `fly volumes list`). Snapshot again after any Tahoe upgrade.
 
+## Updating the hub
+
+`fly deploy` builds the image locally and replaces the machine, so it always
+runs the current code — it does not depend on the `latest` tag. The introducer
+volume (tub identity + FURL) persists across deploys, so the FURL is unchanged
+and nodes stay connected.
+
+Note the same network-namespace caveat as member nodes: everything on the hub
+runs inside one machine, so a deploy restarts all of it together and there is no
+stale-namespace issue to work around here — but if you ever `docker`-manage the
+services manually, recreate them as a group, not individually.
+
 ## Notes & limitations
 
 - **UDP**: fly.io's UDP routing needs apps to bind `fly-global-services`,

@@ -160,6 +160,86 @@ class Deployment:
         """Start (creating if needed) all or some services, detached."""
         return self.compose("up", "-d", *(services or []), timeout=300)
 
+    def running_services(self) -> list[str]:
+        """Names of the services whose containers currently exist (any state)."""
+        return [s.name for s in self.ps() if s.name]
+
+    def _images_entries(self) -> list[dict[str, Any]]:
+        """Parse `docker compose images --format json` (array or NDJSON)."""
+        result = self.compose("images", "--format", "json")
+        if not result.success:
+            return []
+        entries: list[dict[str, Any]] = []
+        try:
+            parsed: Any = json.loads(result.stdout or "[]")
+            entries = parsed if isinstance(parsed, list) else [parsed]
+        except json.JSONDecodeError:
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return entries
+
+    def image_ids(self) -> dict[str, str]:
+        """Map each service to the image ID its *running container* uses."""
+        return {str(e.get("Service", "")): str(e.get("ID", "")) for e in self._images_entries()}
+
+    def image_refs(self) -> dict[str, str]:
+        """Map each service to the image reference (repository:tag) it runs."""
+        refs: dict[str, str] = {}
+        for e in self._images_entries():
+            repo, tag = str(e.get("Repository", "")), str(e.get("Tag", ""))
+            if repo:
+                refs[str(e.get("Service", ""))] = f"{repo}:{tag}" if tag else repo
+        return refs
+
+    def local_image_id(self, ref: str) -> str:
+        """The image ID that ``ref`` (repository:tag) resolves to locally, or ''.
+
+        This is what a container WOULD run if recreated now — unlike
+        image_ids(), which reports the (possibly stale) image the current
+        container was created from. Comparing the two is how `update` detects a
+        freshly pulled image before recreating.
+        """
+        result = run_command(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", ref], check=False
+        )
+        return result.stdout.strip() if result.success else ""
+
+    def pending_image_changes(self, services: list[str]) -> list[str]:
+        """Services whose pulled image differs from their running container's.
+
+        Call after pull(): compares each service's running-container image ID
+        against the ID its tag now resolves to.
+        """
+        running = self.image_ids()
+        refs = self.image_refs()
+        changed: list[str] = []
+        for service in services:
+            ref = refs.get(service)
+            if not ref:
+                continue
+            if running.get(service, "") != self.local_image_id(ref):
+                changed.append(service)
+        return sorted(changed)
+
+    def pull(self, services: list[str] | None = None) -> CommandResult:
+        """Pull the latest images for all or some services."""
+        return self.compose("pull", *(services or []), timeout=1800)
+
+    def recreate(self, services: list[str]) -> CommandResult:
+        """Force-recreate the named services from their current images.
+
+        Naming the services explicitly auto-enables their compose profiles, and
+        depends_on ordering means tinc is recreated before the tahoe services —
+        so those rejoin tinc's *new* network namespace instead of the dead one
+        (see docs/quickstart.md: '0 shares after an update').
+        """
+        return self.compose("up", "-d", "--force-recreate", *services, timeout=600)
+
     def start(self, services: list[str]) -> CommandResult:
         """Start existing service containers."""
         return self.compose("start", *services)

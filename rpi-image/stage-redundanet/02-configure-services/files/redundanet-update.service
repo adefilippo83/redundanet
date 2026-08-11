@@ -1,0 +1,19 @@
+[Unit]
+Description=RedundaNet auto-update (pull latest images, netns-aware recreate)
+Documentation=https://github.com/adefilippo83/redundanet
+After=network-online.target docker.service redundanet-docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# The CLI drives docker compose; it pulls only if a new image exists and
+# force-recreates all running services (tinc first) so the tahoe containers
+# rejoin the new network namespace. --yes: unattended.
+ExecStart=/opt/redundanet/venv/bin/redundanet update --yes
+User=root
+Group=root
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

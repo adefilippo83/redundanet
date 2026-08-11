@@ -220,11 +220,53 @@ redundanet storage download home:report.pdf ./report.pdf
 Share a whole directory by giving someone its capability (`URI:DIR2:...` from
 `storage aliases`).
 
-### Mount as Filesystem
+### Mount as a Filesystem (SFTP)
 
-FUSE mounting is **not available** with Tahoe-LAFS 1.20 (native FUSE support was
-removed upstream). Use `redundanet storage upload` / `download` to move files to and
-from the grid instead. Running `redundanet storage mount` prints this notice.
+The client node can expose a directory over **SFTP**, turning the grid into a
+normal remote filesystem you can browse, mount, or serve as WebDAV. (This
+replaces the FUSE mounting that Tahoe-LAFS removed in 1.20.)
+
+**Enable it on the client node** (one time): add to `/opt/redundanet/.env`
+
+```bash
+SFTP_ENABLED=true
+SFTP_BIND=0.0.0.0        # LAN access; omit or 127.0.0.1 for loopback-only
+SFTP_PORT=8022
+```
+
+then apply it: `redundanet update` (or recreate the stack). The client
+generates an SFTP host key and starts the server on port 8022.
+
+> **Security:** bind SFTP to your LAN only — never port-forward 8022 to the
+> internet. An SFTP account grants full read/write to its directory subtree.
+
+**Grant a user access** with their SSH public key:
+
+```bash
+redundanet storage sftp adduser --user alice ~/alice_id_ed25519.pub
+redundanet storage sftp listusers
+```
+
+This maps the key to a dedicated `sftp:` directory (created automatically).
+
+**Connect** from any machine on the node's LAN:
+
+```bash
+# browse / transfer
+sftp -P 8022 alice@<node-lan-ip>
+
+# mount as a drive (Linux/macOS)
+sshfs -p 8022 alice@<node-lan-ip>:/ /mnt/grid
+
+# expose as WebDAV (no extra server code — rclone bridges SFTP to WebDAV)
+rclone serve webdav :sftp:host=<node-lan-ip>,port=8022,user=alice
+```
+
+Files written through the mount are encrypted and erasure-coded across the
+network exactly like `storage upload` — the SFTP layer is just a friendlier
+front door. Expect higher latency than a local disk (every operation is
+encrypt + erasure-code + distribute), so it suits archival and browsing more
+than a hot working directory.
 
 ## Node Roles
 
@@ -264,9 +306,34 @@ docker compose --profile introducer --profile storage up -d
 
 ### Can't Upload Files
 
-1. **Check storage nodes** - Need at least 7 online for successful uploads
+1. **Check storage nodes** - Enough servers must be online to satisfy
+   `shares.happy` (see the network's manifest)
 2. **Check client logs**: `docker compose logs tahoe-client`
 3. **Verify connection**: `redundanet network peers`
+
+### Client shows "0 shares" / "no recoverable versions" after an update
+
+The `tahoe-storage`, `tahoe-client`, and `tahoe-introducer` containers share the
+**`tinc` container's network namespace** (`network_mode: service:tinc`) — that is
+how they reach the VPN. If the `tinc` container is **recreated** (for example by
+`docker compose pull` fetching a new image), the tahoe containers stay attached
+to the *old*, now-deleted namespace and lose all network — the client then
+reports `0 shares` or `no recoverable versions` even though the data is safe on
+disk.
+
+Whenever the tinc image changes, recreate the tahoe containers so they rejoin the
+current namespace:
+
+```bash
+cd /opt/redundanet/docker
+docker compose --env-file /opt/redundanet/.env --profile storage --profile client \
+  up -d --force-recreate
+```
+
+A plain `docker restart tahoe-client` will **fail** in this state
+(`joining network namespace ... No such container`) — use `up -d --force-recreate`
+(or a full `down` then `up`). After the tinc containers restart, allow a minute
+for the mesh to reconverge before the client reconnects to the grid.
 
 ### General Debugging
 
