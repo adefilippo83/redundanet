@@ -4,16 +4,32 @@ network:
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
   tahoe:
-    shares_needed: 3
-    shares_happy: 7
-    shares_total: 10
+    shares_needed: 1
+    shares_happy: 2
+    shares_total: 2
     reserved_space: 1G
-introducer_furl: null
+introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
-- name: node-dd2be971
+- name: hub-fly
+  internal_ip: 10.100.0.1
+  vpn_ip: 10.100.0.1
+  public_ip: 149.248.198.15
+  gpg_key_id: F9151151771C34F4E23BB64BF16283B50D5AD27F
+  region: europe
+  status: active
+  roles:
+  - tinc_vpn
+  - tahoe_introducer
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  is_publicly_accessible: true
+- name: node-2680cd08
   internal_ip: 10.100.0.10
   vpn_ip: 10.100.0.10
-  gpg_key_id: 333BEC68DD2BE971
+  gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
   region: europe
   status: pending
   roles:
@@ -24,12 +40,12 @@ nodes:
     tahoe_storage: 3457
     tahoe_client: 3456
     tahoe_introducer: 3458
-  storage_contribution: 100GB
+  storage_contribution: 900GB
   is_publicly_accessible: false
-- name: node-8285cf34
+- name: node-bae1b9cd
   internal_ip: 10.100.0.11
   vpn_ip: 10.100.0.11
-  gpg_key_id: 5A1494688285CF34
+  gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
   region: europe
   status: pending
   roles:
@@ -40,71 +56,5 @@ nodes:
     tahoe_storage: 3457
     tahoe_client: 3456
     tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: true
-  public_ip: 168.119.173.11
-- name: node-175328d4
-  internal_ip: 10.100.0.12
-  vpn_ip: 10.100.0.12
-  gpg_key_id: 88139A43175328D4
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
+  storage_contribution: 900GB
   is_publicly_accessible: false
-- name: node-68ca04b0
-  internal_ip: 10.100.0.13
-  vpn_ip: 10.100.0.13
-  gpg_key_id: F8A1B80668CA04B0
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: false
-- name: node-cafe1234
-  internal_ip: 10.100.0.14
-  vpn_ip: 10.100.0.14
-  gpg_key_id: DEADBEEFCAFE1234
-  region: unknown
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 100GB
-  is_publicly_accessible: false
-- name: node-6163c200
-  internal_ip: 10.100.0.15
-  vpn_ip: 10.100.0.15
-  gpg_key_id: 9490E9D46163C200
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 10GB
-  is_publicly_accessible: true
-  public_ip: 167.233.118.253

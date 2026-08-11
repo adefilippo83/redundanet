@@ -6,7 +6,28 @@ import pytest
 import yaml
 
 from redundanet.core.exceptions import ManifestError, ValidationError
-from redundanet.core.manifest import Manifest
+from redundanet.core.manifest import Manifest, locate_manifest
+
+
+class TestLocateManifest:
+    def test_finds_top_level_manifest(self, tmp_path: Path):
+        (tmp_path / "manifest.yaml").write_text("network: {}\n")
+        assert locate_manifest(tmp_path) == tmp_path / "manifest.yaml"
+
+    def test_finds_repo_clone_layout(self, tmp_path: Path):
+        """A manifest dir that is a repo clone keeps the manifest under manifests/."""
+        (tmp_path / "manifests").mkdir()
+        (tmp_path / "manifests" / "manifest.yaml").write_text("network: {}\n")
+        assert locate_manifest(tmp_path) == tmp_path / "manifests" / "manifest.yaml"
+
+    def test_top_level_wins_when_both_exist(self, tmp_path: Path):
+        (tmp_path / "manifest.yaml").write_text("a: 1\n")
+        (tmp_path / "manifests").mkdir()
+        (tmp_path / "manifests" / "manifest.yaml").write_text("b: 2\n")
+        assert locate_manifest(tmp_path) == tmp_path / "manifest.yaml"
+
+    def test_missing_returns_none(self, tmp_path: Path):
+        assert locate_manifest(tmp_path) is None
 
 
 @pytest.fixture
