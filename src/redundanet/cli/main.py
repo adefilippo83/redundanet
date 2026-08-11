@@ -297,15 +297,15 @@ def update(
         console.print("[yellow]No running services found.[/yellow] Start the node first.")
         raise typer.Exit(1)
 
-    before = deployment.image_ids()
     with console.status("[bold green]Pulling latest images..."):
         pull = deployment.pull(services)
     if not pull.success:
         console.print(f"[red]Pull failed:[/red] {pull.stderr.strip() or pull.stdout.strip()}")
         raise typer.Exit(1)
-    after = deployment.image_ids()
 
-    changed = sorted(s for s in services if before.get(s) != after.get(s))
+    # A pull updates the local repo:tag but NOT the running container's image,
+    # so compare each container's image against what its tag now resolves to.
+    changed = deployment.pending_image_changes(services)
     if not changed:
         console.print("[green]Already up to date.[/green] No image changed.")
         return

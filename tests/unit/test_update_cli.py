@@ -14,13 +14,11 @@ runner = CliRunner()
 class FakeDeployment:
     """Deployment stand-in for the update command."""
 
-    def __init__(self, before, after, running=("tinc", "tahoe-storage", "tahoe-client")):
-        self._before = before
-        self._after = after
+    def __init__(self, changed, running=("tinc", "tahoe-storage", "tahoe-client")):
+        self._changed = list(changed)  # services pending_image_changes should report
         self._running = list(running)
         self.pulled = False
         self.recreated: list[str] | None = None
-        self._calls = 0
 
     def require(self):
         return None
@@ -28,10 +26,8 @@ class FakeDeployment:
     def running_services(self):
         return self._running
 
-    def image_ids(self):
-        # First call = before pull, second = after.
-        self._calls += 1
-        return self._before if self._calls == 1 else self._after
+    def pending_image_changes(self, services):
+        return [s for s in self._changed if s in services]
 
     def pull(self, services=None):
         from redundanet.utils.process import CommandResult
@@ -64,26 +60,22 @@ def patch_deployment(monkeypatch):
 
 class TestUpdate:
     def test_no_change_reports_up_to_date(self, patch_deployment):
-        ids = {"tinc": "a", "tahoe-storage": "b", "tahoe-client": "c"}
-        dep = patch_deployment["install"](FakeDeployment(ids, ids))
+        dep = patch_deployment["install"](FakeDeployment(changed=[]))
         result = runner.invoke(app, ["update", "--yes"])
         assert result.exit_code == 0
         assert "Already up to date" in result.output
         assert dep.recreated is None
 
     def test_change_triggers_recreate_tinc_first(self, patch_deployment):
-        before = {"tinc": "a", "tahoe-storage": "b", "tahoe-client": "c"}
-        after = {"tinc": "A", "tahoe-storage": "b", "tahoe-client": "c"}  # tinc changed
-        dep = patch_deployment["install"](FakeDeployment(before, after))
+        dep = patch_deployment["install"](FakeDeployment(changed=["tinc"]))
         result = runner.invoke(app, ["update", "--yes"])
         assert result.exit_code == 0
         assert "Updated images available for: tinc" in result.output
+        # Even though only tinc changed, ALL running services recreate (netns).
         assert dep.recreated == ["tinc", "tahoe-storage", "tahoe-client"]
 
     def test_check_mode_never_recreates(self, patch_deployment):
-        before = {"tinc": "a"}
-        after = {"tinc": "A"}
-        dep = patch_deployment["install"](FakeDeployment(before, after, running=["tinc"]))
+        dep = patch_deployment["install"](FakeDeployment(changed=["tinc"], running=["tinc"]))
         result = runner.invoke(app, ["update", "--check"])
         assert result.exit_code == 0
         assert "not recreating" in result.output
@@ -91,7 +83,7 @@ class TestUpdate:
         assert dep.recreated is None
 
     def test_no_running_services_errors(self, patch_deployment):
-        patch_deployment["install"](FakeDeployment({}, {}, running=[]))
+        patch_deployment["install"](FakeDeployment(changed=[], running=[]))
         result = runner.invoke(app, ["update", "--yes"])
         assert result.exit_code == 1
         assert "No running services" in result.output

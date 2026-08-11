@@ -164,29 +164,67 @@ class Deployment:
         """Names of the services whose containers currently exist (any state)."""
         return [s.name for s in self.ps() if s.name]
 
-    def image_ids(self) -> dict[str, str]:
-        """Map each service to the image ID its container is using."""
+    def _images_entries(self) -> list[dict[str, Any]]:
+        """Parse `docker compose images --format json` (array or NDJSON)."""
         result = self.compose("images", "--format", "json")
-        ids: dict[str, str] = {}
         if not result.success:
-            return ids
+            return []
+        entries: list[dict[str, Any]] = []
         try:
             parsed: Any = json.loads(result.stdout or "[]")
+            entries = parsed if isinstance(parsed, list) else [parsed]
         except json.JSONDecodeError:
-            # Older compose emits one JSON object per line.
             for line in result.stdout.splitlines():
                 line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                ids[str(entry.get("Service", ""))] = str(entry.get("ID", ""))
-            return ids
-        for entry in parsed if isinstance(parsed, list) else [parsed]:
-            ids[str(entry.get("Service", ""))] = str(entry.get("ID", ""))
-        return ids
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        return entries
+
+    def image_ids(self) -> dict[str, str]:
+        """Map each service to the image ID its *running container* uses."""
+        return {str(e.get("Service", "")): str(e.get("ID", "")) for e in self._images_entries()}
+
+    def image_refs(self) -> dict[str, str]:
+        """Map each service to the image reference (repository:tag) it runs."""
+        refs: dict[str, str] = {}
+        for e in self._images_entries():
+            repo, tag = str(e.get("Repository", "")), str(e.get("Tag", ""))
+            if repo:
+                refs[str(e.get("Service", ""))] = f"{repo}:{tag}" if tag else repo
+        return refs
+
+    def local_image_id(self, ref: str) -> str:
+        """The image ID that ``ref`` (repository:tag) resolves to locally, or ''.
+
+        This is what a container WOULD run if recreated now — unlike
+        image_ids(), which reports the (possibly stale) image the current
+        container was created from. Comparing the two is how `update` detects a
+        freshly pulled image before recreating.
+        """
+        result = run_command(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", ref], check=False
+        )
+        return result.stdout.strip() if result.success else ""
+
+    def pending_image_changes(self, services: list[str]) -> list[str]:
+        """Services whose pulled image differs from their running container's.
+
+        Call after pull(): compares each service's running-container image ID
+        against the ID its tag now resolves to.
+        """
+        running = self.image_ids()
+        refs = self.image_refs()
+        changed: list[str] = []
+        for service in services:
+            ref = refs.get(service)
+            if not ref:
+                continue
+            if running.get(service, "") != self.local_image_id(ref):
+                changed.append(service)
+        return sorted(changed)
 
     def pull(self, services: list[str] | None = None) -> CommandResult:
         """Pull the latest images for all or some services."""

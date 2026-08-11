@@ -110,6 +110,28 @@ def test_image_ids_parses_ndjson(tmp_path):
     assert dep.image_ids() == {"tinc": "a", "tahoe-storage": "b"}
 
 
+def test_image_refs_builds_repo_tag(tmp_path):
+    dep = Deployment(make_settings(tmp_path))
+    payload = '[{"Service":"tinc","Repository":"ghcr.io/x/redundanet-tinc","Tag":"main","ID":"a"}]'
+    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    assert dep.image_refs() == {"tinc": "ghcr.io/x/redundanet-tinc:main"}
+
+
+def test_pending_image_changes_detects_pulled_image(tmp_path, monkeypatch):
+    """The running container's image (id 'old') differs from what the tag now
+    resolves to ('new') after a pull — so the service is reported changed.
+    This is the bug fix: comparing container image vs pulled tag, not
+    before/after `compose images` (which never changes on pull)."""
+    dep = Deployment(make_settings(tmp_path))
+    payload = '[{"Service":"tinc","Repository":"repo/tinc","Tag":"main","ID":"old"},{"Service":"tahoe-storage","Repository":"repo/storage","Tag":"main","ID":"same"}]'
+    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    # tinc's tag now resolves to a NEW image; storage's is unchanged.
+    resolved = {"repo/tinc:main": "new", "repo/storage:main": "same"}
+    monkeypatch.setattr(dep, "local_image_id", lambda ref: resolved[ref])
+
+    assert dep.pending_image_changes(["tinc", "tahoe-storage"]) == ["tinc"]
+
+
 def test_recreate_forces_and_names_services(tmp_path):
     dep = Deployment(make_settings(tmp_path))
     fake = FakeCompose({})
