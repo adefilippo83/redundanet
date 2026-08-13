@@ -96,38 +96,39 @@ class FakeCompose:
         return CommandResult(0, "", "", "")
 
 
-def test_image_ids_parses_json_array(tmp_path, monkeypatch):
+def test_service_containers_maps_names(tmp_path):
     dep = Deployment(make_settings(tmp_path))
-    payload = '[{"Service":"tinc","ID":"sha256:aaa"},{"Service":"tahoe-storage","ID":"sha256:bbb"}]'
-    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
-    assert dep.image_ids() == {"tinc": "sha256:aaa", "tahoe-storage": "sha256:bbb"}
-
-
-def test_image_ids_parses_ndjson(tmp_path):
-    dep = Deployment(make_settings(tmp_path))
-    payload = '{"Service":"tinc","ID":"a"}\n{"Service":"tahoe-storage","ID":"b"}'
-    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
-    assert dep.image_ids() == {"tinc": "a", "tahoe-storage": "b"}
-
-
-def test_image_refs_builds_repo_tag(tmp_path):
-    dep = Deployment(make_settings(tmp_path))
-    payload = '[{"Service":"tinc","Repository":"ghcr.io/x/redundanet-tinc","Tag":"main","ID":"a"}]'
-    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
-    assert dep.image_refs() == {"tinc": "ghcr.io/x/redundanet-tinc:main"}
+    payload = (
+        '{"Service":"tinc","Name":"redundanet-tinc"}\n'
+        '{"Service":"tahoe-storage","Name":"redundanet-tahoe-storage"}'
+    )
+    dep.compose = FakeCompose({("ps",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    assert dep._service_containers() == {
+        "tinc": "redundanet-tinc",
+        "tahoe-storage": "redundanet-tahoe-storage",
+    }
 
 
 def test_pending_image_changes_detects_pulled_image(tmp_path, monkeypatch):
-    """The running container's image (id 'old') differs from what the tag now
-    resolves to ('new') after a pull — so the service is reported changed.
-    This is the bug fix: comparing container image vs pulled tag, not
-    before/after `compose images` (which never changes on pull)."""
+    """The running container's image differs from what the reference it was
+    created from now resolves to (post-pull) — so the service is reported
+    changed. Uses `docker inspect`, never `docker compose images` (which
+    returned empty on compose v5.4 and silently broke detection)."""
     dep = Deployment(make_settings(tmp_path))
-    payload = '[{"Service":"tinc","Repository":"repo/tinc","Tag":"main","ID":"old"},{"Service":"tahoe-storage","Repository":"repo/storage","Tag":"main","ID":"same"}]'
-    dep.compose = FakeCompose({("images",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
-    # tinc's tag now resolves to a NEW image; storage's is unchanged.
-    resolved = {"repo/tinc:main": "new", "repo/storage:main": "same"}
-    monkeypatch.setattr(dep, "local_image_id", lambda ref: resolved[ref])
+    ps = '{"Service":"tinc","Name":"c-tinc"}\n{"Service":"tahoe-storage","Name":"c-storage"}'
+    dep.compose = FakeCompose({("ps",): CommandResult(0, ps, "", "")})  # type: ignore[assignment]
+
+    # tinc container runs 'old' but its ref now resolves to 'new'; storage is
+    # unchanged ('same' == 'same').
+    inspects = {
+        ("c-tinc", "{{.Image}}"): "old",
+        ("c-tinc", "{{.Config.Image}}"): "repo/tinc:main",
+        ("c-storage", "{{.Image}}"): "same",
+        ("c-storage", "{{.Config.Image}}"): "repo/storage:main",
+        ("repo/tinc:main", "{{.Id}}"): "new",
+        ("repo/storage:main", "{{.Id}}"): "same",
+    }
+    monkeypatch.setattr(dep, "_inspect", lambda target, fmt: inspects[(target, fmt)])
 
     assert dep.pending_image_changes(["tinc", "tahoe-storage"]) == ["tinc"]
 

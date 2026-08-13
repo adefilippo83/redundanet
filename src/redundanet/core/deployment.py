@@ -164,65 +164,61 @@ class Deployment:
         """Names of the services whose containers currently exist (any state)."""
         return [s.name for s in self.ps() if s.name]
 
-    def _images_entries(self) -> list[dict[str, Any]]:
-        """Parse `docker compose images --format json` (array or NDJSON)."""
-        result = self.compose("images", "--format", "json")
-        if not result.success:
-            return []
-        entries: list[dict[str, Any]] = []
-        try:
-            parsed: Any = json.loads(result.stdout or "[]")
-            entries = parsed if isinstance(parsed, list) else [parsed]
-        except json.JSONDecodeError:
-            for line in result.stdout.splitlines():
-                line = line.strip()
-                if line:
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        return entries
+    def _service_containers(self) -> dict[str, str]:
+        """Map each service to its container name, from `docker compose ps`.
 
-    def image_ids(self) -> dict[str, str]:
-        """Map each service to the image ID its *running container* uses."""
-        return {str(e.get("Service", "")): str(e.get("ID", "")) for e in self._images_entries()}
-
-    def image_refs(self) -> dict[str, str]:
-        """Map each service to the image reference (repository:tag) it runs."""
-        refs: dict[str, str] = {}
-        for e in self._images_entries():
-            repo, tag = str(e.get("Repository", "")), str(e.get("Tag", ""))
-            if repo:
-                refs[str(e.get("Service", ""))] = f"{repo}:{tag}" if tag else repo
-        return refs
-
-    def local_image_id(self, ref: str) -> str:
-        """The image ID that ``ref`` (repository:tag) resolves to locally, or ''.
-
-        This is what a container WOULD run if recreated now — unlike
-        image_ids(), which reports the (possibly stale) image the current
-        container was created from. Comparing the two is how `update` detects a
-        freshly pulled image before recreating.
+        Deliberately NOT `docker compose images` — that returns empty on some
+        compose versions (observed on v5.4), which silently made update think
+        nothing changed. `ps` is reliable and gives us container names to
+        inspect directly.
         """
-        result = run_command(
-            ["docker", "image", "inspect", "--format", "{{.Id}}", ref], check=False
-        )
+        result = self.compose("ps", "--all", "--format", "json")
+        names: dict[str, str] = {}
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed: Any = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for entry in parsed if isinstance(parsed, list) else [parsed]:
+                service = str(entry.get("Service") or "")
+                name = str(entry.get("Name") or "")
+                if service and name:
+                    names[service] = name
+        return names
+
+    def _inspect(self, target: str, fmt: str) -> str:
+        """`docker inspect -f <fmt> <target>`, stripped, or '' on failure."""
+        result = run_command(["docker", "inspect", "-f", fmt, target], check=False)
         return result.stdout.strip() if result.success else ""
 
-    def pending_image_changes(self, services: list[str]) -> list[str]:
-        """Services whose pulled image differs from their running container's.
+    def local_image_id(self, ref: str) -> str:
+        """The image ID that ``ref`` (repository:tag) resolves to locally, or ''."""
+        return self._inspect(ref, "{{.Id}}")
 
-        Call after pull(): compares each service's running-container image ID
-        against the ID its tag now resolves to.
+    def pending_image_changes(self, services: list[str]) -> list[str]:
+        """Services whose running container's image differs from its tag's.
+
+        Call after pull(): for each service compares the container's actual
+        image (``docker inspect .Image``) against what the reference it was
+        created from (``.Config.Image``) now resolves to. A pull updates the
+        tag but not the running container, so a difference means a recreate is
+        needed.
         """
-        running = self.image_ids()
-        refs = self.image_refs()
+        containers = self._service_containers()
         changed: list[str] = []
         for service in services:
-            ref = refs.get(service)
-            if not ref:
+            container = containers.get(service)
+            if not container:
                 continue
-            if running.get(service, "") != self.local_image_id(ref):
+            current = self._inspect(container, "{{.Image}}")
+            ref = self._inspect(container, "{{.Config.Image}}")
+            if not ref or not current:
+                continue
+            latest = self.local_image_id(ref)
+            if latest and current != latest:
                 changed.append(service)
         return sorted(changed)
 
