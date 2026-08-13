@@ -36,6 +36,26 @@ def test_base_command_has_project_and_file(tmp_path):
     assert str(settings.compose_file) in base
 
 
+def test_base_includes_override_when_present(tmp_path):
+    """A CLI-driven recreate MUST keep docker-compose.override.yml — passing -f
+    disables Docker's auto-load, and dropping it detaches a storage node's data
+    disk (the bind-mount lives in the override)."""
+    settings = make_settings(tmp_path)
+    override = settings.compose_file.parent / "docker-compose.override.yml"
+    override.write_text("services: {}\n")
+    dep = Deployment(settings)
+    base = dep._base()
+    # Both the main file and the override are passed with -f.
+    assert base.count("-f") == 2
+    assert str(override) in base
+
+
+def test_base_no_override_when_absent(tmp_path):
+    settings = make_settings(tmp_path)
+    dep = Deployment(settings)
+    assert dep._base().count("-f") == 1
+
+
 def test_env_file_added_to_base(tmp_path):
     env = tmp_path / ".env"
     env.write_text("X=1\n")

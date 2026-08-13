@@ -76,8 +76,30 @@ class Deployment:
                 "or set REDUNDANET_COMPOSE_FILE."
             )
 
+    def _override_files(self) -> list[Path]:
+        """Compose override files next to the main compose file.
+
+        Passing any ``-f`` disables Docker's automatic loading of the
+        override, so we must add it back explicitly — otherwise a CLI-driven
+        recreate (e.g. `redundanet update`) silently drops the override's
+        settings, such as a storage node's bind-mount to its data disk, and
+        falls back to the empty named volume.
+        """
+        if self.compose_file is None:
+            return []
+        parent = self.compose_file.parent
+        names = (
+            "docker-compose.override.yml",
+            "docker-compose.override.yaml",
+            "compose.override.yml",
+            "compose.override.yaml",
+        )
+        return [parent / name for name in names if (parent / name).exists()]
+
     def _base(self) -> list[str]:
         cmd = ["docker", "compose", "-p", self.project, "-f", str(self.compose_file)]
+        for override in self._override_files():
+            cmd += ["-f", str(override)]
         if self.env_file is not None:
             cmd += ["--env-file", str(self.env_file)]
         return cmd
