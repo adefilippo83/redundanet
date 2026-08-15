@@ -54,6 +54,55 @@ def test_init_persists_config_that_load_settings_reads(tmp_path, monkeypatch):
     assert settings.node_name == "node-abc"
 
 
+def test_init_falls_back_to_user_dirs_without_root(tmp_path, monkeypatch):
+    """On hosts where /etc and /var/lib are not writable (macOS, non-sudo
+    Linux), init must fall back to per-user dirs instead of crashing."""
+    read_only = tmp_path / "ro"
+    read_only.mkdir()
+    read_only.chmod(0o500)
+    monkeypatch.setenv("REDUNDANET_CONFIG_DIR", str(read_only / "etc" / "redundanet"))
+    monkeypatch.setenv("REDUNDANET_DATA_DIR", str(read_only / "var" / "redundanet"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("REDUNDANET_MANIFEST_REPO", raising=False)
+    monkeypatch.delenv("REDUNDANET_NODE_NAME", raising=False)
+
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--name",
+                "node-user",
+                "--network",
+                "redundanet",
+                "--storage",
+                "1TB",
+                "--manifest-repo",
+                "https://example.com/r.git",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "per-user directories" in result.output
+
+        env_file = tmp_path / "home" / ".config" / "redundanet" / ".env"
+        assert env_file.exists()
+        content = env_file.read_text()
+        assert "REDUNDANET_NODE_NAME=node-user" in content
+        # The fallback data dir is recorded so later commands agree on it.
+        assert "REDUNDANET_DATA_DIR=" in content
+
+        # A fresh settings load (system config absent) must pick up the
+        # per-user config transparently.
+        monkeypatch.setenv("REDUNDANET_CONFIG_DIR", str(tmp_path / "nonexistent"))
+        monkeypatch.delenv("REDUNDANET_DATA_DIR", raising=False)
+        settings = load_settings()
+        assert settings.node_name == "node-user"
+        assert settings.data_dir == tmp_path / "home" / ".local" / "share" / "redundanet"
+        assert (settings.data_dir / "manifest").is_dir()
+    finally:
+        read_only.chmod(0o700)  # let pytest clean the tmp dir
+
+
 def test_sync_copies_manifest_out_of_repo_subdir(tmp_path, monkeypatch):
     data = tmp_path / "data"
     monkeypatch.setenv("REDUNDANET_CONFIG_DIR", str(tmp_path / "cfg"))

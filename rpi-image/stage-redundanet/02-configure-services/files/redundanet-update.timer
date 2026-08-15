@@ -1,0 +1,14 @@
+[Unit]
+Description=RedundaNet auto-update timer
+Documentation=https://github.com/adefilippo83/redundanet
+
+[Timer]
+# Daily, at a randomized time so the whole fleet does not update in lockstep
+# (a bad image would otherwise take every node down at once). Disabled by
+# default — enable per node with: systemctl enable --now redundanet-update.timer
+OnCalendar=daily
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

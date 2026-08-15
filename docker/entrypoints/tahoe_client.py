@@ -57,11 +57,14 @@ def get_introducer_furl() -> str | None:
             logger.info("Found introducer FURL in manifest volume")
             return furl
 
-    manifest_file = manifest_dir / "manifest.yaml"
-    if manifest_file.exists():
+    # The manifest dir may be a plain dir or a full repo clone.
+    from redundanet.core.manifest import locate_manifest
+
+    manifest_file = locate_manifest(manifest_dir)
+    if manifest_file is not None:
         import yaml
 
-        with open(manifest_file) as f:
+        with manifest_file.open() as f:
             manifest = yaml.safe_load(f) or {}
 
         furl = manifest.get("introducer_furl")
@@ -71,6 +74,36 @@ def get_introducer_furl() -> str | None:
 
     logger.warning("No introducer FURL found")
     return None
+
+
+def _prepare_sftp(client_dir: Path) -> None:
+    """Ensure SFTP host keys and an accounts file exist (idempotent).
+
+    Host keys are generated once and persist on the volume. The accounts file
+    starts empty (the SFTP server still starts; nobody can log in until an
+    account is added with `redundanet storage sftp adduser`).
+    """
+    logger = get_logger()
+    private = client_dir / "private"
+    private.mkdir(parents=True, exist_ok=True)
+
+    privkey = private / "ssh_host_rsa_key"
+    if not privkey.exists():
+        subprocess.run(
+            ["ssh-keygen", "-t", "rsa", "-b", "2048", "-N", "", "-f", str(privkey)],
+            check=True,
+            capture_output=True,
+        )
+        logger.info("Generated SFTP host key")
+
+    accounts = private / "sftp_accounts"
+    if not accounts.exists():
+        accounts.write_text(
+            "# RedundaNet SFTP accounts — one per line:\n"
+            "#   <username> ssh-rsa <key-blob> <root-directory-cap>\n"
+            "# Managed by 'redundanet storage sftp adduser'.\n"
+        )
+        logger.info("Created empty SFTP accounts file")
 
 
 def main():
@@ -88,6 +121,8 @@ def main():
     shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
     shares_happy = int(os.environ.get("REDUNDANET_SHARES_HAPPY", "7"))
     shares_total = int(os.environ.get("REDUNDANET_SHARES_TOTAL", "10"))
+    sftp_enabled = os.environ.get("REDUNDANET_SFTP_ENABLED", "false").lower() == "true"
+    sftp_port = int(os.environ.get("REDUNDANET_SFTP_PORT", "8022"))
     test_mode = os.environ.get("REDUNDANET_TEST_MODE", "false").lower() == "true"
 
     if not node_name:
@@ -131,6 +166,8 @@ def main():
         shares_needed=shares_needed,
         shares_happy=shares_happy,
         shares_total=shares_total,
+        sftp_enabled=sftp_enabled,
+        sftp_port=sftp_port,
     )
     client = TahoeClient(config)
 
@@ -141,7 +178,12 @@ def main():
         logger.info("Using existing Tahoe client configuration")
         client.update_introducer_furl(introducer_furl)
 
-    logger.info("Tahoe client setup complete")
+    # SFTP host keys + accounts go into the node's private/ dir, which only
+    # exists AFTER create_node() (tahoe refuses a non-empty base directory).
+    if sftp_enabled:
+        _prepare_sftp(client_dir)
+
+    logger.info("Tahoe client setup complete", sftp=sftp_enabled)
 
 
 if __name__ == "__main__":
