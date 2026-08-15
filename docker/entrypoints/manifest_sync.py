@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml
 
 from redundanet.core.deployment import git_sync
+from redundanet.core.manifest import locate_manifest
 from redundanet.utils.logging import get_logger, setup_logging
 from redundanet.vpn.peers import sync_peer_host_files, tinc_name
 from redundanet.vpn.tinc import TincConfig, TincManager
@@ -59,8 +60,8 @@ def run_once(
                            error=result.stderr.strip())
             return False
 
-    manifest_file = manifest_dir / "manifest.yaml"
-    if not manifest_file.exists():
+    manifest_file = locate_manifest(manifest_dir)
+    if manifest_file is None:
         logger.warning("No manifest.yaml present; nothing to sync")
         return False
     manifest = yaml.safe_load(manifest_file.read_text()) or {}

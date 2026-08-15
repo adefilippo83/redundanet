@@ -25,6 +25,8 @@ def _render_storage_cfg(
     shares_needed: int,
     shares_happy: int,
     shares_total: int,
+    expire_enabled: bool = True,
+    lease_duration: str = "90 days",
 ) -> str:
     """Render tahoe.cfg for a storage node (plain INI text, no templating)."""
     storage_dir_line = f"storage_dir = {storage_dir}\n" if storage_dir else ""
@@ -46,7 +48,14 @@ shares.total = {shares_total}
 [storage]
 enabled = true
 reserved_space = {reserved_space}
-{storage_dir_line}
+{storage_dir_line}# Garbage-collect shares whose lease has not been renewed within the lease
+# duration — without this, deleted files would occupy space forever. Clients
+# keep their data alive by renewing leases (see 'redundanet storage renew'
+# and the client container's periodic lease-renew job).
+expire.enabled = {str(expire_enabled).lower()}
+expire.mode = age
+expire.override_lease_duration = {lease_duration}
+
 [helper]
 enabled = false
 """
@@ -67,6 +76,10 @@ class TahoeStorageConfig:
     shares_needed: int = 3
     shares_happy: int = 7
     shares_total: int = 10
+    # Lease/GC: shares whose lease is older than this are collected. Clients
+    # must renew leases within this window to keep their data alive.
+    expire_enabled: bool = True
+    lease_duration: str = "90 days"
 
     @classmethod
     def from_tahoe_config(
@@ -147,6 +160,8 @@ class TahoeStorage:
             shares_needed=self.config.shares_needed,
             shares_happy=self.config.shares_happy,
             shares_total=self.config.shares_total,
+            expire_enabled=self.config.expire_enabled,
+            lease_duration=self.config.lease_duration,
         )
 
         write_file(self._tahoe_cfg, content, mode=0o600)

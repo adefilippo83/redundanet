@@ -61,12 +61,15 @@ def get_introducer_furl() -> str | None:
             logger.info("Found introducer FURL in manifest volume")
             return furl
 
-    # Check manifest.yaml (top-level introducer_furl key)
-    manifest_file = manifest_dir / "manifest.yaml"
-    if manifest_file.exists():
+    # Check manifest.yaml (top-level introducer_furl key); the manifest dir may
+    # be a plain dir or a full repo clone (manifests/manifest.yaml).
+    from redundanet.core.manifest import locate_manifest
+
+    manifest_file = locate_manifest(manifest_dir)
+    if manifest_file is not None:
         import yaml
 
-        with open(manifest_file) as f:
+        with manifest_file.open() as f:
             manifest = yaml.safe_load(f) or {}
 
         furl = manifest.get("introducer_furl")
@@ -94,6 +97,8 @@ def main():
     shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
     shares_happy = int(os.environ.get("REDUNDANET_SHARES_HAPPY", "7"))
     shares_total = int(os.environ.get("REDUNDANET_SHARES_TOTAL", "10"))
+    expire_enabled = os.environ.get("REDUNDANET_EXPIRE_ENABLED", "true").lower() == "true"
+    lease_duration = os.environ.get("REDUNDANET_LEASE_DURATION", "90 days")
     test_mode = os.environ.get("REDUNDANET_TEST_MODE", "false").lower() == "true"
 
     if not node_name:
@@ -106,6 +111,16 @@ def main():
 
     storage_dir = Path("/var/lib/tahoe-storage")
     storage_data_dir = Path("/data/storage")
+
+    # Fresh ext4 volumes contain lost+found, which makes `tahoe create-node`
+    # refuse the "non-empty" base directory (see tahoe_introducer.py).
+    lost_found = storage_dir / "lost+found"
+    if lost_found.is_dir():
+        try:
+            lost_found.rmdir()
+            logger.info("Removed empty lost+found from fresh volume")
+        except OSError:
+            logger.warning("lost+found is not empty; not touching it")
 
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
@@ -140,6 +155,8 @@ def main():
         shares_needed=shares_needed,
         shares_happy=shares_happy,
         shares_total=shares_total,
+        expire_enabled=expire_enabled,
+        lease_duration=lease_duration,
     )
     storage = TahoeStorage(config)
 

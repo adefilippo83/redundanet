@@ -76,8 +76,30 @@ class Deployment:
                 "or set REDUNDANET_COMPOSE_FILE."
             )
 
+    def _override_files(self) -> list[Path]:
+        """Compose override files next to the main compose file.
+
+        Passing any ``-f`` disables Docker's automatic loading of the
+        override, so we must add it back explicitly — otherwise a CLI-driven
+        recreate (e.g. `redundanet update`) silently drops the override's
+        settings, such as a storage node's bind-mount to its data disk, and
+        falls back to the empty named volume.
+        """
+        if self.compose_file is None:
+            return []
+        parent = self.compose_file.parent
+        names = (
+            "docker-compose.override.yml",
+            "docker-compose.override.yaml",
+            "compose.override.yml",
+            "compose.override.yaml",
+        )
+        return [parent / name for name in names if (parent / name).exists()]
+
     def _base(self) -> list[str]:
         cmd = ["docker", "compose", "-p", self.project, "-f", str(self.compose_file)]
+        for override in self._override_files():
+            cmd += ["-f", str(override)]
         if self.env_file is not None:
             cmd += ["--env-file", str(self.env_file)]
         return cmd
@@ -160,6 +182,82 @@ class Deployment:
         """Start (creating if needed) all or some services, detached."""
         return self.compose("up", "-d", *(services or []), timeout=300)
 
+    def running_services(self) -> list[str]:
+        """Names of the services whose containers currently exist (any state)."""
+        return [s.name for s in self.ps() if s.name]
+
+    def _service_containers(self) -> dict[str, str]:
+        """Map each service to its container name, from `docker compose ps`.
+
+        Deliberately NOT `docker compose images` — that returns empty on some
+        compose versions (observed on v5.4), which silently made update think
+        nothing changed. `ps` is reliable and gives us container names to
+        inspect directly.
+        """
+        result = self.compose("ps", "--all", "--format", "json")
+        names: dict[str, str] = {}
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed: Any = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for entry in parsed if isinstance(parsed, list) else [parsed]:
+                service = str(entry.get("Service") or "")
+                name = str(entry.get("Name") or "")
+                if service and name:
+                    names[service] = name
+        return names
+
+    def _inspect(self, target: str, fmt: str) -> str:
+        """`docker inspect -f <fmt> <target>`, stripped, or '' on failure."""
+        result = run_command(["docker", "inspect", "-f", fmt, target], check=False)
+        return result.stdout.strip() if result.success else ""
+
+    def local_image_id(self, ref: str) -> str:
+        """The image ID that ``ref`` (repository:tag) resolves to locally, or ''."""
+        return self._inspect(ref, "{{.Id}}")
+
+    def pending_image_changes(self, services: list[str]) -> list[str]:
+        """Services whose running container's image differs from its tag's.
+
+        Call after pull(): for each service compares the container's actual
+        image (``docker inspect .Image``) against what the reference it was
+        created from (``.Config.Image``) now resolves to. A pull updates the
+        tag but not the running container, so a difference means a recreate is
+        needed.
+        """
+        containers = self._service_containers()
+        changed: list[str] = []
+        for service in services:
+            container = containers.get(service)
+            if not container:
+                continue
+            current = self._inspect(container, "{{.Image}}")
+            ref = self._inspect(container, "{{.Config.Image}}")
+            if not ref or not current:
+                continue
+            latest = self.local_image_id(ref)
+            if latest and current != latest:
+                changed.append(service)
+        return sorted(changed)
+
+    def pull(self, services: list[str] | None = None) -> CommandResult:
+        """Pull the latest images for all or some services."""
+        return self.compose("pull", *(services or []), timeout=1800)
+
+    def recreate(self, services: list[str]) -> CommandResult:
+        """Force-recreate the named services from their current images.
+
+        Naming the services explicitly auto-enables their compose profiles, and
+        depends_on ordering means tinc is recreated before the tahoe services —
+        so those rejoin tinc's *new* network namespace instead of the dead one
+        (see docs/quickstart.md: '0 shares after an update').
+        """
+        return self.compose("up", "-d", "--force-recreate", *services, timeout=600)
+
     def start(self, services: list[str]) -> CommandResult:
         """Start existing service containers."""
         return self.compose("start", *services)
@@ -182,12 +280,26 @@ class Deployment:
 
 
 def git_sync(repo: str, branch: str, target_dir: Path) -> CommandResult:
-    """Clone or hard-reset a manifest git repository into ``target_dir``."""
-    if (target_dir / ".git").exists():
-        run_command(["git", "-C", str(target_dir), "fetch", "origin"], check=False)
-        return run_command(
-            ["git", "-C", str(target_dir), "reset", "--hard", f"origin/{branch}"],
-            check=False,
-        )
-    target_dir.mkdir(parents=True, exist_ok=True)
-    return run_command(["git", "clone", "-b", branch, repo, str(target_dir)], check=False)
+    """Sync a manifest git repository into ``target_dir`` (init/fetch/reset).
+
+    Deliberately avoids ``git clone``: the target may already contain
+    unrelated files (e.g. the shared manifest volume, where the introducer
+    FURL is published by a concurrent process), and clone refuses non-empty
+    directories — a race that left a live hub unable to sync at all.
+    Initializing in place and hard-resetting to the fetched branch works for
+    empty, non-empty, and already-cloned directories alike; untracked files
+    are left alone.
+    """
+    git = ["git", "-C", str(target_dir)]
+    if not (target_dir / ".git").exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        result = run_command([*git, "init", "-q"], check=False)
+        if not result.success:
+            return result
+    # add-or-update the remote (idempotent across both paths)
+    run_command([*git, "remote", "add", "origin", repo], check=False)
+    run_command([*git, "remote", "set-url", "origin", repo], check=False)
+    result = run_command([*git, "fetch", "-q", "origin", branch], check=False)
+    if not result.success:
+        return result
+    return run_command([*git, "reset", "--hard", "FETCH_HEAD"], check=False)
