@@ -259,6 +259,32 @@ redundanet node keys export --key-id 0x12345678 --output my-key.asc
 redundanet node keys import --input peer-key.asc
 ```
 
+## Data Retention: Leases & Garbage Collection
+
+Every share on a storage node carries a **lease**. Storage nodes
+garbage-collect shares whose lease has not been renewed within the lease
+duration — that is how deleting data eventually frees disk space.
+
+| Variable (storage node) | Default | Meaning |
+|----------|---------|-------------|
+| `EXPIRE_ENABLED` | `true` | Collect shares with lapsed leases |
+| `LEASE_DURATION` | `90 days` | How long an unrenewed share survives |
+
+**Keeping data alive:**
+
+- The client container renews the leases of **all aliases** automatically
+  once a week (the `lease-renew` job; interval override:
+  `REDUNDANET_LEASE_RENEW_INTERVAL`, seconds).
+- Manual renewal: `redundanet storage renew` (all aliases) or
+  `redundanet storage renew URI:CHK:...` / `redundanet storage renew home:`.
+- **Bare capabilities that are not linked into an alias are not renewed
+  automatically** — keep long-lived data under an alias
+  (`redundanet storage mkdir`), or renew such caps yourself more often than
+  the lease duration.
+
+The 90-day default means a client can be offline for ~12 weekly renewal
+cycles before its data is at risk.
+
 ## Role Definitions
 
 ### Introducer
@@ -305,12 +331,64 @@ By default, RedundaNet uses `10.100.0.0/16`:
 - Use Docker secrets or environment variables for sensitive data
 - Consider hardware security modules (HSM) for production
 
-### Key Rotation
+### Key Backup (do this when you join)
 
-While GPG keys don't expire by default, consider:
-- Generating new keys periodically
-- Using subkeys for node authentication
-- Having a key revocation plan
+Your node's GPG key **is its identity** — the VPN transport key is derived
+from it. If the disk dies and you have no backup, the identity is gone and
+the only path back is rejoining as a new node.
+
+The private key lives in two places after `redundanet node keys generate`:
+
+- the exported file: `/opt/redundanet/docker/secrets/gpg_private_key.asc`
+- your GPG keyring (`gpg --list-secret-keys`)
+
+Back it up **off the node** (password manager or offline media):
+
+```bash
+gpg --armor --export-secret-keys YOUR_FINGERPRINT > redundanet-node-key.asc
+# store redundanet-node-key.asc somewhere safe, then shred the local copy
+```
+
+### Restore (new hardware, same identity)
+
+```bash
+redundanet init --name node-XXXXXXXX          # your existing node name
+gpg --import redundanet-node-key.asc
+mkdir -p /opt/redundanet/docker/secrets
+cp redundanet-node-key.asc /opt/redundanet/docker/secrets/gpg_private_key.asc
+chmod 600 /opt/redundanet/docker/secrets/gpg_private_key.asc
+redundanet network join --repo <manifest-repo> --name node-XXXXXXXX
+cd /opt/redundanet/docker && docker compose --env-file /opt/redundanet/.env --profile storage up -d
+```
+
+No manifest change is needed — the identity (and therefore the VPN key) is
+unchanged.
+
+### Key Rotation (compromise or precaution)
+
+1. Generate and publish a new key:
+   `redundanet node keys generate --name node-XXXXXXXX --email you@example.com`
+   then `redundanet node keys publish --key-id NEW_FINGERPRINT`
+   (publish verifies the key is actually fetchable before reporting success)
+2. Open a PR updating your node's `gpg_key_id` in the manifest to the new
+   **full 40-character fingerprint**
+3. Once merged, every running peer picks up the new key within
+   `SYNC_INTERVAL` (default 300s) via the manifest-sync sidecar — no peer
+   restarts needed
+4. Restart your own tinc container so it derives its transport key from the
+   new secret:
+   `docker compose --env-file /opt/redundanet/.env restart tinc`
+
+During the window between merge and your restart, peers expect the new key
+while your node still presents the old one — plan for a few minutes of VPN
+downtime for your node.
+
+### Revocation
+
+Removing a node's entry from the manifest revokes it: within `SYNC_INTERVAL`
+every peer deletes its Tinc host file and reloads, refusing further
+connections. Optionally also publish a GPG revocation certificate for the key
+itself.
 
 ### Network Isolation
 

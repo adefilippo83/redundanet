@@ -5,11 +5,15 @@
 install -m 644 files/redundanet.service "${ROOTFS_DIR}/etc/systemd/system/redundanet.service"
 install -m 644 files/redundanet-docker.service "${ROOTFS_DIR}/etc/systemd/system/redundanet-docker.service"
 install -m 644 files/redundanet-init.service "${ROOTFS_DIR}/etc/systemd/system/redundanet-init.service"
+install -m 644 files/redundanet-update.service "${ROOTFS_DIR}/etc/systemd/system/redundanet-update.service"
+install -m 644 files/redundanet-update.timer "${ROOTFS_DIR}/etc/systemd/system/redundanet-update.timer"
 
 # Enable services
 on_chroot << EOF
 systemctl enable redundanet-init.service
-# Don't enable redundanet-docker yet - let first-boot configure it
+# Don't enable redundanet-docker yet - let first-boot configure it.
+# Auto-update timer ships disabled: opt in per node with
+#   systemctl enable --now redundanet-update.timer
 EOF
 
 echo "Systemd services configured"

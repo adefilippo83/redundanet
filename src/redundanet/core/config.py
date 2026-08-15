@@ -17,6 +17,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_CONFIG_DIR = Path("/etc/redundanet")
 
 
+def user_config_dir() -> Path:
+    """Per-user fallback config dir for hosts where /etc is not writable."""
+    return Path.home() / ".config" / "redundanet"
+
+
+def user_data_dir() -> Path:
+    """Per-user fallback data dir for hosts where /var/lib is not writable."""
+    return Path.home() / ".local" / "share" / "redundanet"
+
+
 class NodeRole(StrEnum):
     """Available roles for a RedundaNet node."""
 
@@ -217,11 +227,14 @@ def load_settings() -> AppSettings:
     """Load application settings.
 
     Sources, in increasing precedence: a ``.env`` in the current directory, the
-    persisted node config at ``<config_dir>/.env`` (written by ``redundanet
-    init``), then real ``REDUNDANET_*`` environment variables.
+    per-user config at ``~/.config/redundanet/.env`` (written by ``redundanet
+    init`` when the system paths are not writable), the persisted node config
+    at ``<config_dir>/.env``, then real ``REDUNDANET_*`` environment variables.
     """
     config_dir = Path(os.environ.get("REDUNDANET_CONFIG_DIR", str(DEFAULT_CONFIG_DIR)))
-    return AppSettings(_env_file=(".env", str(config_dir / ".env")))
+    return AppSettings(
+        _env_file=(".env", str(user_config_dir() / ".env"), str(config_dir / ".env"))
+    )
 
 
 def get_default_manifest_path(settings: AppSettings | None = None) -> Path:

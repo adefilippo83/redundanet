@@ -67,9 +67,9 @@ RUN mkdir -p /var/lib/redundanet/{manifest,tinc} \
 # Expose Tinc port
 EXPOSE 655/tcp 655/udp
 
-# Health check
+# Health check (the VPN interface is named after the network: "redundanet")
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ip link show tinc0 | grep -q UP || exit 1
+    CMD ip link show redundanet | grep -q UP || exit 1
 
 # Run entrypoint
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/tinc.conf"]

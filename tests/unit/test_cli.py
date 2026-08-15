@@ -209,5 +209,5 @@ class TestSubcommandHelp:
     def test_storage_help(self):
         result = runner.invoke(app, ["storage", "--help"])
         assert result.exit_code == 0
-        for command in ("upload", "download", "status"):
+        for command in ("upload", "download", "status", "renew"):
             assert command in result.output

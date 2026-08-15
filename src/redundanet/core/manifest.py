@@ -86,6 +86,21 @@ MANIFEST_SCHEMA: dict[str, Any] = {
 }
 
 
+def locate_manifest(manifest_dir: Path, filename: str = "manifest.yaml") -> Path | None:
+    """Find the manifest file under a manifest directory.
+
+    The directory is either a plain directory holding the manifest at its top
+    level (test mounts, `redundanet sync` output) or a clone of the network
+    repository, where the manifest lives under ``manifests/``. The container
+    entrypoints must handle both — reading only the top level silently yields
+    an empty peer list when the directory is a repo clone.
+    """
+    for candidate in (manifest_dir / filename, manifest_dir / "manifests" / filename):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 class Manifest:
     """Manages the RedundaNet network manifest."""
 
