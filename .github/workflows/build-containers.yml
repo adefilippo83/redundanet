@@ -26,7 +26,7 @@ jobs:
           - tahoe-storage
           - tahoe-client
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # QEMU enables cross-building the arm64/arm32 images on the amd64 runner.
       - name: Set up QEMU
@@ -85,7 +85,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -139,7 +139,7 @@ jobs:
     needs: [build, build-base]
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate docker-compose.yml
         run: docker compose -f docker/docker-compose.yml config
