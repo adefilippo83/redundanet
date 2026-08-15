@@ -23,6 +23,11 @@ services:
     ports:
       - "${TINC_PORT:-655}:655/tcp"
       - "${TINC_PORT:-655}:655/udp"
+      # SFTP frontend of the tahoe-client (which shares this netns). Only
+      # published when SFTP_ENABLED — bind to the LAN, never port-forward to
+      # the internet. Default 127.0.0.1 keeps it loopback-only until you set
+      # SFTP_BIND to a LAN address (e.g. 0.0.0.0 or the node's LAN IP).
+      - "${SFTP_BIND:-127.0.0.1}:${SFTP_PORT:-8022}:8022/tcp"
     environment:
       - REDUNDANET_NODE_NAME=${NODE_NAME}
       - REDUNDANET_INTERNAL_VPN_IP=${VPN_IP}
@@ -109,6 +114,8 @@ services:
       - REDUNDANET_SHARES_NEEDED=${SHARES_NEEDED:-3}
       - REDUNDANET_SHARES_HAPPY=${SHARES_HAPPY:-7}
       - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
+      - REDUNDANET_SFTP_ENABLED=${SFTP_ENABLED:-false}
+      - REDUNDANET_SFTP_PORT=${SFTP_PORT:-8022}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest

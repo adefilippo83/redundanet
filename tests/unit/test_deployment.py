@@ -36,6 +36,26 @@ def test_base_command_has_project_and_file(tmp_path):
     assert str(settings.compose_file) in base
 
 
+def test_base_includes_override_when_present(tmp_path):
+    """A CLI-driven recreate MUST keep docker-compose.override.yml — passing -f
+    disables Docker's auto-load, and dropping it detaches a storage node's data
+    disk (the bind-mount lives in the override)."""
+    settings = make_settings(tmp_path)
+    override = settings.compose_file.parent / "docker-compose.override.yml"
+    override.write_text("services: {}\n")
+    dep = Deployment(settings)
+    base = dep._base()
+    # Both the main file and the override are passed with -f.
+    assert base.count("-f") == 2
+    assert str(override) in base
+
+
+def test_base_no_override_when_absent(tmp_path):
+    settings = make_settings(tmp_path)
+    dep = Deployment(settings)
+    assert dep._base().count("-f") == 1
+
+
 def test_env_file_added_to_base(tmp_path):
     env = tmp_path / ".env"
     env.write_text("X=1\n")
@@ -79,6 +99,70 @@ def test_exec_builds_command(tmp_path, monkeypatch):
     assert cmd[:4] == ["docker", "compose", "-p", "testproj"]
     assert "exec" in cmd and "-T" in cmd and "tahoe-client" in cmd
     assert cmd[-5:] == ["tahoe", "-d", "/d", "put", "/f"]
+
+
+class FakeCompose:
+    """Deployment.compose stand-in scripted by subcommand."""
+
+    def __init__(self, responses: dict) -> None:
+        self.responses = responses
+        self.calls: list[tuple[str, ...]] = []
+
+    def __call__(self, *args, **kwargs):
+        self.calls.append(args)
+        for key, result in self.responses.items():
+            if args[: len(key)] == key:
+                return result() if callable(result) else result
+        return CommandResult(0, "", "", "")
+
+
+def test_service_containers_maps_names(tmp_path):
+    dep = Deployment(make_settings(tmp_path))
+    payload = (
+        '{"Service":"tinc","Name":"redundanet-tinc"}\n'
+        '{"Service":"tahoe-storage","Name":"redundanet-tahoe-storage"}'
+    )
+    dep.compose = FakeCompose({("ps",): CommandResult(0, payload, "", "")})  # type: ignore[assignment]
+    assert dep._service_containers() == {
+        "tinc": "redundanet-tinc",
+        "tahoe-storage": "redundanet-tahoe-storage",
+    }
+
+
+def test_pending_image_changes_detects_pulled_image(tmp_path, monkeypatch):
+    """The running container's image differs from what the reference it was
+    created from now resolves to (post-pull) — so the service is reported
+    changed. Uses `docker inspect`, never `docker compose images` (which
+    returned empty on compose v5.4 and silently broke detection)."""
+    dep = Deployment(make_settings(tmp_path))
+    ps = '{"Service":"tinc","Name":"c-tinc"}\n{"Service":"tahoe-storage","Name":"c-storage"}'
+    dep.compose = FakeCompose({("ps",): CommandResult(0, ps, "", "")})  # type: ignore[assignment]
+
+    # tinc container runs 'old' but its ref now resolves to 'new'; storage is
+    # unchanged ('same' == 'same').
+    inspects = {
+        ("c-tinc", "{{.Image}}"): "old",
+        ("c-tinc", "{{.Config.Image}}"): "repo/tinc:main",
+        ("c-storage", "{{.Image}}"): "same",
+        ("c-storage", "{{.Config.Image}}"): "repo/storage:main",
+        ("repo/tinc:main", "{{.Id}}"): "new",
+        ("repo/storage:main", "{{.Id}}"): "same",
+    }
+    monkeypatch.setattr(dep, "_inspect", lambda target, fmt: inspects[(target, fmt)])
+
+    assert dep.pending_image_changes(["tinc", "tahoe-storage"]) == ["tinc"]
+
+
+def test_recreate_forces_and_names_services(tmp_path):
+    dep = Deployment(make_settings(tmp_path))
+    fake = FakeCompose({})
+    dep.compose = fake  # type: ignore[assignment]
+    dep.recreate(["tinc", "tahoe-storage", "tahoe-client"])
+    call = fake.calls[-1]
+    assert call[:3] == ("up", "-d", "--force-recreate")
+    # tinc named first so it is recreated before the tahoe services (netns).
+    assert call[3] == "tinc"
+    assert "tahoe-storage" in call and "tahoe-client" in call
 
 
 def test_git_sync_initializes_in_place_never_clones(tmp_path, monkeypatch):
