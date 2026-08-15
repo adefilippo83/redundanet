@@ -16,7 +16,7 @@ Project Earthgrid is a distributed, encrypted storage system built on Tahoe-LAFS
 ### Key Features
 - **Decentralized Architecture**: No central authority or single point of failure
 - **End-to-End Encryption**: Data is encrypted before leaving the user's device
-- **High Redundancy**: 3-of-10 erasure coding scheme ensures data availability
+- **High Redundancy**: configurable *k*-of-*n* erasure coding (3-of-10 by default) ensures data availability
 - **Resource Sharing**: Users contribute resources and benefit from the collective capacity
 - **Private Networking**: Secure mesh VPN isolates the storage network from the public internet
 
@@ -218,7 +218,7 @@ graph TD
 
 ### 4.2 Erasure Coding
 
-#### 3-of-10 Scheme Implementation
+#### Erasure-Coding Scheme (default 3-of-10, configurable)
 
 ```mermaid
 graph LR

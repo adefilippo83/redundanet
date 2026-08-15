@@ -179,7 +179,11 @@ def init(
     console.print("\n[bold]Next steps:[/bold]")
     console.print("1. Generate GPG keys: [cyan]redundanet node keys generate[/cyan]")
     console.print("2. Join the network:  [cyan]redundanet network join[/cyan]")
-    console.print("3. Start services:    [cyan]docker compose up -d[/cyan]" if docker else "")
+    # 'join' derives this node's compose profile from its manifest roles and
+    # prints the exact 'docker compose ... up -d' to run — so we don't print a
+    # role-agnostic (and here, wrong) command at init time.
+    if docker:
+        console.print("3. Start services:    the 'join' command prints the exact start command")
 
 
 @app.command()
@@ -393,27 +397,38 @@ def validate_manifest(
         typer.Argument(help="Path to the manifest file"),
     ],
 ) -> None:
-    """Validate a network manifest file."""
+    """Validate a network manifest file.
+
+    Exits non-zero if the manifest has blocking errors (so CI and operators can
+    gate on it); advisory warnings alone do not fail the check.
+    """
     try:
         manifest = Manifest.from_file(manifest_path)
-        errors = manifest.validate()
-
-        if errors:
-            console.print("[yellow]Validation warnings:[/yellow]")
-            for error in errors:
-                console.print(f"  [yellow]![/yellow] {error}")
-        else:
-            console.print("[green]Manifest is valid![/green]")
-
-        # Print summary
-        console.print(f"\n[bold]Network:[/bold] {manifest.network.name}")
-        console.print(f"[bold]Nodes:[/bold] {len(manifest.nodes)}")
-        console.print(f"[bold]Introducers:[/bold] {len(manifest.get_introducers())}")
-        console.print(f"[bold]Storage Nodes:[/bold] {len(manifest.get_storage_nodes())}")
-
     except Exception as e:
         console.print(f"[red]Validation failed:[/red] {e}")
         raise typer.Exit(1) from None
+
+    result = manifest.validate_detailed()
+
+    if result.errors:
+        console.print("[red]Validation errors:[/red]")
+        for error in result.errors:
+            console.print(f"  [red]✗[/red] {error}")
+    if result.warnings:
+        console.print("[yellow]Validation warnings:[/yellow]")
+        for warning in result.warnings:
+            console.print(f"  [yellow]![/yellow] {warning}")
+    if not result.errors and not result.warnings:
+        console.print("[green]Manifest is valid![/green]")
+
+    # Print summary
+    console.print(f"\n[bold]Network:[/bold] {manifest.network.name}")
+    console.print(f"[bold]Nodes:[/bold] {len(manifest.nodes)}")
+    console.print(f"[bold]Introducers:[/bold] {len(manifest.get_introducers())}")
+    console.print(f"[bold]Storage Nodes:[/bold] {len(manifest.get_storage_nodes())}")
+
+    if result.errors:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

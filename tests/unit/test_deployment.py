@@ -153,6 +153,24 @@ def test_pending_image_changes_detects_pulled_image(tmp_path, monkeypatch):
     assert dep.pending_image_changes(["tinc", "tahoe-storage"]) == ["tinc"]
 
 
+def test_cp_in_out_pass_timeout(tmp_path):
+    """Bulk copies must be able to outlast the 120s control default, or large
+    uploads/downloads fail mid-transfer."""
+    dep = Deployment(make_settings(tmp_path))
+    recorded: list[tuple[tuple, dict]] = []
+
+    def rec(*args, **kwargs):
+        recorded.append((args, kwargs))
+        return CommandResult(0, "", "", "")
+
+    dep.compose = rec  # type: ignore[assignment]
+    dep.cp_in("tahoe-client", tmp_path / "f", "/tmp/f", timeout=3600)
+    dep.cp_out("tahoe-client", "/tmp/f", tmp_path / "f", timeout=1800)
+
+    assert recorded[0][0][0] == "cp" and recorded[0][1]["timeout"] == 3600
+    assert recorded[1][0][0] == "cp" and recorded[1][1]["timeout"] == 1800
+
+
 def test_recreate_forces_and_names_services(tmp_path):
     dep = Deployment(make_settings(tmp_path))
     fake = FakeCompose({})

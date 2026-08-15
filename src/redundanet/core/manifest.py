@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 from jsonschema import ValidationError as JsonSchemaValidationError
@@ -12,6 +12,20 @@ from jsonschema import validate
 
 from redundanet.core.config import NetworkConfig, NodeConfig
 from redundanet.core.exceptions import ManifestError, ValidationError
+
+
+class ManifestValidation(NamedTuple):
+    """Validation findings, split into blocking errors and advisory warnings.
+
+    ``errors`` mark a manifest that is structurally unusable (a VPN/grid that
+    cannot function); ``warnings`` are policy/capacity nudges a healthy network
+    may legitimately carry. ``redundanet validate`` exits non-zero only on
+    errors, so a real defect actually fails the required check.
+    """
+
+    errors: list[str]
+    warnings: list[str]
+
 
 # JSON Schema for manifest validation
 MANIFEST_SCHEMA: dict[str, Any] = {
@@ -257,19 +271,28 @@ class Manifest:
 
         self._path = path
 
-    def validate(self) -> list[str]:
-        """Validate the manifest and return a list of warnings/errors."""
-        errors: list[str] = []
+    def validate_detailed(self) -> ManifestValidation:
+        """Validate the manifest, separating blocking errors from advisories.
 
-        # Check for duplicate node names
+        Errors make the network structurally unusable; warnings are policy or
+        capacity nudges a healthy network may legitimately carry. Prefer this
+        over :meth:`validate` when the caller needs to act on the distinction
+        (e.g. exit non-zero only on errors).
+        """
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # Duplicate node names collide in the tinc host-file layout and silently
+        # drop a peer's auth -> the network cannot function. ERROR.
         names = [node.name for node in self.nodes]
         duplicates = [name for name in set(names) if names.count(name) > 1]
         if duplicates:
             errors.append(f"Duplicate node names: {duplicates}")
 
-        # Check for IPs shared across different nodes. A node whose internal_ip
-        # equals its own vpn_ip is valid (and recommended) and must not be
-        # flagged — only an address owned by two or more distinct nodes is.
+        # IPs shared across different nodes break VPN routing. A node whose
+        # internal_ip equals its own vpn_ip is valid (and recommended) and must
+        # not be flagged — only an address owned by two or more distinct nodes
+        # is. ERROR.
         ip_owners: dict[str, set[str]] = {}
         for node in self.nodes:
             node_ips = {node.internal_ip}
@@ -281,12 +304,12 @@ class Manifest:
         if duplicate_ips:
             errors.append(f"Duplicate IP addresses: {duplicate_ips}")
 
-        # Check introducer presence/count. Without exactly one introducer (or an
-        # externally provided FURL) the Tahoe grid cannot bootstrap: storage and
-        # client nodes wait for an introducer FURL and give up.
+        # Introducer presence/count. Without an introducer (or an externally
+        # provided FURL) the grid cannot bootstrap — ERROR. More than one is
+        # merely unusual under the current single-introducer design — WARNING.
         introducers = [n for n in self.nodes if "tahoe_introducer" in [r.value for r in n.roles]]
         if len(introducers) > 1:
-            errors.append(
+            warnings.append(
                 f"Found {len(introducers)} introducer nodes. "
                 "Having more than one introducer is unusual."
             )
@@ -297,31 +320,49 @@ class Manifest:
                 "not be able to join the grid."
             )
 
-        # An introducer_furl, when present, must be a well-formed Tahoe FURL.
+        # An introducer_furl, when present, must be a well-formed Tahoe FURL. ERROR.
         if self.introducer_furl:
             from redundanet.storage.furl import validate_furl
 
             if not validate_furl(self.introducer_furl):
                 errors.append(f"Invalid introducer_furl: {self.introducer_furl!r}")
 
-        # Short GPG key ids are brute-forceable (fingerprint-suffix collisions);
-        # nudge networks toward full 40-char fingerprints.
+        # Short GPG key ids are brute-forceable (fingerprint-suffix collisions).
+        # Advisory here; hard enforcement lives on the join/identity path.
         short_key_nodes = [n.name for n in self.nodes if n.gpg_key_id and len(n.gpg_key_id) < 40]
         if short_key_nodes:
-            errors.append(
+            warnings.append(
                 "Nodes using short GPG key ids instead of full 40-char fingerprints "
                 f"(collision-prone): {short_key_nodes}"
             )
 
-        # Check storage node count vs shares_happy
+        # Storage capacity vs shares_happy. Too few nodes to ever satisfy happy
+        # is a capacity nudge (a growing network legitimately starts short);
+        # happy == count means no write-redundancy headroom (losing one node
+        # makes the grid read-only). Both advisory.
         storage_nodes = [n for n in self.nodes if "tahoe_storage" in [r.value for r in n.roles]]
-        if len(storage_nodes) < self.network.tahoe.shares_happy:
-            errors.append(
-                f"Not enough storage nodes ({len(storage_nodes)}) "
-                f"to satisfy shares_happy ({self.network.tahoe.shares_happy})"
+        happy = self.network.tahoe.shares_happy
+        if len(storage_nodes) < happy:
+            warnings.append(
+                f"Not enough storage nodes ({len(storage_nodes)}) to satisfy shares_happy ({happy})"
+            )
+        elif storage_nodes and len(storage_nodes) == happy:
+            warnings.append(
+                f"shares_happy ({happy}) equals the storage-node count "
+                f"({len(storage_nodes)}): losing any one node makes the grid "
+                "read-only (no write-redundancy headroom)."
             )
 
-        return errors
+        return ManifestValidation(errors=errors, warnings=warnings)
+
+    def validate(self) -> list[str]:
+        """Flat list of all findings (errors first, then warnings).
+
+        Kept for backward compatibility; :meth:`validate_detailed` exposes the
+        error/warning split.
+        """
+        result = self.validate_detailed()
+        return [*result.errors, *result.warnings]
 
     def get_node(self, name: str) -> NodeConfig | None:
         """Get a node by name."""

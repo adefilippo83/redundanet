@@ -14,7 +14,7 @@ RedundaNet is a distributed, encrypted storage system built on a secure mesh VPN
 - **End-to-End Encryption**: Data is encrypted before leaving your device using Tahoe-LAFS
 - **GPG-Based Authentication**: Secure node identity verification via public keyservers
 - **Private Networking**: Secure Tinc mesh VPN isolates the storage network
-- **Erasure Coding**: Data is split and distributed across multiple nodes (3-of-10 scheme)
+- **Erasure Coding**: Data is split and distributed across multiple nodes using a configurable *k*-of-*n* scheme (3-of-10 by default)
 - **Open Membership**: Anyone can apply to join the network
 - **Containerized Deployment**: Easy setup with Docker Compose
 - **Raspberry Pi Ready**: Pre-built images for ARM devices
@@ -51,9 +51,11 @@ RedundaNet is a distributed, encrypted storage system built on a secure mesh VPN
 
 **Key Concepts:**
 - **Your data is encrypted** on your device before upload - nodes cannot read your files
-- **Erasure coding** splits data across nodes - any 3 of 10 nodes can reconstruct your file
+- **Erasure coding** splits data across nodes - with the default 3-of-10, any 3 of the 10 shares reconstruct your file
 - **Mesh VPN** connects all nodes securely - no central server required
 - **GPG keys** verify node identity - published to public keyservers
+
+> **Encoding is configurable per network.** The *k*-of-*n* split (`shares_needed` / `shares_happy` / `shares_total`) is set in the network manifest; 3-of-10 above is the default example. A small network runs smaller parameters, and if `shares_happy` equals the number of storage nodes there is no write-redundancy headroom — losing any one node makes the grid read-only until another joins. Run `redundanet validate <manifest>` to surface this.
 
 ## Join the Network
 

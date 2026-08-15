@@ -21,6 +21,11 @@ from redundanet.utils.process import CommandResult
 app = typer.Typer(help="Storage management commands")
 console = Console()
 
+# Bulk transfers (upload/download) ride the erasure-coding + mesh path and can
+# far outlast the 120s default used for control commands; give them an hour by
+# default, overridable with --timeout.
+DATA_TIMEOUT = 3600
+
 
 def _deployment() -> tuple[Deployment, AppSettings]:
     """Return a ready-to-use Deployment, or exit with a friendly error."""
@@ -128,6 +133,15 @@ def upload_file(
             "(an alias from 'storage mkdir'). Omit for an unlinked capability.",
         ),
     ] = None,
+    timeout: Annotated[
+        int,
+        typer.Option(
+            "--timeout",
+            help="Seconds allowed for the copy and the erasure-coded upload. "
+            "Raise for large files: the default suits data transfer, not the 120s "
+            "control-command default.",
+        ),
+    ] = DATA_TIMEOUT,
 ) -> None:
     """Upload a file to the grid.
 
@@ -146,14 +160,14 @@ def upload_file(
     node_dir = str(settings.client_node_dir)
 
     with console.status(f"[bold green]Uploading {source.name}..."):
-        copy = deployment.cp_in(settings.client_service, source, container_path)
+        copy = deployment.cp_in(settings.client_service, source, container_path, timeout=timeout)
         if not copy.success:
             console.print(f"[red]Failed to copy file into client:[/red] {copy.stderr.strip()}")
             raise typer.Exit(1)
         put_args = ["tahoe", "-d", node_dir, "put", container_path]
         if dest:
             put_args.append(dest)
-        result = deployment.exec(settings.client_service, put_args)
+        result = deployment.exec(settings.client_service, put_args, timeout=timeout)
         deployment.exec(settings.client_service, ["rm", "-f", container_path])
 
     if not result.success:
@@ -184,6 +198,14 @@ def download_file(
         Path | None,
         typer.Argument(help="Local destination path"),
     ] = None,
+    timeout: Annotated[
+        int,
+        typer.Option(
+            "--timeout",
+            help="Seconds allowed for the erasure-coded fetch and the copy out. "
+            "Raise for large files (the 120s control default is too short).",
+        ),
+    ] = DATA_TIMEOUT,
 ) -> None:
     """Download a file from the storage grid by capability or alias path."""
     deployment, settings = _deployment()
@@ -194,14 +216,16 @@ def download_file(
 
     with console.status(f"[bold green]Downloading to {dest}..."):
         result = deployment.exec(
-            settings.client_service, ["tahoe", "-d", node_dir, "get", cap, container_path]
+            settings.client_service,
+            ["tahoe", "-d", node_dir, "get", cap, container_path],
+            timeout=timeout,
         )
         if not result.success:
             console.print(
                 f"[red]Download failed:[/red] {result.stderr.strip() or result.stdout.strip()}"
             )
             raise typer.Exit(1)
-        copy = deployment.cp_out(settings.client_service, container_path, dest)
+        copy = deployment.cp_out(settings.client_service, container_path, dest, timeout=timeout)
         deployment.exec(settings.client_service, ["rm", "-f", container_path])
 
     if not copy.success:

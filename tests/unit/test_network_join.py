@@ -8,6 +8,8 @@ from redundanet.cli.network import (
     _find_node_in_manifest,
     _generate_env_file,
     _load_manifest_dict,
+    _merge_env,
+    _profiles_for_roles,
 )
 
 
@@ -67,6 +69,57 @@ class TestGenerateEnvFile:
         assert env["SHARES_TOTAL"] == "10"
         assert env["RESERVED_SPACE"] == "1G"
         assert env["PUBLIC_IP"] == "auto"
+
+
+class TestRejoinPreservesLocalConfig:
+    """A re-join must not clobber a working node's local .env or strand its key."""
+
+    def test_operator_keys_survive_rejoin(self, tmp_path: Path):
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "NODE_NAME=old-name\n"
+            "SFTP_ENABLED=true\n"
+            "SFTP_BIND=0.0.0.0\n"
+            "LOG_LEVEL=DEBUG\n"
+            "GPG_KEY_ID=EXISTINGKEYFINGERPRINT0000000000000000AA\n"
+        )
+        node = {"name": "new-name", "vpn_ip": "10.100.0.10"}  # manifest carries no key
+        _generate_env_file(node, {}, "repo", "main", tmp_path)
+
+        env = parse_env(env_path)
+        # Manifest-derived value updated...
+        assert env["NODE_NAME"] == "new-name"
+        # ...operator-set keys preserved (this is what wiped SFTP before)...
+        assert env["SFTP_ENABLED"] == "true"
+        assert env["SFTP_BIND"] == "0.0.0.0"
+        assert env["LOG_LEVEL"] == "DEBUG"
+        # ...and an existing key id is never blanked by a keyless manifest.
+        assert env["GPG_KEY_ID"] == "EXISTINGKEYFINGERPRINT0000000000000000AA"
+
+    def test_manifest_key_overrides_existing(self, tmp_path: Path):
+        env_path = tmp_path / ".env"
+        env_path.write_text("GPG_KEY_ID=OLD\n")
+        node = {"name": "n", "gpg_key_id": "NEWFINGERPRINT111111111111111111111111AA"}
+        _generate_env_file(node, {}, "repo", "main", tmp_path)
+        assert parse_env(env_path)["GPG_KEY_ID"] == "NEWFINGERPRINT111111111111111111111111AA"
+
+    def test_merge_appends_unknown_manifest_keys(self):
+        merged = _merge_env("NODE_NAME=a\n", {"NODE_NAME": "b", "VPN_IP": "10.0.0.1"})
+        lines = [line for line in merged.splitlines() if "=" in line and not line.startswith("#")]
+        assert "NODE_NAME=b" in lines
+        assert "VPN_IP=10.0.0.1" in lines
+
+
+class TestProfilesForRoles:
+    def test_maps_roles_to_compose_profiles(self):
+        assert _profiles_for_roles(["tahoe_storage"]) == ["storage"]
+        assert _profiles_for_roles(["tahoe_introducer"]) == ["introducer"]
+        assert _profiles_for_roles(["tahoe_storage", "tahoe_client"]) == ["storage", "client"]
+
+    def test_ignores_non_service_roles_and_dedupes(self):
+        # tinc_vpn has no profile (it always runs); duplicates collapse.
+        assert _profiles_for_roles(["tinc_vpn", "tahoe_storage", "tahoe_storage"]) == ["storage"]
+        assert _profiles_for_roles([]) == []
 
 
 class TestManifestLookup:

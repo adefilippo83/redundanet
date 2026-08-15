@@ -641,7 +641,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">&#128218;</div>
                     <h3 data-i18n="features.erasure.title">Erasure Coding</h3>
-                    <p data-i18n="features.erasure.desc">Data is split into 10 encrypted shares. Any 3 can reconstruct your file. Survives up to 7 node failures.</p>
+                    <p data-i18n="features.erasure.desc">By default, data is split into 10 encrypted shares and any 3 can reconstruct your file (surviving up to 7 node failures). The split is configurable per network.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128273;</div>
@@ -701,7 +701,7 @@
                         </div>
                     </div>
                     <p style="text-align: center; margin-top: 24px; color: var(--text-muted);" data-i18n="how.flow.note">
-                        <strong>Any 3 of 10 shares</strong> can reconstruct your original file.<br>
+                        <strong>By default, any 3 of 10 shares</strong> can reconstruct your original file (the split is configurable per network).<br>
                         Storage nodes only see encrypted blobs - they cannot read your data.
                     </p>
                 </div>
@@ -716,7 +716,7 @@
                 <div class="process-step">
                     <div class="step-number">2</div>
                     <h4 data-i18n="how.step2.title">Erasure Coding</h4>
-                    <p data-i18n="how.step2.desc">The encrypted file is split into 10 shares using Reed-Solomon coding. Only 3 are needed to reconstruct.</p>
+                    <p data-i18n="how.step2.desc">By default, the encrypted file is split into 10 shares using Reed-Solomon coding, of which only 3 are needed to reconstruct. The k-of-n split is configurable per network.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">3</div>
