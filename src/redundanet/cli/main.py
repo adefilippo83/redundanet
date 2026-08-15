@@ -266,6 +266,74 @@ def status(
 
 
 @app.command()
+def update(
+    check: Annotated[
+        bool,
+        typer.Option(
+            "--check", help="Only report whether new images are available; change nothing"
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Recreate without confirmation"),
+    ] = False,
+) -> None:
+    """Pull the latest container images and recreate the node's services.
+
+    Netns-aware: the tahoe services share the tinc container's network
+    namespace, so this force-recreates all running services together (tinc
+    first) — a plain restart would strand them on the old namespace.
+    """
+    settings = load_settings()
+    deployment = Deployment(settings)
+    try:
+        deployment.require()
+    except Exception as e:  # DeploymentError and friends
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1) from None
+
+    services = deployment.running_services()
+    if not services:
+        console.print("[yellow]No running services found.[/yellow] Start the node first.")
+        raise typer.Exit(1)
+
+    with console.status("[bold green]Pulling latest images..."):
+        pull = deployment.pull(services)
+    if not pull.success:
+        console.print(f"[red]Pull failed:[/red] {pull.stderr.strip() or pull.stdout.strip()}")
+        raise typer.Exit(1)
+
+    # A pull updates the local repo:tag but NOT the running container's image,
+    # so compare each container's image against what its tag now resolves to.
+    changed = deployment.pending_image_changes(services)
+    if not changed:
+        console.print("[green]Already up to date.[/green] No image changed.")
+        return
+
+    console.print("[bold]Updated images available for:[/bold] " + ", ".join(changed))
+    if check:
+        console.print("[dim]--check: not recreating.[/dim]")
+        raise typer.Exit(0)
+
+    if not yes and not typer.confirm(
+        "Recreate these services now? (brief downtime; VPN reconverges after)"
+    ):
+        console.print("Aborted. Run without --check to apply later.")
+        raise typer.Exit(0)
+
+    with console.status("[bold green]Recreating services (tinc first)..."):
+        result = deployment.recreate(services)
+    if not result.success:
+        console.print(f"[red]Recreate failed:[/red] {result.stderr.strip()}")
+        raise typer.Exit(1)
+    console.print("[green]Updated.[/green] Services recreated from the new images.")
+    console.print(
+        "[dim]The VPN mesh takes ~a minute to reconverge before the client "
+        "reconnects to the grid.[/dim]"
+    )
+
+
+@app.command()
 def sync(
     force: Annotated[
         bool,

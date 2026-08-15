@@ -5,7 +5,7 @@ network:
   vpn_network: 10.100.0.0/16
   tahoe:
     shares_needed: 1
-    shares_happy: 1
+    shares_happy: 2
     shares_total: 2
     reserved_space: 1G
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
@@ -31,7 +31,23 @@ nodes:
   vpn_ip: 10.100.0.10
   gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
   region: europe
-  status: pending
+  status: active
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 900GB
+  is_publicly_accessible: false
+- name: node-bae1b9cd
+  internal_ip: 10.100.0.11
+  vpn_ip: 10.100.0.11
+  gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
+  region: europe
+  status: active
   roles:
   - tinc_vpn
   - tahoe_storage
