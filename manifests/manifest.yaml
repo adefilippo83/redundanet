@@ -31,7 +31,7 @@ nodes:
   vpn_ip: 10.100.0.10
   gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
   region: europe
-  status: pending
+  status: active
   roles:
   - tinc_vpn
   - tahoe_storage
@@ -47,7 +47,7 @@ nodes:
   vpn_ip: 10.100.0.11
   gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
   region: europe
-  status: pending
+  status: active
   roles:
   - tinc_vpn
   - tahoe_storage

@@ -1,6 +1,13 @@
 name: Build Raspberry Pi Image
 
 on:
+  # Trigger on the TAG PUSH, not on 'release: published'. The release is
+  # created by release.yml using GITHUB_TOKEN, and GitHub's recursion guard
+  # means a GITHUB_TOKEN-created release does NOT fire 'release: published' —
+  # so RPi images silently stopped building after v2.3.1. A tag push is a real
+  # user event and always triggers; the upload step upserts the release.
+  push:
+    tags: ["v*"]
   release:
     types: [published]
   workflow_dispatch:
@@ -31,6 +38,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
             echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
@@ -223,11 +232,11 @@ jobs:
           retention-days: 7
 
       - name: Upload to Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           files: |
             ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-arm64.img.xz
             SHA256SUMS-arm64.txt
@@ -246,6 +255,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           else
             echo "version=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
@@ -438,11 +449,11 @@ jobs:
           retention-days: 7
 
       - name: Upload to Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
           files: |
             ${{ env.IMAGE_NAME }}-${{ steps.version.outputs.version }}-armhf.img.xz
             SHA256SUMS-armhf.txt
