@@ -28,8 +28,14 @@ VALID_STATUS = {"active", "pending", "inactive"}
 
 
 def _is_gpg_key_id(value: str) -> bool:
+    """Only a full 40-char hex fingerprint is a valid node identity.
+
+    Short 8/16-char ids are brute-forceable (Evil32 fingerprint-suffix
+    collisions) and the runtime now refuses them outright, so the manifest
+    gate must too.
+    """
     v = value.replace(" ", "").upper()
-    return len(v) in (8, 16, 40) and all(c in "0123456789ABCDEF" for c in v)
+    return len(v) == 40 and all(c in "0123456789ABCDEF" for c in v)
 
 
 def validate(manifest_path: str) -> tuple[list[str], list[str]]:
@@ -96,14 +102,8 @@ def validate(manifest_path: str) -> tuple[list[str], list[str]]:
         elif not _is_gpg_key_id(str(gpg_key_id)):
             errors.append(
                 f"Node {name or where}: invalid gpg_key_id '{gpg_key_id}' "
-                "(expected an 8/16/40-character hex key id)"
-            )
-        elif len(str(gpg_key_id).replace(" ", "")) < 40:
-            # Short key ids are brute-forceable (fingerprint-suffix collisions).
-            # Advisory only: existing manifest entries still use 16-char ids.
-            warnings.append(
-                f"Node {name or where}: gpg_key_id is a short key id; prefer the "
-                "full 40-character fingerprint (short ids are collision-prone)"
+                "(expected the full 40-character hex fingerprint; short "
+                "8/16-character key ids are collision-prone and rejected)"
             )
 
         # IPs: must be valid, inside the VPN network, and unique across nodes.

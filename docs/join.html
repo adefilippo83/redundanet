@@ -360,8 +360,8 @@ pip install redundanet
 # Generate a new GPG key
 redundanet node keys generate --name my-node --email you@example.com
 
-# Publish your key to keyservers
-redundanet node keys publish --key-id YOUR_KEY_ID
+# Publish your key to keyservers (use the FULL 40-char fingerprint)
+redundanet node keys publish --key-id YOUR_FULL_FINGERPRINT
 
 # Or use standard GPG commands:
 gpg --gen-key
@@ -397,9 +397,9 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
         <div class="form-card">
             <form id="joinForm">
                 <div class="form-group">
-                    <label for="gpgKeyId" data-i18n="join.form.gpg.label">GPG Key ID *</label>
-                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="e.g., 0x1234ABCD5678EF90" data-i18n-placeholder="join.form.gpg.ph" required>
-                    <p class="hint" data-i18n="join.form.gpg.hint">Your GPG public key ID (must be published to a keyserver). Run <code>redundanet node keys list</code> or <code>gpg --list-keys --keyid-format long</code> to find it.</p>
+                    <label for="gpgKeyId" data-i18n="join.form.gpg.label">GPG Fingerprint *</label>
+                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="Full 40-character fingerprint, e.g. ABCD1234EF567890ABCD1234EF567890ABCD1234" data-i18n-placeholder="join.form.gpg.ph" required>
+                    <p class="hint" data-i18n="join.form.gpg.hint">Your GPG key's full 40-character fingerprint (must be published to a keyserver). Run <code>gpg --fingerprint</code> or <code>redundanet node keys list</code> to find it. Short key ids are not accepted.</p>
                 </div>
 
                 <div class="form-row">
@@ -495,9 +495,10 @@ gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
             const notes = document.getElementById('notes').value.trim() || 'None';
 
             // Validate GPG key format. Must match what the join workflow
-            // accepts: exactly 8, 16, or 40 hex characters (optional 0x).
-            if (!/^(0x)?([A-Fa-f0-9]{8}|[A-Fa-f0-9]{16}|[A-Fa-f0-9]{40})$/.test(gpgKeyId.replace(/\s/g, ''))) {
-                alert('Please enter a valid GPG key ID: exactly 8, 16, or 40 hexadecimal characters (the full 40-character fingerprint is preferred)');
+            // accepts: the FULL 40-hex-character fingerprint (optional 0x).
+            // Short 8/16-char key ids are collision-prone and rejected.
+            if (!/^(0x)?[A-Fa-f0-9]{40}$/.test(gpgKeyId.replace(/\s/g, ''))) {
+                alert('Please enter your full 40-character GPG fingerprint (run: gpg --fingerprint). Short 8/16-character key ids are not accepted.');
                 return;
             }
 

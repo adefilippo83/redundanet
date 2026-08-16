@@ -17,6 +17,26 @@ app = typer.Typer(help="Node management commands")
 console = Console()
 
 
+def _require_full_fingerprint(key_id: str) -> str:
+    """Normalize a key id and exit with guidance unless it is a full fingerprint.
+
+    The keyserver client refuses short 8/16-char ids (collision-prone), so
+    surfacing the requirement here beats a silent 'not found' later.
+    """
+    normalized = key_id.replace(" ", "").upper().removeprefix("0X")
+    if len(normalized) != 40 or any(c not in "0123456789ABCDEF" for c in normalized):
+        console.print(
+            f"[red]Error:[/red] a full 40-character GPG fingerprint is required (got {key_id!r})."
+        )
+        console.print(
+            "Short key ids are collision-prone and not accepted. Find your "
+            "fingerprint with: [cyan]gpg --fingerprint[/cyan] or "
+            "[cyan]redundanet node keys list[/cyan]"
+        )
+        raise typer.Exit(1)
+    return normalized
+
+
 @app.command("list")
 def list_nodes(
     manifest_path: Annotated[
@@ -187,6 +207,11 @@ def add_node(
     if manifest.get_node(name):
         console.print(f"[red]Error:[/red] Node '{name}' already exists")
         raise typer.Exit(1)
+
+    # A node identity must be a full fingerprint — reject early here rather
+    # than letting the manifest fail CI validation later.
+    if gpg_key_id:
+        gpg_key_id = _require_full_fingerprint(gpg_key_id)
 
     # Parse roles
     node_roles = []
@@ -474,6 +499,7 @@ def manage_keys(
             console.print("[red]Error:[/red] --key-id is required for publish")
             console.print("Use 'redundanet node keys list' to see your keys")
             raise typer.Exit(1)
+        key_id = _require_full_fingerprint(key_id)
 
         console.print(f"[bold]Publishing key to keyservers: {key_id}[/bold]")
 
@@ -541,6 +567,7 @@ def manage_keys(
         if not key_id:
             console.print("[red]Error:[/red] --key-id is required for fetch")
             raise typer.Exit(1)
+        key_id = _require_full_fingerprint(key_id)
 
         console.print(f"[bold]Fetching key from keyservers: {key_id}[/bold]")
 

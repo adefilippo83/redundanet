@@ -327,13 +327,14 @@ class Manifest:
             if not validate_furl(self.introducer_furl):
                 errors.append(f"Invalid introducer_furl: {self.introducer_furl!r}")
 
-        # Short GPG key ids are brute-forceable (fingerprint-suffix collisions).
-        # Advisory here; hard enforcement lives on the join/identity path.
+        # Short GPG key ids are brute-forceable (Evil32 fingerprint-suffix
+        # collisions) and the runtime refuses to fetch/match them, so a node
+        # with a short id cannot be authenticated at all. ERROR.
         short_key_nodes = [n.name for n in self.nodes if n.gpg_key_id and len(n.gpg_key_id) < 40]
         if short_key_nodes:
-            warnings.append(
+            errors.append(
                 "Nodes using short GPG key ids instead of full 40-char fingerprints "
-                f"(collision-prone): {short_key_nodes}"
+                f"(collision-prone, unfetchable at runtime): {short_key_nodes}"
             )
 
         # Storage capacity vs shares_happy. Too few nodes to ever satisfy happy

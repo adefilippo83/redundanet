@@ -195,17 +195,19 @@ class TestKeysPublish:
         monkeypatch.setattr("redundanet.auth.gpg.GPGManager", lambda *_a, **_k: object())
         monkeypatch.setattr("redundanet.cli.node.time.sleep", lambda _s: None)
 
+    FULL_FPR = "DEADBEEFCAFE1234DEADBEEFCAFE1234DEADBEEF"
+
     def test_upload_and_verify_ok(self):
         FakeKeyServerClient.upload_result = True
         FakeKeyServerClient.verify_result = True
-        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", self.FULL_FPR])
         assert result.exit_code == 0, result.output
         assert "verified fetchable" in result.output
 
     def test_upload_ok_but_unfetchable_fails_loudly(self):
         FakeKeyServerClient.upload_result = True
         FakeKeyServerClient.verify_result = False
-        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", self.FULL_FPR])
         assert result.exit_code == 1
         assert "cannot be fetched back" in result.output
         assert "cannot authenticate" in result.output
@@ -214,9 +216,20 @@ class TestKeysPublish:
 
     def test_upload_failure_exits_nonzero(self):
         FakeKeyServerClient.upload_result = False
-        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", self.FULL_FPR])
         assert result.exit_code == 1
         assert "Failed to upload" in result.output
+
+    def test_short_key_id_rejected_with_guidance(self):
+        """The CLI refuses short ids up front — the keyserver client would
+        silently find nothing (fail-closed), which is a worse experience."""
+        FakeKeyServerClient.upload_result = True
+        FakeKeyServerClient.verify_result = True
+        FakeKeyServerClient.verify_calls = 0  # class attr: reset (client never instantiated)
+        result = runner.invoke(app, ["node", "keys", "publish", "--key-id", "DEADBEEFCAFE1234"])
+        assert result.exit_code == 1
+        assert "40-character" in result.output
+        assert FakeKeyServerClient.verify_calls == 0  # never reached the network
 
 
 class TestSubcommandHelp:

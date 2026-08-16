@@ -48,13 +48,14 @@ class TestValidManifest:
         assert errors == []
         assert warnings == []
 
-    def test_short_key_id_is_warning_not_error(self, tmp_path: Path):
+    def test_short_key_id_is_a_hard_error(self, tmp_path: Path):
+        """Short ids are collision-prone and the runtime refuses them; the
+        manifest gate must fail them, not wave them through as warnings."""
         manifest = valid_manifest()
         manifest["nodes"][0]["gpg_key_id"] = "DEADBEEFCAFE1234"
         errors, warnings = validate_pr.validate(write_manifest(tmp_path, manifest))
-        assert errors == []
-        assert len(warnings) == 1
-        assert "short key id" in warnings[0]
+        assert warnings == []
+        assert any("40-character" in e for e in errors)
 
 
 class TestErrors:
@@ -123,5 +124,5 @@ class TestKeyIdPredicate:
         validate_pr._is_gpg_key_id(value)
 
     @given(st.text(alphabet="0123456789abcdefABCDEF", min_size=1, max_size=50))
-    def test_hex_accepted_only_at_valid_lengths(self, value: str):
-        assert validate_pr._is_gpg_key_id(value) == (len(value) in (8, 16, 40))
+    def test_hex_accepted_only_at_full_fingerprint_length(self, value: str):
+        assert validate_pr._is_gpg_key_id(value) == (len(value) == 40)

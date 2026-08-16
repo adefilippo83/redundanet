@@ -71,9 +71,10 @@ jobs:
 
       # The parsing/allocation logic lives in .github/scripts/process_join.py so
       # it is unit-tested (tests/unit/test_process_join.py). It strictly
-      # validates every attacker-controlled value before use, pins the key's
-      # full fingerprint when the key is found on the keyservers, and writes
-      # outputs with random-delimiter heredocs.
+      # validates every attacker-controlled value before use, requires the full
+      # 40-char fingerprint and FAILS CLOSED unless the key is fetchable from
+      # the keyservers with an exactly matching fingerprint, and writes outputs
+      # with random-delimiter heredocs.
       - name: Parse issue and update manifest
         id: process
         env:

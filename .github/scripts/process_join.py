@@ -11,10 +11,12 @@ anywhere, so it can contain no newlines or quotes that could inject
 GITHUB_OUTPUT entries or break out of a later github-script string. Values are
 additionally written with the random-delimiter heredoc form (defense in depth).
 
-The applicant's GPG key is looked up on the public keyservers; when found, the
-manifest stores the key's full 40-char fingerprint rather than the submitted
-short id (short ids are brute-forceable suffix collisions). A fetched key whose
-fingerprint does not end with the submitted id is treated as an error.
+The applicant must submit the full 40-character GPG fingerprint (short 8/16
+char ids are brute-forceable Evil32-style suffix collisions and are rejected).
+The key MUST be fetchable from the public keyservers and its fingerprint MUST
+exactly match the submitted one, or the join fails — peers authenticate the
+node by fetching exactly this key, so an unverifiable key would either brick
+the node or, worse, let an attacker-uploaded key take its place. Fail closed.
 """
 
 from __future__ import annotations
@@ -35,7 +37,9 @@ KEYSERVERS = [
     "keyserver.ubuntu.com",
 ]
 
-GPG_KEY_ID_RE = re.compile(r"[A-F0-9]{8}|[A-F0-9]{16}|[A-F0-9]{40}")
+# Only the full 40-char fingerprint is accepted as a node identity; short
+# 8/16-char ids are collision-prone and rejected outright.
+GPG_KEY_ID_RE = re.compile(r"[A-F0-9]{40}")
 
 
 @dataclass
@@ -64,9 +68,11 @@ def set_output(**kwargs: str) -> None:
 
 
 def parse_gpg_key_id(issue_body: str) -> str | None:
-    """Extract and strictly validate the GPG key id from the issue body.
+    """Extract and strictly validate the GPG fingerprint from the issue body.
 
-    Returns the normalized id (uppercase hex, no 0x) or None if missing/invalid.
+    Only a full 40-character hex fingerprint is accepted (spaces and an ``0x``
+    prefix are tolerated and stripped). Returns the normalized fingerprint or
+    None if missing/short/invalid.
     """
     match = re.search(r"\*\*GPG Key ID\*\*\s*\|\s*`([^`]+)`", issue_body)
     if not match:
@@ -178,13 +184,15 @@ def allocate_ip(manifest: dict[str, Any]) -> str | None:
 
 
 def is_duplicate_key(manifest: dict[str, Any], key_id: str) -> bool:
-    """True if a node already uses this key (or a shorter/longer form of it)."""
-    kid = key_id.upper()
+    """True if a node already uses this exact fingerprint.
+
+    Exact comparison only: identities are full 40-char fingerprints, and
+    suffix matching would let a crafted fingerprint alias an existing node.
+    """
+    kid = key_id.replace(" ", "").upper()
     for node in manifest.get("nodes", []):
         existing = str(node.get("gpg_key_id", "")).replace(" ", "").upper()
-        if not existing:
-            continue
-        if existing == kid or existing.endswith(kid) or kid.endswith(existing):
+        if existing and existing == kid:
             return True
     return False
 
@@ -200,39 +208,44 @@ def process(
         return JoinResult(
             success=False,
             error=(
-                "Could not parse a valid GPG Key ID from the issue "
-                "(expected 8, 16, or 40 hexadecimal characters)"
+                "Could not parse a valid GPG fingerprint from the issue "
+                "(expected the full 40-character hex fingerprint; short "
+                "8/16-character key ids are not accepted — run "
+                "'gpg --fingerprint <your-key>' to get it)"
             ),
         )
 
     result = JoinResult(success=True, gpg_key_id=key_id)
 
-    # Verify the key on the keyservers; when found, pin the full fingerprint.
+    # FAIL CLOSED: the key must be fetchable from the keyservers and its
+    # fingerprint must exactly match the submitted one. Peers authenticate the
+    # node by fetching exactly this key — admitting an unverifiable key would
+    # either brick the node or let attacker-uploaded material stand in for it.
     armored = fetch_key(key_id)
     if armored is None:
-        result.warnings.append(
-            "GPG key not found on keyservers. Proceeding anyway; publish it with: "
-            "redundanet node keys publish --key-id <key-id>"
+        return JoinResult(
+            success=False,
+            error=(
+                "GPG key not found on the public keyservers. Publish it first "
+                "('redundanet node keys publish --key-id <fingerprint>' or "
+                "upload at https://keys.openpgp.org/upload), wait a few "
+                "minutes, then re-open the request."
+            ),
         )
-    else:
-        fingerprint = armored_fingerprint(armored)
-        if fingerprint is None:
-            result.warnings.append(
-                "Keyserver response could not be parsed as an OpenPGP key; "
-                "keeping the submitted key id."
-            )
-        elif len(key_id) == 40 and fingerprint != key_id:
-            return JoinResult(
-                success=False,
-                error="Keyserver returned a key whose fingerprint does not match the submitted one",
-            )
-        elif not fingerprint.endswith(key_id):
-            return JoinResult(
-                success=False,
-                error="Keyserver returned a key that does not match the submitted key id",
-            )
-        else:
-            result.gpg_key_id = fingerprint  # store the full fingerprint
+    fingerprint = armored_fingerprint(armored)
+    if fingerprint is None:
+        return JoinResult(
+            success=False,
+            error=(
+                "The keyserver response could not be parsed as an OpenPGP "
+                "key; cannot verify the submitted fingerprint."
+            ),
+        )
+    if fingerprint != key_id:
+        return JoinResult(
+            success=False,
+            error="Keyserver returned a key whose fingerprint does not match the submitted one",
+        )
 
     storage = parse_storage(issue_body)
     region = parse_region(issue_body)

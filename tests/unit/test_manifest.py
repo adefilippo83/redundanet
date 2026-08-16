@@ -52,7 +52,7 @@ def valid_manifest_data() -> dict:
                 "internal_ip": "192.168.1.10",
                 "vpn_ip": "10.100.0.1",
                 "public_ip": "1.2.3.4",
-                "gpg_key_id": "ABCD1234",  # Valid 8-char hex
+                "gpg_key_id": "ABCD1234ABCD1234ABCD1234ABCD1234ABCD1234",  # full fingerprint
                 "roles": ["tahoe_introducer", "tahoe_storage"],
                 "storage_contribution": "100GB",
             },
@@ -60,7 +60,7 @@ def valid_manifest_data() -> dict:
                 "name": "node2",
                 "internal_ip": "192.168.1.11",
                 "vpn_ip": "10.100.0.2",
-                "gpg_key_id": "12345678",  # Valid 8-char hex
+                "gpg_key_id": "1234567812345678123456781234567812345678",  # full fingerprint
                 "roles": ["tahoe_storage", "tahoe_client"],
                 "storage_contribution": "500GB",
             },
@@ -302,22 +302,28 @@ class TestManifest:
         errors = manifest.validate()
         assert any("Invalid introducer_furl" in e for e in errors)
 
-    def test_short_gpg_key_ids_are_flagged(self, manifest_file: Path):
-        manifest = Manifest.from_file(manifest_file)
-        errors = manifest.validate()
-        assert any("short GPG key ids" in e for e in errors)
+    def test_short_gpg_key_ids_are_blocking_errors(self, valid_manifest_data: dict):
+        """Short ids cannot be fetched/matched by the runtime (fail-closed
+        keyserver client), so a manifest carrying one is broken — ERROR."""
+        data = dict(valid_manifest_data)
+        data["nodes"] = [dict(n) for n in data["nodes"]]
+        data["nodes"][0]["gpg_key_id"] = "ABCD1234"  # short id
+        result = Manifest.from_dict(data).validate_detailed()
+
+        assert any("short GPG key ids" in e for e in result.errors)
+        assert not any("short GPG key ids" in w for w in result.warnings)
 
     def test_validate_detailed_splits_errors_from_warnings(self, valid_manifest_data: dict):
-        # A duplicate IP is blocking; short keys / under-provisioning are advisory.
+        # A duplicate IP is blocking; under-provisioning stays advisory.
         data = dict(valid_manifest_data)
         data["nodes"] = [dict(n) for n in data["nodes"]]
         data["nodes"][1]["vpn_ip"] = data["nodes"][0]["vpn_ip"]  # force a dup IP
         result = Manifest.from_dict(data).validate_detailed()
 
         assert any("Duplicate IP" in e for e in result.errors)
-        assert any("short GPG key ids" in w for w in result.warnings)
+        assert any("Not enough storage nodes" in w for w in result.warnings)
         # Advisory items must NOT be classified as blocking errors.
-        assert not any("short GPG key ids" in e for e in result.errors)
+        assert not any("Not enough storage nodes" in e for e in result.errors)
         # The flat validate() stays a superset for backward compatibility.
         flat = Manifest.from_dict(data).validate()
         assert set(result.errors + result.warnings) == set(flat)

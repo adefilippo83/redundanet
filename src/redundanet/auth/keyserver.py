@@ -46,18 +46,15 @@ def armored_key_matches_id(armored: str, key_id: str) -> bool:
 
     SECURITY: anyone can upload any key to the SKS-style keyservers, so a
     fetched key must never be trusted just because the server returned it for
-    a lookup. A 40-char id (full fingerprint) must match exactly; shorter
-    (8/16-char) ids are matched as a fingerprint suffix. Note that short key
-    ids are brute-forceable (fingerprint-suffix collisions), so manifests
-    should carry full fingerprints.
+    a lookup. Only a full 40-char fingerprint with an exact match is accepted:
+    shorter (8/16-char) key ids are brute-forceable (Evil32-style
+    fingerprint-suffix collisions), so they never match — fail closed.
     """
     fingerprint = armored_key_fingerprint(armored)
     if not fingerprint:
         return False
     kid = normalize_key_id(key_id)
-    if len(kid) == 40:
-        return fingerprint == kid
-    return fingerprint.endswith(kid)
+    return len(kid) == 40 and fingerprint == kid
 
 
 class KeyServerClient:
@@ -149,17 +146,24 @@ class KeyServerClient:
         """Fetch a key from keyservers, verifying it matches the requested id.
 
         The fetched blob is only returned if its primary-key fingerprint
-        matches ``key_id`` (exact match for 40-char fingerprints, suffix match
-        for shorter key ids) — a keyserver response is attacker-uploadable
-        content, not an authority.
+        exactly matches ``key_id``, which must be a full 40-char fingerprint —
+        a keyserver response is attacker-uploadable content, not an authority,
+        and short key ids are brute-forceable suffix collisions (fail closed).
 
         Args:
-            key_id: Key ID or fingerprint
+            key_id: Full 40-character key fingerprint
 
         Returns:
             ASCII-armored public key, or None if not found or mismatched
         """
         kid = normalize_key_id(key_id)
+        if len(kid) != 40:
+            logger.warning(
+                "Refusing keyserver lookup with a short key id; use the full "
+                "40-character fingerprint (short ids are collision-prone)",
+                key_id=kid,
+            )
+            return None
         search = f"0x{kid}"
 
         for server in self.keyservers:

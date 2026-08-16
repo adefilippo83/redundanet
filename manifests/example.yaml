@@ -21,7 +21,8 @@ nodes:
     internal_ip: 192.168.1.10
     vpn_ip: 10.100.0.1
     public_ip: 203.0.113.10    # Optional: for publicly accessible nodes
-    gpg_key_id: ABCD1234EF567890
+    # The node identity: the FULL 40-character GPG fingerprint (short key ids are rejected).
+    gpg_key_id: ABCD1234EF567890ABCD1234EF567890ABCD1234
     region: us-east
     status: active
     roles:
@@ -35,7 +36,7 @@ nodes:
   - name: storage-node-1
     internal_ip: 192.168.1.20
     vpn_ip: 10.100.0.2
-    gpg_key_id: 1234567890ABCDEF
+    gpg_key_id: 1234567890ABCDEF1234567890ABCDEF12345678
     region: eu-west
     status: active
     roles:
@@ -47,7 +48,7 @@ nodes:
   - name: storage-node-2
     internal_ip: 192.168.2.30
     vpn_ip: 10.100.0.3
-    gpg_key_id: FEDCBA0987654321
+    gpg_key_id: FEDCBA0987654321FEDCBA0987654321FEDCBA09
     region: asia-pacific
     status: active
     roles:
@@ -61,7 +62,7 @@ nodes:
   - name: client-node
     internal_ip: 192.168.3.40
     vpn_ip: 10.100.0.4
-    gpg_key_id: 0F1E2D3C4B5A6978
+    gpg_key_id: 0F1E2D3C4B5A69780F1E2D3C4B5A69780F1E2D3C
     region: us-west
     status: active
     roles:

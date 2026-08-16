@@ -40,7 +40,7 @@ Visit [redundanet.com/join.html](https://redundanet.com/join.html) and fill out 
 
 | Field | Description |
 |-------|-------------|
-| **GPG Key ID** | The key ID from step 2 (e.g., `1234ABCD5678EF90`; the full 40-character fingerprint is preferred) |
+| **GPG Key ID** | The **full 40-character fingerprint** from step 2 (run `gpg --fingerprint`; short 8/16-char key ids are rejected — they are collision-prone) |
 | **Storage Contribution** | How much disk space you'll share (e.g., 100GB) |
 | **Region** | Your geographic location |
 | **Device Type** | Raspberry Pi, server, VPS, etc. |
