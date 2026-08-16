@@ -8,6 +8,7 @@ typed wrapper around ``docker compose`` built on :func:`run_command`.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -261,6 +262,69 @@ class Deployment:
         (see docs/quickstart.md: '0 shares after an update').
         """
         return self.compose("up", "-d", "--force-recreate", *services, timeout=600)
+
+    def current_images(self, services: list[str]) -> dict[str, tuple[str, str]]:
+        """For each service, ``(image reference, current image id)`` of its
+        running container. Captured *before* an update so a bad recreate can be
+        rolled back to the exact image that was working.
+        """
+        containers = self._service_containers()
+        images: dict[str, tuple[str, str]] = {}
+        for service in services:
+            container = containers.get(service)
+            if not container:
+                continue
+            ref = self._inspect(container, "{{.Config.Image}}")
+            image_id = self._inspect(container, "{{.Image}}")
+            if ref and image_id:
+                images[service] = (ref, image_id)
+        return images
+
+    def retag(self, image_id: str, ref: str) -> CommandResult:
+        """Point an image reference (``repo:tag``) back at a specific image id."""
+        return run_command(["docker", "tag", image_id, ref], check=False)
+
+    @staticmethod
+    def _statuses_healthy(statuses: list[ServiceStatus], services: list[str]) -> bool:
+        """Whether the given services look healthy after a recreate.
+
+        Every named service must be ``running`` and not ``unhealthy``; tinc must
+        additionally be affirmatively ``healthy`` because it anchors the shared
+        network namespace and the VPN the tahoe services ride on. The tahoe
+        services are only required to be up (not crash-looping) — they may still
+        be reconnecting to the grid, which is not a failure of the update.
+        """
+        by_name = {s.name: s for s in statuses}
+        for service in services:
+            status = by_name.get(service)
+            if status is None or status.state != "running":
+                return False
+            if status.health == "unhealthy":
+                return False
+        # tinc must be affirmatively healthy when it reports a healthcheck.
+        tinc = by_name.get("tinc")
+        return tinc is None or not tinc.health or tinc.health == "healthy"
+
+    def wait_healthy(
+        self, services: list[str], timeout: float = 120.0, interval: float = 5.0
+    ) -> bool:
+        """Poll ``ps`` until the services are healthy, or ``timeout`` elapses."""
+        deadline = time.monotonic() + timeout
+        while True:
+            if self._statuses_healthy(self.ps(), services):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(interval)
+
+    def rollback(self, images: dict[str, tuple[str, str]], services: list[str]) -> CommandResult:
+        """Re-point each captured image reference back to its previous id and
+        force-recreate the services (tinc first) so the node returns to the
+        exact images it was running before the update.
+        """
+        for _service, (ref, image_id) in images.items():
+            self.retag(image_id, ref)
+        return self.recreate(services)
 
     def start(self, services: list[str]) -> CommandResult:
         """Start existing service containers."""

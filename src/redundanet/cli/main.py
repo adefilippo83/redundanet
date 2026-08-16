@@ -281,12 +281,32 @@ def update(
         bool,
         typer.Option("--yes", "-y", help="Recreate without confirmation"),
     ] = False,
+    health_timeout: Annotated[
+        int,
+        typer.Option(
+            "--health-timeout",
+            help="Seconds to wait for the node to become healthy after recreate "
+            "before rolling back.",
+        ),
+    ] = 120,
+    no_rollback: Annotated[
+        bool,
+        typer.Option(
+            "--no-rollback",
+            help="Do not roll back to the previous images if the node is "
+            "unhealthy after the update (just report).",
+        ),
+    ] = False,
 ) -> None:
     """Pull the latest container images and recreate the node's services.
 
     Netns-aware: the tahoe services share the tinc container's network
     namespace, so this force-recreates all running services together (tinc
     first) — a plain restart would strand them on the old namespace.
+
+    After recreating, the node's health is checked; if it does not recover
+    within --health-timeout, the previous images are restored (unless
+    --no-rollback), so a bad :latest push cannot leave the node down.
     """
     settings = load_settings()
     deployment = Deployment(settings)
@@ -325,16 +345,56 @@ def update(
         console.print("Aborted. Run without --check to apply later.")
         raise typer.Exit(0)
 
+    # Capture the working images BEFORE recreating, so a bad new image can be
+    # rolled back to exactly what was running.
+    rollback_images = deployment.current_images(changed)
+
     with console.status("[bold green]Recreating services (tinc first)..."):
         result = deployment.recreate(services)
     if not result.success:
         console.print(f"[red]Recreate failed:[/red] {result.stderr.strip()}")
         raise typer.Exit(1)
-    console.print("[green]Updated.[/green] Services recreated from the new images.")
+
+    with console.status("[bold green]Verifying node health..."):
+        healthy = deployment.wait_healthy(services, timeout=health_timeout)
+    if healthy:
+        console.print("[green]Updated.[/green] Services recreated from the new images and healthy.")
+        console.print(
+            "[dim]The VPN mesh takes ~a minute to reconverge before the client "
+            "reconnects to the grid.[/dim]"
+        )
+        return
+
+    # The node did not recover on the new images.
     console.print(
-        "[dim]The VPN mesh takes ~a minute to reconverge before the client "
-        "reconnects to the grid.[/dim]"
+        f"[red]Node did not become healthy within {health_timeout}s after the update.[/red]"
     )
+    if no_rollback or not rollback_images:
+        console.print(
+            "[yellow]Left on the new images (--no-rollback or no prior image "
+            "captured).[/yellow] Investigate with [cyan]redundanet status[/cyan]."
+        )
+        raise typer.Exit(1)
+
+    console.print("[bold]Rolling back to the previous images...[/bold]")
+    restored = deployment.rollback(rollback_images, services)
+    if not restored.success:
+        console.print(f"[red]Rollback recreate failed:[/red] {restored.stderr.strip()}")
+        raise typer.Exit(1)
+
+    with console.status("[bold green]Verifying health after rollback..."):
+        healthy_again = deployment.wait_healthy(services, timeout=health_timeout)
+    if healthy_again:
+        console.print(
+            "[yellow]Rolled back to the previous images; the node is healthy "
+            "again.[/yellow] The new images appear broken — not applied."
+        )
+    else:
+        console.print(
+            "[red]Rollback did not restore health.[/red] Manual intervention "
+            "needed: check [cyan]redundanet status[/cyan] and the container logs."
+        )
+    raise typer.Exit(1)
 
 
 @app.command()
