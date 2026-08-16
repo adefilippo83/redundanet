@@ -170,13 +170,17 @@ class Deployment:
             timeout=timeout,
         )
 
-    def cp_in(self, service: str, local: Path, container_path: str) -> CommandResult:
+    def cp_in(
+        self, service: str, local: Path, container_path: str, timeout: float | None = 120
+    ) -> CommandResult:
         """Copy a local file into a service container."""
-        return self.compose("cp", str(local), f"{service}:{container_path}")
+        return self.compose("cp", str(local), f"{service}:{container_path}", timeout=timeout)
 
-    def cp_out(self, service: str, container_path: str, local: Path) -> CommandResult:
+    def cp_out(
+        self, service: str, container_path: str, local: Path, timeout: float | None = 120
+    ) -> CommandResult:
         """Copy a file out of a service container to the local filesystem."""
-        return self.compose("cp", f"{service}:{container_path}", str(local))
+        return self.compose("cp", f"{service}:{container_path}", str(local), timeout=timeout)
 
     def up(self, services: list[str] | None = None) -> CommandResult:
         """Start (creating if needed) all or some services, detached."""

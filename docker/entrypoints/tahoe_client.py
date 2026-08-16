@@ -135,6 +135,17 @@ def main():
 
     client_dir = Path("/var/lib/tahoe-client")
 
+    # Fresh ext4 volumes (a fly volume or a real disk) contain lost+found, which
+    # makes `tahoe create-client` refuse the "non-empty" base directory — the same
+    # guard the introducer/storage entrypoints already have.
+    lost_found = client_dir / "lost+found"
+    if lost_found.is_dir():
+        try:
+            lost_found.rmdir()
+            logger.info("Removed empty lost+found from fresh volume")
+        except OSError:
+            logger.warning("lost+found is not empty; not touching it")
+
     # Wait for VPN to be available (skip in test mode)
     if not test_mode:
         if not wait_for_vpn(vpn_ip):

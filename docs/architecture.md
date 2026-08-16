@@ -85,7 +85,7 @@ Tahoe-LAFS provides distributed, encrypted storage with erasure coding.
 - Erasure coding (data survives node failures)
 - Capability-based security (cryptographic access control)
 
-**Erasure Coding (3-of-10):**
+**Erasure Coding (default 3-of-10, configurable per network via the manifest):**
 ```
 Original File
      │

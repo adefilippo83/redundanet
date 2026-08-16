@@ -1,8 +1,10 @@
 """Unit tests for the CLI commands (real assertions against real behavior)."""
 
+import copy
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from redundanet import __version__
@@ -35,6 +37,24 @@ class TestValidateCommand:
         # 2 storage nodes < shares_happy=7 -> the validate() warning must surface.
         result = runner.invoke(app, ["validate", str(sample_manifest_file)])
         assert "Not enough storage nodes" in result.output
+
+    def test_warnings_alone_do_not_fail(self, sample_manifest_file: Path):
+        # A capacity warning is advisory: the check must still pass (exit 0).
+        result = runner.invoke(app, ["validate", str(sample_manifest_file)])
+        assert result.exit_code == 0
+        assert "Validation errors" not in result.output
+
+    def test_blocking_error_exits_nonzero(self, sample_manifest_data: dict, tmp_path: Path):
+        # A duplicate VPN IP is a blocking error -> the check must fail (exit 1)
+        # so CI/operators can gate on `redundanet validate`.
+        data = copy.deepcopy(sample_manifest_data)
+        data["nodes"][1]["vpn_ip"] = data["nodes"][0]["vpn_ip"]
+        path = tmp_path / "dup.yaml"
+        path.write_text(yaml.dump(data))
+        result = runner.invoke(app, ["validate", str(path)])
+        assert result.exit_code == 1
+        assert "Validation errors" in result.output
+        assert "Duplicate IP" in result.output
 
     def test_schema_invalid_manifest_fails(self, tmp_path: Path):
         bad = tmp_path / "bad.yaml"

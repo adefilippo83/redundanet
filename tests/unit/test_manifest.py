@@ -306,3 +306,32 @@ class TestManifest:
         manifest = Manifest.from_file(manifest_file)
         errors = manifest.validate()
         assert any("short GPG key ids" in e for e in errors)
+
+    def test_validate_detailed_splits_errors_from_warnings(self, valid_manifest_data: dict):
+        # A duplicate IP is blocking; short keys / under-provisioning are advisory.
+        data = dict(valid_manifest_data)
+        data["nodes"] = [dict(n) for n in data["nodes"]]
+        data["nodes"][1]["vpn_ip"] = data["nodes"][0]["vpn_ip"]  # force a dup IP
+        result = Manifest.from_dict(data).validate_detailed()
+
+        assert any("Duplicate IP" in e for e in result.errors)
+        assert any("short GPG key ids" in w for w in result.warnings)
+        # Advisory items must NOT be classified as blocking errors.
+        assert not any("short GPG key ids" in e for e in result.errors)
+        # The flat validate() stays a superset for backward compatibility.
+        flat = Manifest.from_dict(data).validate()
+        assert set(result.errors + result.warnings) == set(flat)
+
+    def test_write_spof_is_warning_not_error(self, valid_manifest_data: dict):
+        # shares_happy == storage-node count: no write-redundancy headroom. This
+        # is the live production shape (1-of-2), so it must warn, never block.
+        data = dict(valid_manifest_data)
+        data["network"] = {
+            **data["network"],
+            "tahoe": {"shares_needed": 1, "shares_happy": 2, "shares_total": 2},
+        }
+        result = Manifest.from_dict(data).validate_detailed()
+
+        assert result.errors == []
+        assert any("no write-redundancy headroom" in w for w in result.warnings)
+        assert not any("Not enough storage nodes" in w for w in result.warnings)
