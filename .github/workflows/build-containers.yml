@@ -11,10 +11,23 @@ env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ${{ github.repository_owner }}/redundanet
 
+# One in-flight run per ref: a branch push and its later tag push must not race
+# each other to re-tag :latest backwards.
+concurrency:
+  group: build-containers-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  # Gate: the images (which the live fleet auto-pulls via :latest) must not be
+  # built or pushed unless lint + types + unit tests pass on this exact ref.
+  gate:
+    name: Test gate
+    uses: ./.github/workflows/tests.yml
+
   build:
     name: Build ${{ matrix.image }}
     runs-on: ubuntu-latest
+    needs: [gate]
     permissions:
       contents: read
       packages: write
@@ -81,6 +94,7 @@ jobs:
   build-base:
     name: Build Base Image
     runs-on: ubuntu-latest
+    needs: [gate]
     permissions:
       contents: read
       packages: write

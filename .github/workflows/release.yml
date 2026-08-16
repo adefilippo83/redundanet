@@ -8,9 +8,16 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
+  # Gate: never publish a wheel or image for a tag whose code is red. ci.yml does
+  # not run on tags, so this is the only test barrier on the release path.
+  gate:
+    name: Test gate
+    uses: ./.github/workflows/tests.yml
+
   release-pypi:
     name: Release to PyPI
     runs-on: ubuntu-latest
+    needs: [gate]
     environment: release
     permissions:
       id-token: write
@@ -38,6 +45,7 @@ jobs:
   release-containers:
     name: Release Container Images
     runs-on: ubuntu-latest
+    needs: [gate]
     permissions:
       contents: read
       packages: write

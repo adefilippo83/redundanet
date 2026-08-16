@@ -183,6 +183,70 @@ def test_recreate_forces_and_names_services(tmp_path):
     assert "tahoe-storage" in call and "tahoe-client" in call
 
 
+def test_statuses_healthy_classifier():
+    s = ServiceStatus
+    ok = [s("tinc", "running", "healthy"), s("tahoe-storage", "running", "")]
+    assert Deployment._statuses_healthy(ok, ["tinc", "tahoe-storage"]) is True
+    # A service not running -> unhealthy.
+    exited = [s("tinc", "running", "healthy"), s("tahoe-storage", "exited", "")]
+    assert Deployment._statuses_healthy(exited, ["tinc", "tahoe-storage"]) is False
+    # tinc must be affirmatively healthy (anchors netns/VPN): starting is not yet.
+    assert Deployment._statuses_healthy([s("tinc", "running", "starting")], ["tinc"]) is False
+    assert Deployment._statuses_healthy([s("tinc", "running", "unhealthy")], ["tinc"]) is False
+    # A missing service is unhealthy.
+    assert Deployment._statuses_healthy([], ["tinc"]) is False
+    # A tahoe service explicitly unhealthy fails even though tinc is fine.
+    bad = [s("tinc", "running", "healthy"), s("tahoe-storage", "running", "unhealthy")]
+    assert Deployment._statuses_healthy(bad, ["tinc", "tahoe-storage"]) is False
+
+
+def test_wait_healthy_true_on_first_poll(tmp_path, monkeypatch):
+    dep = Deployment(make_settings(tmp_path))
+    monkeypatch.setattr(dep, "ps", lambda: [ServiceStatus("tinc", "running", "healthy")])
+    assert dep.wait_healthy(["tinc"], timeout=5) is True
+
+
+def test_wait_healthy_times_out(tmp_path, monkeypatch):
+    dep = Deployment(make_settings(tmp_path))
+    # tinc never becomes 'healthy'; timeout=0 -> one check then give up (no sleep).
+    monkeypatch.setattr(dep, "ps", lambda: [ServiceStatus("tinc", "running", "starting")])
+    assert dep.wait_healthy(["tinc"], timeout=0) is False
+
+
+def test_current_images_maps_ref_and_id(tmp_path, monkeypatch):
+    dep = Deployment(make_settings(tmp_path))
+    monkeypatch.setattr(dep, "_service_containers", lambda: {"tinc": "c-tinc"})
+    table = {
+        ("c-tinc", "{{.Config.Image}}"): "repo/tinc:main",
+        ("c-tinc", "{{.Image}}"): "sha-old",
+    }
+    monkeypatch.setattr(dep, "_inspect", lambda target, fmt: table[(target, fmt)])
+    assert dep.current_images(["tinc"]) == {"tinc": ("repo/tinc:main", "sha-old")}
+
+
+def test_rollback_retags_previous_then_recreates(tmp_path, monkeypatch):
+    dep = Deployment(make_settings(tmp_path))
+    retags: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        dep,
+        "retag",
+        lambda image_id, ref: retags.append((image_id, ref)) or CommandResult(0, "", "", ""),
+    )
+    fake = FakeCompose({})
+    dep.compose = fake  # type: ignore[assignment]
+
+    images = {"tinc": ("repo/tinc:main", "sha-old"), "tahoe-storage": ("repo/st:main", "sha-s")}
+    dep.rollback(images, ["tinc", "tahoe-storage", "tahoe-client"])
+
+    # Each ref re-pointed at its previous image id...
+    assert ("sha-old", "repo/tinc:main") in retags
+    assert ("sha-s", "repo/st:main") in retags
+    # ...then a force-recreate of all services (tinc first, via recreate()).
+    call = fake.calls[-1]
+    assert call[:3] == ("up", "-d", "--force-recreate")
+    assert call[3] == "tinc"
+
+
 def test_git_sync_initializes_in_place_never_clones(tmp_path, monkeypatch):
     """git_sync must work in a NON-EMPTY dir (the shared manifest volume can
     already hold e.g. introducer.furl) — `git clone` would refuse it."""
