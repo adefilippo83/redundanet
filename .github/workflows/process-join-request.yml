@@ -232,7 +232,7 @@ jobs:
 
       - name: Comment on issue - Failure
         if: steps.process.outputs.success == 'false'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.issue.number }}
           body: |
