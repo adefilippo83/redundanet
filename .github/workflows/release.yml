@@ -120,7 +120,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           name: RedundaNet ${{ steps.version.outputs.VERSION }}
           body: |
