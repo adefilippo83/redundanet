@@ -51,7 +51,7 @@ jobs:
         uses: pguyot/arm-runner-action@v2
         id: build
         with:
-          base_image: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz
+          base_image: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-06-19/2026-06-18-raspios-trixie-arm64-lite.img.xz
           image_additional_mb: 2048
           commands: |
             # Prevent initramfs updates from failing in QEMU
@@ -65,7 +65,6 @@ jobs:
             # Install dependencies
             apt-get install -y --no-install-recommends \
               docker.io \
-              docker-compose \
               python3 \
               python3-pip \
               python3-venv \
@@ -87,6 +86,26 @@ jobs:
 
             # Enable Docker
             systemctl enable docker
+
+            # Install the Docker Compose v2 plugin (pinned). Debian's
+            # 'docker-compose' apt package is the legacy v1 Python tool: it
+            # cannot parse the modern flags (-p, --env-file, --profile) that
+            # the redundanet CLI and docs rely on, which broke fresh nodes.
+            COMPOSE_VERSION=v5.5.0
+            case "$(uname -m)" in
+              aarch64) COMPOSE_ARCH=aarch64 ;;
+              armv7l|armv6l) COMPOSE_ARCH=armv7 ;;
+              *) echo "Unsupported arch: $(uname -m)"; exit 1 ;;
+            esac
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" \
+              -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+            # The image must never ship without a working v2 plugin.
+            docker compose version
+            docker compose version | grep -q "^Docker Compose version" \
+              || { echo "docker compose v2 plugin verification FAILED"; exit 1; }
 
             # Create redundanet user
             useradd -m -s /bin/bash -G sudo,docker redundanet || true
@@ -268,7 +287,7 @@ jobs:
         uses: pguyot/arm-runner-action@v2
         id: build
         with:
-          base_image: https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz
+          base_image: https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2026-06-19/2026-06-18-raspios-trixie-armhf-lite.img.xz
           image_additional_mb: 2048
           commands: |
             # Prevent initramfs updates from failing in QEMU
@@ -282,7 +301,6 @@ jobs:
             # Install dependencies
             apt-get install -y --no-install-recommends \
               docker.io \
-              docker-compose \
               python3 \
               python3-pip \
               python3-venv \
@@ -304,6 +322,26 @@ jobs:
 
             # Enable Docker
             systemctl enable docker
+
+            # Install the Docker Compose v2 plugin (pinned). Debian's
+            # 'docker-compose' apt package is the legacy v1 Python tool: it
+            # cannot parse the modern flags (-p, --env-file, --profile) that
+            # the redundanet CLI and docs rely on, which broke fresh nodes.
+            COMPOSE_VERSION=v5.5.0
+            case "$(uname -m)" in
+              aarch64) COMPOSE_ARCH=aarch64 ;;
+              armv7l|armv6l) COMPOSE_ARCH=armv7 ;;
+              *) echo "Unsupported arch: $(uname -m)"; exit 1 ;;
+            esac
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            curl -fSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${COMPOSE_ARCH}" \
+              -o /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+            # The image must never ship without a working v2 plugin.
+            docker compose version
+            docker compose version | grep -q "^Docker Compose version" \
+              || { echo "docker compose v2 plugin verification FAILED"; exit 1; }
 
             # Create redundanet user
             useradd -m -s /bin/bash -G sudo,docker redundanet || true

@@ -85,7 +85,10 @@ jobs:
       - name: Create Pull Request
         if: steps.process.outputs.success == 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@v6
+        # v6 (early 2024) rotted against the 2026 runners: its git base-repo
+        # check started failing with HTTP 400 (seen on issue #82). Keep this
+        # action on the current major.
+        uses: peter-evans/create-pull-request@v8
         with:
           # A PR opened with GITHUB_TOKEN cannot trigger the pull_request-based
           # validate.yml (GitHub's recursion guard), so that required check

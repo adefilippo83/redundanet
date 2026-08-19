@@ -8,10 +8,10 @@ The images are built automatically via GitHub Actions using [arm-runner-action](
 
 ## Image Features
 
-- **Base**: Raspberry Pi OS Lite (64-bit, Bookworm)
+- **Base**: Raspberry Pi OS Lite (64-bit, Trixie / Debian 13)
 - **Pre-installed**:
-  - Docker & Docker Compose
-  - Python 3.11+ with pip
+  - Docker & the Docker Compose v2 plugin (pinned; the build fails if `docker compose` doesn't answer as v2)
+  - Python 3.13 with pip
   - Tinc VPN
   - GnuPG for key management
   - RedundaNet CLI
