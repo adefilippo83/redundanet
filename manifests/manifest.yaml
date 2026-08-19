@@ -58,3 +58,19 @@ nodes:
     tahoe_introducer: 3458
   storage_contribution: 900GB
   is_publicly_accessible: false
+- name: node-d52801b9
+  internal_ip: 10.100.0.12
+  vpn_ip: 10.100.0.12
+  gpg_key_id: 36E3DFE7C1A3EC2ECC84F5F9CE7AF4CFD52801B9
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc:655
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 900GB
+  is_publicly_accessible: false
+
