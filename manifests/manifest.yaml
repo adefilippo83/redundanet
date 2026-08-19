@@ -68,7 +68,7 @@ nodes:
   - tinc_vpn
   - tahoe_storage
   ports:
-    tinc:655
+    tinc: 655
     tahoe_client: 3456
     tahoe_introducer: 3458
   storage_contribution: 900GB
