@@ -116,11 +116,16 @@ services:
       - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
       - REDUNDANET_SFTP_ENABLED=${SFTP_ENABLED:-false}
       - REDUNDANET_SFTP_PORT=${SFTP_PORT:-8022}
+      # One-way async backup of SYNC_DIR into the grid (tahoe backup).
+      - REDUNDANET_SYNC_ENABLED=${SYNC_ENABLED:-false}
+      - REDUNDANET_SYNC_INTERVAL=${SYNC_INTERVAL:-900}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest
       - logs:/var/log/redundanet
       - ${MOUNT_POINT:-./mount}:/mnt/redundanet:shared
+      # Read-only: the share is the source of truth; the sync only reads it.
+      - ${SYNC_DIR:-./sync}:/data/sync:ro
     profiles:
       - client
 
