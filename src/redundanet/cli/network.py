@@ -186,11 +186,25 @@ def _setup_manifest(repo_dir: Path) -> Path | None:
 
 
 def _load_manifest_dict(manifest_path: Path) -> dict[str, Any]:
-    """Load the raw manifest mapping."""
+    """Load the raw manifest mapping.
+
+    A manifest that is not valid YAML (e.g. a bad hand-edit landed on the
+    repo) must produce a clean, actionable error — not a raw traceback (a
+    fresh node hit exactly that during a join).
+    """
     import yaml
 
-    with manifest_path.open() as f:
-        data = yaml.safe_load(f)
+    try:
+        with manifest_path.open() as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        console.print(f"[red]Error:[/red] the synced manifest is not valid YAML: {e}")
+        console.print(
+            "This usually means a broken commit landed on the manifest repository. "
+            "Fix (or wait for a fix of) the manifest on the repo, then re-run "
+            "[cyan]redundanet network join[/cyan]."
+        )
+        raise typer.Exit(1) from None
     return data if isinstance(data, dict) else {}
 
 
@@ -205,12 +219,7 @@ def _find_node_in_manifest(manifest_path: Path, node_name: str) -> dict[str, Any
 
 def _list_nodes_in_manifest(manifest_path: Path) -> list[dict[str, Any]]:
     """List all nodes in the manifest."""
-    import yaml
-
-    with manifest_path.open() as f:
-        manifest = yaml.safe_load(f)
-
-    result: list[dict[str, Any]] = manifest.get("nodes", [])
+    result: list[dict[str, Any]] = _load_manifest_dict(manifest_path).get("nodes", [])
     return result
 
 
@@ -256,6 +265,13 @@ def _generate_env_file(
         updates["GPG_KEY_ID"] = gpg_key_id
     elif existing is None:
         updates["GPG_KEY_ID"] = ""
+
+    # Compose reads COMPOSE_PROJECT_NAME from the --env-file, so with this in
+    # place a plain `docker compose --env-file .../.env up` lands in the same
+    # project the redundanet CLI drives — no -p flag to forget. Never override
+    # an operator's custom value.
+    if existing is None or "COMPOSE_PROJECT_NAME" not in existing:
+        updates["COMPOSE_PROJECT_NAME"] = "redundanet"
 
     env_path.write_text(_merge_env(existing, updates))
     verb = "updated" if existing else "created"

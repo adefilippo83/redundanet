@@ -8,10 +8,10 @@ The images are built automatically via GitHub Actions using [arm-runner-action](
 
 ## Image Features
 
-- **Base**: Raspberry Pi OS Lite (64-bit, Bookworm)
+- **Base**: Raspberry Pi OS Lite (64-bit, Trixie / Debian 13)
 - **Pre-installed**:
-  - Docker & Docker Compose
-  - Python 3.11+ with pip
+  - Docker & the Docker Compose v2 plugin (pinned; the build fails if `docker compose` doesn't answer as v2)
+  - Python 3.13 with pip
   - Tinc VPN
   - GnuPG for key management
   - RedundaNet CLI
@@ -65,10 +65,11 @@ If you haven't already joined the network, follow the join process:
 # Generate GPG key
 redundanet node keys generate --name my-pi-node --email you@example.com
 
-# Publish to keyservers
-redundanet node keys publish --key-id YOUR_KEY_ID
+# Publish to keyservers — use your key's FULL 40-character fingerprint
+# (find it with `gpg --fingerprint`; short key ids are rejected)
+redundanet node keys publish --key-id YOUR_FULL_FINGERPRINT
 
-# Note your Key ID, then visit:
+# Note your full fingerprint, then apply at:
 # https://redundanet.com/join.html
 ```
 
@@ -82,18 +83,67 @@ redundanet init --name node-XXXXXXXX
 # generates /opt/redundanet/.env from your manifest entry
 redundanet network join --repo https://github.com/adefilippo83/redundanet.git --name node-XXXXXXXX
 
-# Start services
-sudo systemctl enable --now redundanet-docker
-# Or manually:
-cd /opt/redundanet/docker && docker compose --env-file /opt/redundanet/.env --profile storage up -d
+# Start services (the `join` command prints this too). The -p flag matters:
+# it is the project name the `redundanet` CLI uses to find the containers.
+cd /opt/redundanet/docker && docker compose -p redundanet --env-file /opt/redundanet/.env \
+  --profile storage up -d
+
+# To run a storage node AND a client on the same Pi, stack the profiles:
+#   ... --profile storage --profile client up -d
 ```
+
+The containers use `restart: unless-stopped`, so Docker brings them back
+automatically after a reboot — no extra systemd unit is needed.
 
 ### 6. Verify
 
 ```bash
 redundanet status
-docker compose ps
+docker compose -p redundanet ps
 ```
+
+### 7. Put Storage on an External Disk (strongly recommended)
+
+**Without this step, all stored shares land on the SD card** (inside the
+`storage-data` Docker volume) — SD cards are small and wear out quickly, and a
+disk that is hand-mounted but missing from `/etc/fstab` reverts to the empty
+volume after a reboot, making the node silently appear to have lost its data.
+
+```bash
+# 1. Identify the disk (double-check — formatting is destructive!)
+lsblk
+
+# 2. Format once and mount it
+sudo mkfs.ext4 /dev/sda1
+sudo mkdir -p /mnt/storage
+sudo mount /dev/sda1 /mnt/storage
+sudo mkdir -p /mnt/storage/redundanet
+
+# 3. Persist the mount across reboots — always by UUID
+UUID=$(sudo blkid -s UUID -o value /dev/sda1)
+echo "UUID=$UUID /mnt/storage ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+
+# 4. Point the storage container at the disk with a compose override
+cat <<'EOF' | sudo tee /opt/redundanet/docker/docker-compose.override.yml
+services:
+  tahoe-storage:
+    volumes:
+      - /mnt/storage/redundanet:/data/storage
+EOF
+
+# 5. Recreate so the bind-mount takes effect
+cd /opt/redundanet/docker && docker compose -p redundanet --env-file /opt/redundanet/.env \
+  --profile storage up -d --force-recreate tinc tahoe-storage
+
+# 6. Confirm the container reads from the disk
+docker inspect redundanet-tahoe-storage \
+  --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' | grep /data/storage
+# expected: /mnt/storage/redundanet -> /data/storage
+```
+
+The `redundanet` CLI (`update`, `storage`, ...) automatically includes
+`docker-compose.override.yml` in every compose command, so the disk stays
+attached across updates and recreates.
 
 ## Supported Hardware
 
@@ -119,17 +169,21 @@ After setup, RedundaNet files are located at:
 
 ## Services
 
-The image includes systemd services:
+The image ships one systemd unit, `redundanet-firstboot.service`, which runs
+once on first boot (generates a node-name, writes the first-boot log) and then
+disables itself via `/etc/redundanet/.initialized`.
+
+The RedundaNet containers themselves are **not** managed by systemd: they are
+started with `docker compose` (step 5) and carry `restart: unless-stopped`, so
+the Docker daemon restarts them on failure and after every reboot.
 
 ```bash
-# Enable and start RedundaNet
-sudo systemctl enable --now redundanet-docker
+# Container status and logs
+docker compose -p redundanet ps
+docker compose -p redundanet logs -f tinc
 
-# Check status
-sudo systemctl status redundanet-docker
-
-# View logs
-sudo journalctl -u redundanet-docker -f
+# First-boot service (one-shot)
+systemctl status redundanet-firstboot
 ```
 
 ## Building the Image
@@ -137,8 +191,10 @@ sudo journalctl -u redundanet-docker -f
 Images are built by the **Build RPi Image** GitHub Actions workflow
 (`.github/workflows/build-rpi-image.yml`), which uses
 [arm-runner-action](https://github.com/pguyot/arm-runner-action) to customize
-an official Raspberry Pi OS image under QEMU with the stages in
-`rpi-image/stage-redundanet/`. There is no local build script.
+an official Raspberry Pi OS image under QEMU. The customization steps are
+inlined in the workflow itself — the pi-gen-style stage files under
+`rpi-image/stage-redundanet/` are **not** currently used by the build. There
+is no local build script.
 
 To build one yourself:
 1. Fork the repository (or use your push access)
@@ -152,6 +208,15 @@ To build one yourself:
 1. Ensure your Pi is connected to the network
 2. Try using the IP address directly (check your router)
 3. On macOS/Linux: `ping redundanet.local`
+
+**Running more than one Pi?** Every image boots with the same hostname
+(`redundanet`), so two Pis on one LAN collide on `redundanet.local` — mDNS
+will resolve to whichever answered first. Give each Pi a unique hostname
+right after first login:
+
+```bash
+sudo hostnamectl set-hostname my-pi-node && sudo reboot
+```
 
 ### SSH connection refused
 
@@ -169,20 +234,26 @@ sudo journalctl -u docker -n 50
 The `redundanet` CLI is installed in a virtual environment at `/opt/redundanet/venv`.
 
 ```bash
-# Option 1: Run the install/update script
-sudo /opt/redundanet/install-redundanet.sh
-
-# Option 2: Use the venv directly
+# Option 1: Use the venv directly
 /opt/redundanet/venv/bin/redundanet --version
 
-# Option 3: Run as Python module
+# Option 2: Run as Python module
 /opt/redundanet/venv/bin/python -m redundanet --version
 
-# Option 4: Recreate the symlink
+# Option 3: Recreate the symlink
 sudo ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
 ```
 
-**Note:** Do NOT run `pip install redundanet` directly - use the virtual environment.
+**Note:** Do NOT run `pip install redundanet` outside the venv - use the virtual environment.
+
+### Upgrading the CLI
+
+```bash
+# --no-cache-dir matters: a stale pip HTTP cache can silently serve an old
+# version and make the upgrade appear to do nothing.
+sudo /opt/redundanet/venv/bin/pip install --upgrade --no-cache-dir redundanet
+redundanet --version
+```
 
 ### Check first boot log
 
@@ -190,22 +261,29 @@ sudo ln -sf /opt/redundanet/venv/bin/redundanet /usr/local/bin/redundanet
 cat /var/log/redundanet/first-boot.log
 ```
 
-### Reset configuration
+### Reset first-boot configuration
 
 ```bash
+# The one-shot unit is named redundanet-firstboot; it re-runs only when the
+# .initialized flag is removed.
 sudo rm /etc/redundanet/.initialized
-sudo systemctl restart redundanet-init
+sudo systemctl restart redundanet-firstboot
 ```
 
 ### Storage issues
 
-Ensure your SD card has sufficient space:
+First check whether the storage container is actually reading from your
+external disk (see **step 7** above) — after a reboot with a missing fstab
+entry it silently falls back to the empty Docker volume on the SD card:
 
 ```bash
-df -h
+docker inspect redundanet-tahoe-storage \
+  --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' | grep /data/storage
+df -h /mnt/storage
 ```
 
-The image requires at least 8GB SD card, 16GB+ recommended.
+The image itself requires at least an 8GB SD card, 16GB+ recommended — but
+contributed storage should live on an external disk, not the card.
 
 ## Network Configuration
 
@@ -220,16 +298,19 @@ sudo raspi-config
 
 ### Static IP
 
-Edit `/etc/dhcpcd.conf`:
+Raspberry Pi OS Bookworm uses **NetworkManager** (the old `/etc/dhcpcd.conf`
+method no longer applies):
 
 ```bash
-interface eth0
-static ip_address=192.168.1.100/24
-static routers=192.168.1.1
-static domain_name_servers=8.8.8.8
+sudo nmcli connection modify "Wired connection 1" \
+  ipv4.addresses 192.168.1.100/24 \
+  ipv4.gateway 192.168.1.1 \
+  ipv4.dns 8.8.8.8 \
+  ipv4.method manual
+sudo nmcli connection up "Wired connection 1"
 ```
 
-Then restart: `sudo systemctl restart dhcpcd`
+(Or use the interactive `sudo nmtui`.)
 
 ## Security Recommendations
 
