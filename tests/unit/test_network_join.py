@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+import typer
 import yaml
 
 from redundanet.cli.network import (
@@ -138,3 +140,31 @@ class TestManifestLookup:
         path = tmp_path / "manifest.yaml"
         path.write_text("- a\n- b\n")
         assert _load_manifest_dict(path) == {}
+
+    def test_broken_yaml_exits_cleanly_not_traceback(self, tmp_path: Path):
+        """A bad hand-edit on the manifest repo must produce a clean CLI error
+        (a fresh Pi hit a raw ScannerError traceback mid-join)."""
+        path = tmp_path / "manifest.yaml"
+        path.write_text("nodes:\n  - name: broken\n   bad: indent: here\n")
+        with pytest.raises(typer.Exit):
+            _load_manifest_dict(path)
+        with pytest.raises(typer.Exit):
+            _find_node_in_manifest(path, "any")
+
+
+class TestComposeProjectName:
+    def test_seeded_on_fresh_env(self, tmp_path: Path):
+        _generate_env_file({"name": "n"}, {}, "repo", "main", tmp_path)
+        assert parse_env(tmp_path / ".env")["COMPOSE_PROJECT_NAME"] == "redundanet"
+
+    def test_appended_when_missing_on_rejoin(self, tmp_path: Path):
+        (tmp_path / ".env").write_text("NODE_NAME=old\nSFTP_ENABLED=true\n")
+        _generate_env_file({"name": "n"}, {}, "repo", "main", tmp_path)
+        env = parse_env(tmp_path / ".env")
+        assert env["COMPOSE_PROJECT_NAME"] == "redundanet"
+        assert env["SFTP_ENABLED"] == "true"
+
+    def test_custom_value_preserved(self, tmp_path: Path):
+        (tmp_path / ".env").write_text("COMPOSE_PROJECT_NAME=customproj\n")
+        _generate_env_file({"name": "n"}, {}, "repo", "main", tmp_path)
+        assert parse_env(tmp_path / ".env")["COMPOSE_PROJECT_NAME"] == "customproj"
