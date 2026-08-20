@@ -67,6 +67,7 @@ In `/opt/redundanet/.env`:
 SYNC_ENABLED=true
 SYNC_DIR=/mnt/storage/share
 # SYNC_INTERVAL=900        # seconds; default 15 minutes
+# SYNC_TIMEOUT=21600       # per-run ceiling; default 6h (first syncs are slow)
 ```
 
 Then recreate the client so the settings and the bind-mount take effect:
@@ -105,4 +106,10 @@ or restore from a *different* node, share the alias capability with that node
 - If the grid is unreachable, the share keeps working; the sync retries every
   cycle and catches up.
 - Large initial syncs can take a while — the loop logs duration and the
-  per-run summary (`N files backed up, M reused`).
+  per-run summary (`N files backed up, M reused`). Progress survives an
+  interrupted run: already-uploaded files are recorded in the backupdb and
+  skipped on the next cycle.
+- A file still being written (e.g. a large copy over SMB in progress) when a
+  sync fires may be archived **truncated in that snapshot**; the next cycle
+  archives the complete version. Snapshots make this self-healing, but for a
+  guaranteed-consistent snapshot, pause writes for one sync interval.

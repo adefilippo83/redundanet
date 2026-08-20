@@ -24,9 +24,11 @@ class FakeRun:
     def __init__(self, responses: dict[str, subprocess.CompletedProcess]):
         self.responses = responses
         self.calls: list[list[str]] = []
+        self.timeouts: list[int] = []
 
     def __call__(self, args, timeout=3600):
         self.calls.append(list(args))
+        self.timeouts.append(timeout)
         return self.responses.get(args[0], completed())
 
 
@@ -45,12 +47,22 @@ class TestParseConfig:
                 "REDUNDANET_SYNC_INTERVAL": "300",
                 "REDUNDANET_SYNC_DIR": "/srv/share",
                 "REDUNDANET_SYNC_ALIAS": "nas",
+                "REDUNDANET_SYNC_TIMEOUT": "7200",
             }
         )
         assert config.enabled is True
         assert config.interval == 300
         assert config.sync_dir == "/srv/share"
         assert config.alias == "nas"
+        assert config.timeout == 7200
+
+    def test_bad_integers_fall_back_to_defaults(self):
+        """A typo in .env must degrade gracefully, not crash-loop the program."""
+        config = backup_sync.parse_config(
+            {"REDUNDANET_SYNC_INTERVAL": "abc", "REDUNDANET_SYNC_TIMEOUT": ""}
+        )
+        assert config.interval == 900
+        assert config.timeout == 21600
 
 
 class TestEnsureAlias:
@@ -84,7 +96,7 @@ class TestEnsureAlias:
 class TestRunBackup:
     def config(self, sync_dir: str) -> backup_sync.SyncConfig:
         return backup_sync.SyncConfig(
-            enabled=True, interval=900, sync_dir=sync_dir, alias="backups"
+            enabled=True, interval=900, sync_dir=sync_dir, alias="backups", timeout=1234
         )
 
     def test_backs_up_nonempty_dir(self, tmp_path: Path):
@@ -92,6 +104,9 @@ class TestRunBackup:
         run = FakeRun({"backup": completed(stdout=" reused 2 files\n backed up 1 files\n")})
         assert backup_sync.run_backup(self.config(str(tmp_path)), run=run) is True
         assert run.calls == [["backup", str(tmp_path), "backups:"]]
+        # The configured ceiling must reach the subprocess (a big first sync
+        # can far outlast the old 1h default).
+        assert run.timeouts == [1234]
 
     def test_empty_dir_skipped_without_error(self, tmp_path: Path):
         run = FakeRun({})

@@ -119,6 +119,7 @@ services:
       # One-way async backup of SYNC_DIR into the grid (tahoe backup).
       - REDUNDANET_SYNC_ENABLED=${SYNC_ENABLED:-false}
       - REDUNDANET_SYNC_INTERVAL=${SYNC_INTERVAL:-900}
+      - REDUNDANET_SYNC_TIMEOUT=${SYNC_TIMEOUT:-21600}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest

@@ -16,6 +16,8 @@ Environment:
   REDUNDANET_SYNC_INTERVAL  seconds between backup runs (default 900 = 15 min)
   REDUNDANET_SYNC_DIR       directory to back up (default /data/sync)
   REDUNDANET_SYNC_ALIAS     tahoe alias for the backups (default "backups")
+  REDUNDANET_SYNC_TIMEOUT   per-run ceiling in seconds (default 21600 = 6h;
+                            large initial syncs are legitimately slow)
 
 Snapshots accumulate on purpose (oops/ransomware protection); pruning old
 Archives/ is a deliberate future feature tied to the lease/GC policy work.
@@ -46,15 +48,32 @@ class SyncConfig:
     interval: int
     sync_dir: str
     alias: str
+    timeout: int
+
+
+def _int_env(environ: dict[str, str], name: str, default: int) -> int:
+    """Parse an integer env var; a bad value logs and falls back to the
+    default instead of crash-looping the whole program under supervisord."""
+    raw = environ.get(name, "")
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        log(f"invalid {name}={raw!r}; using default {default}")
+        return default
 
 
 def parse_config(environ: dict[str, str]) -> SyncConfig:
     """Read the sync configuration from environment variables."""
     return SyncConfig(
         enabled=environ.get("REDUNDANET_SYNC_ENABLED", "false").lower() == "true",
-        interval=int(environ.get("REDUNDANET_SYNC_INTERVAL", "900")),
+        interval=_int_env(environ, "REDUNDANET_SYNC_INTERVAL", 900),
         sync_dir=environ.get("REDUNDANET_SYNC_DIR", "/data/sync"),
         alias=environ.get("REDUNDANET_SYNC_ALIAS", "backups"),
+        # A large first sync (hundreds of GB over erasure coding + VPN) can
+        # legitimately run for hours. Progress survives a timeout (the
+        # backupdb records completed files), but killing a run mid-file
+        # wastes work — so the ceiling is generous.
+        timeout=_int_env(environ, "REDUNDANET_SYNC_TIMEOUT", 21600),  # 6h
     )
 
 
@@ -104,7 +123,7 @@ def run_backup(config: SyncConfig, run=run_tahoe) -> bool:
         log(f"{config.sync_dir} is missing or empty; nothing to back up")
         return True
     started = time.monotonic()
-    result = run(["backup", config.sync_dir, f"{config.alias}:"])
+    result = run(["backup", config.sync_dir, f"{config.alias}:"], timeout=config.timeout)
     elapsed = int(time.monotonic() - started)
     if result.returncode != 0:
         log(f"backup FAILED after {elapsed}s (will retry next cycle): {result.stderr.strip()}")
