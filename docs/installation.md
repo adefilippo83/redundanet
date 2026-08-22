@@ -2,6 +2,11 @@
 
 This guide covers the various ways to install and deploy RedundaNet.
 
+> **Setting up a node on Debian 13 (Trixie) from scratch?** Follow the
+> step-by-step [Debian 13 node guide](installation-debian.md) — it covers the
+> full path (Docker + Compose v2 plugin, user privileges, GPG identity, join,
+> storage disk) including the pitfalls this generic guide doesn't.
+
 ## Prerequisites
 
 Before installing RedundaNet, ensure you have:
