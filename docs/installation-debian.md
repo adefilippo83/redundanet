@@ -36,17 +36,24 @@ sudo apt install -y docker.io
 sudo systemctl enable --now docker
 ```
 
-Add your user to the `docker` group so docker commands work without `sudo`:
+Add your user to the `docker` group so docker commands work without `sudo`.
+The package normally creates the group, but not always — create it first
+(`-f` makes this safe if it already exists), and restart the daemon so its
+socket is owned by the group:
 
 ```bash
+sudo groupadd -f docker
 sudo usermod -aG docker $USER
+sudo systemctl restart docker
 ```
 
 ⚠️ Group membership takes effect on your **next login**: log out and back in
-(or `newgrp docker` for the current shell). Verify:
+(over SSH: reconnect), or `newgrp docker` for the current shell. Verify:
 
 ```bash
-docker ps        # must answer without "permission denied"
+id -nG                         # must list 'docker'
+ls -l /var/run/docker.sock     # must be root:docker
+docker ps                      # must answer without "permission denied"
 ```
 
 ### Docker Compose v2 (IMPORTANT)
