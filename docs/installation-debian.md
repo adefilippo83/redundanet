@@ -144,8 +144,25 @@ redundanet network join \
 
 The join syncs the manifest, installs the docker files under
 `/opt/redundanet`, and generates `/opt/redundanet/.env` for your node. It
-ends by **printing the exact start command** — don't run it yet: set up the
-storage disk first (step 7).
+ends by **printing the exact start command** — don't run it yet: two more
+steps first.
+
+### Export your GPG private key for the containers (do NOT skip)
+
+The VPN container reads your private key from `docker/secrets/`. The join
+creates that directory **empty** — export your key into it now:
+
+```bash
+gpg --armor --export-secret-keys <FULL_FINGERPRINT> \
+  > /opt/redundanet/docker/secrets/gpg_private_key.asc
+chmod 600 /opt/redundanet/docker/secrets/gpg_private_key.asc
+```
+
+If you skip this, the tinc container crash-loops with
+`IsADirectoryError: /run/secrets/gpg_private_key` (Docker turns the missing
+file into an empty directory). To recover: stop the stack, `sudo rmdir` the
+wrongly-created `secrets/gpg_private_key.asc` directory, export the key as
+above, start again.
 
 ## 7. Dedicated storage disk (do NOT skip)
 
