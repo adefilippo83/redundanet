@@ -147,10 +147,20 @@ The join syncs the manifest, installs the docker files under
 ends by **printing the exact start command** — don't run it yet: two more
 steps first.
 
-### Export your GPG private key for the containers (do NOT skip)
+### Check the GPG private key for the containers
 
-The VPN container reads your private key from `docker/secrets/`. The join
-creates that directory **empty** — export your key into it now:
+The VPN container reads your private key from
+`docker/secrets/gpg_private_key.asc`. Since CLI **2.7.11**, `network join`
+exports it there **automatically** when the key is in your local keyring —
+you should have seen `GPG private key exported for the containers` in the
+join output. Verify:
+
+```bash
+ls -l /opt/redundanet/docker/secrets/gpg_private_key.asc   # must exist, non-empty
+```
+
+If the join printed a **red warning** instead (key not in this machine's
+keyring, or an older CLI), export it manually:
 
 ```bash
 gpg --armor --export-secret-keys <FULL_FINGERPRINT> \
@@ -158,11 +168,11 @@ gpg --armor --export-secret-keys <FULL_FINGERPRINT> \
 chmod 600 /opt/redundanet/docker/secrets/gpg_private_key.asc
 ```
 
-If you skip this, the tinc container crash-loops with
-`IsADirectoryError: /run/secrets/gpg_private_key` (Docker turns the missing
-file into an empty directory). To recover: stop the stack, `sudo rmdir` the
-wrongly-created `secrets/gpg_private_key.asc` directory, export the key as
-above, start again.
+If you start the stack without this file, the tinc container refuses to start
+(the log tells you exactly what to do). On CLIs older than 2.7.11 it instead
+crash-loops with `IsADirectoryError` — recover by stopping the stack,
+`sudo rmdir` the wrongly-created `secrets/gpg_private_key.asc` directory,
+exporting the key as above, and starting again.
 
 ## 7. Dedicated storage disk (do NOT skip)
 

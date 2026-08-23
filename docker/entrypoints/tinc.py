@@ -39,6 +39,40 @@ def sync_manifest(manifest_repo: str, manifest_branch: str, manifest_dir: Path) 
     return False
 
 
+def gpg_secret_error(path: Path) -> str | None:
+    """Explain what is wrong with the mounted GPG key, or None if it is usable.
+
+    The most common failure on a fresh node: the host-side key file was never
+    exported, so Docker auto-created the missing bind-mount source as an empty
+    DIRECTORY — which passes an exists() check and then explodes on read with
+    an IsADirectoryError traceback. Catch it here with instructions instead.
+    """
+    if path.is_dir():
+        return (
+            "The GPG key mount is a DIRECTORY, not a file. The key file was "
+            "missing on the host when Docker started, so Docker created an "
+            "empty directory in its place. Fix on the HOST: stop the stack, "
+            "remove the wrongly-created directory "
+            "(sudo rmdir /opt/redundanet/docker/secrets/gpg_private_key.asc), "
+            "export your key (gpg --armor --export-secret-keys <FINGERPRINT> "
+            "> /opt/redundanet/docker/secrets/gpg_private_key.asc), then start "
+            "the stack again."
+        )
+    if not path.is_file():
+        return (
+            "GPG private key not found at /run/secrets/gpg_private_key. "
+            "Export it on the host: gpg --armor --export-secret-keys "
+            "<FINGERPRINT> > /opt/redundanet/docker/secrets/gpg_private_key.asc"
+        )
+    if path.stat().st_size == 0:
+        return (
+            "The GPG private key file is EMPTY. Re-export it on the host: "
+            "gpg --armor --export-secret-keys <FINGERPRINT> "
+            "> /opt/redundanet/docker/secrets/gpg_private_key.asc"
+        )
+    return None
+
+
 def main() -> None:
     setup_logging(level=os.environ.get("REDUNDANET_LOG_LEVEL", "INFO"))
     logger = get_logger()
@@ -64,8 +98,9 @@ def main() -> None:
         sync_manifest(manifest_repo, manifest_branch, MANIFEST_DIR)
 
     # The node's GPG private key (mounted secret) IS the Tinc key material.
-    if not GPG_SECRET_PATH.exists():
-        logger.error("GPG private key not found at /run/secrets/gpg_private_key")
+    secret_problem = gpg_secret_error(GPG_SECRET_PATH)
+    if secret_problem:
+        logger.error(secret_problem)
         sys.exit(1)
     gpg_secret = GPG_SECRET_PATH.read_text()
     try:

@@ -278,6 +278,44 @@ def _generate_env_file(
     console.print(f"[green]Environment file {verb}:[/green] {env_path}")
 
 
+def _ensure_gpg_secret(gpg_key_id: str, install_dir: Path) -> None:
+    """Make sure the containers' GPG private key file exists after a join.
+
+    The tinc container reads /run/secrets/gpg_private_key from
+    ``docker/secrets/gpg_private_key.asc``. Without this file Docker turns the
+    missing bind-mount source into an empty directory and the VPN crash-loops
+    — so export the key automatically when it is in the local keyring, and
+    warn LOUDLY when it is not.
+    """
+    secrets_path = install_dir / "docker" / "secrets" / "gpg_private_key.asc"
+    if secrets_path.is_file() and secrets_path.stat().st_size > 0:
+        return  # already exported (and preserved across re-joins)
+
+    if gpg_key_id:
+        try:
+            from redundanet.auth.gpg import GPGManager
+
+            armored = GPGManager().export_private_key(gpg_key_id)
+        except Exception:
+            armored = ""
+        if armored and "PRIVATE KEY BLOCK" in armored:
+            secrets_path.parent.mkdir(parents=True, exist_ok=True)
+            secrets_path.write_text(armored)
+            secrets_path.chmod(0o600)
+            console.print(
+                f"[green]GPG private key exported for the containers:[/green] {secrets_path}"
+            )
+            return
+
+    console.print(f"\n[bold red]WARNING: no GPG private key at {secrets_path}[/bold red]")
+    console.print("[red]The VPN container cannot start without it.[/red] Export it now:")
+    console.print(
+        f"  [cyan]gpg --armor --export-secret-keys {gpg_key_id or '<FINGERPRINT>'} "
+        f"> {secrets_path}[/cyan]"
+    )
+    console.print(f"  [cyan]chmod 600 {secrets_path}[/cyan]")
+
+
 @app.command("join")
 def join_network(
     node_name: Annotated[
@@ -357,6 +395,7 @@ def join_network(
             console.print(f"\n[green]Found node in manifest:[/green] {name}")
             network = _load_manifest_dict(manifest_file).get("network", {}) or {}
             _generate_env_file(node, network, repo, branch, install_dir)
+            _ensure_gpg_secret(str(node.get("gpg_key_id", "") or ""), install_dir)
             profiles = _profiles_for_roles(node.get("roles", []) or [])
         else:
             console.print(f"[yellow]Warning:[/yellow] Node '{name}' not found in manifest")

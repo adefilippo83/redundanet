@@ -7,6 +7,7 @@ import typer
 import yaml
 
 from redundanet.cli.network import (
+    _ensure_gpg_secret,
     _find_node_in_manifest,
     _generate_env_file,
     _load_manifest_dict,
@@ -122,6 +123,63 @@ class TestProfilesForRoles:
         # tinc_vpn has no profile (it always runs); duplicates collapse.
         assert _profiles_for_roles(["tinc_vpn", "tahoe_storage", "tahoe_storage"]) == ["storage"]
         assert _profiles_for_roles([]) == []
+
+
+class FakeGPG:
+    """GPGManager stand-in for the secret-export flow."""
+
+    export_result = (
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nkey\n-----END PGP PRIVATE KEY BLOCK-----\n"
+    )
+
+    def export_private_key(self, key_id, passphrase=""):
+        return type(self).export_result
+
+
+class TestEnsureGpgSecret:
+    """A join must never end 'successfully' with a missing container key —
+    that guarantees a tinc crash-loop (IsADirectoryError via Docker's
+    auto-created bind-mount directory)."""
+
+    def secrets_path(self, install_dir: Path) -> Path:
+        return install_dir / "docker" / "secrets" / "gpg_private_key.asc"
+
+    def test_exports_key_from_local_keyring(self, tmp_path: Path, monkeypatch, capsys):
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", lambda *_a, **_k: FakeGPG())
+        _ensure_gpg_secret("ABCD" * 10, tmp_path)
+        secret = self.secrets_path(tmp_path)
+        assert secret.is_file()
+        assert "PRIVATE KEY BLOCK" in secret.read_text()
+        assert oct(secret.stat().st_mode & 0o777) == "0o600"
+
+    def test_existing_file_untouched(self, tmp_path: Path, monkeypatch):
+        secret = self.secrets_path(tmp_path)
+        secret.parent.mkdir(parents=True)
+        secret.write_text("EXISTING KEY")
+
+        def boom(*a, **k):
+            raise AssertionError("GPGManager must not be constructed")
+
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", boom)
+        _ensure_gpg_secret("ABCD" * 10, tmp_path)
+        assert secret.read_text() == "EXISTING KEY"
+
+    def test_key_not_in_keyring_warns_loudly(self, tmp_path: Path, monkeypatch, capsys):
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", lambda *_a, **_k: FakeGPG())
+        monkeypatch.setattr(FakeGPG, "export_result", "")  # keyring has no such key
+        _ensure_gpg_secret("ABCD" * 10, tmp_path)
+        assert not self.secrets_path(tmp_path).exists()
+        out = capsys.readouterr().out
+        assert "WARNING" in out
+        assert "export-secret-keys" in out
+
+    def test_gpg_failure_warns_instead_of_crashing(self, tmp_path: Path, monkeypatch, capsys):
+        def boom(*a, **k):
+            raise RuntimeError("no gpg binary")
+
+        monkeypatch.setattr("redundanet.auth.gpg.GPGManager", boom)
+        _ensure_gpg_secret("ABCD" * 10, tmp_path)
+        assert "WARNING" in capsys.readouterr().out
 
 
 class TestManifestLookup:
