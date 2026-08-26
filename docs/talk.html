@@ -89,10 +89,12 @@
 
   .diagram { width: 100%; }
   .mnav { display: none; }
+  @supports (height: 100dvh) { @media (max-width: 900px), (max-height: 520px) { html, body { height: 100dvh; } } }
   @media (max-width: 900px), (max-height: 520px) {
     body { overflow: hidden; }
     .slide { padding: 20px 18px calc(84px + env(safe-area-inset-bottom)); justify-content: flex-start;
       overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+    .slide > * { flex-shrink: 0; }  /* never squish a block to fit the viewport: scroll instead */
     .slide h1 { font-size: 38px; }
     .slide h2 { font-size: 26px; margin-bottom: 14px; }
     .slide h3 { font-size: 18px; }
@@ -110,7 +112,9 @@
     .diagram { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -18px; padding: 0 18px; }
     .diagram svg { min-width: 980px; height: auto; }
     .hint { display: none; }
-    .foot { left: 18px; right: 18px; bottom: calc(56px + env(safe-area-inset-bottom)); font-size: 12px; }
+    .foot { display: none; }
+    pre { font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+    .mnav .count { flex: 0 0 auto; align-self: center; font-size: 13px; color: var(--text-muted); padding: 0 6px; }
     .notes { left: 12px; right: 12px; width: auto; bottom: calc(60px + env(safe-area-inset-bottom)); max-height: 50%; font-size: 14px; }
     .mnav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; gap: 8px;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: rgba(11,17,32,.92);
@@ -615,7 +619,7 @@ redundanet validate manifests/manifest.yaml</pre>
 
 </div>
 <div class="hint">← → navigate · N notes · F fullscreen</div>
-<div class="mnav"><button id="prevBtn" aria-label="Previous">‹ Prev</button><button class="notes-btn" id="notesBtn" aria-label="Toggle notes">Notes</button><button id="nextBtn" aria-label="Next">Next ›</button></div>
+<div class="mnav"><button id="prevBtn" aria-label="Previous">‹ Prev</button><span class="count" id="mcount"></span><button class="notes-btn" id="notesBtn" aria-label="Toggle notes">Notes</button><button id="nextBtn" aria-label="Next">Next ›</button></div>
 <div class="progress" id="progress"></div>
 
 <script>
@@ -637,6 +641,8 @@ redundanet validate manifests/manifest.yaml</pre>
       slides[i].appendChild(foot);
     }
     slides[i].querySelectorAll('.notes').forEach(el => el.classList.toggle('show', notes));
+    const mc = document.getElementById('mcount'); if (mc) mc.textContent = (i + 1) + '/' + slides.length;
+    slides[i].scrollTop = 0;
   }
   document.addEventListener('keydown', (e) => {
     if (['ArrowRight', ' ', 'PageDown', 'l', 'j'].includes(e.key)) { e.preventDefault(); show(i + 1); }
