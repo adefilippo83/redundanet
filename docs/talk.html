@@ -161,7 +161,7 @@
     <text class="l" x="40" y="232">PKI: fetch peer keys by full fingerprint</text>
     <!-- hub -->
     <rect class="box hub" x="460" y="30" width="320" height="150"/>
-    <text x="480" y="60" font-weight="700">Hub (fly.io, dedicated IPv4)</text>
+    <text x="480" y="60" font-weight="700">Hub (any host with a public IP)</text>
     <text class="l" x="480" y="86">tinc node with a public address:</text>
     <text class="l" x="480" y="106">relays NAT↔NAT peers</text>
     <text class="l" x="480" y="128">Tahoe introducer (rendezvous)</text>
@@ -169,26 +169,26 @@
     <!-- nodes -->
     <g>
       <rect class="box" x="360" y="290" width="240" height="190"/>
-      <text x="380" y="320" font-weight="700">Node (Raspberry Pi 5)</text>
+      <text x="380" y="320" font-weight="700">Node · a Raspberry Pi</text>
       <text class="l" x="380" y="348">tinc container ─ netns owner</text>
-      <text class="l" x="380" y="370">tahoe-storage  ─ shares on USB disk</text>
-      <text class="l" x="380" y="392">tahoe-client   ─ SFTP / uploads</text>
+      <text class="l" x="380" y="370">tahoe-storage  ─ shares on a USB disk</text>
+      <text class="l" x="380" y="392">tahoe-client   ─ uploads / SFTP</text>
       <text class="l" x="380" y="414">manifest-sync sidecar (5 min)</text>
       <text class="l" x="380" y="436">census sidecar (:3459, VPN-only)</text>
       <text class="l" x="380" y="464">network_mode: service:tinc</text>
     </g>
     <g>
       <rect class="box" x="660" y="290" width="240" height="190"/>
-      <text x="680" y="320" font-weight="700">Node (x86, iSCSI disk)</text>
-      <text class="l" x="680" y="348">same stack, storage + client</text>
-      <text class="l" x="680" y="370">NAS: Samba share →</text>
-      <text class="l" x="680" y="392">async tahoe backup (15 min)</text>
+      <text x="680" y="320" font-weight="700">Node · an old laptop</text>
+      <text class="l" x="680" y="348">same stack</text>
+      <text class="l" x="680" y="370">storage + client roles</text>
+      <text class="l" x="680" y="392">internal disk, behind home NAT</text>
     </g>
     <g>
       <rect class="box" x="960" y="290" width="240" height="190"/>
-      <text x="980" y="320" font-weight="700">Node (Debian 13 PC)</text>
-      <text class="l" x="980" y="348">joined by PR last week</text>
-      <text class="l" x="980" y="370">storage only</text>
+      <text x="980" y="320" font-weight="700">Node · a home server</text>
+      <text class="l" x="980" y="348">same stack, storage only</text>
+      <text class="l" x="980" y="370">any Linux box with Docker</text>
     </g>
     <!-- vpn mesh -->
     <path class="vpn" d="M620 180 L480 290"/>
@@ -206,7 +206,7 @@
     <text class="l" x="360" y="80" fill="#fde68a">git sync</text>
     <path class="sync" d="M330 215 L380 290"/>
   </svg>
-  <div class="notes"><b>Walk it:</b> repo → nodes (manifest sync), keyservers → peer host files, hub relays + introduces, three storage nodes. Stress: "the VPN namespace is owned by the tinc container; the Tahoe containers <em>join</em> it" — this becomes a story later.</div>
+  <div class="notes"><b>Walk it:</b> repo → nodes (manifest sync), keyservers → peer host files, hub relays + introduces, heterogeneous nodes running the same stack. Stress: "the VPN namespace is owned by the tinc container; the Tahoe containers <em>join</em> it" — this becomes a story later.</div>
 </section>
 
 <!-- 5 · Why Tahoe -->
