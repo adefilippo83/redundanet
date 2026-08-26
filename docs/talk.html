@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>RedundaNet — Distributed, redundant, community-run storage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #6366f1; --primary-dark: #4f46e5; --secondary: #22c55e;
+    --warn: #f59e0b; --danger: #ef4444;
+    --bg-dark: #0f172a; --bg-card: #1e293b; --bg-deep: #0b1120;
+    --text: #f8fafc; --text-muted: #94a3b8; --border: #334155;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg-dark); color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+
+  .deck { position: relative; width: 100%; height: 100%; }
+  .slide { position: absolute; inset: 0; display: none; padding: 56px 88px 72px;
+    flex-direction: column; justify-content: center; overflow: hidden; }
+  .slide.active { display: flex; animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none;} }
+
+  .slide h1 { font-size: 64px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; }
+  .slide h2 { font-size: 40px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 26px; }
+  .slide h2 .k { color: var(--primary); }
+  .slide h3 { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+  .slide p, .slide li { font-size: 21px; line-height: 1.45; color: var(--text); }
+  .slide .muted { color: var(--text-muted); }
+  .slide ul { list-style: none; }
+  .slide ul li { padding: 6px 0 6px 28px; position: relative; }
+  .slide ul li::before { content: ""; position: absolute; left: 6px; top: 17px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--primary); }
+  .slide ul.ok li::before { background: var(--secondary); }
+  .slide ul.bad li::before { background: var(--danger); }
+  .slide ul.warn li::before { background: var(--warn); }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 22px 26px; }
+  .card h3 { margin-bottom: 8px; }
+  .card.accent { border-color: var(--primary); }
+  .card.good { border-color: var(--secondary); }
+  .card.warn { border-color: var(--warn); }
+  .card.bad { border-color: var(--danger); }
+  .tag { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px; background: rgba(99,102,241,.18); color: #c7d2fe; margin-bottom: 14px; align-self: flex-start; }
+  .tag.demo { background: rgba(34,197,94,.18); color: #bbf7d0; }
+  .tag.pain { background: rgba(239,68,68,.18); color: #fecaca; }
+
+  pre { background: var(--bg-deep); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px;
+    font-size: 17px; line-height: 1.5; color: #e2e8f0; overflow: auto; }
+  pre .c { color: var(--text-muted); }
+  pre .g { color: #86efac; } pre .y { color: #fde68a; } pre .r { color: #fca5a5; } pre .b { color: #a5b4fc; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 22px; font-size: 19px; }
+  .kv dt { color: var(--text-muted); } .kv dd { color: var(--text); }
+  .big { font-size: 80px; font-weight: 800; color: var(--primary); line-height: 1; }
+  .stat { text-align: center; }
+  .stat .big { font-size: 64px; }
+  .stat .lbl { color: var(--text-muted); font-size: 17px; margin-top: 6px; }
+  .quote { font-size: 30px; font-weight: 500; line-height: 1.35; color: var(--text); border-left: 5px solid var(--primary);
+    padding-left: 26px; max-width: 1100px; }
+  .foot { position: absolute; left: 88px; right: 88px; bottom: 26px; display: flex; justify-content: space-between;
+    font-size: 14px; color: var(--text-muted); }
+  .progress { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--primary); transition: width .25s; }
+  .notes { display: none; position: absolute; right: 24px; bottom: 60px; width: 420px; max-height: 60%; overflow: auto;
+    background: rgba(11,17,32,.96); border: 1px solid var(--primary); border-radius: 12px; padding: 16px 18px;
+    font-size: 15px; line-height: 1.45; color: #cbd5e1; z-index: 5; }
+  .notes.show { display: block; }
+  .notes b { color: #c7d2fe; }
+  .hint { position: absolute; top: 18px; right: 24px; font-size: 13px; color: var(--text-muted); }
+  .logo { font-weight: 800; letter-spacing: -0.02em; }
+  .logo span { color: var(--primary); }
+  svg text { font-family: 'Inter', sans-serif; }
+  .arch text { fill: #e2e8f0; font-size: 15px; }
+  .arch .l { fill: #94a3b8; font-size: 13px; }
+  .arch rect.box { fill: #1e293b; stroke: #475569; stroke-width: 1.5; rx: 10; }
+  .arch rect.hub { stroke: #6366f1; stroke-width: 2; }
+  .arch rect.repo { stroke: #f59e0b; stroke-width: 2; }
+  .arch line, .arch path { stroke: #64748b; stroke-width: 2; fill: none; }
+  .arch .vpn { stroke: #6366f1; stroke-dasharray: 6 5; }
+  .arch .tahoe { stroke: #22c55e; }
+  .arch .sync { stroke: #f59e0b; stroke-dasharray: 3 4; }
+  @media print {
+    html, body { overflow: visible; background: #fff; }
+    .slide { display: flex !important; position: relative; page-break-after: always; height: 100vh; }
+    .hint, .notes, .progress { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- 1 · Title -->
+<section class="slide">
+  <div class="tag">Project talk</div>
+  <h1><span class="logo">Redunda<span>Net</span></span></h1>
+  <p style="font-size:30px;margin-top:18px;max-width:1000px">Distributed, encrypted, <em>very</em> redundant storage — run by a community of volunteers, not a company.</p>
+  <p class="muted" style="margin-top:34px;font-size:19px">Tahoe-LAFS · Tinc mesh VPN · GPG identities · a Git repo as the source of truth · Docker Compose · Raspberry Pis and old PCs</p>
+  <p class="muted" style="margin-top:40px;font-size:16px">redundanet.com · github.com/adefilippo83/redundanet</p>
+  <div class="notes"><b>Open:</b> one sentence — "I built a storage network you can join by opening a pull request, where your files survive any single machine dying and nobody who hosts them can read them." Then the origin story.</div>
+</section>
+
+<!-- 2 · Origin -->
+<section class="slide">
+  <h2>Where it came from: <span class="k">an orphaned idea</span></h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Cubbit, 2019 (Kickstarter)</h3>
+      <ul>
+        <li>A little box you plug in at home; your data is split, encrypted and spread across <em>everyone's</em> boxes</li>
+        <li>Storage as a peer-to-peer commons — I backed it and got the device</li>
+        <li>Then the company pivoted to <strong>enterprise object storage</strong>. Reasonable business call. The consumer commons idea was orphaned.</li>
+      </ul>
+    </div>
+    <div class="card accent">
+      <h3>The part I didn't want to let go</h3>
+      <ul>
+        <li>A network <strong>maintained by volunteers</strong>, with no company in the middle that can pivot away</li>
+        <li><strong>Very distributed</strong>: commodity hardware behind home NATs</li>
+        <li><strong>Very redundant</strong>: erasure coding, not just mirroring</li>
+        <li>Membership as a social process — you join because people vouch for you</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>Point:</b> the business pivot is not a criticism of Cubbit — it is the reason a community-owned version has to exist: nobody can pivot a network its members run themselves.</div>
+</section>
+
+<!-- 3 · Principles -->
+<section class="slide">
+  <h2>Design principles <span class="muted" style="font-size:24px">(and what they forced)</span></h2>
+  <div class="cols-3">
+    <div class="card"><h3>Nobody can read your data</h3><p class="muted">Not the hosts, not the operator. Encryption must happen client-side; the storage layer sees only ciphertext shares.</p></div>
+    <div class="card"><h3>Any node may die</h3><p class="muted">Files survive a Raspberry Pi with a dead SD card. Erasure coding with configurable k-of-n; the network keeps working read-only even below threshold.</p></div>
+    <div class="card"><h3>No central authority</h3><p class="muted">No server that, if it disappears, takes membership with it. Identity = a GPG key you own; membership = a file in a Git repo anyone can fork.</p></div>
+    <div class="card"><h3>Commodity, behind NAT</h3><p class="muted">Home connections, no port forwarding required. A mesh VPN that relays NAT-to-NAT.</p></div>
+    <div class="card"><h3>Vetted, not anonymous</h3><p class="muted">Members are approved humans. That lets some enforcement be an <em>honor system</em> — a deliberate trade, stated openly.</p></div>
+    <div class="card"><h3>Boring operations</h3><p class="muted">One CLI, one <code>docker compose</code> stack, a self-updater that can't brick a node, a public status page.</p></div>
+  </div>
+  <div class="notes"><b>Emphasize:</b> "vetted, not anonymous" — this is the trust model that makes several later decisions (client-side quotas, keyserver PKI) defensible rather than naïve.</div>
+</section>
+
+<!-- 4 · Architecture -->
+<section class="slide">
+  <h2>Architecture</h2>
+  <svg class="arch" viewBox="0 0 1240 520" width="100%" height="480" role="img" aria-label="RedundaNet architecture">
+    <!-- repo -->
+    <rect class="box repo" x="20" y="30" width="310" height="118"/>
+    <text x="40" y="60" font-weight="700">GitHub repo = source of truth</text>
+    <text class="l" x="40" y="86">manifest.yaml: nodes, VPN IPs, roles,</text>
+    <text class="l" x="40" y="106">GPG fingerprints, k-of-n encoding</text>
+    <text class="l" x="40" y="128">join: issue → bot PR → validate → merge</text>
+    <!-- keyservers -->
+    <rect class="box" x="20" y="180" width="310" height="70"/>
+    <text x="40" y="208" font-weight="700">Public GPG keyservers</text>
+    <text class="l" x="40" y="232">PKI: fetch peer keys by full fingerprint</text>
+    <!-- hub -->
+    <rect class="box hub" x="460" y="30" width="320" height="150"/>
+    <text x="480" y="60" font-weight="700">Hub (fly.io, dedicated IPv4)</text>
+    <text class="l" x="480" y="86">tinc node with a public address:</text>
+    <text class="l" x="480" y="106">relays NAT↔NAT peers</text>
+    <text class="l" x="480" y="128">Tahoe introducer (rendezvous)</text>
+    <text class="l" x="480" y="150">status page + replication census</text>
+    <!-- nodes -->
+    <g>
+      <rect class="box" x="360" y="290" width="240" height="190"/>
+      <text x="380" y="320" font-weight="700">Node (Raspberry Pi 5)</text>
+      <text class="l" x="380" y="348">tinc container ─ netns owner</text>
+      <text class="l" x="380" y="370">tahoe-storage  ─ shares on USB disk</text>
+      <text class="l" x="380" y="392">tahoe-client   ─ SFTP / uploads</text>
+      <text class="l" x="380" y="414">manifest-sync sidecar (5 min)</text>
+      <text class="l" x="380" y="436">census sidecar (:3459, VPN-only)</text>
+      <text class="l" x="380" y="464">network_mode: service:tinc</text>
+    </g>
+    <g>
+      <rect class="box" x="660" y="290" width="240" height="190"/>
+      <text x="680" y="320" font-weight="700">Node (x86, iSCSI disk)</text>
+      <text class="l" x="680" y="348">same stack, storage + client</text>
+      <text class="l" x="680" y="370">NAS: Samba share →</text>
+      <text class="l" x="680" y="392">async tahoe backup (15 min)</text>
+    </g>
+    <g>
+      <rect class="box" x="960" y="290" width="240" height="190"/>
+      <text x="980" y="320" font-weight="700">Node (Debian 13 PC)</text>
+      <text class="l" x="980" y="348">joined by PR last week</text>
+      <text class="l" x="980" y="370">storage only</text>
+    </g>
+    <!-- vpn mesh -->
+    <path class="vpn" d="M620 180 L480 290"/>
+    <path class="vpn" d="M620 180 L780 290"/>
+    <path class="vpn" d="M620 180 L1080 290"/>
+    <path class="vpn" d="M600 385 L660 385"/>
+    <path class="vpn" d="M900 385 L960 385"/>
+    <text class="l" x="640" y="245" fill="#a5b4fc">tinc mesh VPN 10.100.0.0/16 (dashed)</text>
+    <!-- tahoe -->
+    <path class="tahoe" d="M780 130 L1010 130 L1010 290"/>
+    <text class="l" x="800" y="118" fill="#86efac">introducer FURL: storage servers announce, clients discover</text>
+    <!-- sync -->
+    <path class="sync" d="M330 90 L460 90"/>
+    <path class="sync" d="M300 148 C 320 230, 330 300, 370 290"/>
+    <text class="l" x="360" y="80" fill="#fde68a">git sync</text>
+    <path class="sync" d="M330 215 L380 290"/>
+  </svg>
+  <div class="notes"><b>Walk it:</b> repo → nodes (manifest sync), keyservers → peer host files, hub relays + introduces, three storage nodes. Stress: "the VPN namespace is owned by the tinc container; the Tahoe containers <em>join</em> it" — this becomes a story later.</div>
+</section>
+
+<!-- 5 · Why Tahoe -->
+<section class="slide">
+  <h2>Why <span class="k">Tahoe-LAFS</span> as the storage engine</h2>
+  <div class="cols">
+    <div>
+      <ul class="ok">
+        <li><strong>Provider-independent security</strong> — encryption and integrity happen in the client; storage servers are untrusted by design. Exactly the volunteer-host threat model.</li>
+        <li><strong>Capabilities</strong> — an unguessable URI <em>is</em> the access right. No ACL server, no accounts to run.</li>
+        <li><strong>Erasure coding built in</strong> — k-of-n Reed-Solomon, "servers of happiness" placement guarantees.</li>
+        <li><strong>Mature</strong> — since 2007, audited (Cure53), Python, runs on a Pi.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Alternatives I weighed</h3>
+      <dl class="kv">
+        <dt>IPFS</dt><dd>content-addressed & public by default; no redundancy guarantee without pinning services</dd>
+        <dt>Ceph / MinIO</dt><dd>excellent — for a <em>trusted</em> cluster you own; wrong threat model for volunteer hosts</dd>
+        <dt>Storj / Sia</dt><dd>token economies; I wanted a social contract, not a market</dd>
+        <dt>Roll my own</dt><dd>the crypto and placement logic is precisely where I'd get it wrong</dd>
+      </dl>
+      <p class="muted" style="margin-top:14px">The cost of the choice: a dormant upstream. More on that later.</p>
+    </div>
+  </div>
+  <div class="notes"><b>Interview-grade point:</b> the selection criterion was the threat model, not features. Untrusted hosts ⇒ client-side crypto ⇒ Tahoe's whole design thesis.</div>
+</section>
+
+<!-- 6 · Why tinc + GPG -->
+<section class="slide">
+  <h2>Connectivity & identity: <span class="k">Tinc + GPG</span></h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Tinc mesh VPN</h3>
+      <ul>
+        <li>Full mesh with automatic relaying — two nodes behind NAT talk via the hub, direct when they can</li>
+        <li>Decentralized: every node holds every peer's public key (host files)</li>
+        <li>RSA keys → <strong>one identity for VPN and membership</strong>: the node's GPG key is converted (pgpy → PKCS#1 PEM) and used as the tinc key. No second keypair to manage or lose.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Membership pipeline</h3>
+      <ul>
+        <li>Applicant publishes a GPG key, submits the <strong>full 40-char fingerprint</strong> via a form → GitHub issue</li>
+        <li>Bot verifies the key is fetchable from keyservers and matches <em>exactly</em> — else the join <strong>fails closed</strong></li>
+        <li>Bot opens a PR adding the node to the manifest; CI validates; a human merges</li>
+        <li>Every node's sidecar pulls the manifest and rebuilds its tinc host files → the mesh admits the newcomer within minutes</li>
+      </ul>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:22px">Git gives audit history, review, and revocation (delete the node, merge) for free.</p>
+  <div class="notes"><b>Why full fingerprints:</b> short key ids are brute-forceable (Evil32). Earlier versions accepted 8/16-char ids and matched by suffix — an attacker could upload a colliding key. Now rejected everywhere. Good "I found and closed a hole" story.</div>
+</section>
+
+<!-- 7 · Deployment -->
+<section class="slide">
+  <h2>Deployment: <span class="k">one compose stack</span>, three roles</h2>
+  <div class="cols">
+    <pre><span class="c"># profiles select what a node runs</span>
+docker compose -p redundanet --env-file /opt/redundanet/.env \
+  --profile storage --profile client up -d
+
+<span class="c"># the tahoe containers live inside tinc's network namespace</span>
+tahoe-storage:
+  network_mode: <span class="b">"service:tinc"</span>
+  depends_on: { tinc: { condition: service_healthy } }
+  volumes: [ /mnt/storage/redundanet:/data/storage ]</pre>
+    <div>
+      <ul>
+        <li><strong>Roles = compose profiles</strong>: introducer, storage, client — derived from the manifest at join time</li>
+        <li><strong>Shared netns</strong>: Tahoe binds on the VPN IP without any port plumbing; tinc owns the namespace</li>
+        <li><strong>Hub on fly.io</strong>: Firecracker microVM, dedicated IPv4, a volume for the introducer's identity</li>
+        <li><strong>Prebuilt Raspberry Pi image</strong> (Trixie, pinned Compose v2) built in CI under QEMU</li>
+        <li>A CLI (<code>redundanet</code>) wraps it all: <code>join</code>, <code>update</code>, <code>storage</code>, <code>sftp</code>, <code>validate</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>Foreshadow:</b> "shared netns is elegant and it set a trap I'll show you."</div>
+</section>
+
+<!-- 8 · DEMO 1 -->
+<section class="slide">
+  <div class="tag demo">Live demo 1</div>
+  <h2>The network, right now</h2>
+  <div class="cols">
+    <div>
+      <p style="font-size:26px;margin-bottom:16px">Open <strong class="mono">redundanet-hub.fly.dev</strong></p>
+      <ul>
+        <li>Node list with VPN reachability, RTT, 24h uptime</li>
+        <li>Storage servers connected to the grid</li>
+        <li><strong>Replication census</strong>: per-object copies vs target — the "is my redundancy real?" question, answered continuously</li>
+        <li>Manifest status vs live status side by side</li>
+      </ul>
+    </div>
+    <pre><span class="c"># the same data the page renders</span>
+curl -s https://redundanet-hub.fly.dev/status.json | jq '.census'
+{
+  "objects_total": 8,
+  "target_copies": 2,
+  "fully_replicated": 8,
+  "under_replicated": 0,
+  "per_server": { "node-2680cd08": {...}, "node-bae1b9cd": {...} }
+}</pre>
+  </div>
+  <div class="notes"><b>Demo:</b> open the page, point at census. The census is computed from each storage node's share inventory (opaque storage indexes — no filenames, no content) served VPN-only; the hub intersects them.</div>
+</section>
+
+<!-- 9 · Redundancy -->
+<section class="slide">
+  <h2>Redundancy that is <span class="k">measured, not assumed</span></h2>
+  <div class="cols">
+    <div>
+      <h3>Erasure coding, configurable per network</h3>
+      <ul>
+        <li><code>shares_needed / shares_happy / shares_total</code> live in the manifest</li>
+        <li>Today: <strong>1-of-2 mirror</strong>, <code>happy=2</code> — every object on two distinct servers. Small network, honest parameters.</li>
+        <li>Growth policy: raise to e.g. 2-of-4 when the fleet reaches ~4–5 nodes (a manifest PR)</li>
+        <li><code>redundanet validate</code> warns when <code>happy == node count</code> — no write headroom (lose one node ⇒ read-only)</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Verified by failure drill (and in CI)</h3>
+      <ul class="ok">
+        <li>Production: stopped a storage node, downloaded via the other, <strong>byte-identical</strong></li>
+        <li>CI grid test: 3 storage nodes, 2-of-3, upload → kill a node → download → <code>sha256</code> match, every push</li>
+        <li>The census turned an assumption ("it's replicated") into a number I watch</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>Honesty beat:</b> docs used to say "3-of-10" while production ran 1-of-2. I reconciled the docs to "configurable k-of-n" — claim what you run.</div>
+</section>
+
+<!-- 10 · DEMO 2 -->
+<section class="slide">
+  <div class="tag demo">Live demo 2</div>
+  <h2>Kill a node, keep the file</h2>
+  <pre><span class="c"># on node A (client): upload, note the hash</span>
+sha256sum talk.pdf
+redundanet storage upload talk.pdf home:talk.pdf
+
+<span class="c"># on node B (storage): take it down</span>
+docker stop redundanet-tahoe-storage
+
+<span class="c"># status page: 1 storage server connected, census incomplete
+# on node A: download still works from the remaining copy</span>
+redundanet storage download home:talk.pdf /tmp/back.pdf
+sha256sum /tmp/back.pdf     <span class="g"># identical</span>
+
+<span class="c"># bring B back; the census returns to fully replicated</span>
+docker start redundanet-tahoe-storage</pre>
+  <p class="muted" style="margin-top:16px">Plain <code>docker stop/start</code> is safe for a <em>tahoe</em> container — it re-joins tinc's live namespace. (Restarting <em>tinc</em> itself is a different story — next.)</p>
+  <div class="notes"><b>Timing:</b> the client reconnects to remaining servers within seconds; the download uses the surviving share. Prepare the file beforehand so the upload is instant.</div>
+</section>
+
+<!-- 11 · Challenges I -->
+<section class="slide">
+  <div class="tag pain">Challenges · production incidents</div>
+  <h2>Fix the <span class="k">class</span>, not the instance</h2>
+  <div class="cols-3">
+    <div class="card bad"><h3>The netns trap</h3><p class="muted">Recreating the tinc container gives it a <em>new</em> network namespace; the Tahoe containers stay attached to the dead one — "0 shares connected". Fix: <code>redundanet update</code> always force-recreates tinc <em>first</em> and the Tahoe services with it; documented as a rule.</p></div>
+    <div class="card bad"><h3>The vanishing disk</h3><p class="muted">The CLI passed <code>-f docker-compose.yml</code>, which disables Docker's auto-loading of the override file holding the storage bind-mount. An update silently detached a 1TB disk: the node "lost" all objects (they were fine on disk). Fix: the CLI now includes the override explicitly, with a test.</p></div>
+    <div class="card bad"><h3>Fresh-node breakage</h3><p class="muted">The Pi image shipped Debian's <code>docker-compose</code> (v1, 2021); the CLI needs v2. A hand-edited manifest with a typo broke a node's join for 11 minutes. Fixes: pinned Compose v2 plugin verified at image-build time; the CLI diagnoses bad YAML instead of a traceback.</p></div>
+  </div>
+  <p class="muted" style="margin-top:22px">Each one became: a test, a CLI guard, and a doc line — the incident can't recur the same way.</p>
+  <div class="notes"><b>Pick one to tell fully:</b> the vanishing disk is the best — a correct-looking command with a subtle Docker semantic (explicit -f disables override auto-load). The fix is 12 lines and a test that asserts two -f flags.</div>
+</section>
+
+<!-- 12 · Challenges II -->
+<section class="slide">
+  <div class="tag pain">Challenges · the edges of Tahoe</div>
+  <h2>Living with a <span class="k">dormant upstream</span></h2>
+  <div class="cols">
+    <div>
+      <ul class="warn">
+        <li><strong>Last release: 1.20.0, Dec 2024.</strong> The SFTP frontend hasn't seen functional work since 2023.</li>
+        <li><strong>SFTP never closes sessions</strong> — the server consumes the client's disconnect and keeps the TCP connection forever; <code>exit</code> hangs. Bisected: not the client (OpenSSH 9.6 & 10.2), not the network (loopback), not Twisted (23 & 25). It's upstream code nobody maintains.</li>
+        <li><strong>No accounting</strong> — a storage server can't tell who uploaded what. Per-client quotas can only be client-enforced (fine under a vetted-member trust model; stated honestly).</li>
+        <li><strong>Unpinned transitive deps</strong> — pyOpenSSL 25 removed an API; every Tahoe container crash-looped. Caught by the grid e2e test; pinned.</li>
+      </ul>
+    </div>
+    <div class="card accent">
+      <h3>The response</h3>
+      <ul>
+        <li>Carry small, tested workarounds in our images; pin what upstream doesn't</li>
+        <li>Route around dead frontends: Tahoe's <em>web gateway</em> is the maintained one; the NAS pattern avoids SFTP entirely</li>
+        <li>Document quirks where users will hit them, not in a changelog</li>
+        <li>Keep the storage engine swappable in the architecture: the manifest, identity and mesh don't know it's Tahoe</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>Judgment call to highlight:</b> I chose Tahoe knowing it's slow-moving; the mitigation is architectural isolation, not hope.</div>
+</section>
+
+<!-- 13 · Security hardening -->
+<section class="slide">
+  <h2>Security hardening from a <span class="k">50-finding audit</span></h2>
+  <div class="cols">
+    <div>
+      <h3>Trust boundary on the source of truth</h3>
+      <ul class="ok">
+        <li>Full 40-char fingerprints only; exact match; suffix matching removed (Evil32)</li>
+        <li>Joins fail closed: key must be fetchable and match, or no PR</li>
+        <li>Publishing gated on green CI — <code>:latest</code> and PyPI can't ship a red commit to a fleet that auto-pulls</li>
+        <li><code>validate</code> exits non-zero on real errors; advisory warnings stay warnings</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Safe self-update</h3>
+      <ul class="ok">
+        <li><code>redundanet update</code>: detects new images via <code>docker inspect</code> (not <code>compose images</code>, which returns nothing on some versions)</li>
+        <li>Captures the running image IDs, recreates (tinc first), <strong>health-checks</strong>, and <strong>rolls back</strong> to the previous images if the node doesn't recover</li>
+        <li>Never blanks a node's key or wipes operator settings on re-join (<code>.env</code> is merged, not overwritten)</li>
+      </ul>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:20px">Method: six auditors by dimension → adversarial verification of every finding → prioritized batches. Shipped as small, tested releases (2.7.5 → 2.7.11).</p>
+  <div class="notes"><b>If asked "how did you audit it":</b> multi-agent read of the whole codebase by dimension, each finding independently re-verified against the code before it made the list, then six batches ranked by blast radius (publish safety first).</div>
+</section>
+
+<!-- 14 · Testing -->
+<section class="slide">
+  <h2>Testing a <span class="k">distributed system</span> on a laptop</h2>
+  <div class="cols-3">
+    <div class="stat"><div class="big">247</div><div class="lbl">unit tests · ruff · mypy strict</div></div>
+    <div class="stat"><div class="big">3</div><div class="lbl">docker e2e suites: mesh VPN, erasure-coded grid, hub bootstrap</div></div>
+    <div class="stat"><div class="big">1</div><div class="lbl">real network, dogfooded daily</div></div>
+  </div>
+  <div class="cols" style="margin-top:34px">
+    <div class="card">
+      <h3>What the grid test proves, every push</h3>
+      <p class="muted">Introducer + 3 storage nodes + client in compose; upload with 2-of-3; assert shares landed on 3 distinct hosts; stop one; download; <code>sha256</code> equal. It caught the pyOpenSSL breakage before any node did.</p>
+    </div>
+    <div class="card">
+      <h3>What tests <em>couldn't</em> catch</h3>
+      <p class="muted">The netns trap, the override-drop, compose v1 on a fresh OS — environment semantics. Each is now a unit test on the CLI's command construction, because that's where the bug actually lived.</p>
+    </div>
+  </div>
+  <div class="notes"><b>Mature framing:</b> know what your test pyramid doesn't cover; the gaps that remain (container entrypoints, hub image not built in CI) are on the roadmap, not hidden.</div>
+</section>
+
+<!-- 15 · NAS -->
+<section class="slide">
+  <h2>Using it: a home NAS with an <span class="k">erasure-coded time machine</span></h2>
+  <div class="cols">
+    <div>
+      <p style="margin-bottom:14px">First instinct: mount the grid via FUSE (sshfs) and re-export over Samba. Wrong tool:</p>
+      <ul class="bad">
+        <li>Tahoe files are immutable → every edit re-uploads the whole file</li>
+        <li>Finder/Windows write noise (temp files, partial writes) hammers the grid</li>
+        <li>"Saved" reported before the upload finishes</li>
+      </ul>
+      <p style="margin-top:14px">Better: <strong>local share, async one-way sync.</strong></p>
+    </div>
+    <pre>LAN ──SMB──▶ Samba share on the node (real disk)
+                     │  read-only bind-mount
+                     ▼
+          tahoe backup, every 15 min, incremental
+                     ▼
+   grid: backups:Archives/&lt;timestamp&gt;/  +  backups:Latest/
+
+<span class="c"># .env on the node</span>
+SYNC_ENABLED=true
+SYNC_DIR=/mnt/storage/share</pre>
+  </div>
+  <p class="muted" style="margin-top:18px">Snapshots accumulate on purpose — that's the oops/ransomware protection. Restore from any node. (Optional demo: drop a file on the share, watch it appear in <code>backups:Latest/</code>.)</p>
+  <div class="notes"><b>Design story:</b> a user proposed this; I had proposed the FUSE route. Theirs was better because it plays to Tahoe's immutable model instead of fighting it. Say that — it shows you take good ideas from anywhere.</div>
+</section>
+
+<!-- 16 · Operations -->
+<section class="slide">
+  <h2>Day-2 operations</h2>
+  <div class="cols">
+    <pre><span class="c"># join (writes .env, exports the GPG key, prints the start command)</span>
+redundanet network join --repo &lt;manifest repo&gt; --name node-303c084b
+
+<span class="c"># safe self-update with rollback</span>
+redundanet update --check
+redundanet update
+
+<span class="c"># files</span>
+redundanet storage upload photo.jpg home:photo.jpg
+redundanet storage ls backups:Latest/
+redundanet storage sftp adduser --user alice ~/.ssh/id_ed25519.pub
+
+<span class="c"># the network</span>
+redundanet network peers
+redundanet validate manifests/manifest.yaml</pre>
+    <div>
+      <ul>
+        <li>Everything a node needs is <code>/opt/redundanet/.env</code> + one override file for the disk</li>
+        <li>Errors are actionable by design now: a missing key, a bad manifest, a stale compose all say <em>what to run</em></li>
+        <li>Public status page = the on-call view; <code>status.json</code> = the alerting hook (alerts themselves: roadmap)</li>
+        <li>Guides for Debian 13 and the Pi image — written from real installs, not from the design doc</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>If time is short:</b> skip this slide; the demo already showed the CLI.</div>
+</section>
+
+<!-- 17 · What's next -->
+<section class="slide">
+  <h2>What's next <span class="muted" style="font-size:24px">(ranked by risk, not by fun)</span></h2>
+  <div class="cols">
+    <div>
+      <h3>Redundancy promises</h3>
+      <ul>
+        <li><strong>GC vs. lease renewal</strong>: storage expires unrenewed shares after 90 days; make expiry opt-in or renew fleet-wide</li>
+        <li><strong>Introducer SPOF</strong>: the hub is the only rendezvous point; support Tahoe's multi-introducer list</li>
+        <li><strong>Quotas</strong>: hard per-node caps from <code>storage_contribution</code>; client-enforced <code>storage_allocation</code> with usage on the status page</li>
+        <li><strong>Disk setup tooling</strong> for the Pi (mount + fstab + override) — today it's a documented procedure</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Engineering hygiene</h3>
+      <ul>
+        <li>Unit-test the container entrypoints (the historical blind spot); build the hub image in CI</li>
+        <li>Nightly e2e runs to catch environment drift between commits</li>
+        <li>Browser access via Tahoe's web gateway (the maintained frontend) instead of SFTP</li>
+        <li>Alerting on <code>status.json</code>: node down, servers &lt; <code>shares_needed</code>, census incomplete</li>
+        <li>Input hardening leftovers: SFTP usernames, node names in file paths</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes"><b>Signal:</b> you know the difference between what's shiny and what's risky. Lead with GC — silent data loss is the scariest item in any storage system.</div>
+</section>
+
+<!-- 18 · Lessons -->
+<section class="slide">
+  <h2>What I'd tell myself at the start</h2>
+  <ul style="max-width:1100px">
+    <li><strong>Run your own network from day one.</strong> Every serious bug was found by the live fleet, not by tests — then turned into a test.</li>
+    <li><strong>Validation that isn't on the live path is dead code.</strong> A beautiful <code>validate()</code> nobody calls protected nothing; a manifest typo reached a node in 11 minutes.</li>
+    <li><strong>Choose by threat model, then isolate the choice.</strong> Tahoe was right for untrusted hosts; keeping identity, membership and mesh engine-agnostic is what makes its dormancy survivable.</li>
+    <li><strong>Claim what you run.</strong> "3-of-10" in the docs vs 1-of-2 in production erodes exactly the trust a storage system lives on.</li>
+    <li><strong>Make failure legible.</strong> The best fixes this year were error messages that say what to run next.</li>
+    <li><strong>Communities design better than you do.</strong> The NAS sync architecture came from a member; the join pipeline exists because a friend wanted in.</li>
+  </ul>
+  <div class="notes"><b>Close on the last bullet</b> — it ties back to the origin: the reason to build a community-run network is that the community makes it better.</div>
+</section>
+
+<!-- 19 · Numbers -->
+<section class="slide">
+  <h2>By the numbers</h2>
+  <div class="cols-3">
+    <div class="stat"><div class="big">4</div><div class="lbl">nodes across 3 hardware types, all but the hub behind home NAT</div></div>
+    <div class="stat"><div class="big">2×</div><div class="lbl">copies of every object, verified continuously</div></div>
+    <div class="stat"><div class="big">99.7–99.9%</div><div class="lbl">24h node uptime on the public status page</div></div>
+  </div>
+  <div class="cols-3" style="margin-top:28px">
+    <div class="stat"><div class="big">50</div><div class="lbl">audit findings triaged into 6 batches</div></div>
+    <div class="stat"><div class="big">7</div><div class="lbl">releases in two weeks, each CI-gated</div></div>
+    <div class="stat"><div class="big">1</div><div class="lbl">PR to join</div></div>
+  </div>
+  <div class="notes"><b>Quick slide</b> — 20 seconds, then to the close.</div>
+</section>
+
+<!-- 20 · Close -->
+<section class="slide">
+  <h1 style="font-size:52px">Storage you can join with a pull request.</h1>
+  <p class="quote" style="margin-top:30px">Very distributed. Very redundant. Nobody in the middle.</p>
+  <div class="cols" style="margin-top:44px">
+    <dl class="kv">
+      <dt>Code</dt><dd class="mono">github.com/adefilippo83/redundanet</dd>
+      <dt>Status</dt><dd class="mono">redundanet-hub.fly.dev</dd>
+      <dt>Join</dt><dd class="mono">redundanet.com/join.html</dd>
+      <dt>Stack</dt><dd>Python · Tahoe-LAFS · Tinc · GPG · Docker · GitHub Actions · fly.io</dd>
+    </dl>
+    <div class="card accent"><h3>Questions I enjoy</h3><p class="muted">Threat model and capabilities · why not IPFS/Ceph · the netns trap · how the census works · what happens when the hub dies · quotas without accounting</p></div>
+  </div>
+  <div class="notes"><b>End.</b> Offer the demo again for Q&amp;A: "want to see me take a node down?"</div>
+</section>
+
+</div>
+<div class="hint">← → navigate · N notes · F fullscreen</div>
+<div class="progress" id="progress"></div>
+
+<script>
+(function () {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const progress = document.getElementById('progress');
+  let i = Math.max(0, Math.min(slides.length - 1, parseInt(location.hash.slice(1) || '1', 10) - 1));
+  let notes = false;
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', '#' + (i + 1));
+    let foot = slides[i].querySelector('.foot');
+    if (!foot) {
+      foot = document.createElement('div'); foot.className = 'foot';
+      foot.innerHTML = '<span>RedundaNet — redundanet.com</span><span>' + (i + 1) + ' / ' + slides.length + '</span>';
+      slides[i].appendChild(foot);
+    }
+    slides[i].querySelectorAll('.notes').forEach(el => el.classList.toggle('show', notes));
+  }
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown', 'l', 'j'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    else if (['ArrowLeft', 'PageUp', 'h', 'k'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key.toLowerCase() === 'n') { notes = !notes; show(i); }
+    else if (e.key.toLowerCase() === 'f') { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
+  });
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+    if (Math.abs(dx) > 50) show(dx < 0 ? i + 1 : i - 1);
+  });
+  document.addEventListener('click', e => {
+    if (e.target.closest('a, pre, .notes')) return;
+    show(e.clientX > window.innerWidth / 2 ? i + 1 : i - 1);
+  });
+  show(i);
+})();
+</script>
+</body>
+</html>
