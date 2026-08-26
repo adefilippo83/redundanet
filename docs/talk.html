@@ -141,7 +141,7 @@
   <p style="font-size:30px;margin-top:18px;max-width:1000px">Distributed, encrypted, <em>very</em> redundant storage, run by a community of volunteers, not a company.</p>
   <p class="muted" style="margin-top:34px;font-size:19px">Tahoe-LAFS · Tinc mesh VPN · GPG identities · a Git repo as the source of truth · Docker Compose · Raspberry Pis and old PCs</p>
   <p class="muted" style="margin-top:40px;font-size:16px">redundanet.com · github.com/adefilippo83/redundanet</p>
-  <div class="notes"><b>Open:</b> one sentence: "I built a storage network you can join by opening a pull request, where your files survive any single machine dying and nobody who hosts them can read them." Then the origin story.</div>
+  <div class="notes">Start with the one-liner: a storage network you join by opening a pull request, where your files survive any machine dying and nobody hosting them can read them. Then straight into the Cubbit story.</div>
 </section>
 
 <!-- 2 · Origin -->
@@ -166,7 +166,7 @@
       </ul>
     </div>
   </div>
-  <div class="notes"><b>Point:</b> the business pivot is not a criticism of Cubbit; it is the reason a community-owned version has to exist: nobody can pivot a network its members run themselves.</div>
+  <div class="notes">I backed the Cubbit Kickstarter in 2019 and I still have the box. When they pivoted to enterprise object storage I didn't blame them, it was the right business call. But it left the idea I cared about with nobody carrying it. A network the members run themselves can't pivot away from them. That's the whole reason this exists.</div>
 </section>
 
 <!-- 3 · Principles -->
@@ -180,7 +180,7 @@
     <div class="card"><h3>Vetted, not anonymous</h3><p class="muted">Members are approved humans. That lets some enforcement be an <em>honor system</em>, a deliberate trade, stated openly.</p></div>
     <div class="card"><h3>Boring operations</h3><p class="muted">One CLI, one <code>docker compose</code> stack, a self-updater that can't brick a node, a public status page.</p></div>
   </div>
-  <div class="notes"><b>Emphasize:</b> "vetted, not anonymous": this is the trust model that makes several later decisions (client-side quotas, keyserver PKI) defensible rather than naïve.</div>
+  <div class="notes">Dwell on "vetted, not anonymous". This is the trust model everything else leans on: members are approved humans, so some enforcement can be honor-system (quotas, later) and that's a deliberate choice, not naivety.</div>
 </section>
 
 <!-- 4 · Architecture -->
@@ -244,7 +244,7 @@
     <text class="l" x="360" y="80" fill="#fde68a">git sync</text>
     <path class="sync" d="M330 215 L365 290"/>
   </svg></div>
-  <div class="notes"><b>Walk it:</b> repo → nodes (manifest sync), keyservers → peer host files, hub relays + introduces, heterogeneous nodes running the same stack. Stress: "the VPN namespace is owned by the tinc container; the Tahoe containers <em>join</em> it". This becomes a story later.</div>
+  <div class="notes">Walk it left to right: the repo is the source of truth and nodes sync it; the keyservers are the PKI; the hub relays NAT-to-NAT and runs the introducer. Every node runs the same stack on whatever hardware. Mention that the tinc container owns the network namespace and the Tahoe containers join it. I come back to this on the incidents slide.</div>
 </section>
 
 <!-- 5 · Why Tahoe -->
@@ -270,7 +270,7 @@
       <p class="muted" style="margin-top:14px">The cost of the choice: a dormant upstream. More on that later.</p>
     </div>
   </div>
-  <div class="notes"><b>Interview-grade point:</b> the selection criterion was the threat model, not features. Untrusted hosts ⇒ client-side crypto ⇒ Tahoe's whole design thesis.</div>
+  <div class="notes">The criterion was the threat model, not the feature list. Untrusted hosts means encryption has to happen in the client, and that is Tahoe's entire thesis. Be upfront that upstream moves slowly: I chose it knowing that.</div>
 </section>
 
 <!-- 6 · Why tinc + GPG -->
@@ -296,7 +296,7 @@
     </div>
   </div>
   <p class="muted" style="margin-top:22px">Git gives audit history, review, and revocation (delete the node, merge) for free.</p>
-  <div class="notes"><b>Why full fingerprints:</b> short key ids are brute-forceable (Evil32). Earlier versions accepted 8/16-char ids and matched by suffix, so an attacker could upload a colliding key. Now rejected everywhere. Good "I found and closed a hole" story.</div>
+  <div class="notes">Why full fingerprints: a short key id is just the last 8 or 16 hex characters of the hash, and Evil32 showed you can forge one in seconds. Earlier versions accepted short ids and matched by suffix, so an attacker could upload a colliding key and become a node. Now rejected everywhere. Good story if there's a security person in the room.</div>
 </section>
 
 <!-- 7 · Deployment -->
@@ -322,7 +322,7 @@ tahoe-storage:
       </ul>
     </div>
   </div>
-  <div class="notes"><b>Foreshadow:</b> "shared netns is elegant and it set a trap I'll show you."</div>
+  <div class="notes">The shared network namespace is elegant and it set a trap. Don't explain it here, just plant it.</div>
 </section>
 
 <!-- 8 · DEMO 1 -->
@@ -349,7 +349,7 @@ curl -s https://redundanet-hub.fly.dev/status.json | jq '.census'
   "per_server": { "node-2680cd08": {...}, "node-bae1b9cd": {...} }
 }</pre>
   </div>
-  <div class="notes"><b>Demo:</b> open the page, point at census. The census is computed from each storage node's share inventory (opaque storage indexes: no filenames, no content) served VPN-only; the hub intersects them.</div>
+  <div class="notes">Open the status page. Point at the census: it's built from each storage node's list of opaque storage indexes, no filenames, no content, served only over the VPN. The hub intersects them. Check before the talk that the census says complete.</div>
 </section>
 
 <!-- 9 · Redundancy -->
@@ -374,7 +374,7 @@ curl -s https://redundanet-hub.fly.dev/status.json | jq '.census'
       </ul>
     </div>
   </div>
-  <div class="notes"><b>Honesty beat:</b> docs used to say "3-of-10" while production ran 1-of-2. I reconciled the docs to "configurable k-of-n". Claim what you run.</div>
+  <div class="notes">Own the honesty point: the docs used to say 3-of-10 while production ran 1-of-2. I fixed the docs to say what we actually run. Claim what you run.</div>
 </section>
 
 <!-- 10 · DEMO 2 -->
@@ -396,7 +396,7 @@ sha256sum /tmp/back.pdf     <span class="g"># identical</span>
 <span class="c"># bring B back; the census returns to fully replicated</span>
 docker start redundanet-tahoe-storage</pre>
   <p class="muted" style="margin-top:16px">Plain <code>docker stop/start</code> is safe for a <em>tahoe</em> container: it re-joins tinc's live namespace. (Restarting <em>tinc</em> itself is a different story, next.)</p>
-  <div class="notes"><b>Timing:</b> the client reconnects to remaining servers within seconds; the download uses the surviving share. Prepare the file beforehand so the upload is instant.</div>
+  <div class="notes">Have talk.pdf ready and the hash already noted. Stop the Pi's storage container, download from falcon, compare hashes. The client reconnects in seconds. Start the container again before moving on.</div>
 </section>
 
 <!-- 11 · Challenges I -->
@@ -409,7 +409,7 @@ docker start redundanet-tahoe-storage</pre>
     <div class="card bad"><h3>Fresh-node breakage</h3><p class="muted">The Pi image shipped Debian's <code>docker-compose</code> (v1, 2021); the CLI needs v2. A hand-edited manifest with a typo broke a node's join for 11 minutes. Fixes: pinned Compose v2 plugin verified at image-build time; the CLI diagnoses bad YAML instead of a traceback.</p></div>
   </div>
   <p class="muted" style="margin-top:22px">Each one became: a test, a CLI guard, and a doc line, so the incident can't recur the same way.</p>
-  <div class="notes"><b>Pick one to tell fully:</b> the vanishing disk is the best: a correct-looking command with a subtle Docker semantic (explicit -f disables override auto-load). The fix is 12 lines and a test that asserts two -f flags.</div>
+  <div class="notes">If short on time, tell only the vanishing disk: the command looked right, but an explicit -f turns off Docker's auto-loading of the override file, so an update silently detached a 1TB disk. The data was fine on the disk, the node just couldn't see it. A twelve-line fix plus a test that asserts two -f flags.</div>
 </section>
 
 <!-- 12 · Challenges II -->
@@ -435,7 +435,7 @@ docker start redundanet-tahoe-storage</pre>
       </ul>
     </div>
   </div>
-  <div class="notes"><b>Judgment call to highlight:</b> I chose Tahoe knowing it's slow-moving; the mitigation is architectural isolation, not hope.</div>
+  <div class="notes">I picked Tahoe knowing it moves slowly. The mitigation is architecture, not hope: identity, membership and the mesh don't know that the storage engine is Tahoe.</div>
 </section>
 
 <!-- 13 · Security hardening -->
@@ -461,7 +461,7 @@ docker start redundanet-tahoe-storage</pre>
     </div>
   </div>
   <p class="muted" style="margin-top:20px">Method: six auditors by dimension → adversarial verification of every finding → prioritized batches. Shipped as small, tested releases (2.7.5 → 2.7.11).</p>
-  <div class="notes"><b>If asked "how did you audit it":</b> multi-agent read of the whole codebase by dimension, each finding independently re-verified against the code before it made the list, then six batches ranked by blast radius (publish safety first).</div>
+  <div class="notes">If someone asks why the manifest isn't signed: it was the biggest finding and I deferred it on purpose. Today the boundary is GitHub auth, branch protection and review. Signing would protect against a compromised GitHub account. Known gap, on the list.</div>
 </section>
 
 <!-- 14 · Testing -->
@@ -482,7 +482,7 @@ docker start redundanet-tahoe-storage</pre>
       <p class="muted">The netns trap, the override-drop, compose v1 on a fresh OS: environment semantics. Each is now a unit test on the CLI's command construction, because that's where the bug actually lived.</p>
     </div>
   </div>
-  <div class="notes"><b>Mature framing:</b> know what your test pyramid doesn't cover; the gaps that remain (container entrypoints, hub image not built in CI) are on the roadmap, not hidden.</div>
+  <div class="notes">Be honest about what the test pyramid doesn't cover: the container entrypoints and the hub image aren't tested in CI yet. On the roadmap, not hidden.</div>
 </section>
 
 <!-- 15 · NAS -->
@@ -510,7 +510,7 @@ SYNC_ENABLED=true
 SYNC_DIR=/mnt/storage/share</pre>
   </div>
   <p class="muted" style="margin-top:18px">Snapshots accumulate on purpose: that's the oops/ransomware protection. Restore from any node. (Optional demo: drop a file on the share, watch it appear in <code>backups:Latest/</code>.)</p>
-  <div class="notes"><b>Design story:</b> a user proposed this; I had proposed the FUSE route. Theirs was better because it plays to Tahoe's immutable model instead of fighting it. Say that; it shows you take good ideas from anywhere.</div>
+  <div class="notes">A member proposed this design; I had proposed the FUSE route. Theirs was better because it works with Tahoe's immutable model instead of against it. Say so.</div>
 </section>
 
 <!-- 16 · Operations -->
@@ -541,7 +541,7 @@ redundanet validate manifests/manifest.yaml</pre>
       </ul>
     </div>
   </div>
-  <div class="notes"><b>If time is short:</b> skip this slide; the demo already showed the CLI.</div>
+  <div class="notes">Skip this one if running late, the demo already showed the CLI.</div>
 </section>
 
 <!-- 17 · What's next -->
@@ -568,7 +568,7 @@ redundanet validate manifests/manifest.yaml</pre>
       </ul>
     </div>
   </div>
-  <div class="notes"><b>Signal:</b> you know the difference between what's shiny and what's risky. Lead with GC: silent data loss is the scariest item in any storage system.</div>
+  <div class="notes">Lead with GC: silent data loss is the scariest item in any storage system. The rest is ranked by risk on purpose.</div>
 </section>
 
 <!-- 18 · Lessons -->
@@ -582,7 +582,7 @@ redundanet validate manifests/manifest.yaml</pre>
     <li><strong>Make failure legible.</strong> The best fixes this year were error messages that say what to run next.</li>
     <li><strong>Communities design better than you do.</strong> The NAS sync architecture came from a member; the join pipeline exists because a friend wanted in.</li>
   </ul>
-  <div class="notes"><b>Close on the last bullet</b>: it ties back to the origin: the reason to build a community-run network is that the community makes it better.</div>
+  <div class="notes">End on the last bullet: the reason to build a community-run network is that the community makes it better. It ties back to Cubbit.</div>
 </section>
 
 <!-- 19 · Numbers -->
@@ -598,7 +598,7 @@ redundanet validate manifests/manifest.yaml</pre>
     <div class="stat"><div class="big">7</div><div class="lbl">releases in two weeks, each CI-gated</div></div>
     <div class="stat"><div class="big">1</div><div class="lbl">PR to join</div></div>
   </div>
-  <div class="notes"><b>Quick slide</b>: 20 seconds, then to the close.</div>
+  <div class="notes">Twenty seconds, then close.</div>
 </section>
 
 <!-- 20 · Close -->
@@ -614,7 +614,7 @@ redundanet validate manifests/manifest.yaml</pre>
     </dl>
     <div class="card accent"><h3>Questions I enjoy</h3><p class="muted">Threat model and capabilities · why not IPFS/Ceph · the netns trap · how the census works · what happens when the hub dies · quotas without accounting</p></div>
   </div>
-  <div class="notes"><b>End.</b> Offer the demo again for Q&amp;A: "want to see me take a node down?"</div>
+  <div class="notes">Offer the demo again for Q&amp;A: want to see me take a node down?</div>
 </section>
 
 </div>
