@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your backup is someone else&#x27;s computer. What if it were everyone&#x27;s? | RedundaNet</title>
+    <meta name="description" content="Every guide to backups repeats the same rule: three copies, two media, one somewhere else. But what did you actually buy from a cloud provider? Seven principles for storage worth trusting, the story behind a community-run network, and why any organization sitting on idle disks can fork it.">
+    <link rel="canonical" href="https://redundanet.com/news/your-backup-is-someone-elses-computer.html">
+    <link rel="alternate" type="application/rss+xml" title="RedundaNet news" href="/news/feed.xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* Header */
+        .page-header {
+            text-align: center;
+            padding: 60px 0 32px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        /* Table of contents */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 28px;
+            margin-bottom: 48px;
+        }
+
+        .toc h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .toc ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 6px 24px;
+        }
+
+        .toc a {
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .toc a:hover {
+            color: var(--primary);
+        }
+
+        /* Guide sections */
+        .guide section {
+            margin-bottom: 48px;
+            scroll-margin-top: 24px;
+        }
+
+        .guide h2 {
+            font-size: 1.6rem;
+            margin-bottom: 18px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .guide h3 {
+            font-size: 1.2rem;
+            margin: 28px 0 12px;
+        }
+
+        .guide h4 {
+            font-size: 1rem;
+            margin: 20px 0 10px;
+            color: var(--text-muted);
+        }
+
+        .guide p {
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .guide ul,
+        .guide ol {
+            color: var(--text-muted);
+            margin: 0 0 16px 22px;
+        }
+
+        .guide li {
+            margin-bottom: 6px;
+        }
+
+        .guide strong {
+            color: var(--text);
+        }
+
+        .guide a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .guide a:hover {
+            text-decoration: underline;
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 18px;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        td {
+            color: var(--text-muted);
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        /* Callout */
+        .note {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid var(--primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 0 0 18px;
+            color: var(--text-muted);
+        }
+
+        .note strong {
+            color: var(--text);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        @media (max-width: 600px) {
+            .page-header h1 { font-size: 2rem; }
+        }
+    </style>
+    
+<style>
+  .page-header a { color: var(--primary); text-decoration: none; }
+  .page-header a:hover { text-decoration: underline; }
+  .article-meta { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.75rem; }
+  .guide article > h2 { margin-top: 2.6rem; }
+  .guide article > h3 { margin-top: 1.8rem; }
+  .guide article p { margin: 0 0 1.1rem; }
+  .guide article ul { margin: 0 0 1.2rem 1.4rem; }
+  .guide article hr { border: 0; border-top: 1px solid var(--border); margin: 2.4rem 0; }
+  .guide article em { color: var(--text); }
+  .news-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.6rem 1.8rem; margin-bottom: 1.2rem; }
+  .news-card h2 { margin: 0 0 0.4rem; font-size: 1.45rem; line-height: 1.3; }
+  .news-card h2 a { color: var(--text); text-decoration: none; }
+  .news-card h2 a:hover { color: var(--primary); }
+  .news-card .article-meta { margin: 0 0 0.8rem; }
+  .news-card p { color: var(--text-muted); margin: 0 0 1rem; }
+  .news-card .more { color: var(--primary); font-weight: 600; text-decoration: none; }
+  .author-box { display: flex; gap: 1.2rem; align-items: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 1.4rem 1.6rem; margin-top: 2.6rem; }
+  .author-avatar { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem; color: #fff; }
+  .author-box h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+  .author-box p { color: var(--text-muted); margin: 0 0 0.6rem; font-size: 0.98rem; }
+  .author-box .author-links { margin: 0; }
+  .author-box a { color: var(--primary); text-decoration: none; }
+  .author-box a:hover { text-decoration: underline; }
+  @media (max-width: 600px) { .author-box { flex-direction: column; } }
+  .article-links { margin-top: 2.5rem; padding-top: 1.4rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.95rem; }
+</style>
+</head>
+<body>
+    <nav>
+        <div class="nav-container">
+            <a href="../" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <span class="nav-right">
+                <span data-lang-switcher class="lang-switcher"></span>
+                <a href="./" class="btn btn-secondary">← All news</a>
+            </span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Your backup is someone else&#x27;s computer. What if it were everyone&#x27;s?</h1>
+            <p>Principles of storage worth trusting, and why I built a community-run network around them.</p>
+            <div class="article-meta"><time datetime="2026-08-30">30 August 2026</time> · Alessandro De Filippo</div>
+        </div>
+
+        <div class="guide">
+            <article>
+<p>Every guide to backups repeats the same rule: three copies of your data, on two different kinds of media, one of them somewhere else. Most of us implement "somewhere else" by uploading to a cloud provider and calling it done.</p>
+<p>That is not wrong. But it is worth noticing what you actually bought. You did not buy redundancy, geographic distribution, or privacy. You bought a promise about those things from a company, priced monthly, governed by terms of service that can change, running on infrastructure you cannot see, in a jurisdiction you may not have chosen. The copy exists as long as the company does and as long as it wants to keep serving you.</p>
+<p>I spent the last year building an alternative, not because the cloud is bad, but because I wanted to understand which properties of "a safe place for my data" are essential, and whether a community of ordinary people with ordinary hardware could provide them for each other. The project is called RedundaNet. This article is about the principles behind it more than the engineering, and about why those principles are useful to anyone, including companies, who wants to own their storage instead of renting it.</p>
+<h2>Where it started: a box that wanted to be a commons</h2>
+<p>In 2019 I backed a Kickstarter for a product called Cubbit. The pitch was lovely: a small box you plug in at home. Your files get encrypted, split into pieces, and spread across everyone else's boxes. No data center. Storage as a shared commons, where each participant contributes a little disk and gets back a resilient, private place for their data.</p>
+<p>I got the box. Then the company did what companies must sometimes do: it pivoted to enterprise object storage. A reasonable business decision, and I hold nothing against them. But it illustrates the first principle better than any argument could: <strong>a network owned by a company can pivot away from the people using it.</strong> The idea I cared about was not wrong, it was orphaned.</p>
+<p>The only kind of network that cannot pivot away from its members is one the members run themselves.</p>
+<h2>Seven principles for storage worth trusting</h2>
+<p>Building the thing forced me to be explicit about what "safe" means. These are the properties I ended up designing for. They apply whether you use a cloud provider, a NAS in your closet, or a community network.</p>
+<h3>1. Redundancy you can count, not assume</h3>
+<p>A single copy is not a backup. Two copies on the same disk are not a backup either. Real redundancy means the loss of any one machine, disk, or site leaves your data intact and retrievable.</p>
+<p>The elegant way to do this is called erasure coding. Instead of storing whole copies, a file is split into a number of pieces, and any few of them are enough to rebuild the original. Store it as, say, four pieces of which any two suffice, and you can lose two machines and lose nothing, at the storage cost of two full copies. The mathematics has been around for decades; RAID uses a version of it inside one box. Distributed storage uses it across many boxes.</p>
+<p>What matters more than the scheme is verification. RedundaNet has a public status page that counts, continuously, how many copies of every stored object actually exist on distinct machines. I have deliberately shut nodes down and downloaded files through the survivors to confirm they come back byte for byte. Redundancy you have never tested is a hope, not a property.</p>
+<h3>2. Geographic distribution</h3>
+<p>Fire, flood, theft, a burst pipe, a burglar who takes "the electronics." Every one of these takes your local copy and your local backup together. Distance is the only defense: copies should live in different buildings, ideally different cities.</p>
+<p>A community network gets this for free. Its members are already spread out: a Raspberry Pi in one apartment, an old laptop in another, a home server across the country. No single event touches more than one of them.</p>
+<h3>3. Privacy by construction, not by policy</h3>
+<p>The honest version of most privacy policies is: "we can read your data, but we promise not to." The stronger version is: "we cannot read your data, and here is why."</p>
+<p>The difference is where encryption happens. If your files are encrypted on your own device before they leave it, and the key never leaves with them, then whoever stores them holds ciphertext and nothing else. It does not matter whether the host is a company, a stranger's Raspberry Pi, or a subpoena. There is nothing there to read.</p>
+<p>This was non-negotiable for RedundaNet, because the people storing your data are, by design, other members of the community. You should not have to trust them, and they should not have to trust you. Everyone holds pieces of everyone else's ciphertext, and nobody can open anything but their own.</p>
+<h3>4. Data sovereignty</h3>
+<p>Sovereignty is a word that gets used for governments, but it applies to individuals and organizations too. It means: who ultimately controls the existence of your data? Who can delete it, change the price of keeping it, lock you out of your account, or hand it to a third party?</p>
+<p>With a provider, the answer is the provider. You hold the login; they hold everything else.</p>
+<p>With storage you run, the answer is you. You hold the keys, you hold the infrastructure, and the rules are written in files you can read. In RedundaNet, the entire definition of the network, its members, their addresses, the redundancy scheme, lives in a Git repository. Membership is a line in a file. Changing the rules is a pull request that a human reviews and merges.</p>
+<h3>5. No central authority, and the right to leave</h3>
+<p>A system with a single indispensable party has a single point of failure that is not technical but political. Even with good intentions, that party can go bankrupt, get acquired, or lose interest.</p>
+<p>So the question to ask of any storage system is: <em>what happens if the people who run it disappear tomorrow?</em></p>
+<p>For RedundaNet the answer is: nothing, structurally. Identity is a cryptographic key you generate and own. The network definition is a Git repository anyone can clone. The software is open source under the GPL. If I vanished, the members could keep running the network, or fork the repository and start their own, without asking anyone.</p>
+<p>That right to leave, to fork, is not a fallback. It is the feature.</p>
+<h3>6. Honesty about trust</h3>
+<p>Every system trusts something. The mistake is hiding what.</p>
+<p>RedundaNet does not pretend to be a trustless network of anonymous strangers. Membership is a social process: you apply, your cryptographic identity is verified, and a person approves you. Members are known humans. That single decision makes a lot of other things simpler and more honest. Some rules can be enforced by software; others can be an honor system among people who vouched for each other, and we say so openly instead of pretending the code does it.</p>
+<p>This is closer to how a co-op works than to how a marketplace works, and I think that is the right model for infrastructure shared among people who actually know each other.</p>
+<h3>7. Boring operations</h3>
+<p>The final principle is the least glamorous and the most important: the thing must be easy to run, or nobody will keep running it. A community network is only as reliable as the least technical member's willingness to keep their node on.</p>
+<p>Everything in RedundaNet is one configuration file and one command to start, a self-update that checks the node is healthy and rolls itself back if it is not, and a status page that tells you what is wrong before someone has to ask. A network that needs a sysadmin is a network that will not outlive its sysadmin.</p>
+<h2>What it looks like in practice</h2>
+<p>For the curious, the stack in one paragraph: files are encrypted and erasure-coded by Tahoe-LAFS, a storage system designed from the start on the assumption that storage servers are untrusted. Nodes talk over a private mesh VPN that works behind ordinary home routers. Each node's identity is a GPG key, published to the same public key servers people have used for decades. Docker packages it so that a node is a Raspberry Pi, an old laptop, or a home server with a spare disk. A small hub with a public address helps nodes find each other and serves the public status page.</p>
+<p>To join, you generate a key, submit its fingerprint through a form, a bot verifies the key exists and matches exactly, and a maintainer merges the pull request that adds you. A few minutes later, the network knows you. You are storing pieces of other people's data, and they are storing pieces of yours.</p>
+<p>It is not a replacement for a fast synced folder. It is an archive: the place you put the things that must survive. My own node exposes a normal network share to my home; what lands there is quietly and continuously replicated into the network.</p>
+<h2>The part I find most interesting: anyone can fork this</h2>
+<p>RedundaNet is one network, run by one community of friends. But the model is a template, and the template is where the real value is.</p>
+<p>The repository, the join process, the identity system and the tooling are all general. Fork it, edit one file with your own network name and members, and you have your own private storage commons, governed by your own rules, with no dependency on me or on the original network.</p>
+<p>Consider who has hardware and does not use it:</p>
+<ul>
+<li><strong>A company with hundreds of thin clients or desktops</strong>, each with a disk mostly empty and a network that is idle at night. That is a large, geographically distributed, already-paid-for storage fleet. Erasure-coded across those machines, it becomes a highly available archive that survives any office losing power, at a marginal cost of zero. The data never leaves the company's own devices, which for many regulated industries is not a nicety but a requirement.</li>
+<li><strong>A university or research group</strong> spread across buildings and campuses, with the same idle disks and a real need to keep datasets for years.</li>
+<li><strong>A family or a group of friends</strong> who would each buy a small box if it meant their photos survived any one house.</li>
+<li><strong>Any organization uncomfortable with a single provider holding all its data</strong>, for reasons of cost, jurisdiction, or simple prudence.</li>
+</ul>
+<p>In each case the principles above are not abstract. They are the reasons the company, the university, or the family should own the network rather than rent it: redundancy they can verify, distribution they already have, privacy that does not depend on a policy, and sovereignty that does not depend on anyone else's business plan.</p>
+<h2>The invitation</h2>
+<p>If you have a spare Raspberry Pi and a few hundred gigabytes, and the idea of co-owning a piece of infrastructure with other people appeals to you, the door to RedundaNet is a pull request away.</p>
+<p>If you run an organization sitting on idle disks, fork it and build your own. The code is open, the design is documented, and the network has been running in production long enough to have made, and fixed, the interesting mistakes.</p>
+<p>Either way, the principles are the point. Ask them of whatever you use today. Can you count your copies? Are they far apart? Can the host read them? Who decides whether they still exist next year? And what happens if that someone disappears?</p>
+<p>If you do not like the answers, you now know it is possible to change them.</p>
+            </article>
+            <aside class="author-box">
+                <div class="author-avatar">AD</div>
+                <div>
+                    <h3>About the author</h3>
+                    <p>Alessandro De Filippo works at Celonis in Munich, Germany. Originally from Prato, Italy, he co-founded the Pistoia Linux User Group in 2003 and served as its vice president for nearly a decade, has been a Fellow of the Free Software Foundation Europe since 2012, and is a member of the IEEE and the IEEE Communications Society. He has a long-standing interest in the infrastructure behind everyday life: telephony with Asterisk, home automation, and servers he would rather own than rent. RedundaNet is the current expression of that interest: storage run by a community, not a company.</p>
+                    <p class="author-links"><a href="https://www.linkedin.com/in/alessandro-de-filippo-77a7bbb/" target="_blank" rel="noopener">LinkedIn</a> · <a href="https://github.com/adefilippo83" target="_blank" rel="noopener">GitHub</a></p>
+                </div>
+            </aside>
+            <p class="article-links">RedundaNet is open source (GPL): <a href="../">redundanet.com</a> · <a href="https://redundanet-hub.fly.dev" target="_blank" rel="noopener">live status page</a> · <a href="https://github.com/adefilippo83/redundanet" target="_blank" rel="noopener">source on GitHub</a> · <a href="./">all news</a></p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
+        </div>
+    </footer>
+
+    <script src="/i18n/i18n.js"></script>
+</body>
+</html>

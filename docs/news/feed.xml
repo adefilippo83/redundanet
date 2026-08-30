@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>RedundaNet news</title>
+  <link>https://redundanet.com/news/</link>
+  <description>Articles, announcements and notes from the RedundaNet project.</description>
+  <language>en</language>
+  <atom:link href="https://redundanet.com/news/feed.xml" rel="self" type="application/rss+xml"/>
+  <item>
+    <title>Your backup is someone else&#x27;s computer. What if it were everyone&#x27;s?</title>
+    <link>https://redundanet.com/news/your-backup-is-someone-elses-computer.html</link>
+    <guid>https://redundanet.com/news/your-backup-is-someone-elses-computer.html</guid>
+    <pubDate>Sun, 30 Aug 2026 09:00:00 GMT</pubDate>
+    <description>Every guide to backups repeats the same rule: three copies, two media, one somewhere else. But what did you actually buy from a cloud provider? Seven principles for storage worth trusting, the story behind a community-run network, and why any organization sitting on idle disks can fork it.</description>
+  </item>
+</channel>
+</rss>
