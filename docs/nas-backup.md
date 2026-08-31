@@ -32,12 +32,40 @@ converges to the same capabilities, so periodic re-syncs are cheap.
 
 ## Setup (on the sharing node)
 
+> The examples use `youruser` as the account that will access the share
+> over SMB — replace it with your own Unix user (on the prebuilt
+> Raspberry Pi image that is `redundanet` by default).
+
 ### 1. The share directory (on the external disk, not the SD card)
 
 ```bash
 sudo mkdir -p /mnt/storage/share
-sudo chown alessandro:alessandro /mnt/storage/share   # your SMB user
 ```
+
+**Permissions matter**: Samba writes as the authenticated Unix user, so a
+`root:root` directory with mode 755 makes the share read-only for everyone
+(writes fail with access denied). The grid sync is unaffected either way (it
+reads through the container as root), but pick one of these:
+
+Single SMB user:
+
+```bash
+sudo chown youruser:youruser /mnt/storage/share   # your SMB user
+sudo chmod 755 /mnt/storage/share    # 700 if other local users shouldn't read it
+```
+
+Multiple SMB users sharing one folder:
+
+```bash
+sudo groupadd -f gridshare
+sudo usermod -aG gridshare youruser                 # repeat for each user
+sudo chown root:gridshare /mnt/storage/share
+sudo chmod 2775 /mnt/storage/share                    # setgid: new files inherit the group
+```
+
+For the multi-user case, also add to the `[grid-share]` section below:
+`force group = gridshare`, `create mask = 0664`, `directory mask = 2775` —
+so a file created by one member stays writable by the others.
 
 ### 2. Samba
 
@@ -48,12 +76,12 @@ sudo tee -a /etc/samba/smb.conf <<'EOF'
 [grid-share]
    path = /mnt/storage/share
    writable = yes
-   valid users = alessandro
+   valid users = youruser
    # Keep macOS metadata junk off the share (and out of the grid archive).
    veto files = /.DS_Store/._*/.Trashes/
    delete veto files = yes
 EOF
-sudo smbpasswd -a alessandro
+sudo smbpasswd -a youruser
 sudo systemctl restart smbd
 ```
 
