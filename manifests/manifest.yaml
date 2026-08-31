@@ -74,3 +74,35 @@ nodes:
     tahoe_introducer: 3458
   storage_contribution: 1TB
   is_publicly_accessible: false
+- name: node-e418302c
+  internal_ip: 10.100.0.13
+  vpn_ip: 10.100.0.13
+  gpg_key_id: D41D09F293F89FA18948933682385B9CE418302C
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 1TB
+  is_publicly_accessible: false
+- name: node-bd1fa4cf
+  internal_ip: 10.100.0.14
+  vpn_ip: 10.100.0.14
+  gpg_key_id: F7B0B2A1FEFAC6C8F57959FFB734D29ABD1FA4CF
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 1TB
+  is_publicly_accessible: false
