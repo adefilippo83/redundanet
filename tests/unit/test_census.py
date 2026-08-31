@@ -7,7 +7,7 @@ from pathlib import Path
 
 from redundanet.monitor.census import census_payload, disk_used_bytes, list_storage_indexes
 from redundanet.monitor.render import render_html
-from redundanet.monitor.status import collect_status
+from redundanet.monitor.status import collect_status, load_census, save_census
 
 NOW = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -79,7 +79,7 @@ def payload(indexes: list[str], disk: int = 1000) -> dict:
     }
 
 
-def collect(fetch, storage_connected: int = 2):
+def collect(fetch, storage_connected: int = 2, cache_dir: Path | None = None):
     return collect_status(
         manifest(),
         "hub",
@@ -89,6 +89,7 @@ def collect(fetch, storage_connected: int = 2):
         manifest_synced_at=NOW,
         now=NOW,
         fetch_census=fetch,
+        census_cache_dir=cache_dir,
     )
 
 
@@ -124,8 +125,9 @@ class TestReplication:
         assert status.overall == "degraded"
         assert any("re-upload or repair" in note for note in status.notes)
 
-    def test_missing_census_is_partial_not_alarming(self):
-        """A node that doesn't answer must not make its objects look at risk."""
+    def test_missing_census_without_history_assumes_empty(self):
+        """A node that never reported is assumed empty (true for a new node)
+        and must not raise a false alarm."""
         status = collect(
             censuses(
                 {
@@ -137,8 +139,9 @@ class TestReplication:
         replication = status.replication
         assert replication is not None
         assert not replication.complete
-        assert status.overall == "ok"  # no false alarm
-        assert any("census unavailable from n2" in note for note in status.notes)
+        assert replication.per_server["n2"].source == "assumed-empty"
+        assert status.overall == "ok"  # readable (needed=1), so no alarm
+        assert any("never reported a census; assuming empty" in note for note in status.notes)
 
     def test_all_censuses_missing(self):
         status = collect(censuses({}))
@@ -185,7 +188,9 @@ class TestReplication:
         assert "2/2" in html
         assert "2 obj · 2.0 KB" in html
 
-    def test_partial_census_shows_unknown_not_alarm(self):
+    def test_partial_census_shows_counts_with_marker(self):
+        """A missing node no longer blanks the tile to '?': counts are shown
+        with an asterisk and an availability line."""
         status = collect(
             censuses(
                 {
@@ -194,4 +199,63 @@ class TestReplication:
                 }
             )
         )
-        assert "?/1" in render_html(status)
+        html = render_html(status)
+        assert "0/1*" in html  # n2 assumed empty -> si1 on 1 of 2 target servers
+        assert "fully reachable" in html
+
+
+class TestCensusCache:
+    def test_save_and_load_round_trip_with_age(self, tmp_path: Path):
+        save_census(tmp_path, "n2", payload(["si1"]), NOW)
+        loaded = load_census(tmp_path, "n2", NOW)
+        assert loaded is not None
+        record, age = loaded
+        assert record["storage_indexes"] == ["si1"]
+        assert age == 0.0
+        assert load_census(tmp_path, "ghost", NOW) is None
+
+    def test_offline_node_uses_cached_inventory(self, tmp_path: Path):
+        both = censuses(
+            {
+                "10.100.0.10": payload(["si1", "si2"]),
+                "10.100.0.11": payload(["si1", "si2"]),
+            }
+        )
+        collect(both, cache_dir=tmp_path)  # first cycle: caches both
+
+        status = collect(
+            censuses({"10.100.0.10": payload(["si1", "si2"]), "10.100.0.11": None}),
+            cache_dir=tmp_path,
+        )
+        replication = status.replication
+        assert replication is not None
+        # Placement still counts the offline node's (cached) copies...
+        assert replication.fully_replicated == 2
+        assert not replication.complete
+        assert replication.per_server["n2"].source == "cached"
+        # ...while availability reflects only live servers.
+        assert replication.available_full == 0
+        assert replication.unreadable_now == 0  # needed=1, n1 still serves both
+        assert status.overall == "ok"
+        assert any("using its census from" in note for note in status.notes)
+        assert "2/2*" in render_html(status)
+
+    def test_object_only_on_offline_node_is_unreadable_and_degrades(self, tmp_path: Path):
+        collect(
+            censuses(
+                {
+                    "10.100.0.10": payload(["si1"]),
+                    "10.100.0.11": payload(["si1", "si2"]),  # si2 lives only here
+                }
+            ),
+            cache_dir=tmp_path,
+        )
+        status = collect(
+            censuses({"10.100.0.10": payload(["si1"]), "10.100.0.11": None}),
+            cache_dir=tmp_path,
+        )
+        replication = status.replication
+        assert replication is not None
+        assert replication.unreadable_now == 1  # si2 has 0 live copies < needed=1
+        assert status.overall == "degraded"
+        assert any("unreadable until a server returns" in note for note in status.notes)

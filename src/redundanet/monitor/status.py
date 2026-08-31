@@ -7,6 +7,7 @@ the real sources (docker/entrypoints/status_server.py).
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -63,20 +64,37 @@ class GridStatus:
 
 @dataclass
 class ServerCensus:
-    """One storage node's share census, aggregated for display."""
+    """One storage node's share census, aggregated for display.
+
+    ``source`` records where the inventory came from: ``live`` (the node
+    answered this cycle), ``cached`` (the node is unreachable; this is its
+    last known inventory, ``age_seconds`` old — reliable because shares are
+    immutable), or ``assumed-empty`` (the node has never reported; a brand-new
+    node genuinely holds nothing).
+    """
 
     objects: int
     disk_used_bytes: int
+    source: str = "live"  # "live" | "cached" | "assumed-empty"
+    age_seconds: float | None = None
 
 
 @dataclass
 class ReplicationStatus:
     """Per-object replication computed from the storage nodes' share censuses.
 
-    Storage indexes are opaque — this reveals placement, not content. Counts
-    are only authoritative when every storage node reported (``complete``);
-    with a node missing, an object may look under-replicated merely because
-    its holder didn't answer.
+    Storage indexes are opaque — this reveals placement, not content. Two
+    views are computed:
+
+    * **Placement** (``fully_replicated`` / ``under_replicated``): how many
+      distinct servers hold each object, counting offline servers via their
+      last known (cached) inventory. Shares are immutable, so a stale
+      inventory stays accurate.
+    * **Availability** (``available_full`` / ``unreadable_now``): the same
+      counts restricted to servers that answered *this cycle* — the "one more
+      failure and this object is gone" signal during an outage.
+
+    ``complete`` is True only when every storage node reported live.
     """
 
     objects_total: int
@@ -84,6 +102,8 @@ class ReplicationStatus:
     fully_replicated: int
     under_replicated: int
     complete: bool
+    available_full: int = 0  # objects with >= target copies reachable right now
+    unreadable_now: int = 0  # objects with fewer live copies than shares_needed
     per_server: dict[str, ServerCensus] = field(default_factory=dict)
 
 
@@ -114,46 +134,116 @@ class NetworkStatus:
         return data
 
 
+def save_census(cache_dir: Path, node_name: str, payload: dict[str, Any], now: datetime) -> None:
+    """Persist a node's live census so an outage doesn't blind the counts."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    record = dict(payload)
+    record["cached_at"] = now.isoformat(timespec="seconds")
+    # A failed cache write must never break the live census.
+    with contextlib.suppress(OSError):
+        (cache_dir / f"{node_name}.json").write_text(json.dumps(record))
+
+
+def load_census(
+    cache_dir: Path, node_name: str, now: datetime
+) -> tuple[dict[str, Any], float] | None:
+    """A node's last cached census and its age in seconds, or None."""
+    path = cache_dir / f"{node_name}.json"
+    try:
+        record = json.loads(path.read_text())
+        cached_at = datetime.fromisoformat(record["cached_at"])
+    except (OSError, ValueError, KeyError):
+        return None
+    return record, max((now - cached_at).total_seconds(), 0.0)
+
+
+def _human_age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 5400:
+        return f"{int(seconds / 60)}m"
+    return f"{seconds / 3600:.1f}h"
+
+
 def _collect_replication(
     nodes: list[NodeStatus],
     grid: GridStatus,
     fetch_census: CensusFetcher,
     notes: list[str],
+    census_cache_dir: Path | None = None,
+    now: datetime | None = None,
 ) -> ReplicationStatus | None:
-    """Aggregate the storage nodes' share censuses into replication counts."""
+    """Aggregate the storage nodes' share censuses into replication counts.
+
+    Inventory precedence per node: live answer > cached last answer (shares
+    are immutable, so a stale inventory stays accurate) > assumed empty for a
+    node that has never reported (a brand-new node genuinely holds nothing).
+    This keeps the census computable through outages; availability counts
+    (live copies only) carry the actual risk signal.
+    """
+    now = now or datetime.now(UTC)
     storage_nodes = [n for n in nodes if "tahoe_storage" in n.roles]
     if not storage_nodes:
         return None
 
-    holders: dict[str, int] = {}
+    placed: dict[str, int] = {}
+    live_copies: dict[str, int] = {}
     per_server: dict[str, ServerCensus] = {}
     missing: list[str] = []
     for node in storage_nodes:
         payload = fetch_census(node.vpn_ip)
-        if not payload:
+        source, age = "live", None
+        if payload:
+            if census_cache_dir is not None:
+                save_census(census_cache_dir, node.name, payload, now)
+        else:
             missing.append(node.name)
-            continue
+            cached = (
+                load_census(census_cache_dir, node.name, now)
+                if census_cache_dir is not None
+                else None
+            )
+            if cached is not None:
+                payload, age = cached
+                source = "cached"
+                notes.append(
+                    f"{node.name} unreachable; using its census from {_human_age(age)} ago"
+                )
+            else:
+                payload, source = {}, "assumed-empty"
+                notes.append(f"{node.name} has never reported a census; assuming empty")
+
         indexes = payload.get("storage_indexes") or []
         per_server[node.name] = ServerCensus(
             objects=int(payload.get("object_count", len(indexes))),
             disk_used_bytes=int(payload.get("disk_used_bytes", 0)),
+            source=source,
+            age_seconds=age,
         )
-        for storage_index in indexes:
-            holders[str(storage_index)] = holders.get(str(storage_index), 0) + 1
+        for raw_index in indexes:
+            storage_index = str(raw_index)
+            placed[storage_index] = placed.get(storage_index, 0) + 1
+            if source == "live":
+                live_copies[storage_index] = live_copies.get(storage_index, 0) + 1
 
-    for name in missing:
-        notes.append(f"share census unavailable from {name}")
-    if not per_server:
+    if (
+        not placed
+        and missing
+        and all(census.source == "assumed-empty" for census in per_server.values())
+    ):
+        # Nothing has ever reported: there is genuinely nothing to count yet.
         return None
 
     target = min(grid.shares_total, len(storage_nodes))
-    fully = sum(1 for count in holders.values() if count >= target)
+    fully = sum(1 for count in placed.values() if count >= target)
     return ReplicationStatus(
-        objects_total=len(holders),
+        objects_total=len(placed),
         target_copies=target,
         fully_replicated=fully,
-        under_replicated=len(holders) - fully,
+        under_replicated=len(placed) - fully,
         complete=not missing,
+        available_full=sum(1 for si in placed if live_copies.get(si, 0) >= target),
+        unreadable_now=sum(1 for si in placed if live_copies.get(si, 0) < grid.shares_needed),
         per_server=per_server,
     )
 
@@ -167,6 +257,7 @@ def collect_status(
     manifest_synced_at: datetime | None,
     now: datetime | None = None,
     fetch_census: CensusFetcher | None = None,
+    census_cache_dir: Path | None = None,
 ) -> NetworkStatus:
     """Build the status model from the raw inputs."""
     now = now or datetime.now(UTC)
@@ -205,11 +296,20 @@ def collect_status(
 
     replication: ReplicationStatus | None = None
     if fetch_census is not None:
-        replication = _collect_replication(nodes, grid, fetch_census, notes)
+        replication = _collect_replication(
+            nodes, grid, fetch_census, notes, census_cache_dir=census_cache_dir, now=now
+        )
         if replication is not None and replication.complete and replication.under_replicated:
             notes.append(
                 f"{replication.under_replicated} object(s) stored on fewer than "
                 f"{replication.target_copies} servers — re-upload or repair them"
+            )
+            overall = "degraded"
+        if replication is not None and replication.unreadable_now:
+            notes.append(
+                f"{replication.unreadable_now} object(s) currently have fewer than "
+                f"{grid.shares_needed} reachable copies — unreadable until a "
+                "server returns"
             )
             overall = "degraded"
 

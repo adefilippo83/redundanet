@@ -36,6 +36,7 @@ from redundanet.utils.logging import get_logger, setup_logging
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 FURL_PATH = Path("/var/lib/tahoe-introducer/private/introducer.furl")
 HISTORY_PATH = Path("/var/lib/tahoe-introducer/monitor/history.jsonl")
+CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
 INTERVAL = 60
 
@@ -131,6 +132,7 @@ def collect_once(node_name: str) -> None:
         furl_present=FURL_PATH.exists() and FURL_PATH.stat().st_size > 0,
         manifest_synced_at=manifest_synced_at(),
         fetch_census=fetch_census,
+        census_cache_dir=CENSUS_CACHE_DIR,
     )
     append_sample(HISTORY_PATH, status)
     uptimes = uptime_stats(HISTORY_PATH, timedelta(hours=24))

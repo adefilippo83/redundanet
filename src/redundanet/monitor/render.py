@@ -100,10 +100,32 @@ def _replication_value(status: NetworkStatus) -> str:
     replication = status.replication
     if replication is None:
         return "—"
+    value = f"{replication.fully_replicated}/{replication.objects_total}"
     if not replication.complete:
-        # With a census missing, per-object counts would be misleadingly low.
-        return f"?/{replication.objects_total}"
-    return f"{replication.fully_replicated}/{replication.objects_total}"
+        # Placement counts include cached inventories of unreachable nodes
+        # (shares are immutable, so they stay accurate); mark them as such.
+        value += "*"
+    return value
+
+
+def _availability_line(status: NetworkStatus) -> str:
+    """Placement vs right-now availability, shown only during an outage."""
+    replication = status.replication
+    if replication is None or replication.complete:
+        return ""
+    reduced = replication.objects_total - replication.available_full
+    parts = [
+        f"* placement counts include the last known inventory of unreachable "
+        f"server(s). Right now: {replication.available_full}/{replication.objects_total} "
+        f"objects fully reachable"
+    ]
+    if replication.unreadable_now:
+        parts.append(
+            f"<strong>{replication.unreadable_now} unreadable until a server returns</strong>"
+        )
+    elif reduced:
+        parts.append(f"{reduced} at reduced redundancy")
+    return f"<p>{', '.join(parts)}.</p>"
 
 
 def render_html(status: NetworkStatus) -> str:
@@ -128,6 +150,10 @@ def render_html(status: NetworkStatus) -> str:
         if replication and node.name in replication.per_server:
             census = replication.per_server[node.name]
             stored = f"{census.objects} obj · {_esc(_human_bytes(census.disk_used_bytes))}"
+            if census.source == "cached":
+                stored += ' <span style="color:var(--text-2)">(cached)</span>'
+            elif census.source == "assumed-empty":
+                stored += ' <span style="color:var(--text-2)">(no report yet)</span>'
         rows.append(
             "<tr>"
             f"<td><code>{_esc(node.name)}</code></td>"
@@ -169,6 +195,7 @@ def render_html(status: NetworkStatus) -> str:
   <div class="tile"><div class="v">{_replication_value(status)}</div><div class="l">objects fully replicated</div></div>
 </div>
 <p>New uploads require {grid.shares_happy} distinct server(s) — currently possible: <strong>{_esc(upload_state)}</strong>.</p>
+{_availability_line(status)}
 {notes_html}
 <h1>Nodes</h1>
 <div class="wrap"><table>
