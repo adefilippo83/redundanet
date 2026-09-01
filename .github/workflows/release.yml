@@ -75,7 +75,11 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          # X.Y convenience tag (e.g. 2.7) tracking the latest patch of a minor.
+          echo "MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)" >> $GITHUB_OUTPUT
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -86,6 +90,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:${{ steps.version.outputs.MAJOR_MINOR }}
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

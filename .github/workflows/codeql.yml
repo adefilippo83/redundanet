@@ -1,10 +1,26 @@
 name: CodeQL
 
+# Analyzes Python only — run when Python (or this workflow) changes; the
+# weekly schedule stays unfiltered as the safety net for new query packs.
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "docker/entrypoints/**"
+      - ".github/scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/codeql.yml"
   pull_request:
     branches: [main, develop]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "docker/entrypoints/**"
+      - ".github/scripts/**"
+      - "pyproject.toml"
+      - ".github/workflows/codeql.yml"
   schedule:
     # Weekly scan (Mondays 06:00 UTC) to catch newly-published query updates.
     - cron: "0 6 * * 1"

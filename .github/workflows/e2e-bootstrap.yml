@@ -7,11 +7,27 @@ name: E2E Bootstrap
 #
 # Runs the exact same scripts/e2e-bootstrap.sh used locally.
 
+# Builds the images and boots the full stack — run only when something that
+# reaches the stack changes, not on docs edits.
 on:
   push:
     branches: [main, develop]
+    paths:
+      - "docker/**"
+      - "src/**"
+      - "scripts/e2e-bootstrap.sh"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/e2e-bootstrap.yml"
   pull_request:
     branches: [main, develop]
+    paths:
+      - "docker/**"
+      - "src/**"
+      - "scripts/e2e-bootstrap.sh"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/e2e-bootstrap.yml"
   workflow_dispatch:
 
 jobs:

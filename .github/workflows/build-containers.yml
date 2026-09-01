@@ -1,11 +1,28 @@
 name: Build Containers
 
+# Runs only when something that reaches the images changes. Tag builds live in
+# release.yml (building here too double-built every release); docs-only pushes
+# must not trigger a 10-minute multi-arch build.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    paths:
+      - "docker/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/build-containers.yml"
+      - ".github/workflows/tests.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "docker/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/build-containers.yml"
+      - ".github/workflows/tests.yml"
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
