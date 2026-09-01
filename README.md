@@ -241,6 +241,16 @@ make lint
 make type-check
 ```
 
+### AI-assisted development
+
+RedundaNet is designed and maintained by Alessandro De Filippo. Substantial
+parts of the code are written with AI assistance (Claude); every change is
+human-reviewed, gated by CI (lint, types, 250+ unit tests, end-to-end grid
+tests), and proven on the live production network before release. Bugs, like
+credit, land on the human.
+
+Project instructions for AI coding tools live in [CLAUDE.md](CLAUDE.md).
+
 ## Contributing
 
 1. Fork the repository
@@ -250,6 +260,9 @@ make type-check
 5. Commit your changes
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
+
+AI-assisted contributions are welcome under the same rule as everything else:
+you review, test, and own what you submit.
 
 ## License
 
