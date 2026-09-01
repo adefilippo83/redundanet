@@ -120,6 +120,9 @@ services:
       - REDUNDANET_SYNC_ENABLED=${SYNC_ENABLED:-false}
       - REDUNDANET_SYNC_INTERVAL=${SYNC_INTERVAL:-900}
       - REDUNDANET_SYNC_TIMEOUT=${SYNC_TIMEOUT:-21600}
+      # Auto re-encoder: converges files to the current k-of-n (no-op at target).
+      - REDUNDANET_REBALANCE_ENABLED=${REBALANCE_ENABLED:-true}
+      - REDUNDANET_REBALANCE_INTERVAL=${REBALANCE_INTERVAL:-86400}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest

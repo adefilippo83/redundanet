@@ -57,6 +57,7 @@ COPY src/ ./src/
 COPY docker/entrypoints/tahoe_client.py ./entrypoint.py
 COPY docker/entrypoints/lease_renew.sh ./lease_renew.sh
 COPY docker/entrypoints/backup_sync.py ./backup_sync.py
+COPY docker/entrypoints/rebalance.py ./rebalance.py
 COPY docker/supervisord/tahoe-client.conf /etc/supervisor/conf.d/tahoe-client.conf
 
 RUN mkdir -p /var/lib/redundanet/manifest \
