@@ -79,6 +79,19 @@ nodes:
   - Any 3 shares can reconstruct the original file
   - 7 nodes can fail and data is still recoverable
 
+**Changing the encoding:** parameters are baked into each file at upload
+time, so a manifest change affects only new uploads. Existing files are
+converged automatically: every client node runs a rebalance loop (enabled by
+default) that detects files carrying old parameters and re-encodes them from
+the grid itself — serially, rate-limited, resuming across cycles. After a
+change, update each node's `.env` (re-run `network join`) and recreate the
+tahoe containers; then watch the status page's census climb to the new
+target. Tunables in `.env`: `REBALANCE_ENABLED` (default `true`),
+`REBALANCE_INTERVAL` (default 86400s). Old shares stop being lease-renewed
+once replaced and are reclaimed by garbage collection. Files held only as
+bare `URI:` capabilities are not reachable by the loop and must be
+re-uploaded by their owner.
+
 ### Node Section
 
 | Field | Type | Required | Description |
@@ -87,7 +100,7 @@ nodes:
 | `internal_ip` | string | yes | VPN IP address |
 | `vpn_ip` | string | no | Defaults to `internal_ip` |
 | `public_ip` | string | no | Public IP for external access |
-| `gpg_key_id` | string | yes | 8/16/40 hex chars, no `0x` prefix; full fingerprint preferred |
+| `gpg_key_id` | string | yes | The full 40-char hex fingerprint, no `0x` prefix (short 8/16-char ids are rejected) |
 | `region` | string | no | Geographic region |
 | `status` | string | no | `pending`, `active`, or `inactive` |
 | `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
