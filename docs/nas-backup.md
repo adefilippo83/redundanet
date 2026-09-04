@@ -13,7 +13,7 @@ LAN devices ──SMB──▶ Samba share on the node (real disk: fast, normal 
 ```
 
 The share is the **source of truth**; the grid is the **replicated archive**.
-Sync is **one-way by design** — bidirectional sync means conflict resolution
+Sync is **one-way by design**: bidirectional sync means conflict resolution
 (upstream's "Magic Folder" attempted it and was abandoned). Unchanged files
 are skipped (`tahoe backup` keeps a local backupdb), and identical content
 converges to the same capabilities, so periodic re-syncs are cheap.
@@ -24,16 +24,16 @@ converges to the same capabilities, so periodic re-syncs are cheap.
   share may live only on the node's disk until the next sync tick.
 - **Snapshots accumulate on purpose**: every sync that changed something adds
   a timestamped snapshot under `backups:Archives/`. That is your
-  oops/ransomware protection — deleting or encrypting files on the share does
+  oops/ransomware protection: deleting or encrypting files on the share does
   not touch already-archived snapshots. (Pruning/quota controls are a planned
   future feature.)
-- The share and the node's storage contribution may live on the same disk —
+- The share and the node's storage contribution may live on the same disk:
   budget capacity for both.
 
 ## Setup (on the sharing node)
 
 > The examples use `youruser` as the account that will access the share
-> over SMB — replace it with your own Unix user (on the prebuilt
+> over SMB: replace it with your own Unix user (on the prebuilt
 > Raspberry Pi image that is `redundanet` by default).
 
 ### 1. The share directory (on the external disk, not the SD card)
@@ -63,11 +63,12 @@ sudo chown root:gridshare /mnt/storage/share
 sudo chmod 2775 /mnt/storage/share                    # setgid: new files inherit the group
 ```
 
-For the multi-user case, also add to the `[grid-share]` section below:
-`force group = gridshare`, `create mask = 0664`, `directory mask = 2775` —
-so a file created by one member stays writable by the others.
-
 ### 2. Samba
+
+`youruser` below is a placeholder: replace it with your Unix username, or use
+`@gridshare` (the group) for the multi-user layout. A `valid users` entry that
+names a user who does not exist denies everyone, and Finder reports that as
+"the original item for grid-share can't be found" rather than as a login error.
 
 ```bash
 sudo apt install samba
@@ -85,11 +86,32 @@ sudo smbpasswd -a youruser
 sudo systemctl restart smbd
 ```
 
+For the multi-user layout, also add `force group = gridshare`,
+`create mask = 0664` and `directory mask = 2775` to the section, so a file
+created by one member stays writable by the others.
+
+macOS asks the server for DFS referrals using its Bonjour name, which Samba
+logs as `parse_dfs_path_strict: Hostname ... is not ours`. It is harmless, but
+`host msdfs = no` in `[global]` silences it.
+
 Connect from a Mac: Finder → Go → Connect to Server → `smb://<node-ip>/grid-share`.
 
 ### 3. Enable the sync
 
-In `/opt/redundanet/.env`:
+First make sure the node's compose file actually maps the sync settings into
+the container. Nodes that joined before the NAS feature shipped carry an older
+`/opt/redundanet/docker/docker-compose.yml` that has no `SYNC_*` passthrough,
+so `SYNC_ENABLED=true` in `.env` does nothing and the log says `disabled`.
+`redundanet update` only pulls new images, not compose files, so refresh it
+from the repo clone that `network join` maintains:
+
+```bash
+grep -q REDUNDANET_SYNC_ENABLED /opt/redundanet/docker/docker-compose.yml || \
+  cp /var/lib/redundanet/repo/docker/docker-compose.yml \
+     /opt/redundanet/docker/docker-compose.yml
+```
+
+Then, in `/opt/redundanet/.env`:
 
 ```bash
 SYNC_ENABLED=true
@@ -98,11 +120,15 @@ SYNC_DIR=/mnt/storage/share
 # SYNC_TIMEOUT=21600       # per-run ceiling; default 6h (first syncs are slow)
 ```
 
-Then recreate the client so the settings and the bind-mount take effect:
+Then recreate the client so the settings and the bind-mount take effect. Use
+`--no-deps` so only the client is recreated: without it, compose also cycles
+the `tinc` container, and on a node that also runs storage that strands the
+storage container on the old network namespace ("0 shares connected"). `tinc`
+must already be running (it is, on a node that is up):
 
 ```bash
 cd /opt/redundanet/docker && docker compose -p redundanet --env-file /opt/redundanet/.env \
-  --profile storage --profile client up -d --force-recreate tahoe-client
+  --profile storage --profile client up -d --force-recreate --no-deps tahoe-client
 ```
 
 Watch it work:
@@ -133,7 +159,7 @@ or restore from a *different* node, share the alias capability with that node
 - The sync only ever **reads** the share (the bind-mount is read-only).
 - If the grid is unreachable, the share keeps working; the sync retries every
   cycle and catches up.
-- Large initial syncs can take a while — the loop logs duration and the
+- Large initial syncs can take a while: the loop logs duration and the
   per-run summary (`N files backed up, M reused`). Progress survives an
   interrupted run: already-uploaded files are recorded in the backupdb and
   skipped on the next cycle.
