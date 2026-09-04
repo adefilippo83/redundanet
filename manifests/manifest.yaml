@@ -25,7 +25,10 @@ nodes:
     tahoe_storage: 3457
     tahoe_client: 3456
     tahoe_introducer: 3458
-  is_publicly_accessible: true
+  # Not a rendezvous: fly's TCP proxy hides peers' real addresses, which
+  # poisons tinc's address table and forces every path through the proxy.
+  # The hub reaches the mesh through hub-hetzner and keeps introducer + status.
+  is_publicly_accessible: false
   introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 - name: hub-hetzner
   internal_ip: 10.100.0.2

@@ -1,9 +1,14 @@
 # Bootstrapping the Network Hub (fly.io)
 
-The hub is the network's anchor: the publicly reachable **Tinc VPN entry
-node** and the **Tahoe introducer**, running as one fly.io machine from
+The hub is the network's anchor: the **Tahoe introducer** and the public
+**status page**, running as one fly.io machine from
 `docker/Dockerfile.bootstrap` (one VM = one network namespace, the same
 topology the compose stack builds with `network_mode: service:tinc`).
+
+It was also the Tinc rendezvous node at genesis. It no longer is: fly's proxy
+hides peers' real addresses (see "Not a rendezvous" under Notes below), so the
+rendezvous role belongs to a plain VPS with a real public IP (`hub-hetzner`),
+and the fly hub reaches the mesh through it like any other node.
 
 The hub stores no data. Storage nodes join via the
 [join form](https://redundanet.com/join.html) once the hub is up.
@@ -127,6 +132,16 @@ services manually, recreate them as a group, not individually.
 
 ## Notes & limitations
 
+- **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
+  manifest on purpose. Fly's edge proxy terminates every TCP connection, so
+  tincd on the hub sees the proxy's internal address (172.16.x.x) as the
+  source of every peer and advertises that as each peer's location. tinc keeps
+  the first address it learns for a peer, so with fly as a rendezvous every
+  node ends up with an unroutable address for every other node, UDP hole
+  punching can never succeed, and all traffic relays through fly over TCP.
+  A rendezvous node must see real client addresses: a plain VPS does
+  (`hub-hetzner`). The hub connects outward to it like any other node and
+  stays reachable over the VPN for the introducer and the status page.
 - **UDP**: fly.io's UDP routing needs apps to bind `fly-global-services`,
   which tincd doesn't. Only 655/tcp is exposed; tinc falls back to TCP
   automatically. Fine for a rendezvous/relay hub; if the hub ever needs to
