@@ -402,12 +402,17 @@ def manage_keys(
                 console.print(
                     f"1. Join the network: [cyan]redundanet network join --repo <repo-url> --name {node_name}[/cyan]"
                 )
+                # 'join' derives the compose profiles from the node's manifest
+                # roles and prints the exact start command.
                 console.print(
-                    "2. Start services: [cyan]cd /var/lib/redundanet/repo/docker && docker-compose --env-file /opt/redundanet/.env up -d[/cyan]"
+                    "2. Start services: the 'join' command prints the exact start command"
                 )
             else:
                 console.print(
-                    "1. Start services: [cyan]cd /var/lib/redundanet/repo/docker && docker-compose --env-file /opt/redundanet/.env up -d[/cyan]"
+                    "1. Start services: [cyan]cd /opt/redundanet/docker && docker compose "
+                    "-p redundanet --env-file /opt/redundanet/.env up -d[/cyan] "
+                    "(add [cyan]--profile storage[/cyan] / [cyan]--profile client[/cyan] "
+                    "for this node's roles)"
                 )
             console.print(f"\n[dim]Your Key ID: {key_info.key_id}[/dim]")
 

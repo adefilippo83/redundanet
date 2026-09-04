@@ -32,7 +32,7 @@ sudo hostnamectl set-hostname my-node
 ## 2. Docker + user privileges
 
 ```bash
-sudo apt install -y docker.io
+sudo apt install -y docker.io docker-cli
 sudo systemctl enable --now docker
 ```
 

@@ -302,6 +302,48 @@ class TestManifest:
         errors = manifest.validate()
         assert any("Invalid introducer_furl" in e for e in errors)
 
+    SECOND_FURL = "pb://second@tcp:10.100.0.2:3458/introducer"
+
+    @staticmethod
+    def _with_second_introducer(data: dict, furl: str | None) -> dict:
+        """The fixture's node2 promoted to an introducer, optionally publishing a FURL."""
+        data = dict(data)
+        nodes = [dict(n) for n in data["nodes"]]
+        nodes[1]["roles"] = ["tahoe_introducer", "tahoe_storage"]
+        if furl is not None:
+            nodes[1]["introducer_furl"] = furl
+        data["nodes"] = nodes
+        return data
+
+    def test_top_level_furl_plus_second_node_furl_is_clean(self, valid_manifest_data: dict):
+        # node1's FURL is the top-level one (the historical hub layout); node2
+        # publishes its own. Nothing to warn about.
+        data = self._with_second_introducer(valid_manifest_data, self.SECOND_FURL)
+        manifest = Manifest.from_dict(data)
+        result = manifest.validate_detailed()
+        assert not result.errors
+        assert not any("introducer_furl" in w for w in result.warnings)
+        # Clients get the primary first, then the second introducer.
+        assert manifest.introducer_furls == [data["introducer_furl"], self.SECOND_FURL]
+        # The node's FURL survives a round trip through to_dict (what gets saved).
+        assert manifest.to_dict()["nodes"][1]["introducer_furl"] == self.SECOND_FURL
+
+    def test_second_introducer_without_a_furl_warns(self, valid_manifest_data: dict):
+        data = self._with_second_introducer(valid_manifest_data, None)
+        result = Manifest.from_dict(data).validate_detailed()
+        assert any("node2 has no introducer_furl" in w for w in result.warnings)
+
+    def test_sole_introducer_covered_by_top_level_furl_is_silent(self, valid_manifest_data: dict):
+        # One introducer node, no per-node FURL, top-level FURL set: today's layout.
+        result = Manifest.from_dict(valid_manifest_data).validate_detailed()
+        assert not result.errors
+        assert not any("introducer_furl" in w for w in result.warnings)
+
+    def test_malformed_node_introducer_furl_is_an_error(self, valid_manifest_data: dict):
+        data = self._with_second_introducer(valid_manifest_data, "http://not-a-furl")
+        errors = Manifest.from_dict(data).validate()
+        assert any("Invalid introducer_furl on node node2" in e for e in errors)
+
     def test_short_gpg_key_ids_are_blocking_errors(self, valid_manifest_data: dict):
         """Short ids cannot be fetched/matched by the runtime (fail-closed
         keyserver client), so a manifest carrying one is broken — ERROR."""

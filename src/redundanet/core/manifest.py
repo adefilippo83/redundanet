@@ -93,6 +93,7 @@ MANIFEST_SCHEMA: dict[str, Any] = {
                     "storage_contribution": {"type": "string"},
                     "storage_allocation": {"type": "string"},
                     "is_publicly_accessible": {"type": "boolean"},
+                    "introducer_furl": {"type": ["string", "null"]},
                 },
             },
         },
@@ -196,6 +197,7 @@ class Manifest:
                 storage_contribution=node_data.get("storage_contribution"),
                 storage_allocation=node_data.get("storage_allocation"),
                 is_publicly_accessible=node_data.get("is_publicly_accessible", False),
+                introducer_furl=node_data.get("introducer_furl"),
             )
             nodes.append(node)
 
@@ -204,6 +206,20 @@ class Manifest:
             nodes=nodes,
             introducer_furl=data.get("introducer_furl"),
         )
+
+    @property
+    def introducer_furls(self) -> list[str]:
+        """Every introducer FURL clients should use: the top-level primary first,
+        then each introducer-role node's own FURL, de-duplicated."""
+        from redundanet.storage.introducers import dedupe
+
+        furls = [self.introducer_furl] if self.introducer_furl else []
+        furls += [
+            node.introducer_furl
+            for node in self.nodes
+            if node.introducer_furl and "tahoe_introducer" in [r.value for r in node.roles]
+        ]
+        return dedupe(furls)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert manifest to dictionary representation."""
@@ -233,6 +249,7 @@ class Manifest:
                     "storage_contribution": node.storage_contribution,
                     "storage_allocation": node.storage_allocation,
                     "is_publicly_accessible": node.is_publicly_accessible,
+                    "introducer_furl": node.introducer_furl,
                 }
             )
             nodes_list.append(node_dict)
@@ -304,28 +321,40 @@ class Manifest:
         if duplicate_ips:
             errors.append(f"Duplicate IP addresses: {duplicate_ips}")
 
-        # Introducer presence/count. Without an introducer (or an externally
-        # provided FURL) the grid cannot bootstrap — ERROR. More than one is
-        # merely unusual under the current single-introducer design — WARNING.
+        # Introducer presence. Without an introducer (or an externally provided
+        # FURL) the grid cannot bootstrap. ERROR.
         introducers = [n for n in self.nodes if "tahoe_introducer" in [r.value for r in n.roles]]
-        if len(introducers) > 1:
-            warnings.append(
-                f"Found {len(introducers)} introducer nodes. "
-                "Having more than one introducer is unusual."
-            )
-        elif not introducers and not self.introducer_furl:
+        if not introducers and not self.introducer_furl:
             errors.append(
                 "No introducer configured: no node has the 'tahoe_introducer' role "
                 "and 'introducer_furl' is not set. Storage and client nodes will "
                 "not be able to join the grid."
             )
 
-        # An introducer_furl, when present, must be a well-formed Tahoe FURL. ERROR.
-        if self.introducer_furl:
-            from redundanet.storage.furl import validate_furl
+        # Every FURL, top-level or per node, must be a well-formed Tahoe FURL. ERROR.
+        from redundanet.storage.furl import validate_furl
 
-            if not validate_furl(self.introducer_furl):
-                errors.append(f"Invalid introducer_furl: {self.introducer_furl!r}")
+        if self.introducer_furl and not validate_furl(self.introducer_furl):
+            errors.append(f"Invalid introducer_furl: {self.introducer_furl!r}")
+        for node in self.nodes:
+            if node.introducer_furl and not validate_furl(node.introducer_furl):
+                errors.append(
+                    f"Invalid introducer_furl on node {node.name}: {node.introducer_furl!r}"
+                )
+
+        # Several introducers are supported: each publishes its FURL in its own
+        # node entry and clients use all of them. The top-level introducer_furl
+        # counts as the FURL of one introducer node that has none of its own
+        # (the historical single-hub layout); any other introducer node without
+        # a FURL is invisible to clients. WARNING.
+        uncovered = [n for n in introducers if not n.introducer_furl]
+        if self.introducer_furl and uncovered:
+            uncovered = uncovered[1:]
+        for node in uncovered:
+            warnings.append(
+                f"Introducer node {node.name} has no introducer_furl; clients will "
+                "not use it until it publishes one"
+            )
 
         # Short GPG key ids are brute-forceable (Evil32 fingerprint-suffix
         # collisions) and the runtime refuses to fetch/match them, so a node

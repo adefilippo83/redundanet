@@ -71,6 +71,38 @@ The real proof is the first storage node joining via the form and a file
 round-tripping — until then the grid has an introducer but no storage
 (`redundanet validate` warns about that; expected at genesis).
 
+## Adding a second introducer (any public node)
+
+One introducer is a single point of failure for discovery: while it is down,
+a restarting node cannot find the storage servers. Any publicly reachable
+node can run a second one. Storage nodes announce to every introducer in the
+manifest and clients learn servers from all of them, so either can be down.
+
+1. In the manifest give the node the roles `tinc_vpn` and `tahoe_introducer`,
+   its `public_ip`, and `is_publicly_accessible: true`. Join it and start it
+   with the introducer profile:
+
+   ```bash
+   cd /opt/redundanet/docker && docker compose -p redundanet --env-file /opt/redundanet/.env \
+     --profile introducer up -d
+   ```
+
+2. Capture the FURL it generated:
+
+   ```bash
+   docker exec redundanet-tahoe-introducer cat /var/lib/tahoe-introducer/private/introducer.furl
+   ```
+
+3. Put it in that node's manifest entry as `introducer_furl`, commit, push.
+   Keep the top-level `introducer_furl` as the primary.
+
+4. Storage and client nodes apply it the next time their Tahoe containers are
+   recreated (`redundanet update` on the next release, or a force-recreate of
+   the whole stack). Tahoe reads its introducer list only at startup.
+
+Back up the new node's introducer volume the same way as the hub's below: its
+tub identity is what the FURL points at.
+
 ## Back up the anchor identity (do this immediately)
 
 Losing either of these strands every node until the manifest is re-anchored:

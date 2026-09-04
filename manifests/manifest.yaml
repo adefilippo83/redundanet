@@ -26,6 +26,23 @@ nodes:
     tahoe_client: 3456
     tahoe_introducer: 3458
   is_publicly_accessible: true
+  introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
+- name: hub-hetzner
+  internal_ip: 10.100.0.2
+  vpn_ip: 10.100.0.2
+  public_ip: 2.29.46.249
+  gpg_key_id: 60AB30C4475F7EF985CA63826EECE67BFEEB1AC2
+  region: europe
+  status: active
+  roles:
+  - tinc_vpn
+  - tahoe_introducer
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  is_publicly_accessible: true
 - name: node-2680cd08
   internal_ip: 10.100.0.10
   vpn_ip: 10.100.0.10
