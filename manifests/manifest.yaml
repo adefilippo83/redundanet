@@ -43,6 +43,7 @@ nodes:
     tahoe_client: 3456
     tahoe_introducer: 3458
   is_publicly_accessible: true
+  introducer_furl: pb://7qqaoghy6n473f2ougzmahpbbfyh3gzn@tcp:10.100.0.2:3458/wthlrox6zzeqci2gas656woqjkefka2p
 - name: node-2680cd08
   internal_ip: 10.100.0.10
   vpn_ip: 10.100.0.10
