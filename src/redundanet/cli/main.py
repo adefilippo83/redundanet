@@ -16,8 +16,14 @@ from redundanet import __version__
 from redundanet.cli.network import app as network_app
 from redundanet.cli.node import app as node_app
 from redundanet.cli.storage import app as storage_app
-from redundanet.core.config import load_settings
-from redundanet.core.deployment import Deployment, git_sync
+from redundanet.core.config import AppSettings, load_settings
+from redundanet.core.deployment import (
+    Deployment,
+    compose_files_differ,
+    git_sync,
+    read_env_file,
+    sync_compose_files,
+)
 from redundanet.core.manifest import Manifest
 from redundanet.utils.logging import setup_logging
 
@@ -269,6 +275,60 @@ def status(
             console.print("\n[bold]VPN:[/bold] [yellow]interface not up yet[/yellow]")
 
 
+def _refresh_compose_file(
+    settings: AppSettings, deployment: Deployment, *, check: bool
+) -> tuple[bool, bytes | None]:
+    """Refresh the node's ``docker-compose.yml`` from the manifest repo clone.
+
+    ``redundanet update`` pulls new *images*, but the compose file that maps
+    settings and mounts into those images is installed once by ``network
+    join`` and otherwise never refreshed, so a node silently misses compose
+    changes shipped in a release (new env passthrough, new sidecars). This
+    pulls the clone that ``join`` maintains and copies its compose file into
+    the install directory, leaving operator-owned files (the override, secrets,
+    the FUSE mount dir) untouched.
+
+    Returns ``(changed, previous_bytes)``. ``previous_bytes`` is the
+    pre-refresh content of the compose file so a failed update can restore it;
+    it is ``None`` under ``--check`` (nothing is written) and when nothing
+    changed.
+    """
+    compose_path = deployment.compose_file
+    if compose_path is None:
+        return (False, None)
+    repo_dir = settings.data_dir / "repo"
+    # Skip when the located compose file *is* the repo clone (dev/CI checkouts),
+    # or when there is no clone to refresh from.
+    if repo_dir in compose_path.parents or not (repo_dir / ".git").exists():
+        return (False, None)
+
+    install_docker = compose_path.parent
+    repo_docker = repo_dir / "docker"
+
+    # Pull the clone to the branch this node was joined with, when we know it.
+    env_vals = read_env_file(deployment.env_file) if deployment.env_file else {}
+    repo_url = env_vals.get("MANIFEST_REPO") or settings.manifest_repo
+    branch = env_vals.get("MANIFEST_BRANCH") or settings.manifest_branch
+    if repo_url:
+        with console.status("[bold green]Checking the manifest repo for compose changes..."):
+            synced = git_sync(repo_url, branch, repo_dir)
+        if not synced.success:
+            console.print(
+                "[yellow]Could not update the repo clone; comparing against the "
+                "local copy.[/yellow]"
+            )
+
+    if not (repo_docker / "docker-compose.yml").exists():
+        return (False, None)
+
+    if check:
+        return (compose_files_differ(repo_docker, install_docker), None)
+
+    previous = compose_path.read_bytes() if compose_path.exists() else None
+    changed = sync_compose_files(repo_docker, install_docker)
+    return (changed, previous if changed else None)
+
+
 @app.command()
 def update(
     check: Annotated[
@@ -297,16 +357,30 @@ def update(
             "unhealthy after the update (just report).",
         ),
     ] = False,
+    no_compose_refresh: Annotated[
+        bool,
+        typer.Option(
+            "--no-compose-refresh",
+            help="Do not refresh docker-compose.yml from the manifest repo; update images only.",
+        ),
+    ] = False,
 ) -> None:
     """Pull the latest container images and recreate the node's services.
+
+    Also refreshes the node's docker-compose.yml from the manifest repo (unless
+    --no-compose-refresh), so compose changes shipped in a release (new setting
+    passthrough, new sidecars) actually reach the node; a pull alone never
+    updates the compose file. The operator's override file, secrets and mount
+    directory are left untouched.
 
     Netns-aware: the tahoe services share the tinc container's network
     namespace, so this force-recreates all running services together (tinc
     first) — a plain restart would strand them on the old namespace.
 
     After recreating, the node's health is checked; if it does not recover
-    within --health-timeout, the previous images are restored (unless
-    --no-rollback), so a bad :latest push cannot leave the node down.
+    within --health-timeout, the previous images (and, if it changed, the
+    previous compose file) are restored (unless --no-rollback), so a bad
+    :latest push or compose change cannot leave the node down.
     """
     settings = load_settings()
     deployment = Deployment(settings)
@@ -321,6 +395,13 @@ def update(
         console.print("[yellow]No running services found.[/yellow] Start the node first.")
         raise typer.Exit(1)
 
+    # Refresh the compose file before pulling, so image detection and recreate
+    # both see the current file. Under --check nothing is written.
+    compose_changed = False
+    previous_compose: bytes | None = None
+    if not no_compose_refresh:
+        compose_changed, previous_compose = _refresh_compose_file(settings, deployment, check=check)
+
     with console.status("[bold green]Pulling latest images..."):
         pull = deployment.pull(services)
     if not pull.success:
@@ -330,11 +411,15 @@ def update(
     # A pull updates the local repo:tag but NOT the running container's image,
     # so compare each container's image against what its tag now resolves to.
     changed = deployment.pending_image_changes(services)
-    if not changed:
-        console.print("[green]Already up to date.[/green] No image changed.")
+    if not changed and not compose_changed:
+        console.print("[green]Already up to date.[/green] No image or compose change.")
         return
 
-    console.print("[bold]Updated images available for:[/bold] " + ", ".join(changed))
+    if changed:
+        console.print("[bold]Updated images available for:[/bold] " + ", ".join(changed))
+    if compose_changed:
+        verb = "available" if check else "applied"
+        console.print(f"[bold]Compose file update {verb}[/bold] (from the manifest repo).")
     if check:
         console.print("[dim]--check: not recreating.[/dim]")
         raise typer.Exit(0)
@@ -365,16 +450,22 @@ def update(
         )
         return
 
-    # The node did not recover on the new images.
+    # The node did not recover on the new images/compose.
     console.print(
         f"[red]Node did not become healthy within {health_timeout}s after the update.[/red]"
     )
-    if no_rollback or not rollback_images:
+    if no_rollback or (not rollback_images and previous_compose is None):
         console.print(
-            "[yellow]Left on the new images (--no-rollback or no prior image "
-            "captured).[/yellow] Investigate with [cyan]redundanet status[/cyan]."
+            "[yellow]Left on the new images (--no-rollback or nothing to roll "
+            "back to).[/yellow] Investigate with [cyan]redundanet status[/cyan]."
         )
         raise typer.Exit(1)
+
+    # Restore the previous compose file (if we changed it) before recreating, so
+    # a bad compose change is rolled back as cleanly as a bad image.
+    if previous_compose is not None and deployment.compose_file is not None:
+        deployment.compose_file.write_bytes(previous_compose)
+        console.print("[dim]Restored the previous compose file.[/dim]")
 
     console.print("[bold]Rolling back to the previous images...[/bold]")
     restored = deployment.rollback(rollback_images, services)

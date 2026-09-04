@@ -28,6 +28,10 @@ class FakeDeployment:
         self.recreated: list[str] | None = None
         self.rolled_back: tuple[dict, list[str]] | None = None
         self.recreate_calls = 0
+        # No compose file / env file in tests: the real _refresh_compose_file
+        # then no-ops (no repo clone), leaving image-only behavior unchanged.
+        self.compose_file = None
+        self.env_file = None
 
     def require(self):
         return None
@@ -145,3 +149,75 @@ class TestUpdate:
         result = runner.invoke(app, ["update", "--yes"])
         assert result.exit_code == 1
         assert "No running services" in result.output
+
+
+class TestUpdateComposeRefresh:
+    """The compose-file refresh added to `redundanet update`."""
+
+    def test_compose_change_alone_triggers_recreate(self, patch_deployment, monkeypatch):
+        # No image changed, but the compose file did: still recreate (tinc first).
+        dep = patch_deployment["install"](FakeDeployment(changed=[]))
+        monkeypatch.setattr(
+            "redundanet.cli.main._refresh_compose_file", lambda *_a, **_k: (True, b"old-bytes")
+        )
+        result = runner.invoke(app, ["update", "--yes"])
+        assert result.exit_code == 0
+        assert "Compose file update applied" in result.output
+        assert dep.recreated == ["tinc", "tahoe-storage", "tahoe-client"]
+        assert dep.rolled_back is None
+
+    def test_no_image_no_compose_change_is_up_to_date(self, patch_deployment, monkeypatch):
+        dep = patch_deployment["install"](FakeDeployment(changed=[]))
+        monkeypatch.setattr(
+            "redundanet.cli.main._refresh_compose_file", lambda *_a, **_k: (False, None)
+        )
+        result = runner.invoke(app, ["update", "--yes"])
+        assert result.exit_code == 0
+        assert "Already up to date" in result.output
+        assert dep.recreated is None
+
+    def test_no_compose_refresh_flag_skips_refresh(self, patch_deployment, monkeypatch):
+        dep = patch_deployment["install"](FakeDeployment(changed=[]))
+        called = {"n": 0}
+
+        def spy(*a, **k):
+            called["n"] += 1
+            return (True, None)
+
+        monkeypatch.setattr("redundanet.cli.main._refresh_compose_file", spy)
+        result = runner.invoke(app, ["update", "--yes", "--no-compose-refresh"])
+        assert result.exit_code == 0
+        assert called["n"] == 0  # refresh not attempted
+        assert "Already up to date" in result.output
+        assert dep.recreated is None
+
+    def test_check_reports_available_compose_update(self, patch_deployment, monkeypatch):
+        dep = patch_deployment["install"](FakeDeployment(changed=[], running=["tinc"]))
+        monkeypatch.setattr(
+            "redundanet.cli.main._refresh_compose_file", lambda *_a, **_k: (True, None)
+        )
+        result = runner.invoke(app, ["update", "--check"])
+        assert result.exit_code == 0
+        assert "Compose file update available" in result.output
+        assert "not recreating" in result.output
+        assert dep.recreated is None
+
+    def test_bad_compose_change_rolls_back_compose_and_recovers(
+        self, patch_deployment, monkeypatch, tmp_path
+    ):
+        # Compose changed (no image change); node unhealthy after, healthy after rollback.
+        compose = tmp_path / "docker-compose.yml"
+        compose.write_bytes(b"new-broken-bytes")
+        dep = patch_deployment["install"](FakeDeployment(changed=[], health_results=[False, True]))
+        dep.compose_file = compose
+        monkeypatch.setattr(
+            "redundanet.cli.main._refresh_compose_file", lambda *_a, **_k: (True, b"old-good-bytes")
+        )
+        result = runner.invoke(app, ["update", "--yes"])
+        assert result.exit_code == 1
+        assert "Restored the previous compose file" in result.output
+        assert "healthy again" in result.output
+        # The previous compose bytes were written back before the rollback recreate.
+        assert compose.read_bytes() == b"old-good-bytes"
+        # Rollback recreate ran even though there were no image changes to retag.
+        assert dep.rolled_back == ({}, ["tinc", "tahoe-storage", "tahoe-client"])
