@@ -38,8 +38,8 @@ nodes:
     internal_ip: 10.100.0.10    # VPN IP address
     vpn_ip: 10.100.0.10         # Optional; defaults to internal_ip
     public_ip: 1.2.3.4          # Public IP (optional)
-    # GPG key identifier: 8, 16, or 40 hex chars, no 0x prefix. Use the full
-    # 40-character fingerprint — short ids are collision-prone.
+    # GPG key identifier: the full 40-character fingerprint, no 0x prefix
+    # (short 8/16-char ids are rejected).
     gpg_key_id: 1234567890ABCDEF1234567890ABCDEF12345678
     region: north-america       # Geographic region
     status: active              # Node status (pending/active/inactive)
@@ -53,6 +53,9 @@ nodes:
       tahoe_introducer: 3458
     storage_contribution: 500GB # Storage offered to network
     is_publicly_accessible: true # Can accept incoming connections
+    # tahoe_introducer nodes only: the FURL of the introducer this node runs.
+    # Clients use every introducer in the manifest, so either can be down.
+    introducer_furl: pb://...
 ```
 
 ### Network Section
@@ -106,6 +109,7 @@ re-uploaded by their owner.
 | `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
 | `storage_contribution` | string | no | Storage to contribute |
 | `is_publicly_accessible` | bool | no | Can accept incoming connections |
+| `introducer_furl` | string | no | `tahoe_introducer` nodes only: the FURL this introducer publishes. Storage nodes announce to, and clients learn servers from, every introducer in the manifest (the top-level `introducer_furl` plus these), so the grid survives losing one. See the bootstrap hub runbook for adding a second introducer. |
 
 ## Environment Variables
 

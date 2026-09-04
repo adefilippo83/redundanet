@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from redundanet.utils.logging import setup_logging, get_logger
+from redundanet.storage.introducers import dedupe, introducer_furls_from_manifest
 from redundanet.storage.storage import TahoeStorage, TahoeStorageConfig
 
 # Ports used inside the (shared) tinc network namespace. Introducer/storage/client
@@ -42,27 +43,31 @@ def wait_for_vpn(vpn_ip: str, timeout: int = 300) -> bool:
     return False
 
 
-def get_introducer_furl() -> str | None:
-    """Get introducer FURL from environment or the shared manifest volume."""
+def get_introducer_furls() -> list[str]:
+    """Every introducer FURL this node should use, primary first.
+
+    Sources, in precedence order: REDUNDANET_INTRODUCER_FURL (an explicit
+    override, used alone); the FURL a local introducer container published to
+    the shared manifest volume; then the manifest's top-level introducer_furl
+    and each introducer node's own introducer_furl. The node announces itself
+    to all of them, so any single introducer can be down.
+    """
     logger = get_logger()
 
-    # Check environment variable first
     furl = os.environ.get("REDUNDANET_INTRODUCER_FURL")
     if furl:
-        return furl
+        return [furl.strip()]
 
-    # Check the shared manifest volume (published by the introducer container)
+    furls: list[str] = []
     manifest_dir = Path("/var/lib/redundanet/manifest")
     furl_file = manifest_dir / "introducer.furl"
-
     if furl_file.exists():
-        furl = furl_file.read_text().strip()
-        if furl:
+        local = furl_file.read_text().strip()
+        if local:
             logger.info("Found introducer FURL in manifest volume")
-            return furl
+            furls.append(local)
 
-    # Check manifest.yaml (top-level introducer_furl key); the manifest dir may
-    # be a plain dir or a full repo clone (manifests/manifest.yaml).
+    # The manifest dir may be a plain dir or a full repo clone (manifests/manifest.yaml).
     from redundanet.core.manifest import locate_manifest
 
     manifest_file = locate_manifest(manifest_dir)
@@ -71,14 +76,15 @@ def get_introducer_furl() -> str | None:
 
         with manifest_file.open() as f:
             manifest = yaml.safe_load(f) or {}
+        from_manifest = introducer_furls_from_manifest(manifest)
+        if from_manifest:
+            logger.info("Found introducer FURLs in manifest.yaml", count=len(from_manifest))
+        furls.extend(from_manifest)
 
-        furl = manifest.get("introducer_furl")
-        if furl:
-            logger.info("Found introducer FURL in manifest.yaml")
-            return furl
-
-    logger.warning("No introducer FURL found")
-    return None
+    furls = dedupe(furls)
+    if not furls:
+        logger.warning("No introducer FURL found")
+    return furls
 
 
 def main():
@@ -130,23 +136,24 @@ def main():
     else:
         logger.info("Test mode: skipping VPN wait")
 
-    # Get introducer FURL (retry with backoff)
-    introducer_furl = None
+    # Get the introducer FURLs (retry with backoff)
+    introducer_furls: list[str] = []
     for attempt in range(30):
-        introducer_furl = get_introducer_furl()
-        if introducer_furl:
+        introducer_furls = get_introducer_furls()
+        if introducer_furls:
             break
         logger.info("Waiting for introducer FURL...", attempt=attempt + 1)
         time.sleep(10)
 
-    if not introducer_furl:
+    if not introducer_furls:
         logger.error("Could not obtain introducer FURL")
         sys.exit(1)
 
     config = TahoeStorageConfig(
         nickname=f"{node_name}-storage",
         node_dir=storage_dir,
-        introducer_furl=introducer_furl,
+        introducer_furl=introducer_furls[0],
+        extra_introducer_furls=introducer_furls[1:],
         reserved_space=reserved_space,
         storage_dir=storage_data_dir,
         web_port=WEB_PORT,
@@ -165,7 +172,7 @@ def main():
         storage.create_node()
     else:
         logger.info("Using existing Tahoe storage configuration")
-        storage.update_introducer_furl(introducer_furl)
+        storage.update_introducers(introducer_furls)
 
     logger.info("Tahoe storage setup complete")
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from redundanet.core.config import TahoeConfig
 from redundanet.core.exceptions import StorageError
+from redundanet.storage.introducers import write_introducers_yaml
 from redundanet.utils.files import ensure_dir, write_file
 from redundanet.utils.logging import get_logger
 from redundanet.utils.process import is_command_available, run_command
@@ -81,6 +82,9 @@ class TahoeClientConfig:
     shares_total: int = 10
     sftp_enabled: bool = False
     sftp_port: int = 8022
+    # Additional introducers, written to private/introducers.yaml; introducer_furl
+    # above stays the primary in tahoe.cfg.
+    extra_introducer_furls: list[str] = field(default_factory=list)
 
     @classmethod
     def from_tahoe_config(
@@ -122,11 +126,22 @@ class TahoeClient:
         """Check whether this client node has already been created/configured."""
         return self._tahoe_cfg.exists()
 
-    def update_introducer_furl(self, furl: str) -> None:
-        """Update the introducer FURL in the configuration."""
-        self.config.introducer_furl = furl
+    def update_introducers(self, furls: list[str]) -> None:
+        """Point the client at these introducers.
+
+        The first is the primary (tahoe.cfg); the rest go to
+        private/introducers.yaml. Servers are learned from all of them.
+        """
+        if not furls:
+            raise StorageError("At least one introducer FURL is required")
+        self.config.introducer_furl = furls[0]
+        self.config.extra_introducer_furls = list(furls[1:])
         self._write_config()
-        logger.info("Updated introducer FURL")
+        logger.info("Updated introducers", count=len(furls))
+
+    def update_introducer_furl(self, furl: str) -> None:
+        """Update the primary introducer FURL, keeping any extra introducers."""
+        self.update_introducers([furl, *self.config.extra_introducer_furls])
 
     def create_node(self) -> None:
         """Create a new Tahoe-LAFS client node."""
@@ -167,6 +182,8 @@ class TahoeClient:
 
         write_file(self._tahoe_cfg, content, mode=0o600)
         logger.debug("Wrote tahoe.cfg", path=str(self._tahoe_cfg))
+        # Extra introducers live in private/introducers.yaml (removed when none).
+        write_introducers_yaml(self.config.node_dir / "private", self.config.extra_introducer_furls)
 
     # NOTE: the tahoe daemon itself is run by supervisord inside the client
     # container (`tahoe run`); file operations go through the CLI's Deployment

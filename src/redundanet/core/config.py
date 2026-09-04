@@ -99,6 +99,9 @@ class NodeConfig(BaseModel):
     storage_contribution: str | None = None
     storage_allocation: str | None = None
     is_publicly_accessible: bool = False
+    # Nodes with the tahoe_introducer role publish the FURL of the introducer
+    # they run; clients use every introducer in the manifest.
+    introducer_furl: str | None = None
 
     @field_validator("internal_ip", "vpn_ip", "public_ip", mode="before")
     @classmethod

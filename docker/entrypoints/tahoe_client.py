@@ -9,6 +9,7 @@ from pathlib import Path
 
 from redundanet.utils.logging import setup_logging, get_logger
 from redundanet.storage.client import TahoeClient, TahoeClientConfig
+from redundanet.storage.introducers import dedupe, introducer_furls_from_manifest
 
 # Ports used inside the (shared) tinc network namespace.
 TUB_PORT = 3456
@@ -40,22 +41,29 @@ def wait_for_vpn(vpn_ip: str, timeout: int = 300) -> bool:
     return False
 
 
-def get_introducer_furl() -> str | None:
-    """Get introducer FURL from environment or the shared manifest volume."""
+def get_introducer_furls() -> list[str]:
+    """Every introducer FURL this client should use, primary first.
+
+    Sources, in precedence order: REDUNDANET_INTRODUCER_FURL (an explicit
+    override, used alone); the FURL a local introducer container published to
+    the shared manifest volume; then the manifest's top-level introducer_furl
+    and each introducer node's own introducer_furl. Servers are learned from
+    all of them, so any single introducer can be down.
+    """
     logger = get_logger()
 
     furl = os.environ.get("REDUNDANET_INTRODUCER_FURL")
     if furl:
-        return furl
+        return [furl.strip()]
 
+    furls: list[str] = []
     manifest_dir = Path("/var/lib/redundanet/manifest")
     furl_file = manifest_dir / "introducer.furl"
-
     if furl_file.exists():
-        furl = furl_file.read_text().strip()
-        if furl:
+        local = furl_file.read_text().strip()
+        if local:
             logger.info("Found introducer FURL in manifest volume")
-            return furl
+            furls.append(local)
 
     # The manifest dir may be a plain dir or a full repo clone.
     from redundanet.core.manifest import locate_manifest
@@ -66,14 +74,15 @@ def get_introducer_furl() -> str | None:
 
         with manifest_file.open() as f:
             manifest = yaml.safe_load(f) or {}
+        from_manifest = introducer_furls_from_manifest(manifest)
+        if from_manifest:
+            logger.info("Found introducer FURLs in manifest.yaml", count=len(from_manifest))
+        furls.extend(from_manifest)
 
-        furl = manifest.get("introducer_furl")
-        if furl:
-            logger.info("Found introducer FURL in manifest.yaml")
-            return furl
-
-    logger.warning("No introducer FURL found")
-    return None
+    furls = dedupe(furls)
+    if not furls:
+        logger.warning("No introducer FURL found")
+    return furls
 
 
 def _prepare_sftp(client_dir: Path) -> None:
@@ -154,23 +163,24 @@ def main():
     else:
         logger.info("Test mode: skipping VPN wait")
 
-    # Get introducer FURL (retry with backoff)
-    introducer_furl = None
+    # Get the introducer FURLs (retry with backoff)
+    introducer_furls: list[str] = []
     for attempt in range(30):
-        introducer_furl = get_introducer_furl()
-        if introducer_furl:
+        introducer_furls = get_introducer_furls()
+        if introducer_furls:
             break
         logger.info("Waiting for introducer FURL...", attempt=attempt + 1)
         time.sleep(10)
 
-    if not introducer_furl:
+    if not introducer_furls:
         logger.error("Could not obtain introducer FURL")
         sys.exit(1)
 
     config = TahoeClientConfig(
         nickname=f"{node_name}-client",
         node_dir=client_dir,
-        introducer_furl=introducer_furl,
+        introducer_furl=introducer_furls[0],
+        extra_introducer_furls=introducer_furls[1:],
         web_port=WEB_PORT,
         tub_port=TUB_PORT,
         tub_location=f"tcp:{vpn_ip}:{TUB_PORT}",
@@ -187,7 +197,7 @@ def main():
         client.create_node()
     else:
         logger.info("Using existing Tahoe client configuration")
-        client.update_introducer_furl(introducer_furl)
+        client.update_introducers(introducer_furls)
 
     # SFTP host keys + accounts go into the node's private/ dir, which only
     # exists AFTER create_node() (tahoe refuses a non-empty base directory).
