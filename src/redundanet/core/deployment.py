@@ -371,3 +371,63 @@ def git_sync(repo: str, branch: str, target_dir: Path) -> CommandResult:
     if not result.success:
         return result
     return run_command([*git, "reset", "--hard", "FETCH_HEAD"], check=False)
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    """Parse a simple ``KEY=VALUE`` ``.env`` file into a dict.
+
+    Blank lines, comments and lines without ``=`` are ignored. Values are
+    taken verbatim (no quote stripping); this is only used to recover a few
+    plain keys (the manifest repo/branch a node was joined with), not to
+    reproduce full shell ``.env`` semantics.
+    """
+    values: dict[str, str] = {}
+    try:
+        text = path.read_text()
+    except OSError:
+        return values
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        values[key.strip()] = val.strip()
+    return values
+
+
+# Compose files the node reads at runtime. Only these are refreshed from the
+# manifest repo; the ``.override.`` file is operator-owned (it carries the
+# storage disk bind-mount) and is never overwritten from the repo.
+_COMPOSE_GLOB = "docker-compose*.yml"
+
+
+def compose_files_differ(repo_docker: Path, install_docker: Path) -> bool:
+    """Whether the installed runtime ``docker-compose.yml`` differs from the
+    repo clone's copy (a dry-run check that writes nothing)."""
+    src = repo_docker / "docker-compose.yml"
+    dst = install_docker / "docker-compose.yml"
+    if not src.exists():
+        return False
+    if not dst.exists():
+        return True
+    return src.read_bytes() != dst.read_bytes()
+
+
+def sync_compose_files(repo_docker: Path, install_docker: Path) -> bool:
+    """Copy the repo clone's compose files into the install directory.
+
+    Only files matching ``docker-compose*.yml`` are written, and any
+    ``*.override.*`` file is skipped, so operator-owned artifacts (the
+    override with the storage disk bind-mount, the ``secrets/`` directory, the
+    root-owned FUSE ``mount/`` directory) are left untouched. Returns whether
+    the runtime ``docker-compose.yml`` content actually changed.
+    """
+    runtime = install_docker / "docker-compose.yml"
+    before = runtime.read_bytes() if runtime.exists() else None
+    install_docker.mkdir(parents=True, exist_ok=True)
+    for src in sorted(repo_docker.glob(_COMPOSE_GLOB)):
+        if ".override." in src.name:
+            continue
+        (install_docker / src.name).write_bytes(src.read_bytes())
+    after = runtime.read_bytes() if runtime.exists() else None
+    return before != after

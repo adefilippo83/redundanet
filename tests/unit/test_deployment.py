@@ -3,7 +3,14 @@
 from pathlib import Path
 
 from redundanet.core.config import AppSettings
-from redundanet.core.deployment import Deployment, ServiceStatus, git_sync
+from redundanet.core.deployment import (
+    Deployment,
+    ServiceStatus,
+    compose_files_differ,
+    git_sync,
+    read_env_file,
+    sync_compose_files,
+)
 from redundanet.utils.process import CommandResult
 
 
@@ -323,3 +330,89 @@ def test_git_sync_real_end_to_end(tmp_path):
 
     # Second sync (repo now exists) also works.
     assert git_sync(str(origin), "main", target).success
+
+
+# --- read_env_file -------------------------------------------------------
+
+
+def test_read_env_file_parses_and_ignores_noise(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment\n"
+        "\n"
+        "MANIFEST_REPO=https://example.com/r.git\n"
+        "MANIFEST_BRANCH=main\n"
+        "  SPACED = value \n"
+        "no_equals_here\n"
+    )
+    values = read_env_file(env)
+    assert values["MANIFEST_REPO"] == "https://example.com/r.git"
+    assert values["MANIFEST_BRANCH"] == "main"
+    assert values["SPACED"] == "value"
+    assert "no_equals_here" not in values
+
+
+def test_read_env_file_missing_returns_empty(tmp_path):
+    assert read_env_file(tmp_path / "nope.env") == {}
+
+
+# --- sync_compose_files / compose_files_differ ---------------------------
+
+
+def _docker_dirs(tmp_path):
+    repo = tmp_path / "repo" / "docker"
+    install = tmp_path / "install" / "docker"
+    repo.mkdir(parents=True)
+    install.mkdir(parents=True)
+    return repo, install
+
+
+def test_sync_compose_files_copies_and_reports_change(tmp_path):
+    repo, install = _docker_dirs(tmp_path)
+    (repo / "docker-compose.yml").write_text("services: {new: 1}\n")
+    (install / "docker-compose.yml").write_text("services: {old: 1}\n")
+
+    changed = sync_compose_files(repo, install)
+
+    assert changed is True
+    assert (install / "docker-compose.yml").read_text() == "services: {new: 1}\n"
+
+
+def test_sync_compose_files_identical_reports_no_change(tmp_path):
+    repo, install = _docker_dirs(tmp_path)
+    (repo / "docker-compose.yml").write_text("same\n")
+    (install / "docker-compose.yml").write_text("same\n")
+    assert sync_compose_files(repo, install) is False
+
+
+def test_sync_compose_files_preserves_override_and_operator_files(tmp_path):
+    repo, install = _docker_dirs(tmp_path)
+    (repo / "docker-compose.yml").write_text("services: {new: 1}\n")
+    # The repo even shipping an override must not clobber the operator's.
+    (repo / "docker-compose.override.yml").write_text("services: {repo_override: 1}\n")
+    # Operator-owned artifacts on the node.
+    (install / "docker-compose.yml").write_text("services: {old: 1}\n")
+    (install / "docker-compose.override.yml").write_text("services: {disk_bind: 1}\n")
+    (install / "secrets").mkdir()
+    (install / "secrets" / "gpg_private_key.asc").write_text("KEY")
+    (install / "mount").mkdir()
+
+    sync_compose_files(repo, install)
+
+    # Runtime file refreshed...
+    assert (install / "docker-compose.yml").read_text() == "services: {new: 1}\n"
+    # ...but the override and secrets are untouched.
+    assert (install / "docker-compose.override.yml").read_text() == "services: {disk_bind: 1}\n"
+    assert (install / "secrets" / "gpg_private_key.asc").read_text() == "KEY"
+    assert (install / "mount").is_dir()
+
+
+def test_compose_files_differ(tmp_path):
+    repo, install = _docker_dirs(tmp_path)
+    (repo / "docker-compose.yml").write_text("A\n")
+    # No install file yet -> differs.
+    assert compose_files_differ(repo, install) is True
+    (install / "docker-compose.yml").write_text("A\n")
+    assert compose_files_differ(repo, install) is False
+    (install / "docker-compose.yml").write_text("B\n")
+    assert compose_files_differ(repo, install) is True

@@ -246,7 +246,7 @@ connections, open **655/tcp and 655/udp** (tinc) inbound.
 # upgrade the CLI
 pipx upgrade redundanet --pip-args="--no-cache-dir"
 
-# update containers (check first, then apply with a safe service restart)
+# update containers and the compose file (check first, then apply with a safe service restart)
 redundanet update --check
 redundanet update
 ```

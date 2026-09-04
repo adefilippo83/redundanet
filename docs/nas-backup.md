@@ -102,8 +102,15 @@ First make sure the node's compose file actually maps the sync settings into
 the container. Nodes that joined before the NAS feature shipped carry an older
 `/opt/redundanet/docker/docker-compose.yml` that has no `SYNC_*` passthrough,
 so `SYNC_ENABLED=true` in `.env` does nothing and the log says `disabled`.
-`redundanet update` only pulls new images, not compose files, so refresh it
-from the repo clone that `network join` maintains:
+`redundanet update` (2.7.14+) refreshes the compose file from the manifest
+repo, so running it is the simplest way to get the passthrough:
+
+```bash
+redundanet update
+```
+
+On an older CLI, copy the file from the repo clone that `network join`
+maintains:
 
 ```bash
 grep -q REDUNDANET_SYNC_ENABLED /opt/redundanet/docker/docker-compose.yml || \
