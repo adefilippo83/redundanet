@@ -25,9 +25,6 @@ nodes:
     tahoe_storage: 3457
     tahoe_client: 3456
     tahoe_introducer: 3458
-  # Not a rendezvous: fly's TCP proxy hides peers' real addresses, which
-  # poisons tinc's address table and forces every path through the proxy.
-  # The hub reaches the mesh through hub-hetzner and keeps introducer + status.
   is_publicly_accessible: false
   introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 - name: hub-hetzner
@@ -131,6 +128,22 @@ nodes:
   internal_ip: 10.100.0.15
   vpn_ip: 10.100.0.15
   gpg_key_id: A6321A7FF174B46D8C4559082D4AB378BC1232BC
+  region: europe
+  status: pending
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+    tahoe_storage: 3457
+    tahoe_client: 3456
+    tahoe_introducer: 3458
+  storage_contribution: 500GB
+  is_publicly_accessible: false
+- name: node-39276af8
+  internal_ip: 10.100.0.16
+  vpn_ip: 10.100.0.16
+  gpg_key_id: A4E8A270C554BE59EF4008DA61DFA68239276AF8
   region: europe
   status: pending
   roles:
