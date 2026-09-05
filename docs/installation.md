@@ -80,8 +80,9 @@ docker compose --env-file /opt/redundanet/.env --profile client up -d
 By default this **pulls prebuilt images** from the GitHub Container Registry
 (`ghcr.io/adefilippo83/redundanet-*`) — no local build, so it works on a
 low-powered device like a Raspberry Pi. The published images are multi-arch
-(`linux/amd64`, `linux/arm64`, `linux/arm/v7`), so the right architecture is
-selected automatically.
+(`linux/amd64` and `linux/arm64`), so the right architecture is selected
+automatically. 32-bit ARM is not published: Tahoe's Rust dependencies have no
+prebuilt 32-bit wheels, so use a 64-bit OS on Raspberry Pi 3 and newer.
 
 To explicitly refresh to the latest published images:
 
@@ -118,11 +119,23 @@ The locally built images are tagged with the same names as the pulled ones, so
 a later `docker compose up -d` (without the overlay) reuses them. For
 live-reload development, use `docker-compose.dev.yml` instead.
 
+The three Tahoe images build `FROM` the published `redundanet-tahoe-base`
+image (Python, Tahoe-LAFS and the project's locked dependencies), which is
+what makes them build in seconds. To build fully from source, or after
+changing `poetry.lock`, build that base first under the same name:
+
+```bash
+docker build -t ghcr.io/adefilippo83/redundanet-tahoe-base:latest -f docker/Dockerfile.tahoe-base .
+```
+
+On x86-64 this takes a minute or two. On arm64 it compiles Tahoe's Rust
+dependency `pycddl` from source, which is slow but works.
+
 ### 4. Raspberry Pi Image
 
-On first boot the Pi pulls the prebuilt container images for its architecture
-(`arm64` for 64-bit Raspberry Pi OS, `arm/v7` for 32-bit) directly from GHCR, so
-it does not have to compile anything locally.
+On first boot the Pi pulls the prebuilt `arm64` container images directly from
+GHCR, so it does not have to compile anything locally. The image is 64-bit
+Raspberry Pi OS; 32-bit is not supported.
 
 Download the pre-built image from [GitHub Releases](https://github.com/adefilippo83/redundanet/releases):
 
@@ -182,10 +195,12 @@ automatically:
 |--------------|----------|------------------|
 | `linux/amd64` | x86-64 | Most servers, desktops, cloud VMs |
 | `linux/arm64` | ARM 64-bit | Raspberry Pi 3/4/5 (64-bit OS), Apple Silicon |
-| `linux/arm/v7` | ARM 32-bit | Raspberry Pi 2 / 32-bit Raspberry Pi OS |
 
-For any other architecture, build the images from source with the
-`docker-compose.build.yml` overlay (see Docker Deployment above).
+32-bit ARM (`linux/arm/v7`, Raspberry Pi 2 or a 32-bit Raspberry Pi OS) is not
+published: Tahoe's Rust dependencies ship no 32-bit wheels, so those images
+took an hour of emulated compiling per release. Use a 64-bit OS. For any other
+architecture, build the images from source with the `docker-compose.build.yml`
+overlay (see Docker Deployment above).
 
 ## Network Requirements
 

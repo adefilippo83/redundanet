@@ -42,10 +42,20 @@ jobs:
         with:
           skip-existing: true
 
+  # The Tahoe base (Python + Tahoe + locked deps) the tahoe-* images build FROM.
+  # A no-op unless poetry.lock or its Dockerfile changed since the last build.
+  tahoe-base:
+    name: Tahoe base image
+    needs: [gate]
+    uses: ./.github/workflows/tahoe-base.yml
+    permissions:
+      contents: read
+      packages: write
+
   release-containers:
     name: Release Container Images
     runs-on: ubuntu-latest
-    needs: [gate]
+    needs: [gate, tahoe-base]
     permissions:
       contents: read
       packages: write
@@ -59,7 +69,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # QEMU enables cross-building the arm64/arm32 images on the amd64 runner.
+      # QEMU for the arm64 variants. The tahoe-* images only copy files onto the
+      # prebuilt base, so emulation costs seconds; tinc still installs its deps
+      # under emulation (a few minutes). 64-bit only: 32-bit ARM has no prebuilt
+      # wheels for Tahoe's Rust deps.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
@@ -86,14 +99,16 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.${{ matrix.image }}
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            TAHOE_BASE=${{ needs.tahoe-base.outputs.image }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:${{ steps.version.outputs.MAJOR_MINOR }}
             ghcr.io/${{ github.repository_owner }}/redundanet-${{ matrix.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.image }}
 
   create-github-release:
     name: Create GitHub Release

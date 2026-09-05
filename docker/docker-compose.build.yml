@@ -9,6 +9,15 @@
 # The built images are tagged with the same names as the base file's `image:`
 # keys, so a later `up` (without this overlay) reuses them. For live-reload
 # development use docker-compose.dev.yml instead.
+#
+# The tahoe-* images build FROM the published redundanet-tahoe-base image
+# (Python + Tahoe + the locked dependencies). To build fully from source, or
+# after changing poetry.lock, build that base first under the same name:
+#
+#   docker build -t ghcr.io/adefilippo83/redundanet-tahoe-base:latest \
+#     -f docker/Dockerfile.tahoe-base .
+#
+# or point TAHOE_BASE at any other base image reference.
 
 services:
   tinc:
@@ -20,13 +29,19 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-introducer
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}
 
   tahoe-storage:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-storage
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}
 
   tahoe-client:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-client
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}

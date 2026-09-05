@@ -1,54 +1,15 @@
 # Tahoe-LAFS Storage container for RedundaNet
-FROM python:3.11-slim AS builder
-
-# piwheels supplies prebuilt 32-bit ARM (armv7/armv6) wheels that PyPI lacks;
-# pip merges indexes per-arch, so amd64/arm64 keep using PyPI manylinux wheels.
-ENV PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libffi-dev \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install poetry==1.7.1
-WORKDIR /app
-COPY pyproject.toml poetry.lock* ./
-# Install deps via pip (not 'poetry install') so PIP_EXTRA_INDEX_URL/piwheels is
-# honored; poetry only resolves the locked versions into a requirements file.
-RUN poetry config virtualenvs.create false \
-    && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
-    && pip install --no-cache-dir -r /tmp/requirements.txt
-
-# pyOpenSSL >= 25 removed OpenSSL.crypto.X509Req, which foolscap (Tahoe's RPC
-# layer) still uses via Twisted's certificateRequest — an unpinned install
-# crashes every Tahoe node at startup with
-# "AttributeError: module 'OpenSSL.crypto' has no attribute 'X509Req'".
-# service-identity is pinned alongside because its newer releases require a
-# cryptography newer than the one pyopenssl<25 resolves to.
-RUN pip install "tahoe-lafs==1.20.0" "pyopenssl<25" "service-identity<25"
-
-FROM python:3.11-slim
+#
+# Derives from the tahoe-base image (Python + Tahoe + the locked dependencies);
+# only RedundaNet's source and this role's entrypoints are added, so the image
+# builds in seconds. CI pins TAHOE_BASE to the base built from this checkout's
+# poetry.lock (.github/workflows/tahoe-base.yml); the default serves local
+# builds (docker-compose.build.yml, the e2e scripts).
+ARG TAHOE_BASE=ghcr.io/adefilippo83/redundanet-tahoe-base:latest
+FROM ${TAHOE_BASE}
 
 LABEL org.opencontainers.image.title="RedundaNet Tahoe Storage"
 LABEL org.opencontainers.image.description="Tahoe-LAFS storage node for RedundaNet"
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/src \
-    REDUNDANET_LOG_LEVEL=INFO
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libffi8 \
-    iproute2 \
-    iputils-ping \
-    netcat-openbsd \
-    procps \
-    supervisor \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
 COPY src/ ./src/

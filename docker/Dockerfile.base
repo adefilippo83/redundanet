@@ -7,13 +7,10 @@ LABEL org.opencontainers.image.description="Base image for RedundaNet containers
 LABEL org.opencontainers.image.vendor="RedundaNet"
 
 # Environment
-# piwheels supplies prebuilt 32-bit ARM (armv7/armv6) wheels that PyPI lacks;
-# pip merges indexes per-arch, so amd64/arm64 keep using PyPI manylinux wheels.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_EXTRA_INDEX_URL=https://www.piwheels.org/simple
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies (build tools as a fallback for any dependency
 # lacking a prebuilt wheel).
@@ -38,8 +35,8 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies via pip (not 'poetry install') so PIP_EXTRA_INDEX_URL/
-# piwheels is honored; poetry only resolves the locked versions.
+# Install dependencies via pip from the lock export (poetry only resolves the
+# locked versions).
 RUN poetry config virtualenvs.create false \
     && poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
     && pip install -r /tmp/requirements.txt
