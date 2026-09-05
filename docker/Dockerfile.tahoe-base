@@ -1,0 +1,67 @@
+# Tahoe base image for RedundaNet: Python + Tahoe-LAFS + the project's locked
+# dependencies. Everything the tahoe-introducer / tahoe-storage / tahoe-client
+# images need EXCEPT RedundaNet's own source, which those images add on top.
+#
+# Why it exists: Tahoe's Rust dependency pycddl ships no arm64 wheels, so
+# installing Tahoe under QEMU took about an hour per image per release. This
+# image is built natively per architecture and only when its inputs change
+# (poetry.lock or this file; see .github/workflows/tahoe-base.yml, which tags
+# it with a hash of both). The role images then build in seconds.
+FROM python:3.11-slim AS builder
+
+ARG TAHOE_VERSION=1.20.0
+
+# Build tools are a fallback for any dependency lacking a prebuilt wheel
+# (zfec and netifaces on arm64; pycddl, whose build fetches its own Rust).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml poetry.lock* ./
+
+# Poetry lives in its own venv so it does not end up in the image's
+# site-packages; it only resolves the lock into a requirements file for pip.
+RUN python -m venv /opt/poetry \
+    && /opt/poetry/bin/pip install --no-cache-dir poetry==1.7.1 \
+    && /opt/poetry/bin/poetry export --only main --without-hashes -f requirements.txt -o /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
+
+# pyOpenSSL >= 25 removed OpenSSL.crypto.X509Req, which foolscap (Tahoe's RPC
+# layer) still uses via Twisted's certificateRequest: an unpinned install
+# crashes every Tahoe node at startup with
+# "AttributeError: module 'OpenSSL.crypto' has no attribute 'X509Req'".
+# service-identity is pinned alongside because its newer releases require a
+# cryptography newer than the one pyopenssl<25 resolves to.
+RUN pip install --no-cache-dir "tahoe-lafs==${TAHOE_VERSION}" "pyopenssl<25" "service-identity<25"
+
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="RedundaNet Tahoe base"
+LABEL org.opencontainers.image.description="Python + Tahoe-LAFS + RedundaNet dependencies; base of the tahoe-* images"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src \
+    REDUNDANET_LOG_LEVEL=INFO
+
+# Union of the runtime packages the three role images need. fuse and
+# openssh-client (ssh-keygen for the SFTP host key) are for the client; the
+# rest is shared.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libffi8 \
+    fuse \
+    iproute2 \
+    iputils-ping \
+    netcat-openbsd \
+    procps \
+    supervisor \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+WORKDIR /app

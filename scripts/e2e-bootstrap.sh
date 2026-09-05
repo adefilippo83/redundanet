@@ -151,6 +151,13 @@ ok "NODE_NAME=$NODE_NAME VPN_IP=$VPN_IP shares=$SHARES_NEEDED/$SHARES_HAPPY/$SHA
 # 3. Build and start the components
 # ----------------------------------------------------------------------------
 if [ "$BUILD" = "1" ]; then
+  # The tahoe-* images build FROM the tahoe-base image (Python + Tahoe + locked
+  # deps). Build it here under the Dockerfiles' default reference so the role
+  # builds resolve it locally and this test never depends on the registry (or
+  # on a base that predates this checkout's poetry.lock).
+  TAHOE_BASE="${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}"
+  log "Building tahoe-base image ($TAHOE_BASE)"
+  docker build -t "$TAHOE_BASE" -f docker/Dockerfile.tahoe-base .
   log "Building images"
   "${COMPOSE[@]}" build
 fi

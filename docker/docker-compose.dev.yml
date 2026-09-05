@@ -1,7 +1,9 @@
 # RedundaNet Docker Compose - Development Configuration
 # Use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-
-version: "3.8"
+#
+# The source tree is bind-mounted over /app/src for live reload. The tahoe-*
+# images derive from the published redundanet-tahoe-base image; see
+# docker-compose.build.yml for building that base locally.
 
 services:
   tinc:
@@ -20,7 +22,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-introducer
-      target: builder
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}
     volumes:
       - ../src:/app/src:ro
     environment:
@@ -31,7 +34,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-storage
-      target: builder
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}
     volumes:
       - ../src:/app/src:ro
     environment:
@@ -42,7 +46,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.tahoe-client
-      target: builder
+      args:
+        TAHOE_BASE: ${TAHOE_BASE:-ghcr.io/adefilippo83/redundanet-tahoe-base:latest}
     volumes:
       - ../src:/app/src:ro
     environment:

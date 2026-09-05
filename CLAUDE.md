@@ -73,6 +73,11 @@ that chain.
 2. Maintainer commits and pushes; CI must be green.
 3. Maintainer tags `vX.Y.Z` → release workflow publishes PyPI + ghcr images
    (+ Raspberry Pi image built under QEMU).
+   The tahoe-* images build FROM `redundanet-tahoe-base` (Python + Tahoe +
+   locked deps), which `.github/workflows/tahoe-base.yml` rebuilds only when
+   `poetry.lock` or `docker/Dockerfile.tahoe-base` changes (tag = hash of
+   both), natively per architecture. Role images then build in seconds.
+   Images are 64-bit only (amd64, arm64).
 4. Hub changes additionally need `fly deploy` (the hub is built by fly, not
    from ghcr images).
 5. Nodes pick up images via `redundanet update` (health-checked, auto-rollback).

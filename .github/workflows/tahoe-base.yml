@@ -1,0 +1,161 @@
+name: Tahoe base image
+
+# Builds ghcr.io/<owner>/redundanet-tahoe-base: Python + Tahoe-LAFS + the
+# project's locked dependencies, i.e. everything the tahoe-* images need except
+# our own source (docker/Dockerfile.tahoe-base).
+#
+# It is rebuilt only when its inputs change: the tag is a hash of poetry.lock
+# and the Dockerfile, and a tag that already exists is never rebuilt. Each
+# architecture is built natively (GitHub's arm64 runners), then merged into one
+# multi-arch manifest. This is what keeps releases at minutes: Tahoe's Rust
+# dependency pycddl has no arm64 wheels and took about an hour to compile under
+# QEMU, per image, per release.
+#
+# Called by build-containers.yml and release.yml, which build the role images
+# FROM the image reference this workflow outputs. Also runnable by hand.
+#
+# Pull requests from forks: the GITHUB_TOKEN is read-only there, so a fork PR
+# that changes poetry.lock cannot publish the base it needs and its image
+# build fails; same-repo PRs publish it (the tag is content-addressed, so a
+# base published from a PR is exactly the one main will use after the merge).
+on:
+  workflow_call:
+    outputs:
+      image:
+        description: Image reference (registry/name:tag) the role images must build FROM
+        value: ${{ jobs.check.outputs.image }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/redundanet-tahoe-base
+
+jobs:
+  check:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+      exists: ${{ steps.probe.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag from the inputs' hash
+        id: tag
+        run: |
+          HASH=$(cat poetry.lock docker/Dockerfile.tahoe-base | sha256sum | cut -c1-12)
+          echo "image=${IMAGE}:lock-${HASH}" >> "$GITHUB_OUTPUT"
+          echo "tahoe-base tag: lock-${HASH}"
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Already published?
+        id: probe
+        run: |
+          if docker manifest inspect "${{ steps.tag.outputs.image }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ steps.tag.outputs.image }} already published; not rebuilding"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ steps.tag.outputs.image }} not found; building natively per architecture"
+          fi
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: [check]
+    if: needs.check.outputs.exists != 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Platform slug
+        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest only; the merge job below gives the digests their tags.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.tahoe-base
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=tahoe-base-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=min,scope=tahoe-base-${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: tahoe-base-digest-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-arch manifest
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: tahoe-base-digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # :latest tracks the newest lock, for local builds (docker-compose.build.yml).
+      - name: Create manifest list
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "${{ needs.check.outputs.image }}" \
+            -t "${IMAGE}:latest" \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${{ needs.check.outputs.image }}"
