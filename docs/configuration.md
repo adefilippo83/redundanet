@@ -287,11 +287,18 @@ duration — that is how deleting data eventually frees disk space.
 | `EXPIRE_ENABLED` | `true` | Collect shares with lapsed leases |
 | `LEASE_DURATION` | `90 days` | How long an unrenewed share survives |
 
-**Keeping data alive:**
+**Keeping data alive and healthy:**
 
-- The client container renews the leases of **all aliases** automatically
-  once a week (the `lease-renew` job; interval override:
-  `REDUNDANET_LEASE_RENEW_INTERVAL`, seconds).
+- The client container sweeps **all aliases** automatically once a week (the
+  `lease-renew` job): every object gets its leases renewed, and any object
+  with missing shares is repaired from the surviving ones (Tahoe
+  `deep-check --add-lease --repair`). Repair covers the cases where a storage
+  node lost its disk or a member left the network; it needs at least k
+  surviving shares, below that an object is unrecoverable. The per-alias
+  summary (objects checked, healthy/unhealthy before and after, repairs
+  attempted/successful) is in the client's logs under `lease-repair:`.
+  Overrides in `.env`: `LEASE_RENEW_INTERVAL` (seconds, default 604800),
+  `REPAIR_ENABLED=false` to only renew.
 - Manual renewal: `redundanet storage renew` (all aliases) or
   `redundanet storage renew URI:CHK:...` / `redundanet storage renew home:`.
 - **Bare capabilities that are not linked into an alias are not renewed
