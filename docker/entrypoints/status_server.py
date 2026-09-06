@@ -31,12 +31,14 @@ from redundanet.core.manifest import locate_manifest
 from redundanet.monitor.census import CENSUS_PORT
 from redundanet.monitor.render import render_html
 from redundanet.monitor.status import append_sample, collect_status, uptime_stats
+from redundanet.monitor.usage import USAGE_PORT
 from redundanet.utils.logging import get_logger, setup_logging
 
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 FURL_PATH = Path("/var/lib/tahoe-introducer/private/introducer.furl")
 HISTORY_PATH = Path("/var/lib/tahoe-introducer/monitor/history.jsonl")
 CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
+USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
 INTERVAL = 60
 
@@ -79,6 +81,19 @@ def fetch_census(vpn_ip: str) -> dict | None:
     try:
         with urllib.request.urlopen(
             f"http://{vpn_ip}:{CENSUS_PORT}/census", timeout=5
+        ) as response:
+            return json.load(response)
+    except Exception:
+        return None
+
+
+def fetch_usage(vpn_ip: str) -> dict | None:
+    """A client node's /usage payload over the VPN, or None."""
+    if not vpn_ip:
+        return None
+    try:
+        with urllib.request.urlopen(
+            f"http://{vpn_ip}:{USAGE_PORT}/usage", timeout=5
         ) as response:
             return json.load(response)
     except Exception:
@@ -133,6 +148,8 @@ def collect_once(node_name: str) -> None:
         manifest_synced_at=manifest_synced_at(),
         fetch_census=fetch_census,
         census_cache_dir=CENSUS_CACHE_DIR,
+        fetch_usage=fetch_usage,
+        usage_cache_dir=USAGE_CACHE_DIR,
     )
     append_sample(HISTORY_PATH, status)
     uptimes = uptime_stats(HISTORY_PATH, timedelta(hours=24))

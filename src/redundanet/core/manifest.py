@@ -53,6 +53,13 @@ MANIFEST_SCHEMA: dict[str, Any] = {
                         "reserved_space": {"type": "string"},
                     },
                 },
+                "quota": {
+                    "type": "object",
+                    "properties": {
+                        "reserve": {"type": "number", "minimum": 0, "maximum": 0.9},
+                        "enforce": {"type": "boolean"},
+                    },
+                },
             },
         },
         "introducer_furl": {"type": ["string", "null"]},
@@ -94,6 +101,7 @@ MANIFEST_SCHEMA: dict[str, Any] = {
                     "storage_allocation": {"type": "string"},
                     "is_publicly_accessible": {"type": "boolean"},
                     "introducer_furl": {"type": ["string", "null"]},
+                    "member": {"type": ["string", "null"]},
                 },
             },
         },
@@ -167,15 +175,18 @@ class Manifest:
             NodeRole,
             NodeStatus,
             PortConfig,
+            QuotaConfig,
             TahoeConfig,
         )
 
+        quota_data = network_data.get("quota") or {}
         network = NetworkConfig(
             name=network_data.get("name", "redundanet"),
             version=network_data.get("version", "2.0.0"),
             domain=network_data.get("domain", "redundanet.local"),
             vpn_network=network_data.get("vpn_network", "10.100.0.0/16"),
             tahoe=TahoeConfig(**tahoe_data) if tahoe_data else TahoeConfig(),
+            quota=QuotaConfig(**quota_data) if quota_data else QuotaConfig(),
         )
 
         # Parse nodes
@@ -198,6 +209,7 @@ class Manifest:
                 storage_allocation=node_data.get("storage_allocation"),
                 is_publicly_accessible=node_data.get("is_publicly_accessible", False),
                 introducer_furl=node_data.get("introducer_furl"),
+                member=node_data.get("member"),
             )
             nodes.append(node)
 
@@ -250,6 +262,7 @@ class Manifest:
                     "storage_allocation": node.storage_allocation,
                     "is_publicly_accessible": node.is_publicly_accessible,
                     "introducer_furl": node.introducer_furl,
+                    "member": node.member,
                 }
             )
             nodes_list.append(node_dict)
@@ -265,6 +278,10 @@ class Manifest:
                     "shares_happy": self.network.tahoe.shares_happy,
                     "shares_total": self.network.tahoe.shares_total,
                     "reserved_space": self.network.tahoe.reserved_space,
+                },
+                "quota": {
+                    "reserve": self.network.quota.reserve,
+                    "enforce": self.network.quota.enforce,
                 },
             },
             "nodes": nodes_list,
@@ -365,6 +382,16 @@ class Manifest:
                 "Nodes using short GPG key ids instead of full 40-char fingerprints "
                 f"(collision-prone, unfetchable at runtime): {short_key_nodes}"
             )
+
+        # A storage node without a declared contribution earns its member no
+        # allocation; with quotas enforced that member cannot store anything.
+        # WARNING.
+        for node in self.nodes:
+            if "tahoe_storage" in [r.value for r in node.roles] and not node.storage_contribution:
+                warnings.append(
+                    f"Storage node {node.name} has no storage_contribution; its member "
+                    "gets no allocation"
+                )
 
         # Storage capacity vs shares_happy. Too few nodes to ever satisfy happy
         # is a capacity nudge (a growing network legitimately starts short);

@@ -127,6 +127,10 @@ services:
       # missing shares (tahoe deep-check --add-lease --repair).
       - REDUNDANET_LEASE_RENEW_INTERVAL=${LEASE_RENEW_INTERVAL:-604800}
       - REDUNDANET_REPAIR_ENABLED=${REPAIR_ENABLED:-true}
+      # Usage meter: member usage vs allocation (see docs/quotas.md). Enforcement
+      # follows the manifest's network.quota.enforce unless overridden here.
+      - REDUNDANET_USAGE_INTERVAL=${USAGE_INTERVAL:-900}
+      - REDUNDANET_QUOTA_ENFORCE=${QUOTA_ENFORCE:-}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
       - manifest:/var/lib/redundanet/manifest

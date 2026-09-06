@@ -8,9 +8,15 @@ network:
     shares_happy: 2
     shares_total: 2
     reserved_space: 1G
+  # Contribution-based allocation: a member may store contribution x k/n x (1 - reserve).
+  # enforce: the client side refuses uploads over the allocation (docs/quotas.md).
+  quota:
+    reserve: 0.15
+    enforce: true
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
 - name: hub-fly
+  member: adefilippo83
   internal_ip: 10.100.0.1
   vpn_ip: 10.100.0.1
   public_ip: 149.248.198.15
@@ -28,6 +34,7 @@ nodes:
   is_publicly_accessible: false
   introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 - name: hub-hetzner
+  member: adefilippo83
   internal_ip: 10.100.0.2
   vpn_ip: 10.100.0.2
   public_ip: 2.29.46.249
@@ -45,6 +52,7 @@ nodes:
   is_publicly_accessible: true
   introducer_furl: pb://7qqaoghy6n473f2ougzmahpbbfyh3gzn@tcp:10.100.0.2:3458/wthlrox6zzeqci2gas656woqjkefka2p
 - name: node-2680cd08
+  member: adefilippo83
   internal_ip: 10.100.0.10
   vpn_ip: 10.100.0.10
   gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
@@ -53,6 +61,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -61,6 +70,7 @@ nodes:
   storage_contribution: 900GB
   is_publicly_accessible: false
 - name: node-bae1b9cd
+  member: adefilippo83
   internal_ip: 10.100.0.11
   vpn_ip: 10.100.0.11
   gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
@@ -69,6 +79,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -77,6 +88,7 @@ nodes:
   storage_contribution: 900GB
   is_publicly_accessible: false
 - name: node-303c084b
+  member: emiliano-giusti
   internal_ip: 10.100.0.12
   vpn_ip: 10.100.0.12
   gpg_key_id: 1331C835A2B446B61A34959CD5294DA9303C084B
@@ -85,6 +97,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -93,6 +106,7 @@ nodes:
   storage_contribution: 1TB
   is_publicly_accessible: false
 - name: node-e418302c
+  member: noroutine
   internal_ip: 10.100.0.13
   vpn_ip: 10.100.0.13
   gpg_key_id: D41D09F293F89FA18948933682385B9CE418302C
@@ -101,6 +115,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -109,6 +124,7 @@ nodes:
   storage_contribution: 1TB
   is_publicly_accessible: false
 - name: node-bd1fa4cf
+  member: noroutine
   internal_ip: 10.100.0.14
   vpn_ip: 10.100.0.14
   gpg_key_id: F7B0B2A1FEFAC6C8F57959FFB734D29ABD1FA4CF
@@ -117,6 +133,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -125,6 +142,7 @@ nodes:
   storage_contribution: 1TB
   is_publicly_accessible: false
 - name: node-bc1232bc
+  member: daniva6
   internal_ip: 10.100.0.15
   vpn_ip: 10.100.0.15
   gpg_key_id: A6321A7FF174B46D8C4559082D4AB378BC1232BC
@@ -133,6 +151,7 @@ nodes:
   roles:
   - tinc_vpn
   - tahoe_storage
+  - tahoe_client
   ports:
     tinc: 655
     tahoe_storage: 3457
@@ -141,6 +160,7 @@ nodes:
   storage_contribution: 500GB
   is_publicly_accessible: false
 - name: node-39276af8
+  member: ptlug
   internal_ip: 10.100.0.16
   vpn_ip: 10.100.0.16
   gpg_key_id: A4E8A270C554BE59EF4008DA61DFA68239276AF8

@@ -197,12 +197,29 @@ def is_duplicate_key(manifest: dict[str, Any], key_id: str) -> bool:
     return False
 
 
+# A member handle is the GitHub login of the applicant (the issue author):
+# GitHub's own rules, so it can never carry YAML or shell metacharacters.
+MEMBER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+
+
+def valid_member(handle: str | None) -> str | None:
+    """The handle if it is a valid GitHub login, else None."""
+    if handle and MEMBER_RE.fullmatch(handle.strip()):
+        return handle.strip()
+    return None
+
+
 def process(
     issue_body: str,
     manifest_path: Path,
     fetch_key: Callable[[str], str | None] = fetch_key_from_keyservers,
+    member: str | None = None,
 ) -> JoinResult:
-    """Parse a join-request body and add the node to the manifest on disk."""
+    """Parse a join-request body and add the node to the manifest on disk.
+
+    ``member`` groups this node with the applicant's other nodes for the
+    contribution-based allocation (docs/quotas.md).
+    """
     key_id = parse_gpg_key_id(issue_body)
     if key_id is None:
         return JoinResult(
@@ -288,6 +305,8 @@ def process(
     }
     if public_ip:
         new_node["public_ip"] = public_ip
+    if valid_member(member):
+        new_node["member"] = valid_member(member)
 
     manifest.setdefault("nodes", []).append(new_node)
     with manifest_path.open("w") as f:
@@ -307,7 +326,8 @@ def main() -> None:
     # with `::` would be interpreted as a workflow command.
     print(f"Processing issue #{issue_number}")
 
-    result = process(issue_body, Path("manifests/manifest.yaml"))
+    member = valid_member(os.environ.get("ISSUE_AUTHOR"))
+    result = process(issue_body, Path("manifests/manifest.yaml"), member=member)
 
     for warning in result.warnings:
         print(f"::warning::{warning}")

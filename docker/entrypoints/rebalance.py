@@ -30,13 +30,14 @@ Environment:
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from redundanet.storage import inventory
 
 NODE_DIR = "/var/lib/tahoe-client"
 TMP_FILE = Path("/tmp/rebalance.tmp")  # noqa: S108 - private container tmp
@@ -77,20 +78,9 @@ def parse_config(environ: dict[str, str]) -> RebalanceConfig:
     )
 
 
-def parse_chk_params(cap: str) -> tuple[int, int] | None:
-    """(k, n) of an immutable CHK capability, or None for anything else.
-
-    CHK caps literally contain the encoding: URI:CHK:<key>:<hash>:<k>:<n>:<size>.
-    LIT caps (tiny files inlined in the cap) have no shares and never need
-    re-encoding; directories and mutables are out of scope here.
-    """
-    parts = cap.strip().split(":")
-    if len(parts) < 7 or parts[0] != "URI" or parts[1] != "CHK":
-        return None
-    try:
-        return int(parts[4]), int(parts[5])
-    except ValueError:
-        return None
+# Capability parsing and the alias walk live in redundanet.storage.inventory
+# (shared with the usage meter); kept under their historical names here.
+parse_chk_params = inventory.parse_chk_params
 
 
 def run_tahoe(args: list[str], timeout: int = 3600) -> subprocess.CompletedProcess[str]:
@@ -104,42 +94,15 @@ def run_tahoe(args: list[str], timeout: int = 3600) -> subprocess.CompletedProce
 
 
 def list_aliases(run=run_tahoe) -> list[str]:
-    result = run(["list-aliases"], timeout=60)
-    if result.returncode != 0:
-        return []
-    return [line.split(":", 1)[0].strip() for line in result.stdout.splitlines() if ":" in line]
+    return inventory.list_aliases(run)
 
 
 def walk_files(root: str, run=run_tahoe) -> list[tuple[str, str]]:
-    """All (grid path, file cap) pairs reachable from ``root`` (an alias spec
-    like ``backups:``), via recursive `tahoe ls --json` — structured output,
-    no fragile text parsing. Directories themselves are skipped (v1 re-encodes
-    immutable files only; directory objects are tiny mutables)."""
-    files: list[tuple[str, str]] = []
-    pending: list[str] = [""]
-    while pending:
-        subpath = pending.pop()
-        spec = f"{root}{subpath}"
-        result = run(["ls", "--json", spec], timeout=300)
-        if result.returncode != 0:
-            log(f"cannot list {spec!r} (skipping): {result.stderr.strip()[:120]}")
-            continue
-        try:
-            node_type, payload = json.loads(result.stdout)
-        except (ValueError, TypeError):
-            log(f"unparseable listing for {spec!r} (skipping)")
-            continue
-        if node_type != "dirnode":
-            continue
-        for name, (child_type, child) in sorted((payload.get("children") or {}).items()):
-            child_path = f"{subpath}/{name}" if subpath else name
-            if child_type == "dirnode":
-                pending.append(child_path)
-            elif child_type == "filenode":
-                cap = child.get("rw_uri") or child.get("ro_uri") or ""
-                if cap:
-                    files.append((child_path, cap))
-    return files
+    """All (grid path, file cap) pairs under an alias spec like ``backups:``.
+    Directories are walked, not returned. Immutable directories (backup
+    snapshots) are skipped: a re-encoded file cannot be relinked inside them,
+    so trying would download and fail on every cycle."""
+    return inventory.walk_files(root, run, log=log, skip_immutable=True)
 
 
 def reencode_file(root: str, path: str, cap: str, run=run_tahoe) -> bool:

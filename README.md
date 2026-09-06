@@ -219,6 +219,7 @@ graph TD
 - [Installation Guide](docs/installation.md)
 - [Quick Start Guide](docs/quickstart.md)
 - [Configuration Reference](docs/configuration.md)
+- [Quotas and allocation](docs/quotas.md)
 - [Architecture Overview](docs/architecture.md)
 
 ## Development

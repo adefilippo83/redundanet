@@ -15,10 +15,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from redundanet.core.quota import MemberQuota, compute_quotas, format_size
+
 # A pinger takes a VPN IP and returns the RTT in milliseconds, or None.
 Pinger = Callable[[str], "float | None"]
 # A census fetcher takes a VPN IP and returns the node's /census payload, or None.
 CensusFetcher = Callable[[str], "dict[str, Any] | None"]
+# A usage fetcher takes a VPN IP and returns a client node's /usage payload, or None.
+UsageFetcher = Callable[[str], "dict[str, Any] | None"]
 
 STALE_SYNC_SECONDS = 3600
 
@@ -77,6 +81,7 @@ class ServerCensus:
     disk_used_bytes: int
     source: str = "live"  # "live" | "cached" | "assumed-empty"
     age_seconds: float | None = None
+    disk_total_bytes: int | None = None  # size of the storage disk, to verify contributions
 
 
 @dataclass
@@ -120,6 +125,7 @@ class NetworkStatus:
     manifest_synced_at: str | None
     replication: ReplicationStatus | None = None
     notes: list[str] = field(default_factory=list)
+    quotas: list[MemberQuota] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -131,6 +137,9 @@ class NetworkStatus:
                 name: asdict(census)
                 for name, census in self.replication.per_server.items()  # type: ignore[union-attr]
             }
+        data["quotas"] = [
+            {**asdict(quota), "percent": quota.percent, "over": quota.over} for quota in self.quotas
+        ]
         return data
 
 
@@ -214,11 +223,13 @@ def _collect_replication(
                 notes.append(f"{node.name} has never reported a census; assuming empty")
 
         indexes = payload.get("storage_indexes") or []
+        raw_total = payload.get("disk_total_bytes")
         per_server[node.name] = ServerCensus(
             objects=int(payload.get("object_count", len(indexes))),
             disk_used_bytes=int(payload.get("disk_used_bytes", 0)),
             source=source,
             age_seconds=age,
+            disk_total_bytes=int(raw_total) if raw_total is not None else None,
         )
         for raw_index in indexes:
             storage_index = str(raw_index)
@@ -248,6 +259,37 @@ def _collect_replication(
     )
 
 
+def _collect_usage(
+    nodes: list[NodeStatus],
+    fetch_usage: UsageFetcher,
+    usage_cache_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, dict[str, Any]]:
+    """The client nodes' usage reports, keyed by node name.
+
+    Same precedence as the census: a live answer, else the last cached one
+    (marked ``source: cached``). A node that never reported is simply absent,
+    so its member shows no usage rather than a wrong zero.
+    """
+    now = now or datetime.now(UTC)
+    reports: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        # Any node with a Tahoe role may run a client (the manifest's roles are
+        # not always complete); a node without the meter refuses instantly.
+        if node.is_self or not any(r in node.roles for r in ("tahoe_client", "tahoe_storage")):
+            continue
+        payload = fetch_usage(node.vpn_ip)
+        if payload:
+            if usage_cache_dir is not None:
+                save_census(usage_cache_dir, node.name, payload, now)
+            reports[node.name] = {**payload, "source": "live"}
+            continue
+        cached = load_census(usage_cache_dir, node.name, now) if usage_cache_dir else None
+        if cached is not None:
+            reports[node.name] = {**cached[0], "source": "cached"}
+    return reports
+
+
 def collect_status(
     manifest: dict[str, Any],
     self_name: str,
@@ -258,6 +300,8 @@ def collect_status(
     now: datetime | None = None,
     fetch_census: CensusFetcher | None = None,
     census_cache_dir: Path | None = None,
+    fetch_usage: UsageFetcher | None = None,
+    usage_cache_dir: Path | None = None,
 ) -> NetworkStatus:
     """Build the status model from the raw inputs."""
     now = now or datetime.now(UTC)
@@ -313,6 +357,28 @@ def collect_status(
             )
             overall = "degraded"
 
+    # --- members: contribution, allocation, usage ---------------------------
+    # Visibility, not verdict: a member over allocation is noted for everyone
+    # to see, but it is not a network fault, so it never degrades the status.
+    disk_totals = (
+        {name: census.disk_total_bytes for name, census in replication.per_server.items()}
+        if replication is not None
+        else {}
+    )
+    usage = _collect_usage(nodes, fetch_usage, usage_cache_dir, now) if fetch_usage else {}
+    quotas = compute_quotas(manifest, usage, disk_totals)
+    for quota in quotas:
+        if quota.over and quota.used_bytes is not None:
+            notes.append(
+                f"member {quota.member} is over allocation: "
+                f"{format_size(quota.used_bytes)} used of {format_size(quota.allocation_bytes)}"
+            )
+        if quota.overstated:
+            notes.append(
+                f"{', '.join(quota.overstated)}: storage disk smaller than the declared "
+                "storage_contribution; the real size counts"
+            )
+
     unreachable = [n for n in nodes if not n.reachable and n.manifest_status != "inactive"]
     for node in unreachable:
         notes.append(f"node {node.name} is unreachable over the VPN")
@@ -358,6 +424,7 @@ def collect_status(
         ),
         replication=replication,
         notes=notes,
+        quotas=quotas,
     )
 
 

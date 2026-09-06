@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -122,3 +123,25 @@ class TestRunBackup:
         (tmp_path / "file.txt").write_text("data")
         run = FakeRun({"backup": completed(returncode=1, stderr="grid unreachable")})
         assert backup_sync.run_backup(self.config(str(tmp_path)), run=run) is False
+
+
+class TestQuotaBlocks:
+    def test_no_report_does_not_block(self, tmp_path: Path):
+        assert backup_sync.quota_blocks(tmp_path / "none.json") is False
+
+    def test_over_allocation_blocks_when_enforced(self, tmp_path: Path, capsys):
+        report = tmp_path / "u.json"
+        report.write_text(
+            json.dumps(
+                {"member": "ale", "enforce": True, "used_bytes": 200, "allocation_bytes": 100}
+            )
+        )
+        assert backup_sync.quota_blocks(report) is True
+        assert "over allocation" in capsys.readouterr().out
+
+    def test_not_enforced_never_blocks(self, tmp_path: Path):
+        report = tmp_path / "u.json"
+        report.write_text(
+            json.dumps({"enforce": False, "used_bytes": 200, "allocation_bytes": 100})
+        )
+        assert backup_sync.quota_blocks(report) is False
