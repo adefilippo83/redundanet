@@ -217,6 +217,8 @@ def render_html(status: NetworkStatus) -> str:
             f"<td>{_esc(node.manifest_status)}</td>"
             f"<td>{stored}</td>"
             f"<td>{_uptime_cell(node.uptime_24h)}</td>"
+            f"<td>{_uptime_cell(node.uptime_7d)}</td>"
+            f"<td>{_uptime_cell(node.uptime_30d)}</td>"
             "</tr>"
         )
 
@@ -254,7 +256,7 @@ def render_html(status: NetworkStatus) -> str:
 {notes_html}
 <h1>Nodes</h1>
 <div class="wrap"><table>
-<thead><tr><th>Node</th><th>VPN link</th><th>Roles</th><th>Manifest</th><th>Stored</th><th>Uptime (24h)</th></tr></thead>
+<thead><tr><th>Node</th><th>VPN link</th><th>Roles</th><th>Manifest</th><th>Stored</th><th>Uptime (24h)</th><th>7 days</th><th>30 days</th></tr></thead>
 <tbody>{"".join(rows)}</tbody>
 </table></div>
 {_members_table(status)}

@@ -132,6 +132,11 @@ services manually, recreate them as a group, not individually.
 
 ## Notes & limitations
 
+- **Uptime history**: the status page's 24-hour figure comes from one sample
+  per minute (`monitor/history.jsonl` on the introducer volume, about three
+  days kept); the 7-day and 30-day figures come from hourly rollups of those
+  samples (`monitor/uptime-hourly.jsonl`, 90 days kept, a few hundred KB).
+  Both survive deploys; the long windows fill up from the day they shipped.
 - **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
   manifest on purpose. Fly's edge proxy terminates every TCP connection, so
   tincd on the hub sees the proxy's internal address (172.16.x.x) as the

@@ -39,6 +39,8 @@ class NodeStatus:
     reachable: bool = False
     rtt_ms: float | None = None
     uptime_24h: float | None = None  # percent, from history samples
+    uptime_7d: float | None = None  # percent, from hourly rollups
+    uptime_30d: float | None = None
 
 
 @dataclass
@@ -474,3 +476,115 @@ def uptime_stats(
         for name, up in (sample.get("up") or {}).items():
             seen.setdefault(name, []).append(bool(up))
     return {name: round(100.0 * sum(ups) / len(ups), 1) for name, ups in seen.items() if ups}
+
+
+# --- hourly rollups (7-day / 30-day uptime) ---------------------------------
+#
+# Raw minute samples are kept for a couple of days only (MAX_HISTORY_LINES).
+# Every completed hour is folded into one line here, per node how many samples
+# saw it up out of how many saw it at all, so month-long windows cost a few
+# hundred small records to read instead of tens of megabytes of raw samples.
+
+MAX_ROLLUP_LINES = 24 * 90  # 90 days of hourly rollups
+
+
+def _hour_key(ts: datetime) -> str:
+    return ts.astimezone(UTC).strftime("%Y-%m-%dT%H")
+
+
+def rollup_hours(history_path: Path, rollup_path: Path, now: datetime | None = None) -> int:
+    """Fold every completed hour present in the raw history but missing from
+    the rollup file into one line each. Idempotent; returns the lines added.
+
+    A line is ``{"hour": "YYYY-MM-DDTHH", "samples": N, "up": {node: [up, seen]}}``.
+    A node counts only in samples where it existed, so a node that joined
+    mid-hour is measured over its own minutes. The current hour waits until it
+    is complete.
+    """
+    now = now or datetime.now(UTC)
+    current = _hour_key(now)
+
+    existing: set[str] = set()
+    try:
+        for line in rollup_path.read_text().splitlines():
+            try:
+                existing.add(str(json.loads(line)["hour"]))
+            except (ValueError, KeyError, TypeError):
+                continue
+    except OSError:
+        pass
+
+    try:
+        lines = history_path.read_text().splitlines()
+    except OSError:
+        return 0
+    samples: dict[str, int] = {}
+    buckets: dict[str, dict[str, list[int]]] = {}
+    for line in lines:
+        try:
+            sample = json.loads(line)
+            hour = _hour_key(datetime.fromisoformat(sample["ts"]))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if hour >= current or hour in existing:
+            continue
+        samples[hour] = samples.get(hour, 0) + 1
+        bucket = buckets.setdefault(hour, {})
+        for name, up in (sample.get("up") or {}).items():
+            counts = bucket.setdefault(str(name), [0, 0])
+            counts[0] += 1 if up else 0
+            counts[1] += 1
+    if not buckets:
+        return 0
+
+    rollup_path.parent.mkdir(parents=True, exist_ok=True)
+    with rollup_path.open("a") as f:
+        for hour in sorted(buckets):
+            f.write(
+                json.dumps({"hour": hour, "samples": samples[hour], "up": buckets[hour]}) + "\n"
+            )
+
+    try:
+        kept = rollup_path.read_text().splitlines()
+    except OSError:
+        return len(buckets)
+    if len(kept) > MAX_ROLLUP_LINES:
+        rollup_path.write_text("\n".join(kept[-MAX_ROLLUP_LINES:]) + "\n")
+    return len(buckets)
+
+
+def uptime_windows(
+    rollup_path: Path, windows: dict[str, timedelta], now: datetime | None = None
+) -> dict[str, dict[str, float]]:
+    """Per-window, per-node uptime percentage from the hourly rollups.
+
+    ``windows`` maps a label to its length, e.g. ``{"7d": timedelta(days=7)}``.
+    A node with no samples in a window is absent from that window's result.
+    """
+    now = now or datetime.now(UTC)
+    totals: dict[str, dict[str, list[int]]] = {label: {} for label in windows}
+    try:
+        lines = rollup_path.read_text().splitlines()
+    except OSError:
+        return {label: {} for label in windows}
+    for line in lines:
+        try:
+            record = json.loads(line)
+            hour_start = datetime.strptime(record["hour"], "%Y-%m-%dT%H").replace(tzinfo=UTC)
+        except (ValueError, KeyError, TypeError):
+            continue
+        for label, window in windows.items():
+            if hour_start < now - window:
+                continue
+            for node, counts in (record.get("up") or {}).items():
+                try:
+                    up, seen = int(counts[0]), int(counts[1])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                acc = totals[label].setdefault(str(node), [0, 0])
+                acc[0] += up
+                acc[1] += seen
+    return {
+        label: {node: round(100.0 * up / seen, 1) for node, (up, seen) in nodes.items() if seen}
+        for label, nodes in totals.items()
+    }

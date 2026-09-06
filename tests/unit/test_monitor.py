@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from redundanet.monitor.render import render_html
-from redundanet.monitor.status import append_sample, collect_status, uptime_stats
+from redundanet.monitor.status import (
+    MAX_ROLLUP_LINES,
+    append_sample,
+    collect_status,
+    rollup_hours,
+    uptime_stats,
+    uptime_windows,
+)
 
 NOW = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -397,3 +405,93 @@ class TestQuotas:
             now=NOW,
         )
         assert "<h1>Members</h1>" not in render_html(status)
+
+
+class TestRollups:
+    """7-day / 30-day uptime from hourly rollups of the minute samples."""
+
+    @staticmethod
+    def write_samples(path: Path, hours: dict[str, list[tuple[bool, bool | None]]]) -> None:
+        """hours: hour key -> one (n1 up, n2 up or None when n2 absent) per minute."""
+        with path.open("w") as f:
+            for hour, samples in hours.items():
+                for minute, (n1, n2) in enumerate(samples):
+                    up: dict[str, bool] = {"n1": n1}
+                    if n2 is not None:
+                        up["n2"] = n2
+                    f.write(
+                        json.dumps(
+                            {"ts": f"{hour}:{minute:02d}:00+00:00", "overall": "ok", "up": up}
+                        )
+                        + "\n"
+                    )
+
+    def test_completed_hours_are_folded_once(self, tmp_path: Path):
+        history, rollup = tmp_path / "h.jsonl", tmp_path / "r.jsonl"
+        self.write_samples(
+            history,
+            {
+                "2026-09-06T10": [(True, True)] * 57 + [(False, True)] * 3,  # n1 57/60, n2 60/60
+                "2026-09-06T11": [(True, None)] * 30,  # the current hour: still open
+            },
+        )
+        now = datetime(2026, 9, 6, 11, 30, tzinfo=UTC)
+        assert rollup_hours(history, rollup, now=now) == 1
+        rows = [json.loads(line) for line in rollup.read_text().splitlines()]
+        assert rows == [
+            {"hour": "2026-09-06T10", "samples": 60, "up": {"n1": [57, 60], "n2": [60, 60]}}
+        ]
+        assert rollup_hours(history, rollup, now=now) == 0  # idempotent
+        assert len(rollup.read_text().splitlines()) == 1
+
+    def test_windows_from_rollups(self, tmp_path: Path):
+        rollup = tmp_path / "r.jsonl"
+        now = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+
+        def hour(days_ago: int, n1_up: int, seen: int = 60) -> str:
+            key = (now - timedelta(days=days_ago)).strftime("%Y-%m-%dT%H")
+            return json.dumps(
+                {"hour": key, "samples": seen, "up": {"n1": [n1_up, seen], "n2": [seen, seen]}}
+            )
+
+        rollup.write_text("\n".join([hour(1, 60), hour(3, 30), hour(20, 0), hour(40, 0)]) + "\n")
+        windows = uptime_windows(
+            rollup, {"7d": timedelta(days=7), "30d": timedelta(days=30)}, now=now
+        )
+        assert windows["7d"] == {"n1": 75.0, "n2": 100.0}  # (60+30)/120
+        assert windows["30d"] == {"n1": 50.0, "n2": 100.0}  # (60+30+0)/180; the 40-day hour is out
+        assert "n3" not in windows["7d"]
+        assert uptime_windows(tmp_path / "missing.jsonl", {"7d": timedelta(days=7)}, now=now) == {
+            "7d": {}
+        }
+
+    def test_rollup_file_is_trimmed(self, tmp_path: Path):
+        history, rollup = tmp_path / "h.jsonl", tmp_path / "r.jsonl"
+        old = "\n".join(
+            json.dumps({"hour": f"2020-01-01T{i % 24:02d}", "samples": 1, "up": {}})
+            for i in range(2200)
+        )
+        rollup.write_text(old + "\n")
+        self.write_samples(history, {"2026-09-06T10": [(True, True)] * 5})
+        rollup_hours(history, rollup, now=datetime(2026, 9, 6, 11, 0, tzinfo=UTC))
+        lines = rollup.read_text().splitlines()
+        assert len(lines) == MAX_ROLLUP_LINES
+        assert json.loads(lines[-1])["hour"] == "2026-09-06T10"
+
+    def test_page_and_json_carry_the_windows(self):
+        status = collect_status(
+            manifest(),
+            "hub",
+            all_up,
+            storage_connected=2,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+        )
+        for node in status.nodes:
+            node.uptime_24h, node.uptime_7d, node.uptime_30d = 100.0, 99.5, 98.2
+        html = render_html(status)
+        assert "<th>7 days</th>" in html
+        assert "99.5%" in html
+        assert "98.2%" in html
+        assert status.to_dict()["nodes"][0]["uptime_30d"] == 98.2

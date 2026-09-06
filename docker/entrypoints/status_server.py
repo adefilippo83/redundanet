@@ -30,13 +30,20 @@ import yaml
 from redundanet.core.manifest import locate_manifest
 from redundanet.monitor.census import CENSUS_PORT
 from redundanet.monitor.render import render_html
-from redundanet.monitor.status import append_sample, collect_status, uptime_stats
+from redundanet.monitor.status import (
+    append_sample,
+    collect_status,
+    rollup_hours,
+    uptime_stats,
+    uptime_windows,
+)
 from redundanet.monitor.usage import USAGE_PORT
 from redundanet.utils.logging import get_logger, setup_logging
 
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 FURL_PATH = Path("/var/lib/tahoe-introducer/private/introducer.furl")
 HISTORY_PATH = Path("/var/lib/tahoe-introducer/monitor/history.jsonl")
+ROLLUP_PATH = Path("/var/lib/tahoe-introducer/monitor/uptime-hourly.jsonl")
 CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
 USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
@@ -153,8 +160,13 @@ def collect_once(node_name: str) -> None:
     )
     append_sample(HISTORY_PATH, status)
     uptimes = uptime_stats(HISTORY_PATH, timedelta(hours=24))
+    # Completed hours fold into the rollup file; 7d/30d read from there.
+    rollup_hours(HISTORY_PATH, ROLLUP_PATH)
+    windows = uptime_windows(ROLLUP_PATH, {"7d": timedelta(days=7), "30d": timedelta(days=30)})
     for node in status.nodes:
         node.uptime_24h = uptimes.get(node.name)
+        node.uptime_7d = windows["7d"].get(node.name)
+        node.uptime_30d = windows["30d"].get(node.name)
 
     SNAPSHOT.update(
         render_html(status),
