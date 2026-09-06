@@ -6,8 +6,9 @@ docker-compose deployment (see :class:`redundanet.core.deployment.Deployment`).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -16,6 +17,8 @@ from rich.table import Table
 
 from redundanet.core.config import AppSettings, load_settings
 from redundanet.core.deployment import Deployment, DeploymentError
+from redundanet.core.quota import footprint_bytes, format_size
+from redundanet.monitor.usage import USAGE_FILE, over_allocation
 from redundanet.utils.process import CommandResult
 
 app = typer.Typer(help="Storage management commands")
@@ -99,6 +102,87 @@ def storage_status(
         console.print(f"[dim]{furl}[/dim]")
 
 
+def _usage_report(
+    deployment: Deployment, settings: AppSettings, fresh: bool
+) -> dict[str, Any] | None:
+    """The usage meter's report from the client container: its last one, or a
+    fresh measurement (``fresh``). None when the meter has not reported yet."""
+    if fresh:
+        result = deployment.exec(
+            settings.client_service, ["python", "/app/usage_report.py", "--once"], timeout=900
+        )
+    else:
+        result = deployment.exec(settings.client_service, ["cat", str(USAGE_FILE)])
+    if not result.success or not result.stdout.strip():
+        return None
+    try:
+        report = json.loads(result.stdout)
+    except ValueError:
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _encoding_of(report: dict[str, Any]) -> tuple[int, int]:
+    """(k, n) from the report's "k-of-n" string, defaulting to 1-of-1."""
+    try:
+        needed, total = str(report.get("encoding", "1-of-1")).split("-of-")
+        return int(needed), int(total)
+    except ValueError:
+        return 1, 1
+
+
+@app.command("quota")
+def storage_quota(
+    fresh: Annotated[
+        bool,
+        typer.Option("--fresh", help="Measure now instead of showing the meter's last report"),
+    ] = False,
+) -> None:
+    """Show this member's allocation and usage on the grid.
+
+    Allocation = the member's contributed storage x k/n, minus the network's
+    reserve; usage is what the member's files occupy on the grid (each file
+    weighted by its own erasure coding). See docs/quotas.md.
+    """
+    deployment, settings = _deployment()
+    report = _usage_report(deployment, settings, fresh=fresh)
+    if report is None:
+        console.print(
+            "[yellow]No usage report yet.[/yellow] The meter measures a few minutes after "
+            "the client starts and every 15 minutes after; run with [cyan]--fresh[/cyan] "
+            "to measure now."
+        )
+        raise typer.Exit(1)
+
+    used = int(report.get("used_bytes", 0))
+    allocation = int(report.get("allocation_bytes", 0))
+    remaining = max(allocation - used, 0)
+    percent = f"{100.0 * used / allocation:.1f}%" if allocation else "n/a"
+    table = Table(title=f"Quota for member {report.get('member', '?')}", show_header=False)
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+    table.add_row("Allocation", format_size(allocation))
+    table.add_row("Used on the grid", f"{format_size(used)} ({percent})")
+    table.add_row("Remaining", format_size(remaining))
+    table.add_row("Files", str(report.get("files", 0)))
+    table.add_row("Plain data", format_size(int(report.get("data_bytes", 0))))
+    table.add_row("Erasure coding", str(report.get("encoding", "?")))
+    table.add_row("Reserve", f"{100 * float(report.get('reserve', 0)):.0f}%")
+    table.add_row("Enforced", "yes" if report.get("enforce") else "no (visibility only)")
+    table.add_row("Measured at", str(report.get("computed_at", "?")))
+    console.print(table)
+    if allocation and used > allocation:
+        console.print(
+            "[red]Over allocation.[/red] Delete data or contribute more storage; "
+            "with enforcement on, new uploads and backup runs are refused until then."
+        )
+    elif not allocation:
+        console.print(
+            "[yellow]No allocation:[/yellow] this member contributes no storage "
+            "(no storage node with a storage_contribution in the manifest)."
+        )
+
+
 @app.command("start")
 def storage_start() -> None:
     """Start the storage and client services."""
@@ -142,18 +226,47 @@ def upload_file(
             "control-command default.",
         ),
     ] = DATA_TIMEOUT,
+    ignore_quota: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-quota",
+            help="Upload even if it exceeds the member's allocation (it stays visible "
+            "on the status page).",
+        ),
+    ] = False,
 ) -> None:
     """Upload a file to the grid.
 
     With no destination the file's capability (``URI:...``) is printed. With a
     destination of the form ``alias:name`` the file is linked into that directory
     so it can be listed with ``storage ls alias:``.
+
+    When the network enforces quotas, an upload that would push the member over
+    its allocation is refused (see ``storage quota``).
     """
     if not source.exists() or not source.is_file():
         console.print(f"[red]Error:[/red] File not found: {source}")
         raise typer.Exit(1)
 
     deployment, settings = _deployment()
+
+    if not ignore_quota:
+        report = _usage_report(deployment, settings, fresh=False)
+        if report is not None:
+            needed, total = _encoding_of(report)
+            extra = footprint_bytes(source.stat().st_size, needed, total)
+            if over_allocation(report, extra):
+                console.print(
+                    f"[red]Quota exceeded:[/red] member {report.get('member')} uses "
+                    f"{format_size(int(report.get('used_bytes', 0)))} of "
+                    f"{format_size(int(report.get('allocation_bytes', 0)))}; this upload "
+                    f"needs {format_size(extra)} more of grid capacity at {needed}-of-{total}."
+                )
+                console.print(
+                    "Delete data, contribute more storage, or pass [cyan]--ignore-quota[/cyan]."
+                )
+                raise typer.Exit(1)
+
     # Staging path inside the ephemeral, single-tenant client container (created
     # and removed by us); not a host temp file, so B108's symlink risk doesn't apply.
     container_path = f"/tmp/{source.name}"  # noqa: S108  # nosec B108

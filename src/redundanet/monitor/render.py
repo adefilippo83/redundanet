@@ -8,6 +8,7 @@ accessible/table view of the data.
 
 from __future__ import annotations
 
+from redundanet.core.quota import format_size
 from redundanet.monitor.status import NetworkStatus
 
 _OVERALL = {
@@ -128,6 +129,60 @@ def _availability_line(status: NetworkStatus) -> str:
     return f"<p>{', '.join(parts)}.</p>"
 
 
+def _usage_cell(percent: float | None, used: int | None, source: str) -> str:
+    if used is None or percent is None:
+        return '<span style="color:var(--text-2)">no report yet</span>'
+    color = (
+        "var(--good)" if percent < 80 else "var(--warning)" if percent <= 100 else "var(--critical)"
+    )
+    width = min(percent, 100.0)
+    cached = ' <span style="color:var(--text-2)">(cached)</span>' if source == "cached" else ""
+    return (
+        f'<span class="meter" role="img" aria-label="{percent}% of allocation used">'
+        f'<i style="width:{width}%;background:{color}"></i></span> {percent}%{cached}'
+    )
+
+
+def _members_table(status: NetworkStatus) -> str:
+    """Contribution, allocation and usage per member.
+
+    Members that neither contribute nor report usage (e.g. the hubs) are left
+    out; they have nothing to show.
+    """
+    rows = []
+    for quota in status.quotas:
+        if quota.contributed_bytes <= 0 and quota.used_bytes is None:
+            continue
+        contributed = _esc(format_size(quota.contributed_bytes))
+        if quota.overstated:
+            contributed += (
+                f' <span style="color:var(--warning)" title="disk smaller than declared">'
+                f"(real: {_esc(format_size(quota.effective_bytes))})</span>"
+            )
+        used = "—" if quota.used_bytes is None else _esc(format_size(quota.used_bytes))
+        rows.append(
+            "<tr>"
+            f"<td><code>{_esc(quota.member)}</code></td>"
+            f"<td>{_esc(', '.join(quota.nodes))}</td>"
+            f"<td>{contributed}</td>"
+            f"<td>{_esc(format_size(quota.allocation_bytes))}</td>"
+            f"<td>{used}</td>"
+            f"<td>{_usage_cell(quota.percent, quota.used_bytes, quota.usage_source)}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        "<h1>Members</h1>"
+        "<p>Allocation = contribution x k/n, minus the reserve. Usage is what each "
+        "member's client reports it occupies on the grid.</p>"
+        '<div class="wrap"><table>'
+        "<thead><tr><th>Member</th><th>Nodes</th><th>Contributed</th><th>Allocation</th>"
+        "<th>Used</th><th>Usage</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
 def render_html(status: NetworkStatus) -> str:
     icon, word, tone = _OVERALL.get(status.overall, ("?", status.overall, "warning"))
     online = sum(1 for n in status.nodes if n.reachable)
@@ -202,6 +257,7 @@ def render_html(status: NetworkStatus) -> str:
 <thead><tr><th>Node</th><th>VPN link</th><th>Roles</th><th>Manifest</th><th>Stored</th><th>Uptime (24h)</th></tr></thead>
 <tbody>{"".join(rows)}</tbody>
 </table></div>
+{_members_table(status)}
 <footer>
   <a href="/status.json">status.json</a> ·
   <a href="https://github.com/adefilippo83/redundanet">source &amp; join</a> ·

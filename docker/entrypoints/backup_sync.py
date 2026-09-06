@@ -32,6 +32,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from redundanet.monitor.usage import USAGE_FILE, load_usage_file, over_allocation
+
 NODE_DIR = "/var/lib/tahoe-client"
 # Give the client time to connect to the grid after a (re)start before the
 # first backup attempt (same pattern as lease_renew.sh).
@@ -117,6 +119,25 @@ def has_content(sync_dir: str) -> bool:
         return False
 
 
+def quota_blocks(usage_file: Path = USAGE_FILE) -> bool:
+    """Whether the member's allocation is used up (and the network enforces it).
+
+    Reads the usage meter's last report; with no report the sync proceeds
+    (an unknown quota must not silently stop backups). The share keeps
+    working either way; only the copy into the grid pauses, and it resumes on
+    its own once usage drops below the allocation.
+    """
+    payload = load_usage_file(usage_file)
+    if payload is None or not over_allocation(payload):
+        return False
+    log(
+        f"over allocation: {payload.get('member')} uses {payload.get('used_bytes')} of "
+        f"{payload.get('allocation_bytes')} bytes; skipping this run until usage drops "
+        "(delete data, or contribute more storage)"
+    )
+    return True
+
+
 def run_backup(config: SyncConfig, run=run_tahoe) -> bool:
     """One incremental backup pass. Returns True on success."""
     if not has_content(config.sync_dir):
@@ -145,7 +166,7 @@ def main() -> None:
     time.sleep(STARTUP_DELAY)
     while True:
         try:
-            if ensure_alias(config.alias):
+            if not quota_blocks() and ensure_alias(config.alias):
                 run_backup(config)
         except subprocess.TimeoutExpired:
             log("backup timed out; will retry next cycle")

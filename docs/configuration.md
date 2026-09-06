@@ -29,6 +29,11 @@ network:
     shares_total: 10            # Total shares to create (n)
     reserved_space: 1G          # Reserved space per storage node
 
+  # Contribution-based allocation (see quotas.md)
+  quota:
+    reserve: 0.15               # Kept back for GC lag and rebalancing
+    enforce: true               # Client-side refusal over the allocation
+
 # Introducer FURL (auto-populated by introducer node)
 introducer_furl: pb://...
 
@@ -53,6 +58,7 @@ nodes:
       tahoe_introducer: 3458
     storage_contribution: 500GB # Storage offered to network
     is_publicly_accessible: true # Can accept incoming connections
+    member: adefilippo83        # Owner; nodes of one member pool their contribution
     # tahoe_introducer nodes only: the FURL of the introducer this node runs.
     # Clients use every introducer in the manifest, so either can be down.
     introducer_furl: pb://...
@@ -109,6 +115,7 @@ re-uploaded by their owner.
 | `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
 | `storage_contribution` | string | no | Storage to contribute |
 | `is_publicly_accessible` | bool | no | Can accept incoming connections |
+| `member` | string | no | Who this node belongs to (the GitHub login, set by the join bot). Contribution and usage are pooled per member; see [Quotas](quotas.md) |
 | `introducer_furl` | string | no | `tahoe_introducer` nodes only: the FURL this introducer publishes. Storage nodes announce to, and clients learn servers from, every introducer in the manifest (the top-level `introducer_furl` plus these), so the grid survives losing one. See the bootstrap hub runbook for adding a second introducer. |
 
 ## Environment Variables

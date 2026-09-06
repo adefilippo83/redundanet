@@ -102,6 +102,9 @@ class NodeConfig(BaseModel):
     # Nodes with the tahoe_introducer role publish the FURL of the introducer
     # they run; clients use every introducer in the manifest.
     introducer_furl: str | None = None
+    # The person this node belongs to (a handle, e.g. the GitHub username).
+    # Allocation and usage are per member; a node without one is its own member.
+    member: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")] | None = None
 
     @field_validator("internal_ip", "vpn_ip", "public_ip", mode="before")
     @classmethod
@@ -140,6 +143,18 @@ class NodeConfig(BaseModel):
         return role in self.roles
 
 
+class QuotaConfig(BaseModel):
+    """Contribution-based allocation: allocation = contribution x k/n x (1 - reserve).
+
+    ``enforce`` makes the client side refuse uploads over the allocation
+    (the backup sync and ``redundanet storage upload``); off, the status page
+    still shows every member's usage.
+    """
+
+    reserve: Annotated[float, Field(ge=0.0, le=0.9)] = 0.15
+    enforce: bool = False
+
+
 class NetworkConfig(BaseModel):
     """Network-wide configuration for RedundaNet."""
 
@@ -148,6 +163,7 @@ class NetworkConfig(BaseModel):
     domain: str = "redundanet.local"
     vpn_network: str = "10.100.0.0/16"
     tahoe: TahoeConfig = Field(default_factory=TahoeConfig)
+    quota: QuotaConfig = Field(default_factory=QuotaConfig)
 
     @field_validator("vpn_network")
     @classmethod

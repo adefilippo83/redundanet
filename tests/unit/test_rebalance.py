@@ -168,3 +168,27 @@ class TestRunCycle:
         stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
         assert stats["failed"] == 2
         assert stats["reencoded"] == 0
+
+
+class TestImmutableSnapshots:
+    def test_files_inside_backup_snapshots_are_not_reencoded(self):
+        # A backup alias: mutable root, immutable Archives/<ts> snapshots holding
+        # an old-encoding file. Relinking inside an immutable dir is impossible,
+        # so the rebalancer must not even try (it would download and fail daily).
+        run = FakeRun(
+            {
+                "list-aliases": completed(stdout="backups: URI:DIR2:x:y\n"),
+                ("ls", "backups:"): completed(
+                    stdout=dirnode_json({"Archives": ("dirnode", "URI:DIR2:arch")})
+                ),
+                ("ls", "backups:Archives"): completed(
+                    stdout=dirnode_json({"2026-09-05_01": ("dirnode", "URI:DIR2-CHK:snap:1")})
+                ),
+                ("ls", "backups:Archives/2026-09-05_01"): completed(
+                    stdout=dirnode_json({"old.bin": ("filenode", chk(1, 2))})
+                ),
+            }
+        )
+        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        assert stats["scanned"] == 0
+        assert not any(c[0] == "get" for c in run.calls)

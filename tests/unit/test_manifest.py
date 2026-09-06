@@ -344,6 +344,35 @@ class TestManifest:
         errors = Manifest.from_dict(data).validate()
         assert any("Invalid introducer_furl on node node2" in e for e in errors)
 
+    def test_member_and_quota_round_trip(self, valid_manifest_data: dict):
+        data = dict(valid_manifest_data)
+        data["network"] = {**data["network"], "quota": {"reserve": 0.2, "enforce": True}}
+        nodes = [dict(n) for n in data["nodes"]]
+        nodes[0]["member"] = "ale"
+        data["nodes"] = nodes
+        manifest = Manifest.from_dict(data)
+        assert manifest.network.quota.reserve == 0.2
+        assert manifest.network.quota.enforce is True
+        assert manifest.nodes[0].member == "ale"
+        assert manifest.nodes[1].member is None
+        out = manifest.to_dict()
+        assert out["network"]["quota"] == {"reserve": 0.2, "enforce": True}
+        assert out["nodes"][0]["member"] == "ale"
+        assert "member" not in out["nodes"][1]
+
+    def test_quota_defaults(self, valid_manifest_data: dict):
+        manifest = Manifest.from_dict(valid_manifest_data)
+        assert manifest.network.quota.reserve == 0.15
+        assert manifest.network.quota.enforce is False
+
+    def test_storage_node_without_contribution_warns(self, valid_manifest_data: dict):
+        data = dict(valid_manifest_data)
+        nodes = [dict(n) for n in data["nodes"]]
+        nodes[1].pop("storage_contribution", None)
+        data["nodes"] = nodes
+        result = Manifest.from_dict(data).validate_detailed()
+        assert any("node2 has no storage_contribution" in w for w in result.warnings)
+
     def test_short_gpg_key_ids_are_blocking_errors(self, valid_manifest_data: dict):
         """Short ids cannot be fetched/matched by the runtime (fail-closed
         keyserver client), so a manifest carrying one is broken — ERROR."""

@@ -289,3 +289,111 @@ class TestRender:
         assert data["overall"] == "ok"
         assert data["grid"]["tolerable_failures"] == 1
         assert len(data["nodes"]) == 3
+
+
+class TestQuotas:
+    """Contribution, allocation and usage per member on the status page."""
+
+    def manifest_with_members(self) -> dict:
+        return {
+            "network": {
+                "name": "redundanet",
+                "tahoe": {"shares_needed": 1, "shares_happy": 2, "shares_total": 2},
+                "quota": {"reserve": 0, "enforce": True},
+            },
+            "nodes": [
+                {
+                    "name": "hub",
+                    "vpn_ip": "10.100.0.1",
+                    "roles": ["tinc_vpn", "tahoe_introducer"],
+                    "status": "active",
+                },
+                {
+                    "name": "n1",
+                    "vpn_ip": "10.100.0.10",
+                    "roles": ["tinc_vpn", "tahoe_storage", "tahoe_client"],
+                    "status": "active",
+                    "member": "ale",
+                    "storage_contribution": "100GB",
+                },
+                {
+                    "name": "n2",
+                    "vpn_ip": "10.100.0.11",
+                    "roles": ["tinc_vpn", "tahoe_storage"],
+                    "status": "active",
+                    "member": "bob",
+                    "storage_contribution": "100GB",
+                },
+            ],
+        }
+
+    def collect(self, fetch_usage=None, cache: Path | None = None):
+        return collect_status(
+            self.manifest_with_members(),
+            "hub",
+            all_up,
+            storage_connected=2,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+            fetch_usage=fetch_usage,
+            usage_cache_dir=cache,
+        )
+
+    def test_allocations_without_reports(self):
+        status = self.collect()
+        quotas = {q.member: q for q in status.quotas}
+        assert quotas["ale"].allocation_bytes == 50 * 10**9
+        assert quotas["ale"].used_bytes is None
+        assert status.overall == "ok"
+
+    def test_usage_report_and_over_allocation_note(self):
+        def usage(ip: str):
+            return {"used_bytes": 60 * 10**9, "files": 4} if ip == "10.100.0.10" else None
+
+        status = self.collect(fetch_usage=usage)
+        ale = next(q for q in status.quotas if q.member == "ale")
+        assert ale.used_bytes == 60 * 10**9
+        assert ale.over is True
+        assert ale.usage_source == "live"
+        assert any("member ale is over allocation" in n for n in status.notes)
+        assert status.overall == "ok"  # visibility, not a network fault
+        data = status.to_dict()
+        assert data["quotas"][0]["member"] == "ale"
+        assert data["quotas"][0]["percent"] == 120.0
+        assert data["quotas"][0]["over"] is True
+
+    def test_cached_report_used_when_node_silent(self, tmp_path: Path):
+        cache = tmp_path / "usage"
+        self.collect(
+            fetch_usage=lambda ip: {"used_bytes": 10, "files": 1} if ip == "10.100.0.10" else None,
+            cache=cache,
+        )
+        status = self.collect(fetch_usage=lambda _ip: None, cache=cache)
+        ale = next(q for q in status.quotas if q.member == "ale")
+        assert ale.used_bytes == 10
+        assert ale.usage_source == "cached"
+
+    def test_members_table_rendered(self):
+        status = self.collect(
+            fetch_usage=lambda ip: (
+                {"used_bytes": 25 * 10**9, "files": 2} if ip == "10.100.0.10" else None
+            )
+        )
+        html = render_html(status)
+        assert "<h1>Members</h1>" in html
+        assert "ale" in html
+        assert "25.0 GB" in html
+        assert "50.0%" in html
+
+    def test_no_members_table_without_contributions(self):
+        status = collect_status(
+            manifest(),
+            "hub",
+            all_up,
+            storage_connected=2,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+        )
+        assert "<h1>Members</h1>" not in render_html(status)

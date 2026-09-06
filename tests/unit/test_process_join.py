@@ -228,3 +228,28 @@ class TestProcess:
         result = process_join.process("free-form text", tmp_path / "m.yaml", fetch_key=no_key)
         assert not result.success
         assert "fingerprint" in result.error
+
+
+class TestMember:
+    def test_member_from_issue_author(self, tmp_path: Path, real_key):
+        armored, fingerprint = real_key
+        manifest_path = tmp_path / "manifest.yaml"
+        result = process_join.process(
+            issue_body(fingerprint), manifest_path, fetch_key=lambda _k: armored, member="alice-42"
+        )
+        assert result.success
+        assert yaml.safe_load(manifest_path.read_text())["nodes"][0]["member"] == "alice-42"
+
+    def test_invalid_member_is_dropped(self, tmp_path: Path, real_key):
+        armored, fingerprint = real_key
+        manifest_path = tmp_path / "manifest.yaml"
+        process_join.process(
+            issue_body(fingerprint),
+            manifest_path,
+            fetch_key=lambda _k: armored,
+            member="bad handle; rm",
+        )
+        assert "member" not in yaml.safe_load(manifest_path.read_text())["nodes"][0]
+        assert process_join.valid_member("ok-1") == "ok-1"
+        assert process_join.valid_member("-x") is None
+        assert process_join.valid_member(None) is None

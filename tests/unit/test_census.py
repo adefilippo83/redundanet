@@ -37,12 +37,19 @@ class TestCensus:
 
     def test_missing_dir_is_empty(self, tmp_path: Path):
         assert list_storage_indexes(tmp_path / "nope") == []
-        assert census_payload("n1", tmp_path / "nope") == {
+        payload = census_payload("n1", tmp_path / "nope")
+        assert {
+            k: payload[k] for k in ("node", "object_count", "storage_indexes", "disk_used_bytes")
+        } == {
             "node": "n1",
             "object_count": 0,
             "storage_indexes": [],
             "disk_used_bytes": 0,
         }
+        # Disk capacity (to verify a node's claimed contribution) comes from the
+        # filesystem holding the shares; a missing shares dir falls back to its parent.
+        assert payload["disk_total_bytes"] is not None and payload["disk_total_bytes"] > 0
+        assert payload["disk_free_bytes"] is not None
 
 
 def manifest() -> dict:

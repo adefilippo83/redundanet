@@ -11,6 +11,7 @@ Tahoe share layout:  <shares_dir>/<2-char prefix>/<storage_index>/<sharenum>
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -46,12 +47,28 @@ def disk_used_bytes(shares_dir: Path) -> int:
     return total
 
 
+def disk_capacity(shares_dir: Path) -> tuple[int | None, int | None]:
+    """(total, free) bytes of the filesystem holding the shares, or Nones.
+
+    Lets the hub verify a node's claimed ``storage_contribution`` against the
+    disk it actually has.
+    """
+    try:
+        usage = shutil.disk_usage(shares_dir if shares_dir.exists() else shares_dir.parent)
+    except OSError:
+        return None, None
+    return usage.total, usage.free
+
+
 def census_payload(node_name: str, shares_dir: Path) -> dict[str, Any]:
     """The JSON body served at /census."""
     indexes = list_storage_indexes(shares_dir)
+    total, free = disk_capacity(shares_dir)
     return {
         "node": node_name,
         "object_count": len(indexes),
         "storage_indexes": indexes,
         "disk_used_bytes": disk_used_bytes(shares_dir),
+        "disk_total_bytes": total,
+        "disk_free_bytes": free,
     }
