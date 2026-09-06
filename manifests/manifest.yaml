@@ -161,6 +161,7 @@ nodes:
   storage_contribution: 500GB
   is_publicly_accessible: false
 - name: node-39276af8
+  member: ptlug
   internal_ip: 10.100.0.16
   vpn_ip: 10.100.0.16
   gpg_key_id: A4E8A270C554BE59EF4008DA61DFA68239276AF8
