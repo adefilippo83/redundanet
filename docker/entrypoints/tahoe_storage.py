@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 from redundanet.utils.logging import setup_logging, get_logger
+from redundanet.core.manifest import read_manifest
+from redundanet.core.quota import resolve_encoding
 from redundanet.storage.introducers import dedupe, introducer_furls_from_manifest
 from redundanet.storage.storage import TahoeStorage, TahoeStorageConfig
 
@@ -100,9 +102,17 @@ def main():
     node_name = os.environ.get("REDUNDANET_NODE_NAME")
     vpn_ip = os.environ.get("REDUNDANET_INTERNAL_VPN_IP")
     reserved_space = os.environ.get("REDUNDANET_RESERVED_SPACE", "1G")
-    shares_needed = int(os.environ.get("REDUNDANET_SHARES_NEEDED", "3"))
-    shares_happy = int(os.environ.get("REDUNDANET_SHARES_HAPPY", "7"))
-    shares_total = int(os.environ.get("REDUNDANET_SHARES_TOTAL", "10"))
+    # Erasure coding: the synced manifest is the source of truth (a change there
+    # reaches every node at its next container start); .env is the fallback.
+    manifest = read_manifest(Path("/var/lib/redundanet/manifest"))
+    shares_needed, shares_happy, shares_total = resolve_encoding(manifest, os.environ)
+    logger.info(
+        "Erasure coding",
+        needed=shares_needed,
+        happy=shares_happy,
+        total=shares_total,
+        source="manifest" if manifest else "env",
+    )
     expire_enabled = os.environ.get("REDUNDANET_EXPIRE_ENABLED", "true").lower() == "true"
     lease_duration = os.environ.get("REDUNDANET_LEASE_DURATION", "90 days")
     test_mode = os.environ.get("REDUNDANET_TEST_MODE", "false").lower() == "true"
