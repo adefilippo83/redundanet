@@ -32,9 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-from redundanet.core.manifest import locate_manifest
+from redundanet.core.manifest import read_manifest
 from redundanet.monitor.usage import USAGE_FILE, USAGE_PORT, usage_payload, write_usage_file
 from redundanet.storage.inventory import all_file_caps, grid_footprint
 
@@ -58,15 +56,10 @@ def run_tahoe(args: list[str], timeout: int = 3600) -> subprocess.CompletedProce
 
 
 def load_manifest() -> dict[str, Any]:
-    manifest_file = locate_manifest(MANIFEST_DIR)
-    if manifest_file is None:
-        log("no manifest found; allocation unknown (0)")
-        return {}
-    try:
-        return yaml.safe_load(manifest_file.read_text()) or {}
-    except (OSError, yaml.YAMLError) as e:
-        log(f"cannot read manifest ({e}); allocation unknown (0)")
-        return {}
+    manifest = read_manifest(MANIFEST_DIR)
+    if not manifest:
+        log("no readable manifest; allocation unknown (0)")
+    return manifest
 
 
 def enforce_override(environ: dict[str, str]) -> bool | None:

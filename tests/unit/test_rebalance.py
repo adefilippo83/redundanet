@@ -84,6 +84,15 @@ class TestParseConfig:
     def test_bad_int_falls_back(self):
         assert rebalance.parse_config({"REDUNDANET_REBALANCE_INTERVAL": "x"}).interval == 86400
 
+    def test_manifest_encoding_wins_over_env(self):
+        env = {"REDUNDANET_SHARES_NEEDED": "1", "REDUNDANET_SHARES_TOTAL": "2"}
+        manifest = {
+            "network": {"tahoe": {"shares_needed": 2, "shares_happy": 4, "shares_total": 4}}
+        }
+        config = rebalance.parse_config(env, manifest)
+        assert (config.needed, config.total) == (2, 4)
+        assert (rebalance.parse_config(env).needed, rebalance.parse_config(env).total) == (1, 2)
+
 
 class TestWalkFiles:
     def test_recurses_directories(self):
