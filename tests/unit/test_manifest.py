@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from redundanet.core.exceptions import ManifestError, ValidationError
-from redundanet.core.manifest import Manifest, locate_manifest
+from redundanet.core.manifest import Manifest, locate_manifest, read_manifest
 
 
 class TestLocateManifest:
@@ -412,3 +412,20 @@ class TestManifest:
         assert result.errors == []
         assert any("no write-redundancy headroom" in w for w in result.warnings)
         assert not any("Not enough storage nodes" in w for w in result.warnings)
+
+
+class TestReadManifest:
+    def test_reads_plain_dir_and_repo_layout(self, tmp_path: Path):
+        (tmp_path / "manifest.yaml").write_text("network: {name: a}\n")
+        assert read_manifest(tmp_path) == {"network": {"name": "a"}}
+        repo = tmp_path / "repo"
+        (repo / "manifests").mkdir(parents=True)
+        (repo / "manifests" / "manifest.yaml").write_text("network: {name: b}\n")
+        assert read_manifest(repo)["network"]["name"] == "b"
+
+    def test_missing_or_broken_is_empty(self, tmp_path: Path):
+        assert read_manifest(tmp_path / "nope") == {}
+        (tmp_path / "manifest.yaml").write_text("network: [unclosed\n")
+        assert read_manifest(tmp_path) == {}
+        (tmp_path / "manifest.yaml").write_text("- not a mapping\n")
+        assert read_manifest(tmp_path) == {}

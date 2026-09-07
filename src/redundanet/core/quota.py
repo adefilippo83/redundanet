@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -118,6 +119,38 @@ def encoding(manifest: dict[str, Any]) -> tuple[int, int]:
     """(k, n) from the manifest, with the schema defaults."""
     tahoe = (manifest.get("network") or {}).get("tahoe") or {}
     return int(tahoe.get("shares_needed", 3)), int(tahoe.get("shares_total", 10))
+
+
+def resolve_encoding(
+    manifest: dict[str, Any], environ: Mapping[str, str] | None = None
+) -> tuple[int, int, int]:
+    """(needed, happy, total) for a node: the manifest first, the environment second.
+
+    The manifest is the network's source of truth and every node syncs it, so
+    a change there reaches the whole fleet at the next container start with
+    no per-node reconfiguration. The ``REDUNDANET_SHARES_*`` variables (from
+    the node's ``.env``) remain the fallback for a node without a manifest,
+    e.g. the e2e tests.
+    """
+    environ = environ or {}
+    tahoe = (manifest.get("network") or {}).get("tahoe") or {}
+
+    def pick(key: str, env_key: str, default: int) -> int:
+        if key in tahoe:
+            try:
+                return int(tahoe[key])
+            except (TypeError, ValueError):
+                pass
+        try:
+            return int(environ.get(env_key, "") or default)
+        except ValueError:
+            return default
+
+    return (
+        pick("shares_needed", "REDUNDANET_SHARES_NEEDED", 3),
+        pick("shares_happy", "REDUNDANET_SHARES_HAPPY", 7),
+        pick("shares_total", "REDUNDANET_SHARES_TOTAL", 10),
+    )
 
 
 def member_of(node: dict[str, Any]) -> str:

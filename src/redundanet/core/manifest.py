@@ -124,6 +124,23 @@ def locate_manifest(manifest_dir: Path, filename: str = "manifest.yaml") -> Path
     return None
 
 
+def read_manifest(manifest_dir: Path, filename: str = "manifest.yaml") -> dict[str, Any]:
+    """The manifest under ``manifest_dir`` as a plain dict, or ``{}``.
+
+    For the container entrypoints: tolerant of a missing or unreadable file
+    (a node must still start; callers fall back to their environment), and
+    of the directory being a repo clone (see :func:`locate_manifest`).
+    """
+    manifest_file = locate_manifest(manifest_dir, filename)
+    if manifest_file is None:
+        return {}
+    try:
+        data = yaml.safe_load(manifest_file.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 class Manifest:
     """Manages the RedundaNet network manifest."""
 

@@ -88,18 +88,37 @@ nodes:
   - Any 3 shares can reconstruct the original file
   - 7 nodes can fail and data is still recoverable
 
-**Changing the encoding:** parameters are baked into each file at upload
-time, so a manifest change affects only new uploads. Existing files are
-converged automatically: every client node runs a rebalance loop (enabled by
-default) that detects files carrying old parameters and re-encodes them from
-the grid itself — serially, rate-limited, resuming across cycles. After a
-change, update each node's `.env` (re-run `network join`) and recreate the
-tahoe containers; then watch the status page's census climb to the new
-target. Tunables in `.env`: `REBALANCE_ENABLED` (default `true`),
-`REBALANCE_INTERVAL` (default 86400s). Old shares stop being lease-renewed
-once replaced and are reclaimed by garbage collection. Files held only as
-bare `URI:` capabilities are not reachable by the loop and must be
-re-uploaded by their owner.
+**Changing the encoding:** edit `network.tahoe` in the manifest and push. The
+manifest is the source of truth: every node syncs it within minutes, and the
+Tahoe containers read `shares_needed/happy/total` from it when they start
+(the `SHARES_*` values in `.env` are only a fallback for a node without a
+manifest). Nodes apply the change at their next recreate, i.e. the
+`redundanet update` of the next release; no per-node reconfiguration.
+
+Parameters are baked into each file at upload time, so the change affects new
+uploads immediately and existing files are converged by the rebalance loop
+every client node runs (enabled by default): it detects files carrying old
+parameters and re-encodes them from the grid itself, serially, rate-limited,
+resuming across cycles, and re-reads the target every cycle. Watch the status
+page: right after the change every old object shows as under-replicated
+against the new target, and the census climbs as nodes converge. Old shares
+stop being lease-renewed once replaced and are reclaimed by garbage
+collection.
+
+Two kinds of files are not converged: bare `URI:` capabilities not linked into
+any alias (re-upload them yourself), and files inside immutable backup
+snapshots (`tahoe backup`'s `Archives/`): a re-encoded file cannot be relinked
+inside an immutable directory, and unchanged files keep their old capability
+in every new snapshot. Old snapshots stay at the old encoding, which is still
+the durability they were made with. To re-upload a NAS share entirely at the
+new encoding, delete the backup database once and let the next sync run:
+
+```bash
+docker exec redundanet-tahoe-client rm -f /var/lib/tahoe-client/private/backupdb.sqlite
+```
+
+Tunables in `.env`: `REBALANCE_ENABLED` (default `true`), `REBALANCE_INTERVAL`
+(default 86400s).
 
 ### Node Section
 
