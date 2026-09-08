@@ -21,6 +21,7 @@ Properties:
 
 Environment:
   REDUNDANET_SHARES_NEEDED / REDUNDANET_SHARES_TOTAL   the target encoding
+      (fallback: the synced manifest's network.tahoe section wins when present)
   REDUNDANET_REBALANCE_ENABLED   default "true" (set "false" to disable)
   REDUNDANET_REBALANCE_INTERVAL  seconds between cycles (default 86400)
   REDUNDANET_REBALANCE_PAUSE     pause between files (default 10s)
@@ -37,9 +38,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from redundanet.core.manifest import read_manifest
+from redundanet.core.quota import resolve_encoding
 from redundanet.storage import inventory
 
 NODE_DIR = "/var/lib/tahoe-client"
+MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 TMP_FILE = Path("/tmp/rebalance.tmp")  # noqa: S108 - private container tmp
 STARTUP_DELAY = 180  # let the client connect to the grid first
 
@@ -67,14 +71,17 @@ def _int_env(environ: dict[str, str], name: str, default: int) -> int:
         return default
 
 
-def parse_config(environ: dict[str, str]) -> RebalanceConfig:
+def parse_config(environ: dict[str, str], manifest: dict | None = None) -> RebalanceConfig:
+    """The target encoding comes from the synced manifest when present (the
+    network's source of truth), else from the REDUNDANET_SHARES_* variables."""
+    needed, _happy, total = resolve_encoding(manifest or {}, environ)
     return RebalanceConfig(
         enabled=environ.get("REDUNDANET_REBALANCE_ENABLED", "true").lower() != "false",
         interval=_int_env(environ, "REDUNDANET_REBALANCE_INTERVAL", 86400),
         pause=_int_env(environ, "REDUNDANET_REBALANCE_PAUSE", 10),
         budget=_int_env(environ, "REDUNDANET_REBALANCE_BUDGET", 14400),
-        needed=_int_env(environ, "REDUNDANET_SHARES_NEEDED", 3),
-        total=_int_env(environ, "REDUNDANET_SHARES_TOTAL", 10),
+        needed=needed,
+        total=total,
     )
 
 
@@ -157,7 +164,7 @@ def run_cycle(
 
 
 def main() -> None:
-    config = parse_config(dict(os.environ))
+    config = parse_config(dict(os.environ), read_manifest(MANIFEST_DIR))
     if not config.enabled:
         log("disabled (REBALANCE_ENABLED=false); sleeping")
         while True:
@@ -174,6 +181,9 @@ def main() -> None:
     time.sleep(STARTUP_DELAY)
     while True:
         try:
+            # Re-read the target each cycle: the manifest syncs every few minutes,
+            # so an encoding change is picked up without a restart.
+            config = parse_config(dict(os.environ), read_manifest(MANIFEST_DIR))
             stats = run_cycle(config)
             if stats["mismatched"] or stats["failed"]:
                 log(
