@@ -19,6 +19,14 @@ app = typer.Typer(help="Network management commands")
 console = Console()
 
 INSTALL_DIR = Path("/opt/redundanet")
+# Compose override files an operator keeps next to the compose file (the
+# storage disk bind-mount lives there); never overwritten from the repo.
+OVERRIDE_FILES = (
+    "docker-compose.override.yml",
+    "docker-compose.override.yaml",
+    "compose.override.yml",
+    "compose.override.yaml",
+)
 REPO_DIR = Path("/var/lib/redundanet/repo")
 
 # Manifest role -> the docker-compose profile that runs that role's service.
@@ -134,13 +142,20 @@ def _setup_docker_files(repo_dir: Path, install_dir: Path) -> None:
         console.print("[yellow]Warning:[/yellow] No docker directory found in repo")
         return
 
-    # Backup secrets if they exist (e.g., GPG key generated before join)
+    # Operator-owned files must survive the refresh: the secrets dir (the GPG
+    # key) and the compose override (a storage node's disk bind-mount; losing
+    # it silently detaches the disk on the next recreate).
     secrets_backup = None
     if secrets_dir.exists():
         secrets_backup = install_dir / "secrets_backup"
         if secrets_backup.exists():
             shutil.rmtree(secrets_backup)
         shutil.move(str(secrets_dir), str(secrets_backup))
+    overrides: dict[str, str] = {}
+    for name in OVERRIDE_FILES:
+        override = dst_docker / name
+        if override.is_file():
+            overrides[name] = override.read_text()
 
     # Remove existing docker dir if present
     if dst_docker.exists():
@@ -157,6 +172,9 @@ def _setup_docker_files(repo_dir: Path, install_dir: Path) -> None:
     else:
         # Create empty secrets directory
         secrets_dir.mkdir(exist_ok=True)
+    for name, content in overrides.items():
+        (dst_docker / name).write_text(content)
+        console.print(f"[green]Kept compose override:[/green] {dst_docker / name}")
 
     console.print(f"[green]Docker files installed to:[/green] {dst_docker}")
 
