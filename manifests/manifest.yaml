@@ -5,9 +5,9 @@ network:
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
   tahoe:
-    shares_needed: 1
-    shares_happy: 2
-    shares_total: 2
+    shares_needed: 2
+    shares_happy: 4
+    shares_total: 4
     reserved_space: 1G
   # Contribution-based allocation: a member may store contribution x k/n x (1 - reserve).
   # enforce: the client side refuses uploads over the allocation (docs/quotas.md).
