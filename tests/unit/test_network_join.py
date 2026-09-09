@@ -226,3 +226,29 @@ class TestComposeProjectName:
         (tmp_path / ".env").write_text("COMPOSE_PROJECT_NAME=customproj\n")
         _generate_env_file({"name": "n"}, {}, "repo", "main", tmp_path)
         assert parse_env(tmp_path / ".env")["COMPOSE_PROJECT_NAME"] == "customproj"
+
+
+class TestDockerFilesRefresh:
+    def test_override_and_secrets_survive_a_rejoin(self, tmp_path: Path):
+        from redundanet.cli.network import _setup_docker_files
+
+        repo = tmp_path / "repo"
+        (repo / "docker").mkdir(parents=True)
+        (repo / "docker" / "docker-compose.yml").write_text("services: {new: 1}\n")
+        install = tmp_path / "install"
+        docker_dir = install / "docker"
+        docker_dir.mkdir(parents=True)
+        (docker_dir / "docker-compose.yml").write_text("services: {old: 1}\n")
+        (docker_dir / "docker-compose.override.yml").write_text("services: {disk_bind: 1}\n")
+        (docker_dir / "secrets").mkdir()
+        (docker_dir / "secrets" / "gpg_private_key.asc").write_text("KEY")
+
+        _setup_docker_files(repo, install)
+
+        # Refreshed from the repo...
+        assert (docker_dir / "docker-compose.yml").read_text() == "services: {new: 1}\n"
+        # ...while the operator's override (the storage disk bind) and secrets survive.
+        assert (
+            docker_dir / "docker-compose.override.yml"
+        ).read_text() == "services: {disk_bind: 1}\n"
+        assert (docker_dir / "secrets" / "gpg_private_key.asc").read_text() == "KEY"

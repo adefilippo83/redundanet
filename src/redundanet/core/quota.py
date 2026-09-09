@@ -23,9 +23,12 @@ Everything here is pure: the manifest and the reports are passed in.
 
 from __future__ import annotations
 
+import configparser
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 DEFAULT_RESERVE = 0.15
@@ -118,6 +121,58 @@ def encoding(manifest: dict[str, Any]) -> tuple[int, int]:
     """(k, n) from the manifest, with the schema defaults."""
     tahoe = (manifest.get("network") or {}).get("tahoe") or {}
     return int(tahoe.get("shares_needed", 3)), int(tahoe.get("shares_total", 10))
+
+
+def resolve_encoding(
+    manifest: dict[str, Any], environ: Mapping[str, str] | None = None
+) -> tuple[int, int, int]:
+    """(needed, happy, total) for a node: the manifest first, the environment second.
+
+    The manifest is the network's source of truth and every node syncs it, so
+    a change there reaches the whole fleet at the next container start with
+    no per-node reconfiguration. The ``REDUNDANET_SHARES_*`` variables (from
+    the node's ``.env``) remain the fallback for a node without a manifest,
+    e.g. the e2e tests.
+    """
+    environ = environ or {}
+    tahoe = (manifest.get("network") or {}).get("tahoe") or {}
+
+    def pick(key: str, env_key: str, default: int) -> int:
+        if key in tahoe:
+            try:
+                return int(tahoe[key])
+            except (TypeError, ValueError):
+                pass
+        try:
+            return int(environ.get(env_key, "") or default)
+        except ValueError:
+            return default
+
+    return (
+        pick("shares_needed", "REDUNDANET_SHARES_NEEDED", 3),
+        pick("shares_happy", "REDUNDANET_SHARES_HAPPY", 7),
+        pick("shares_total", "REDUNDANET_SHARES_TOTAL", 10),
+    )
+
+
+def node_encoding(tahoe_cfg: Path) -> tuple[int, int] | None:
+    """(needed, total) a running Tahoe node actually uploads with, from its
+    ``tahoe.cfg``; None when the file is missing or unreadable.
+
+    Tahoe reads ``shares.needed``/``shares.total`` once at startup, so this is
+    the encoding of every upload until the container is recreated, whatever
+    the synced manifest says in the meantime. The loops that re-encode data
+    (the rebalancer, the backup sync) compare against this, never against the
+    manifest alone: re-uploading at a target the node cannot produce yet would
+    only churn.
+    """
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        if not parser.read(tahoe_cfg, encoding="utf-8"):
+            return None
+        return parser.getint("client", "shares.needed"), parser.getint("client", "shares.total")
+    except (configparser.Error, ValueError, OSError):
+        return None
 
 
 def member_of(node: dict[str, Any]) -> str:

@@ -215,3 +215,20 @@ class TestSnapshots:
     def test_footprint_counts_each_capability_once(self):
         footprint = grid_footprint([chk(1, 2, 100)] * 50 + [chk(1, 2, 100, "other")])
         assert footprint == Footprint(used_bytes=400, data_bytes=200, files=2)
+
+
+class TestParseEncoding:
+    def test_file_and_immutable_directory_caps(self):
+        from redundanet.storage.inventory import parse_encoding
+
+        assert parse_encoding("URI:CHK:key:hash:2:4:1000") == (2, 4)
+        assert parse_encoding("URI:DIR2-CHK:key:hash:1:2:500") == (1, 2)
+
+    def test_caps_without_shares_are_none(self):
+        from redundanet.storage.inventory import parse_encoding
+
+        assert parse_encoding("URI:LIT:abcd") is None
+        assert parse_encoding("URI:DIR2:writekey:fingerprint") is None
+        assert parse_encoding("URI:DIR2-LIT:abcd") is None
+        assert parse_encoding("URI:CHK:key:hash:x:4:1000") is None
+        assert parse_encoding("garbage") is None

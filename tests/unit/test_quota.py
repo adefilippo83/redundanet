@@ -10,6 +10,7 @@ from redundanet.core.quota import (
     node_allocation,
     parse_size,
     quota_settings,
+    resolve_encoding,
 )
 
 GB = 10**9
@@ -157,3 +158,51 @@ class TestNodeAllocation:
     def test_unknown_node_has_no_allocation(self):
         member, allocation, _settings = node_allocation(manifest([]), "ghost")
         assert (member, allocation) == ("ghost", 0)
+
+
+class TestResolveEncoding:
+    def test_manifest_wins_over_environment(self):
+        m = manifest([], needed=2, total=4)
+        m["network"]["tahoe"]["shares_happy"] = 4
+        env = {
+            "REDUNDANET_SHARES_NEEDED": "1",
+            "REDUNDANET_SHARES_HAPPY": "2",
+            "REDUNDANET_SHARES_TOTAL": "2",
+        }
+        assert resolve_encoding(m, env) == (2, 4, 4)
+
+    def test_environment_when_no_manifest(self):
+        env = {
+            "REDUNDANET_SHARES_NEEDED": "1",
+            "REDUNDANET_SHARES_HAPPY": "2",
+            "REDUNDANET_SHARES_TOTAL": "2",
+        }
+        assert resolve_encoding({}, env) == (1, 2, 2)
+
+    def test_defaults_and_garbage(self):
+        assert resolve_encoding({}, {}) == (3, 7, 10)
+        assert resolve_encoding(
+            {"network": {"tahoe": {"shares_needed": "x"}}}, {"REDUNDANET_SHARES_NEEDED": "y"}
+        ) == (3, 7, 10)
+
+
+class TestNodeEncoding:
+    def test_reads_the_client_section(self, tmp_path):
+        from redundanet.core.quota import node_encoding
+
+        cfg = tmp_path / "tahoe.cfg"
+        cfg.write_text(
+            "# Tahoe-LAFS client configuration\n[node]\nnickname = n\n"
+            "tub.location = tcp:10.100.0.5:3457\n\n[client]\nintroducer.furl = pb://x@tcp:h:1/y\n"
+            "shares.needed = 2\nshares.happy = 4\nshares.total = 4\n\n[storage]\nenabled = false\n"
+        )
+        assert node_encoding(cfg) == (2, 4)
+
+    def test_missing_or_broken_file_is_none(self, tmp_path):
+        from redundanet.core.quota import node_encoding
+
+        assert node_encoding(tmp_path / "absent") is None
+        (tmp_path / "bad.cfg").write_text("[client]\nshares.needed = two\nshares.total = 4\n")
+        assert node_encoding(tmp_path / "bad.cfg") is None
+        (tmp_path / "nosection.cfg").write_text("[node]\nnickname = n\n")
+        assert node_encoding(tmp_path / "nosection.cfg") is None

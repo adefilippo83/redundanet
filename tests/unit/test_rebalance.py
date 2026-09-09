@@ -84,6 +84,15 @@ class TestParseConfig:
     def test_bad_int_falls_back(self):
         assert rebalance.parse_config({"REDUNDANET_REBALANCE_INTERVAL": "x"}).interval == 86400
 
+    def test_manifest_encoding_wins_over_env(self):
+        env = {"REDUNDANET_SHARES_NEEDED": "1", "REDUNDANET_SHARES_TOTAL": "2"}
+        manifest = {
+            "network": {"tahoe": {"shares_needed": 2, "shares_happy": 4, "shares_total": 4}}
+        }
+        config = rebalance.parse_config(env, manifest)
+        assert (config.needed, config.total) == (2, 4)
+        assert (rebalance.parse_config(env).needed, rebalance.parse_config(env).total) == (1, 2)
+
 
 class TestWalkFiles:
     def test_recurses_directories(self):
@@ -192,3 +201,61 @@ class TestImmutableSnapshots:
         stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
         assert stats["scanned"] == 0
         assert not any(c[0] == "get" for c in run.calls)
+
+
+class TestNodeEncodingGuard:
+    def tahoe_cfg(self, tmp_path, needed: int, total: int):
+        cfg = tmp_path / "tahoe.cfg"
+        cfg.write_text(
+            f"[client]\nintroducer.furl = pb://x\nshares.needed = {needed}\n"
+            f"shares.happy = {total}\nshares.total = {total}\n"
+        )
+        return cfg
+
+    def test_waits_while_the_node_still_uploads_at_the_old_encoding(self, tmp_path):
+        reason = rebalance.node_stale((2, 4), tahoe_cfg=self.tahoe_cfg(tmp_path, 1, 2))
+        assert reason is not None
+        assert "1-of-2" in reason and "2-of-4" in reason and "recreate" in reason
+
+    def test_runs_when_node_and_manifest_agree(self, tmp_path):
+        assert rebalance.node_stale((2, 4), tahoe_cfg=self.tahoe_cfg(tmp_path, 2, 4)) is None
+
+    def test_unreadable_tahoe_cfg_does_not_block(self, tmp_path):
+        assert rebalance.node_stale((2, 4), tahoe_cfg=tmp_path / "missing.cfg") is None
+
+    def test_cycle_stops_when_uploads_come_back_at_the_wrong_encoding(self):
+        """Second line of defence: the cap tahoe put prints must carry the
+        target parameters, otherwise every further upload would be wasted."""
+        run = FakeRun(
+            {
+                "list-aliases": completed(stdout="home: URI:DIR2:x:y\n"),
+                ("ls", "home:"): completed(
+                    stdout=dirnode_json(
+                        {
+                            "a.bin": ("filenode", chk(1, 2, "a")),
+                            "b.bin": ("filenode", chk(1, 2, "b")),
+                        }
+                    )
+                ),
+                "get": completed(),
+                "put": completed(stdout=chk(1, 2, "zzzz")),  # node still on 1-of-2
+            }
+        )
+        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        assert stats["node_stale"] == 1
+        assert stats["reencoded"] == 0
+        assert len([c for c in run.calls if c[0] == "put"]) == 1  # stopped after the first
+
+    def test_put_without_a_cap_on_stdout_is_still_a_success(self):
+        run = FakeRun(
+            {
+                "list-aliases": completed(stdout="home: URI:DIR2:x:y\n"),
+                ("ls", "home:"): completed(
+                    stdout=dirnode_json({"a.bin": ("filenode", chk(1, 2, "a"))})
+                ),
+                "get": completed(),
+                "put": completed(stdout=""),
+            }
+        )
+        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        assert stats["reencoded"] == 1 and stats["node_stale"] == 0

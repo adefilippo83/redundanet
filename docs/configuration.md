@@ -88,18 +88,43 @@ nodes:
   - Any 3 shares can reconstruct the original file
   - 7 nodes can fail and data is still recoverable
 
-**Changing the encoding:** parameters are baked into each file at upload
-time, so a manifest change affects only new uploads. Existing files are
-converged automatically: every client node runs a rebalance loop (enabled by
-default) that detects files carrying old parameters and re-encodes them from
-the grid itself — serially, rate-limited, resuming across cycles. After a
-change, update each node's `.env` (re-run `network join`) and recreate the
-tahoe containers; then watch the status page's census climb to the new
-target. Tunables in `.env`: `REBALANCE_ENABLED` (default `true`),
-`REBALANCE_INTERVAL` (default 86400s). Old shares stop being lease-renewed
-once replaced and are reclaimed by garbage collection. Files held only as
-bare `URI:` capabilities are not reachable by the loop and must be
-re-uploaded by their owner.
+**Changing the encoding:** edit `network.tahoe` in the manifest and push. The
+manifest is the source of truth: every node syncs it within minutes, and the
+Tahoe containers read `shares_needed/happy/total` from it when they start
+(the `SHARES_*` values in `.env` are only a fallback for a node without a
+manifest). Nodes apply the change at their next recreate, i.e. the
+`redundanet update` of the next release; no per-node reconfiguration.
+
+Parameters are baked into each file at upload time, so the change affects new
+uploads immediately and existing files are converged by the rebalance loop
+every client node runs (enabled by default): it detects files carrying old
+parameters and re-encodes them from the grid itself, serially, rate-limited,
+resuming across cycles, and re-reads the target every cycle. Watch the status
+page: right after the change every old object shows as under-replicated
+against the new target, and the census climbs as nodes converge. Old shares
+stop being lease-renewed once replaced and are reclaimed by garbage
+collection.
+
+The rebalancer takes its target from the manifest but uploads with whatever
+the node's Tahoe client read from `tahoe.cfg` at startup, which only changes
+when the container is recreated. Between the manifest change and `redundanet
+update` it therefore waits, logging `manifest target is 2-of-4 but this node
+still uploads at 1-of-2 ... recreate the client`, instead of re-encoding
+everything at the old parameters. It also stops a cycle whose uploads come
+back at the wrong encoding.
+
+Two kinds of files are not converged by the rebalancer: bare `URI:`
+capabilities not linked into any alias (re-upload them yourself), and files
+inside immutable backup snapshots (`tahoe backup`'s `Archives/`), because a
+re-encoded file cannot be relinked inside an immutable directory. The backup
+sync handles the second kind itself: before each run it forgets the backupdb
+rows recorded at another encoding than the node's, so that run re-uploads
+exactly those files at the new parameters (`SYNC_REENCODE=false` postpones
+it; see [nas-backup.md](nas-backup.md)). Old snapshots stay at the old
+encoding, which is still the durability they were made with.
+
+Tunables in `.env`: `REBALANCE_ENABLED` (default `true`), `REBALANCE_INTERVAL`
+(default 86400s).
 
 ### Node Section
 
