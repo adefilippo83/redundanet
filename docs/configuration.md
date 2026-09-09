@@ -105,17 +105,23 @@ against the new target, and the census climbs as nodes converge. Old shares
 stop being lease-renewed once replaced and are reclaimed by garbage
 collection.
 
-Two kinds of files are not converged: bare `URI:` capabilities not linked into
-any alias (re-upload them yourself), and files inside immutable backup
-snapshots (`tahoe backup`'s `Archives/`): a re-encoded file cannot be relinked
-inside an immutable directory, and unchanged files keep their old capability
-in every new snapshot. Old snapshots stay at the old encoding, which is still
-the durability they were made with. To re-upload a NAS share entirely at the
-new encoding, delete the backup database once and let the next sync run:
+The rebalancer takes its target from the manifest but uploads with whatever
+the node's Tahoe client read from `tahoe.cfg` at startup, which only changes
+when the container is recreated. Between the manifest change and `redundanet
+update` it therefore waits, logging `manifest target is 2-of-4 but this node
+still uploads at 1-of-2 ... recreate the client`, instead of re-encoding
+everything at the old parameters. It also stops a cycle whose uploads come
+back at the wrong encoding.
 
-```bash
-docker exec redundanet-tahoe-client rm -f /var/lib/tahoe-client/private/backupdb.sqlite
-```
+Two kinds of files are not converged by the rebalancer: bare `URI:`
+capabilities not linked into any alias (re-upload them yourself), and files
+inside immutable backup snapshots (`tahoe backup`'s `Archives/`), because a
+re-encoded file cannot be relinked inside an immutable directory. The backup
+sync handles the second kind itself: before each run it forgets the backupdb
+rows recorded at another encoding than the node's, so that run re-uploads
+exactly those files at the new parameters (`SYNC_REENCODE=false` postpones
+it; see [nas-backup.md](nas-backup.md)). Old snapshots stay at the old
+encoding, which is still the durability they were made with.
 
 Tunables in `.env`: `REBALANCE_ENABLED` (default `true`), `REBALANCE_INTERVAL`
 (default 86400s).

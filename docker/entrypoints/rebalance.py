@@ -19,6 +19,13 @@ Properties:
   * replaced caps stop being lease-renewed (the renewer walks live aliases),
     so old shares age out via GC on their own
 
+The target comes from the synced manifest, but uploads use whatever the
+running Tahoe node read from tahoe.cfg at startup, which only changes when
+the container is recreated (`redundanet update`). Until then a cycle would
+re-encode everything at the old parameters and never converge, so the loop
+compares the two first and waits while they disagree, and stops a cycle whose
+uploads come back at the wrong encoding.
+
 Environment:
   REDUNDANET_SHARES_NEEDED / REDUNDANET_SHARES_TOTAL   the target encoding
       (fallback: the synced manifest's network.tahoe section wins when present)
@@ -39,10 +46,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from redundanet.core.manifest import read_manifest
-from redundanet.core.quota import resolve_encoding
+from redundanet.core.quota import node_encoding, resolve_encoding
 from redundanet.storage import inventory
 
 NODE_DIR = "/var/lib/tahoe-client"
+TAHOE_CFG = Path(NODE_DIR) / "tahoe.cfg"
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 TMP_FILE = Path("/tmp/rebalance.tmp")  # noqa: S108 - private container tmp
 STARTUP_DELAY = 180  # let the client connect to the grid first
@@ -112,8 +120,32 @@ def walk_files(root: str, run=run_tahoe) -> list[tuple[str, str]]:
     return inventory.walk_files(root, run, log=log, skip_immutable=True)
 
 
-def reencode_file(root: str, path: str, cap: str, run=run_tahoe) -> bool:
-    """Download by cap, re-upload at current parameters, relink the path."""
+class NodeEncodingMismatch(Exception):
+    """The running node uploaded at other parameters than the target."""
+
+
+def node_stale(target: tuple[int, int], tahoe_cfg: Path = TAHOE_CFG) -> str | None:
+    """Why a cycle must wait: the node still uploads at another encoding than
+    the manifest's target. None when they agree or tahoe.cfg is unreadable
+    (then the per-upload check below is the guard)."""
+    running = node_encoding(tahoe_cfg)
+    if running is None or running == target:
+        return None
+    return (
+        f"manifest target is {target[0]}-of-{target[1]} but this node still uploads at "
+        f"{running[0]}-of-{running[1]} (tahoe.cfg is read at container start): "
+        "recreate the client (redundanet update); waiting"
+    )
+
+
+def reencode_file(
+    root: str, path: str, cap: str, run=run_tahoe, target: tuple[int, int] | None = None
+) -> bool:
+    """Download by cap, re-upload at current parameters, relink the path.
+
+    Raises NodeEncodingMismatch when the cap tahoe put printed carries other
+    parameters than ``target``: the node runs an older tahoe.cfg and every
+    further upload this cycle would be wasted."""
     try:
         got = run(["get", cap, str(TMP_FILE)])
         if got.returncode != 0:
@@ -123,6 +155,13 @@ def reencode_file(root: str, path: str, cap: str, run=run_tahoe) -> bool:
         if put.returncode != 0:
             log(f"put failed for {path!r}: {put.stderr.strip()[:120]}")
             return False
+        produced = (
+            parse_chk_params(put.stdout.strip().splitlines()[-1]) if put.stdout.strip() else None
+        )
+        if target is not None and produced is not None and produced != target:
+            raise NodeEncodingMismatch(
+                f"{path!r} came back {produced[0]}-of-{produced[1]}, not {target[0]}-of-{target[1]}"
+            )
         return True
     finally:
         with contextlib.suppress(OSError):
@@ -136,7 +175,14 @@ def run_cycle(
     clock=time.monotonic,
 ) -> dict[str, int]:
     """One pass over all aliases. Returns counters for logging/tests."""
-    stats = {"scanned": 0, "mismatched": 0, "reencoded": 0, "failed": 0, "budget_stop": 0}
+    stats = {
+        "scanned": 0,
+        "mismatched": 0,
+        "reencoded": 0,
+        "failed": 0,
+        "budget_stop": 0,
+        "node_stale": 0,
+    }
     target = (config.needed, config.total)
     started = clock()
     for alias in list_aliases(run=run):
@@ -155,10 +201,15 @@ def run_cycle(
                 f"re-encoding {alias}:{path} {params[0]}-of-{params[1]} -> "
                 f"{target[0]}-of-{target[1]}"
             )
-            if reencode_file(root, path, cap, run=run):
-                stats["reencoded"] += 1
-            else:
-                stats["failed"] += 1
+            try:
+                if reencode_file(root, path, cap, run=run, target=target):
+                    stats["reencoded"] += 1
+                else:
+                    stats["failed"] += 1
+            except NodeEncodingMismatch as e:
+                stats["node_stale"] = 1
+                log(f"stopping this cycle: {e}; the node runs an older tahoe.cfg, recreate it")
+                return stats
             sleep(config.pause)
     return stats
 
@@ -184,6 +235,11 @@ def main() -> None:
             # Re-read the target each cycle: the manifest syncs every few minutes,
             # so an encoding change is picked up without a restart.
             config = parse_config(dict(os.environ), read_manifest(MANIFEST_DIR))
+            reason = node_stale((config.needed, config.total))
+            if reason:
+                log(reason)
+                time.sleep(config.interval)
+                continue
             stats = run_cycle(config)
             if stats["mismatched"] or stats["failed"]:
                 log(
