@@ -52,6 +52,22 @@ def parse_chk_params(cap: str) -> tuple[int, int] | None:
     return None if params is None else (params.needed, params.total)
 
 
+def parse_encoding(cap: str) -> tuple[int, int] | None:
+    """(k, n) of any immutable capability that carries shares: files
+    (``URI:CHK:``) and ``tahoe backup``'s directories (``URI:DIR2-CHK:``).
+
+    None for everything else: LIT caps inline their content and have no
+    shares; mutable directories are re-encoded by their owner on every write.
+    """
+    parts = cap.strip().split(":")
+    if len(parts) < 7 or parts[0] != "URI" or parts[1] not in ("CHK", "DIR2-CHK"):
+        return None
+    try:
+        return int(parts[4]), int(parts[5])
+    except ValueError:
+        return None
+
+
 def list_aliases(run: Runner) -> list[str]:
     result = run(["list-aliases"], timeout=60)
     if result.returncode != 0:

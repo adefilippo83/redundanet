@@ -23,10 +23,12 @@ Everything here is pure: the manifest and the reports are passed in.
 
 from __future__ import annotations
 
+import configparser
 import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 DEFAULT_RESERVE = 0.15
@@ -151,6 +153,26 @@ def resolve_encoding(
         pick("shares_happy", "REDUNDANET_SHARES_HAPPY", 7),
         pick("shares_total", "REDUNDANET_SHARES_TOTAL", 10),
     )
+
+
+def node_encoding(tahoe_cfg: Path) -> tuple[int, int] | None:
+    """(needed, total) a running Tahoe node actually uploads with, from its
+    ``tahoe.cfg``; None when the file is missing or unreadable.
+
+    Tahoe reads ``shares.needed``/``shares.total`` once at startup, so this is
+    the encoding of every upload until the container is recreated, whatever
+    the synced manifest says in the meantime. The loops that re-encode data
+    (the rebalancer, the backup sync) compare against this, never against the
+    manifest alone: re-uploading at a target the node cannot produce yet would
+    only churn.
+    """
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    try:
+        if not parser.read(tahoe_cfg, encoding="utf-8"):
+            return None
+        return parser.getint("client", "shares.needed"), parser.getint("client", "shares.total")
+    except (configparser.Error, ValueError, OSError):
+        return None
 
 
 def member_of(node: dict[str, Any]) -> str:

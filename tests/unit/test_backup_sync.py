@@ -65,6 +65,21 @@ class TestParseConfig:
         assert config.interval == 900
         assert config.timeout == 21600
 
+    def test_exclude_and_reencode_defaults(self):
+        config = backup_sync.parse_config({})
+        assert config.exclude == []
+        assert config.reencode is True
+
+    def test_exclude_patterns_split_and_trimmed(self):
+        config = backup_sync.parse_config(
+            {
+                "REDUNDANET_SYNC_EXCLUDE": " .DS_Store, *.tmp ,, photos-link ",
+                "REDUNDANET_SYNC_REENCODE": "false",
+            }
+        )
+        assert config.exclude == [".DS_Store", "*.tmp", "photos-link"]
+        assert config.reencode is False
+
 
 class TestEnsureAlias:
     def test_existing_alias_not_recreated(self):
@@ -123,6 +138,133 @@ class TestRunBackup:
         (tmp_path / "file.txt").write_text("data")
         run = FakeRun({"backup": completed(returncode=1, stderr="grid unreachable")})
         assert backup_sync.run_backup(self.config(str(tmp_path)), run=run) is False
+
+    def test_exclude_patterns_reach_tahoe(self, tmp_path: Path):
+        (tmp_path / "file.txt").write_text("data")
+        config = self.config(str(tmp_path))
+        config.exclude = [".DS_Store", "*.tmp"]
+        run = FakeRun({"backup": completed(stdout=" done\n")})
+        assert backup_sync.run_backup(config, run=run) is True
+        assert run.calls == [
+            ["backup", "--exclude=.DS_Store", "--exclude=*.tmp", str(tmp_path), "backups:"]
+        ]
+
+    def test_skipped_entries_are_a_success_and_named(self, tmp_path: Path, capsys):
+        """tahoe backup exits 2 after making the snapshot when it skipped
+        something (symlinks, special files). That is not a failed backup."""
+        (tmp_path / "file.txt").write_text("data")
+        run = FakeRun(
+            {
+                "backup": completed(
+                    returncode=2,
+                    stdout=" 1 files uploaded (3 reused), 2 files skipped, 1 directories created (0 reused), 0 directories skipped\n",
+                    stderr="WARNING: cannot backup symlink '/data/sync/photos'\nWARNING: cannot backup special '/data/sync/pipe'\n",
+                )
+            }
+        )
+        assert backup_sync.run_backup(self.config(str(tmp_path)), run=run) is True
+        out = capsys.readouterr().out
+        assert "backup ok" in out and "2 skipped" in out and "FAILED" not in out
+        assert "skipped: cannot backup symlink '/data/sync/photos'" in out
+        assert "skipped: cannot backup special '/data/sync/pipe'" in out
+
+    def test_skipped_list_is_capped(self, tmp_path: Path, capsys):
+        (tmp_path / "file.txt").write_text("data")
+        warnings = "".join(f"WARNING: cannot backup symlink 'l{i}'\n" for i in range(25))
+        run = FakeRun({"backup": completed(returncode=2, stdout=" done\n", stderr=warnings)})
+        assert backup_sync.run_backup(self.config(str(tmp_path)), run=run) is True
+        out = capsys.readouterr().out
+        assert out.count("  skipped:") == backup_sync.MAX_SKIPPED_LOGGED
+        assert "and 5 more" in out
+
+
+class TestForgetStaleEncoding:
+    def config(self, reencode: bool = True) -> backup_sync.SyncConfig:
+        return backup_sync.SyncConfig(
+            enabled=True, interval=900, sync_dir="/x", alias="backups", timeout=1, reencode=reencode
+        )
+
+    def tahoe_cfg(self, tmp_path: Path, needed: int, total: int) -> Path:
+        cfg = tmp_path / "tahoe.cfg"
+        cfg.write_text(
+            f"[node]\nnickname = n\n\n[client]\nintroducer.furl = pb://x\n"
+            f"shares.needed = {needed}\nshares.happy = {total}\nshares.total = {total}\n"
+        )
+        return cfg
+
+    def backupdb(self, tmp_path: Path, caps: list[str]) -> Path:
+        import sqlite3
+
+        db = tmp_path / "backupdb.sqlite"
+        conn = sqlite3.connect(db)
+        conn.executescript(
+            "CREATE TABLE local_files (path PRIMARY KEY, size, mtime, ctime, fileid);"
+            "CREATE TABLE caps (fileid INTEGER PRIMARY KEY, filecap UNIQUE);"
+            "CREATE TABLE last_upload (fileid INTEGER PRIMARY KEY, last_uploaded, last_checked);"
+            "CREATE TABLE directories (dirhash PRIMARY KEY, dircap, last_uploaded, last_checked);"
+        )
+        for i, cap in enumerate(caps, start=1):
+            conn.execute("INSERT INTO caps VALUES (?, ?)", (i, cap.encode()))
+            conn.execute("INSERT INTO local_files VALUES (?, 1, 1, 1, ?)", (f"/f{i}", i))
+        conn.commit()
+        conn.close()
+        return db
+
+    def remaining(self, db: Path) -> int:
+        import sqlite3
+
+        conn = sqlite3.connect(db)
+        try:
+            return conn.execute("SELECT count(*) FROM caps").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_rows_at_the_old_encoding_are_forgotten(self, tmp_path: Path, capsys):
+        db = self.backupdb(tmp_path, ["URI:CHK:a:h:1:2:9", "URI:CHK:b:h:2:4:9"])
+        backup_sync.forget_stale_encoding(
+            self.config(), tahoe_cfg=self.tahoe_cfg(tmp_path, 2, 4), db_path=db
+        )
+        assert self.remaining(db) == 1
+        assert "forgot 1 files" in capsys.readouterr().out
+
+    def test_compares_with_the_running_node_not_the_manifest(self, tmp_path: Path, capsys):
+        """A node whose tahoe.cfg still says 1-of-2 (not yet recreated) must
+        keep its rows: re-uploading now would produce 1-of-2 caps again."""
+        db = self.backupdb(tmp_path, ["URI:CHK:a:h:1:2:9"])
+        backup_sync.forget_stale_encoding(
+            self.config(), tahoe_cfg=self.tahoe_cfg(tmp_path, 1, 2), db_path=db
+        )
+        assert self.remaining(db) == 1
+        assert "forgot" not in capsys.readouterr().out
+
+    def test_disabled_leaves_the_database_alone(self, tmp_path: Path):
+        db = self.backupdb(tmp_path, ["URI:CHK:a:h:1:2:9"])
+        backup_sync.forget_stale_encoding(
+            self.config(reencode=False), tahoe_cfg=self.tahoe_cfg(tmp_path, 2, 4), db_path=db
+        )
+        assert self.remaining(db) == 1
+
+    def test_unreadable_tahoe_cfg_keeps_the_database(self, tmp_path: Path, capsys):
+        db = self.backupdb(tmp_path, ["URI:CHK:a:h:1:2:9"])
+        backup_sync.forget_stale_encoding(
+            self.config(), tahoe_cfg=tmp_path / "missing.cfg", db_path=db
+        )
+        assert self.remaining(db) == 1
+        assert "keeping the backupdb" in capsys.readouterr().out
+
+    def test_damaged_database_does_not_stop_the_run(self, tmp_path: Path, capsys):
+        db = tmp_path / "backupdb.sqlite"
+        db.write_bytes(b"not a database at all")
+        backup_sync.forget_stale_encoding(
+            self.config(), tahoe_cfg=self.tahoe_cfg(tmp_path, 2, 4), db_path=db
+        )
+        assert "cannot prune" in capsys.readouterr().out
+
+    def test_no_database_yet_is_quiet(self, tmp_path: Path, capsys):
+        backup_sync.forget_stale_encoding(
+            self.config(), tahoe_cfg=self.tahoe_cfg(tmp_path, 2, 4), db_path=tmp_path / "none"
+        )
+        assert capsys.readouterr().out == ""
 
 
 class TestQuotaBlocks:
