@@ -125,6 +125,8 @@ SYNC_ENABLED=true
 SYNC_DIR=/mnt/storage/share
 # SYNC_INTERVAL=900        # seconds; default 15 minutes
 # SYNC_TIMEOUT=21600       # per-run ceiling; default 6h (first syncs are slow)
+# SYNC_EXCLUDE=.DS_Store,*.tmp   # name globs left out of every snapshot
+# SYNC_REENCODE=true       # re-upload at a new k-of-n automatically (see Notes)
 ```
 
 Then recreate the client so the settings and the bind-mount take effect. Use
@@ -143,6 +145,51 @@ Watch it work:
 ```bash
 docker logs -f redundanet-tahoe-client 2>&1 | grep backup-sync
 ```
+
+## Symlinks in the share
+
+`tahoe backup` never follows symlinks: a link to a file or to a directory is
+skipped, whatever it points at, and Tahoe has no option to change that. The
+run still succeeds and the log names what was left out:
+
+```
+backup-sync: backup ok in 41s with 1 skipped: 12 files uploaded (3040 reused), ...
+backup-sync:   skipped: cannot backup symlink '/data/sync/photos'
+```
+
+The container also sees nothing but `SYNC_DIR`, mounted read-only at
+`/data/sync`, so a link pointing outside the share would be dangling in there
+even if it were followed. A link pointing inside the share needs nothing: its
+target is already in the snapshot under its real path.
+
+To include a folder that lives outside the share, make it a real directory in
+the container's view instead of a link. Either way, remove the symlink itself
+(or list its name in `SYNC_EXCLUDE`) so it stops being reported.
+
+- **Bind mount on the host**, in place of the link. The share then contains a
+  real directory, Docker binds `SYNC_DIR` recursively so the container sees
+  it, and Samba shows it too (Samba hides links that leave the share):
+
+  ```bash
+  sudo rm /mnt/storage/share/photos            # the symlink
+  sudo mkdir /mnt/storage/share/photos
+  sudo mount --bind /mnt/photos /mnt/storage/share/photos
+  echo '/mnt/photos  /mnt/storage/share/photos  none  bind  0 0' | sudo tee -a /etc/fstab
+  ```
+
+- **Extra volume in the compose override** (`docker-compose.override.yml` in
+  `/opt/redundanet/docker`, preserved by `redundanet update`), then recreate
+  the client with the `--no-deps` command above:
+
+  ```yaml
+  services:
+    tahoe-client:
+      volumes:
+        - /mnt/photos:/data/sync/photos:ro
+  ```
+
+Links to single files: use a hard link (same filesystem) or bind-mount the
+file the same way.
 
 ## Restoring
 
@@ -174,3 +221,15 @@ or restore from a *different* node, share the alias capability with that node
   sync fires may be archived **truncated in that snapshot**; the next cycle
   archives the complete version. Snapshots make this self-healing, but for a
   guaranteed-consistent snapshot, pause writes for one sync interval.
+- **Encoding changes** (`network.tahoe` in the manifest): unchanged files
+  would keep their old k-of-n in every new snapshot forever, because the
+  backupdb reuses their capabilities. So before each run the sync forgets the
+  backupdb rows recorded at another encoding than the one the client node is
+  running (its `tahoe.cfg`, applied when the container is recreated by
+  `redundanet update`), and that run re-uploads exactly those files at the
+  new parameters. It happens once, the log says `backupdb: forgot N files
+  ...`, and older snapshots keep the encoding they were made with. On a large
+  share that first run is a full re-upload; set `SYNC_REENCODE=false` to
+  postpone it.
+- `SYNC_EXCLUDE` takes comma-separated globs matched against file and
+  directory **names** (not paths), like `tahoe backup --exclude`.

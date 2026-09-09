@@ -18,6 +18,17 @@ Environment:
   REDUNDANET_SYNC_ALIAS     tahoe alias for the backups (default "backups")
   REDUNDANET_SYNC_TIMEOUT   per-run ceiling in seconds (default 21600 = 6h;
                             large initial syncs are legitimately slow)
+  REDUNDANET_SYNC_EXCLUDE   comma-separated glob patterns matched against file
+                            and directory names, passed to tahoe backup as
+                            --exclude (default none)
+  REDUNDANET_SYNC_REENCODE  "true" (default) to forget backupdb entries made
+                            at an older k-of-n before each run, so the files
+                            are re-uploaded at the node's current encoding
+
+Symlinks and special files are skipped by tahoe backup itself (it has no
+option to follow them); the run still succeeds and the skipped paths are
+logged. Anything a symlink points at outside the sync directory is invisible
+in the container anyway: mount it (docs/nas-backup.md).
 
 Snapshots accumulate on purpose (oops/ransomware protection); pruning old
 Archives/ is a deliberate future feature tied to the lease/GC policy work.
@@ -26,15 +37,23 @@ Archives/ is a deliberate future feature tied to the lease/GC policy work.
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from redundanet.core.quota import node_encoding
 from redundanet.monitor.usage import USAGE_FILE, load_usage_file, over_allocation
+from redundanet.storage.backupdb import BACKUPDB_FILE, prune_stale
 
 NODE_DIR = "/var/lib/tahoe-client"
+TAHOE_CFG = Path(NODE_DIR) / "tahoe.cfg"
+# tahoe backup's exit status when the snapshot was made but entries were
+# skipped (symlinks, special files, unreadable paths).
+EXIT_SKIPPED = 2
+MAX_SKIPPED_LOGGED = 20
 # Give the client time to connect to the grid after a (re)start before the
 # first backup attempt (same pattern as lease_renew.sh).
 STARTUP_DELAY = 120
@@ -51,6 +70,8 @@ class SyncConfig:
     sync_dir: str
     alias: str
     timeout: int
+    exclude: list[str] = field(default_factory=list)
+    reencode: bool = True
 
 
 def _int_env(environ: dict[str, str], name: str, default: int) -> int:
@@ -76,6 +97,12 @@ def parse_config(environ: dict[str, str]) -> SyncConfig:
         # backupdb records completed files), but killing a run mid-file
         # wastes work — so the ceiling is generous.
         timeout=_int_env(environ, "REDUNDANET_SYNC_TIMEOUT", 21600),  # 6h
+        exclude=[
+            pattern.strip()
+            for pattern in environ.get("REDUNDANET_SYNC_EXCLUDE", "").split(",")
+            if pattern.strip()
+        ],
+        reencode=environ.get("REDUNDANET_SYNC_REENCODE", "true").lower() != "false",
     )
 
 
@@ -138,19 +165,75 @@ def quota_blocks(usage_file: Path = USAGE_FILE) -> bool:
     return True
 
 
+def forget_stale_encoding(
+    config: SyncConfig, tahoe_cfg: Path = TAHOE_CFG, db_path: Path = BACKUPDB_FILE
+) -> None:
+    """Before a run: drop backupdb rows made at another k-of-n than the node's.
+
+    The comparison is against the running node's ``tahoe.cfg``, not the
+    manifest: Tahoe applies a new encoding only when the container is
+    recreated, so this fires exactly once, at the first run after that, and
+    can never re-upload at an encoding the node cannot produce.
+    """
+    if not config.reencode:
+        return
+    encoding = node_encoding(tahoe_cfg)
+    if encoding is None:
+        log(f"cannot read the node's encoding from {tahoe_cfg}; keeping the backupdb as is")
+        return
+    try:
+        pruned = prune_stale(db_path, *encoding)
+    except sqlite3.Error as e:  # locked or damaged: the backup run matters more
+        log(f"backupdb: cannot prune ({e}); keeping it as is for this run")
+        return
+    if pruned:
+        log(
+            f"backupdb: forgot {pruned.files} files and {pruned.directories} directories "
+            f"made at an older encoding; re-uploading them at {encoding[0]}-of-{encoding[1]}"
+        )
+
+
+def skipped_paths(stderr: str) -> list[str]:
+    """The entries tahoe backup refused, from its stderr warnings, e.g.
+    ``WARNING: cannot backup symlink 'photos'``."""
+    return [
+        line.strip()[len("WARNING: ") :]
+        for line in stderr.splitlines()
+        if line.strip().startswith("WARNING: ")
+    ]
+
+
+def backup_args(config: SyncConfig) -> list[str]:
+    args = ["backup"]
+    for pattern in config.exclude:
+        args.append(f"--exclude={pattern}")
+    return [*args, config.sync_dir, f"{config.alias}:"]
+
+
 def run_backup(config: SyncConfig, run=run_tahoe) -> bool:
-    """One incremental backup pass. Returns True on success."""
+    """One incremental backup pass. Returns True when a snapshot was made."""
     if not has_content(config.sync_dir):
         log(f"{config.sync_dir} is missing or empty; nothing to back up")
         return True
     started = time.monotonic()
-    result = run(["backup", config.sync_dir, f"{config.alias}:"], timeout=config.timeout)
+    result = run(backup_args(config), timeout=config.timeout)
     elapsed = int(time.monotonic() - started)
-    if result.returncode != 0:
+    if result.returncode not in (0, EXIT_SKIPPED):
         log(f"backup FAILED after {elapsed}s (will retry next cycle): {result.stderr.strip()}")
         return False
     # tahoe backup summarizes what it did on stdout's last line.
     summary = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else "done"
+    if result.returncode == EXIT_SKIPPED:
+        # The snapshot exists and Latest points at it; some entries were left
+        # out (symlinks and special files are never backed up, unreadable
+        # paths cannot be). Name them so the operator can mount or exclude.
+        skipped = skipped_paths(result.stderr)
+        log(f"backup ok in {elapsed}s with {len(skipped)} skipped: {summary}")
+        for entry in skipped[:MAX_SKIPPED_LOGGED]:
+            log(f"  skipped: {entry}")
+        if len(skipped) > MAX_SKIPPED_LOGGED:
+            log(f"  ... and {len(skipped) - MAX_SKIPPED_LOGGED} more")
+        return True
     log(f"backup ok in {elapsed}s: {summary}")
     return True
 
@@ -167,6 +250,7 @@ def main() -> None:
     while True:
         try:
             if not quota_blocks() and ensure_alias(config.alias):
+                forget_stale_encoding(config)
                 run_backup(config)
         except subprocess.TimeoutExpired:
             log("backup timed out; will retry next cycle")
