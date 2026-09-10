@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,40 @@ Pinger = Callable[[str], "float | None"]
 CensusFetcher = Callable[[str], "dict[str, Any] | None"]
 # A usage fetcher takes a VPN IP and returns a client node's /usage payload, or None.
 UsageFetcher = Callable[[str], "dict[str, Any] | None"]
+
+
+class ThrottledFetcher:
+    """Wrap a fetcher so each address is asked again only after ``ttl`` seconds.
+
+    The collector runs every minute, but a census is a few megabytes per
+    storage node and the node itself only recomputes it every few minutes, so
+    fetching it per collection wastes the VPN and the hub. In between, the
+    last answer is returned as if fetched: it is at most ``ttl`` old, and
+    shares are immutable, so it stays accurate. A failed fetch is not cached:
+    the next collection asks again, so an outage is seen within a minute.
+    """
+
+    def __init__(
+        self,
+        fetch: CensusFetcher,
+        ttl: float,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self._fetch = fetch
+        self._ttl = ttl
+        self._clock = clock or time.monotonic
+        self._last: dict[str, tuple[float, dict[str, Any]]] = {}
+
+    def __call__(self, address: str) -> dict[str, Any] | None:
+        now = self._clock()
+        hit = self._last.get(address)
+        if hit is not None and now - hit[0] < self._ttl:
+            return hit[1]
+        payload = self._fetch(address)
+        if payload:
+            self._last[address] = (now, payload)
+        return payload
+
 
 STALE_SYNC_SECONDS = 3600
 
