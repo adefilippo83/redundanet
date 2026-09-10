@@ -129,7 +129,9 @@ def _availability_line(status: NetworkStatus) -> str:
     return f"<p>{', '.join(parts)}.</p>"
 
 
-def _usage_cell(percent: float | None, used: int | None, source: str) -> str:
+def _usage_cell(
+    percent: float | None, used: int | None, source: str, in_progress_files: int = 0
+) -> str:
     if used is None or percent is None:
         return '<span style="color:var(--text-2)">no report yet</span>'
     color = (
@@ -137,9 +139,15 @@ def _usage_cell(percent: float | None, used: int | None, source: str) -> str:
     )
     width = min(percent, 100.0)
     cached = ' <span style="color:var(--text-2)">(cached)</span>' if source == "cached" else ""
+    # A backup still running has uploaded these but linked nothing yet.
+    uploading = (
+        f' <span style="color:var(--text-2)">({in_progress_files:,} files uploading)</span>'
+        if in_progress_files
+        else ""
+    )
     return (
         f'<span class="meter" role="img" aria-label="{percent}% of allocation used">'
-        f'<i style="width:{width}%;background:{color}"></i></span> {percent}%{cached}'
+        f'<i style="width:{width}%;background:{color}"></i></span> {percent}%{cached}{uploading}'
     )
 
 
@@ -167,7 +175,7 @@ def _members_table(status: NetworkStatus) -> str:
             f"<td>{contributed}</td>"
             f"<td>{_esc(format_size(quota.allocation_bytes))}</td>"
             f"<td>{used}</td>"
-            f"<td>{_usage_cell(quota.percent, quota.used_bytes, quota.usage_source)}</td>"
+            f"<td>{_usage_cell(quota.percent, quota.used_bytes, quota.usage_source, quota.in_progress_files)}</td>"
             "</tr>"
         )
     if not rows:

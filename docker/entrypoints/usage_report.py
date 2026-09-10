@@ -34,6 +34,7 @@ from typing import Any
 
 from redundanet.core.manifest import read_manifest
 from redundanet.monitor.usage import USAGE_FILE, USAGE_PORT, usage_payload, write_usage_file
+from redundanet.storage.backupdb import BACKUPDB_FILE, recorded_caps
 from redundanet.storage.inventory import all_file_caps, grid_footprint
 
 NODE_DIR = "/var/lib/tahoe-client"
@@ -71,10 +72,21 @@ def enforce_override(environ: dict[str, str]) -> bool | None:
     return None
 
 
-def measure(node_name: str, environ: dict[str, str], run=run_tahoe) -> dict[str, Any]:
-    footprint = grid_footprint(all_file_caps(run, log=log))
+def measure(
+    node_name: str, environ: dict[str, str], run=run_tahoe, backupdb: Path = BACKUPDB_FILE
+) -> dict[str, Any]:
+    """Everything this client put on the grid: the alias trees, plus what a
+    running backup has uploaded but not linked yet (its backupdb rows)."""
+    linked = all_file_caps(run, log=log)
+    reachable = set(linked)
+    pending = [cap for cap in recorded_caps(backupdb) if cap not in reachable]
+    footprint = grid_footprint([*linked, *pending])
     payload = usage_payload(
-        node_name, load_manifest(), footprint, enforce_override=enforce_override(environ)
+        node_name,
+        load_manifest(),
+        footprint,
+        enforce_override=enforce_override(environ),
+        in_progress=grid_footprint(pending),
     )
     try:
         write_usage_file(payload, USAGE_FILE)
@@ -110,7 +122,8 @@ def meter_loop(node_name: str, interval: int) -> None:
             Handler.latest = payload
             log(
                 f"{payload['member']}: {payload['used_bytes']} of {payload['allocation_bytes']} "
-                f"bytes used ({payload['files']} files, {payload['encoding']}, "
+                f"bytes used ({payload['files']} files, "
+                f"{payload['in_progress_files']} uploading, {payload['encoding']}, "
                 f"enforce={payload['enforce']})"
             )
         except subprocess.TimeoutExpired:

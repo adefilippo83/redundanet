@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from redundanet.core.quota import MemberQuota, compute_quotas, format_size
+from redundanet.monitor.introducer import Announcement, identity_notes, summarize_storage
 
 # A pinger takes a VPN IP and returns the RTT in milliseconds, or None.
 Pinger = Callable[[str], "float | None"]
@@ -86,7 +87,8 @@ class GridStatus:
     shares_happy: int
     shares_total: int
     storage_expected: int  # manifest nodes with the storage role
-    storage_connected: int | None  # announced to the introducer; None = unknown
+    storage_connected: int | None  # distinct servers announced to the introducer; None = unknown
+    storage_identities: int | None = None  # announcements in total; > connected means churn
 
     @property
     def uploads_possible(self) -> bool | None:
@@ -339,12 +341,30 @@ def collect_status(
     census_cache_dir: Path | None = None,
     fetch_usage: UsageFetcher | None = None,
     usage_cache_dir: Path | None = None,
+    announcements: list[Announcement] | None = None,
 ) -> NetworkStatus:
-    """Build the status model from the raw inputs."""
+    """Build the status model from the raw inputs.
+
+    ``storage_connected`` is the introducer's announcement count; when the
+    parsed ``announcements`` are given they take precedence, counting
+    distinct servers (a node that recreated its volumes announces a new
+    identity each time, and the introducer never forgets the old ones).
+    """
     now = now or datetime.now(UTC)
     network = manifest.get("network", {}) or {}
     tahoe = network.get("tahoe", {}) or {}
     notes: list[str] = []
+    storage_identities: int | None = None
+    if announcements is not None:
+        storage_names = [
+            str(n.get("name"))
+            for n in manifest.get("nodes", []) or []
+            if "tahoe_storage" in (n.get("roles") or [])
+        ]
+        identities = summarize_storage(announcements, storage_names)
+        storage_connected = identities.servers
+        storage_identities = identities.identities
+        notes.extend(identity_notes(identities))
 
     nodes: list[NodeStatus] = []
     for raw in manifest.get("nodes", []) or []:
@@ -370,6 +390,7 @@ def collect_status(
         shares_total=int(tahoe.get("shares_total", 10)),
         storage_expected=sum(1 for n in nodes if "tahoe_storage" in n.roles),
         storage_connected=storage_connected,
+        storage_identities=storage_identities,
     )
 
     # --- overall verdict -------------------------------------------------

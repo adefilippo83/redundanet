@@ -195,6 +195,7 @@ class MemberQuota:
     allocation_bytes: int
     used_bytes: int | None  # None: no client of this member has reported usage
     files: int = 0
+    in_progress_files: int = 0  # uploaded by a backup still running, not yet in a snapshot
     usage_source: str = "none"  # "live" | "cached" | "none"
     overstated: list[str] = field(default_factory=list)  # nodes whose disk is smaller than claimed
 
@@ -251,6 +252,7 @@ def compute_quotas(
 
         used: int | None = None
         files = 0
+        in_progress = 0
         source = "none"
         for node in nodes:
             report = usage.get(str(node.get("name")))
@@ -258,6 +260,7 @@ def compute_quotas(
                 continue
             used = (used or 0) + int(report.get("used_bytes", 0))
             files += int(report.get("files", 0))
+            in_progress += int(report.get("in_progress_files", 0) or 0)
             report_source = str(report.get("source", "live"))
             if source == "none" or (report_source == "cached" and source == "live"):
                 source = report_source if source == "none" else "cached"
@@ -271,6 +274,7 @@ def compute_quotas(
                 allocation_bytes=allocation_bytes(effective, needed, total, reserve),
                 used_bytes=used,
                 files=files,
+                in_progress_files=in_progress,
                 usage_source=source,
                 overstated=overstated,
             )

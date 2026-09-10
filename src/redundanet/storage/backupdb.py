@@ -49,6 +49,34 @@ def _stale(cap: str | bytes, encoding: tuple[int, int]) -> bool:
     return params is not None and params != encoding
 
 
+def recorded_caps(db_path: Path) -> list[str]:
+    """Every file capability ``tahoe backup`` has uploaded so far, linked into
+    a snapshot or not.
+
+    A run links its snapshot only when it completes, so during a long first
+    backup nothing is reachable from any alias although the files are on the
+    grid; these rows are the only account of them. Empty when there is no
+    database or it cannot be read right now (a run may hold it).
+    """
+    if not db_path.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(db_path, timeout=5)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute("SELECT filecap FROM caps").fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [
+        (cap.decode("ascii", "replace") if isinstance(cap, bytes) else str(cap))
+        for (cap,) in rows
+        if cap
+    ]
+
+
 def prune_stale(db_path: Path, needed: int, total: int) -> Pruned | None:
     """Delete the rows recorded at an encoding other than ``needed``-of-``total``.
 

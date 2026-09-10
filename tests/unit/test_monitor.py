@@ -371,6 +371,21 @@ class TestQuotas:
         assert data["quotas"][0]["percent"] == 120.0
         assert data["quotas"][0]["over"] is True
 
+    def test_backup_in_progress_is_visible(self):
+        """A first backup links nothing until it completes; the meter reports
+        what it uploaded so far and the page says so."""
+
+        def usage(ip: str):
+            if ip != "10.100.0.10":
+                return None
+            return {"used_bytes": 3 * 10**9, "files": 64000, "in_progress_files": 64000}
+
+        status = self.collect(fetch_usage=usage)
+        ale = next(q for q in status.quotas if q.member == "ale")
+        assert ale.in_progress_files == 64000
+        assert status.to_dict()["quotas"][0]["in_progress_files"] == 64000
+        assert "64,000 files uploading" in render_html(status)
+
     def test_cached_report_used_when_node_silent(self, tmp_path: Path):
         cache = tmp_path / "usage"
         self.collect(

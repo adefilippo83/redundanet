@@ -29,6 +29,7 @@ import yaml
 
 from redundanet.core.manifest import locate_manifest
 from redundanet.monitor.census import CENSUS_PORT
+from redundanet.monitor.introducer import Announcement, parse_announcements
 from redundanet.monitor.render import render_html
 from redundanet.monitor.status import (
     ThrottledFetcher,
@@ -48,6 +49,7 @@ ROLLUP_PATH = Path("/var/lib/tahoe-introducer/monitor/uptime-hourly.jsonl")
 CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
 USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
+INTRODUCER_PAGE = "http://127.0.0.1:4458/"
 INTERVAL = 60
 # A census is megabytes on a big node and the node recomputes it every few
 # minutes anyway; ask each node this often, not every collection.
@@ -84,6 +86,17 @@ def storage_server_count() -> int | None:
         return int((data.get("announcement_summary") or {}).get("storage", 0))
     except Exception:
         return None
+
+
+def introducer_announcements() -> list[Announcement] | None:
+    """Every announcement the introducer holds, from its status page; None
+    when the page cannot be read (the JSON count above is the fallback)."""
+    try:
+        with urllib.request.urlopen(INTRODUCER_PAGE, timeout=5) as response:
+            page = response.read().decode("utf-8", "replace")
+    except Exception:
+        return None
+    return parse_announcements(page)
 
 
 def fetch_census(vpn_ip: str) -> dict | None:
@@ -163,6 +176,7 @@ def collect_once(node_name: str) -> None:
         census_cache_dir=CENSUS_CACHE_DIR,
         fetch_usage=fetch_usage,
         usage_cache_dir=USAGE_CACHE_DIR,
+        announcements=introducer_announcements(),
     )
     append_sample(HISTORY_PATH, status)
     uptimes = uptime_stats(HISTORY_PATH, timedelta(hours=24))

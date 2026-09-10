@@ -269,6 +269,38 @@ re-registered from scratch. Copy it off the machine:
 cp /opt/redundanet/docker/secrets/gpg_private_key.asc /somewhere/safe/
 ```
 
+### The volumes are the node (do not recreate them)
+
+Two Docker volumes hold everything the node is on the grid, and nothing in
+them can be regenerated:
+
+- `redundanet_tahoe-storage`: the storage server's identity (its server id,
+  announced to the introducers) and its leases.
+- `redundanet_tahoe-client`: the client's identity, its aliases (the pointers
+  to everything it ever uploaded, including every backup snapshot), the
+  backup database and the convergence secret.
+
+Recreating them does not delete any data from the grid, it disconnects you
+from it: the storage node comes back as a *new* server (the old one stays
+listed on the introducers and counts twice), the client has no aliases so
+the backup history is unreachable, and the next backup sync starts from
+zero and, with a new convergence secret, re-uploads the whole share as
+brand new objects. The status page shows such a node at zero usage until
+that run completes, and the previous attempt's objects stay on the grid as
+garbage until their leases expire. The entrypoints log a warning when they
+find themselves creating a new identity.
+
+So: never `docker compose down -v`, never `docker volume rm` these, and
+always run compose with the project name and the env file:
+
+```bash
+cd /opt/redundanet/docker && docker compose -p redundanet --env-file /opt/redundanet/.env ...
+```
+
+A bare `docker compose up -d` in that directory creates a second project
+named `docker` with empty volumes, i.e. a brand new node. `redundanet
+update` and `redundanet network leave` keep the volumes.
+
 ## Optional features
 
 - **SFTP** (file access via sftp/sshfs): set `SFTP_ENABLED=true` in

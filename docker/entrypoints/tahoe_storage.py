@@ -89,6 +89,26 @@ def get_introducer_furls() -> list[str]:
     return furls
 
 
+def existing_share_count(shares_dir: Path, limit: int = 1000) -> int:
+    """How many storage-index directories the shares disk already holds (up
+    to ``limit``: enough to tell "data is here" without walking a big disk)."""
+    if not shares_dir.is_dir():
+        return 0
+    count = 0
+    try:
+        for prefix in shares_dir.iterdir():
+            if not prefix.is_dir() or prefix.name == "incoming":
+                continue
+            for si_dir in prefix.iterdir():
+                if si_dir.is_dir():
+                    count += 1
+                    if count >= limit:
+                        return count
+    except OSError:
+        return count
+    return count
+
+
 def main():
     """Set up the storage node configuration, then exit.
 
@@ -179,6 +199,19 @@ def main():
 
     if not storage.is_configured():
         logger.info("Creating new Tahoe storage node", node=node_name)
+        existing = existing_share_count(storage_data_dir / "shares")
+        if existing:
+            # The node directory (identity) is gone but the shares disk is not:
+            # the tahoe-storage volume was recreated. The old server id stays
+            # announced on the introducers and the network sees two servers.
+            logger.warning(
+                "New storage identity while the shares disk already holds data: the "
+                "tahoe-storage volume was recreated (docker compose down -v, a deleted "
+                "volume, or compose run without -p redundanet). This node now announces "
+                "a new server id; keep the volumes from now on",
+                node=node_name,
+                existing_objects=existing,
+            )
         storage.create_node()
     else:
         logger.info("Using existing Tahoe storage configuration")

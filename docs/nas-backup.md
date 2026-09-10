@@ -233,3 +233,11 @@ or restore from a *different* node, share the alias capability with that node
   postpone it.
 - `SYNC_EXCLUDE` takes comma-separated globs matched against file and
   directory **names** (not paths), like `tahoe backup --exclude`.
+- **A backup in progress is invisible on the grid until it completes**:
+  `tahoe backup` links the snapshot into `backups:` only at the end of the
+  run. A first backup of a share with many small files takes hours (roughly
+  one object per second, one per file and per directory). The usage meter
+  counts the files the run has already uploaded from the backup database,
+  and the status page shows them as "N files uploading". A restart resumes
+  from the backup database; recreating the `tahoe-client` volume does not
+  (see "The volumes are the node" in the installation guide).

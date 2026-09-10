@@ -104,6 +104,16 @@ class TestComputeQuotas:
     def test_node_without_member_is_its_own_member(self):
         assert compute_quotas(manifest([storage("n1", "500GB")]))[0].member == "n1"
 
+    def test_in_progress_files_summed_per_member(self):
+        m = manifest([storage("n1", "500GB", "ale"), storage("n2", "500GB", "ale")])
+        usage = {
+            "n1": {"used_bytes": 10, "files": 1, "in_progress_files": 40000, "source": "live"},
+            "n2": {"used_bytes": 10, "files": 1, "source": "live"},  # older meter: no field
+        }
+        (quota,) = compute_quotas(m, usage, {})
+        assert quota.in_progress_files == 40000
+        assert quota.files == 2
+
     def test_usage_summed_over_member_nodes_and_over_flag(self):
         m = manifest(
             [storage("n1", "500GB", "ale"), storage("n2", "500GB", "ale")], quota={"reserve": 0}
