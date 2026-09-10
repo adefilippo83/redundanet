@@ -87,6 +87,8 @@ services:
       - REDUNDANET_SHARES_TOTAL=${SHARES_TOTAL:-10}
       - REDUNDANET_EXPIRE_ENABLED=${EXPIRE_ENABLED:-true}
       - REDUNDANET_LEASE_DURATION=${LEASE_DURATION:-90 days}
+      # Share census for the hub's replication view: recomputed this often, served from memory.
+      - REDUNDANET_CENSUS_INTERVAL=${CENSUS_INTERVAL:-300}
     volumes:
       - tahoe-storage:/var/lib/tahoe-storage
       - storage-data:/data/storage

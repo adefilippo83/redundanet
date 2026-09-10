@@ -137,6 +137,15 @@ services manually, recreate them as a group, not individually.
   days kept); the 7-day and 30-day figures come from hourly rollups of those
   samples (`monitor/uptime-hourly.jsonl`, 90 days kept, a few hundred KB).
   Both survive deploys; the long windows fill up from the day they shipped.
+- **Replication census**: every storage node walks its shares tree on a
+  schedule (`CENSUS_INTERVAL` in its `.env`, default 300s) and serves the
+  result from memory at `/census` on its VPN address, so the answer is
+  instant whatever the object count. The hub asks each node again only
+  every 5 minutes (20s timeout; a big node's census is a few megabytes) and
+  reuses the last answer in between, so the replication tile lags an
+  encoding change or a large upload by up to 10 minutes. Pings, and the
+  uptime they feed, stay at one minute. A node whose census cannot be
+  fetched keeps its last inventory on the page, marked with its age.
 - **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
   manifest on purpose. Fly's edge proxy terminates every TCP connection, so
   tincd on the hub sees the proxy's internal address (172.16.x.x) as the

@@ -31,6 +31,7 @@ from redundanet.core.manifest import locate_manifest
 from redundanet.monitor.census import CENSUS_PORT
 from redundanet.monitor.render import render_html
 from redundanet.monitor.status import (
+    ThrottledFetcher,
     append_sample,
     collect_status,
     rollup_hours,
@@ -48,6 +49,10 @@ CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
 USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
 INTERVAL = 60
+# A census is megabytes on a big node and the node recomputes it every few
+# minutes anyway; ask each node this often, not every collection.
+CENSUS_REFRESH = 300
+CENSUS_TIMEOUT = 20  # seconds: a 2 MB answer over a home uplink takes a few
 
 
 def ping(vpn_ip: str) -> float | None:
@@ -87,11 +92,14 @@ def fetch_census(vpn_ip: str) -> dict | None:
         return None
     try:
         with urllib.request.urlopen(
-            f"http://{vpn_ip}:{CENSUS_PORT}/census", timeout=5
+            f"http://{vpn_ip}:{CENSUS_PORT}/census", timeout=CENSUS_TIMEOUT
         ) as response:
             return json.load(response)
     except Exception:
         return None
+
+
+census_fetcher = ThrottledFetcher(fetch_census, ttl=CENSUS_REFRESH)
 
 
 def fetch_usage(vpn_ip: str) -> dict | None:
@@ -99,9 +107,7 @@ def fetch_usage(vpn_ip: str) -> dict | None:
     if not vpn_ip:
         return None
     try:
-        with urllib.request.urlopen(
-            f"http://{vpn_ip}:{USAGE_PORT}/usage", timeout=5
-        ) as response:
+        with urllib.request.urlopen(f"http://{vpn_ip}:{USAGE_PORT}/usage", timeout=5) as response:
             return json.load(response)
     except Exception:
         return None
@@ -153,7 +159,7 @@ def collect_once(node_name: str) -> None:
         storage_connected=storage_server_count(),
         furl_present=FURL_PATH.exists() and FURL_PATH.stat().st_size > 0,
         manifest_synced_at=manifest_synced_at(),
-        fetch_census=fetch_census,
+        fetch_census=census_fetcher,
         census_cache_dir=CENSUS_CACHE_DIR,
         fetch_usage=fetch_usage,
         usage_cache_dir=USAGE_CACHE_DIR,

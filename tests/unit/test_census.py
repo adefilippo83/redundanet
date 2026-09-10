@@ -5,9 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from redundanet.monitor.census import census_payload, disk_used_bytes, list_storage_indexes
+from redundanet.monitor.census import (
+    census_payload,
+    disk_used_bytes,
+    list_storage_indexes,
+    scan_shares,
+)
 from redundanet.monitor.render import render_html
-from redundanet.monitor.status import collect_status, load_census, save_census
+from redundanet.monitor.status import ThrottledFetcher, collect_status, load_census, save_census
 
 NOW = datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC)
 
@@ -21,6 +26,79 @@ def make_shares(tmp_path: Path, indexes: dict[str, list[int]]) -> Path:
         for num in sharenums:
             (si_dir / str(num)).write_bytes(b"x" * 100)
     return shares
+
+
+class TestScanShares:
+    def test_one_pass_gives_indexes_and_bytes(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0, 1], "bbindex2": [0]})
+        assert scan_shares(shares) == (["aaindex1", "bbindex2"], 300)
+
+    def test_incoming_counts_bytes_but_never_indexes(self, tmp_path: Path):
+        """Tahoe stages uploads in flight under incoming/: they occupy the disk
+        but are not shares anyone can read yet."""
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        staging = shares / "incoming" / "zz" / "zzindex9"
+        staging.mkdir(parents=True)
+        (staging / "0").write_bytes(b"y" * 50)
+        assert scan_shares(shares) == (["aaindex1"], 150)
+
+    def test_symlinks_and_stray_files_are_ignored(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        (shares / "aa" / "aaindex1" / "link").symlink_to(shares / "aa" / "aaindex1" / "0")
+        (shares / "stray.txt").write_bytes(b"z" * 10)
+        assert scan_shares(shares) == (["aaindex1"], 100)
+
+    def test_payload_carries_computed_at(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        payload = census_payload("n1", shares, now=NOW)
+        assert payload["computed_at"] == "2026-08-10T12:00:00+00:00"
+        assert payload["object_count"] == 1 and payload["disk_used_bytes"] == 100
+
+
+class TestThrottledFetcher:
+    def test_asks_again_only_after_ttl(self):
+        calls: list[str] = []
+        clock = [0.0]
+
+        def fetch(addr: str) -> dict:
+            calls.append(addr)
+            return {"storage_indexes": [addr, str(len(calls))]}
+
+        fetcher = ThrottledFetcher(fetch, ttl=300, clock=lambda: clock[0])
+        first = fetcher("10.0.0.1")
+        clock[0] = 120
+        assert fetcher("10.0.0.1") is first  # served from memory
+        clock[0] = 301
+        assert fetcher("10.0.0.1") is not first
+        assert calls == ["10.0.0.1", "10.0.0.1"]
+
+    def test_addresses_are_independent(self):
+        fetcher = ThrottledFetcher(lambda a: {"node": a}, ttl=300, clock=lambda: 0.0)
+        assert fetcher("a")["node"] == "a" and fetcher("b")["node"] == "b"
+
+    def test_failure_is_not_cached(self):
+        answers = iter([None, {"ok": 1}])
+        calls = 0
+
+        def fetch(_addr: str):
+            nonlocal calls
+            calls += 1
+            return next(answers)
+
+        fetcher = ThrottledFetcher(fetch, ttl=300, clock=lambda: 0.0)
+        assert fetcher("a") is None
+        assert fetcher("a") == {"ok": 1}  # asked again at once, outage seen immediately
+        assert calls == 2
+
+    def test_stale_answer_kept_over_a_failed_refresh(self):
+        """Between refreshes the last answer stands; a failed refresh returns
+        None so the collector applies its own unreachable handling."""
+        answers = iter([{"v": 1}, None])
+        clock = [0.0]
+        fetcher = ThrottledFetcher(lambda _a: next(answers), ttl=10, clock=lambda: clock[0])
+        assert fetcher("a") == {"v": 1}
+        clock[0] = 11
+        assert fetcher("a") is None
 
 
 class TestCensus:
