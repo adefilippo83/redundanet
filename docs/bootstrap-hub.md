@@ -137,6 +137,13 @@ services manually, recreate them as a group, not individually.
   days kept); the 7-day and 30-day figures come from hourly rollups of those
   samples (`monitor/uptime-hourly.jsonl`, 90 days kept, a few hundred KB).
   Both survive deploys; the long windows fill up from the day they shipped.
+- **Storage servers tile**: counts distinct storage nicknames announced to
+  the introducer, read from the introducer's status page (its JSON view only
+  has totals). A node whose `tahoe-storage` volume was recreated announces a
+  new server id while the introducer keeps the old one forever; the page
+  notes such a node ("has announced N storage identities ... volumes were
+  recreated") and a nickname that is in no manifest node. Restarting the
+  introducer drops the stale identities.
 - **Replication census**: every storage node walks its shares tree on a
   schedule (`CENSUS_INTERVAL` in its `.env`, default 300s) and serves the
   result from memory at `/census` on its VPN address, so the answer is

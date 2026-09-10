@@ -134,6 +134,16 @@ class TestUsagePayload:
         payload = usage_payload("n1", manifest(), Footprint(0, 0, 0), enforce_override=False)
         assert payload["enforce"] is False
 
+    def test_in_progress_defaults_to_zero_and_is_reported_separately(self):
+        payload = usage_payload("n1", manifest(), Footprint(20, 10, 1))
+        assert (payload["in_progress_files"], payload["in_progress_bytes"]) == (0, 0)
+        payload = usage_payload(
+            "n1", manifest(), Footprint(120, 60, 6), in_progress=Footprint(100, 50, 5)
+        )
+        # used_bytes is the whole footprint; in_progress is the unlinked part of it
+        assert payload["used_bytes"] == 120 and payload["files"] == 6
+        assert (payload["in_progress_files"], payload["in_progress_bytes"]) == (5, 100)
+
     def test_unknown_manifest_means_no_allocation(self):
         payload = usage_payload("n1", {}, Footprint(0, 0, 0))
         assert payload["allocation_bytes"] == 0

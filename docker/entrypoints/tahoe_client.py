@@ -204,6 +204,16 @@ def main():
 
     if not client.is_configured():
         logger.info("Creating new Tahoe client", node=node_name)
+        # A fresh client has no aliases, no backupdb and a new convergence
+        # secret: the next backup sync starts from zero and re-uploads the
+        # whole share as new objects. Fine on a first start, costly on a node
+        # that already backed up (its tahoe-client volume was recreated).
+        logger.warning(
+            "New client identity: aliases, backup history and the convergence secret "
+            "start empty. If this node backed up before, its tahoe-client volume was "
+            "recreated and the next sync re-uploads everything; keep the volumes",
+            node=node_name,
+        )
         client.create_node()
     else:
         logger.info("Using existing Tahoe client configuration")

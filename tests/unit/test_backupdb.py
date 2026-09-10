@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from redundanet.storage.backupdb import Pruned, prune_stale
+from redundanet.storage.backupdb import Pruned, prune_stale, recorded_caps
 
 # Tahoe-LAFS 1.20 backupdb schema, version 2 (allmydata/scripts/backupdb.py).
 SCHEMA_V2 = """
@@ -106,3 +106,19 @@ class TestPruneStale:
         conn.commit()
         conn.close()
         assert prune_stale(db, 2, 4) == Pruned(files=1, directories=0)
+
+
+class TestRecordedCaps:
+    def test_every_uploaded_cap_linked_or_not(self, tmp_path: Path):
+        db = tmp_path / "backupdb.sqlite"
+        make_db(
+            db, files={"/a": chk(2, 4, "a"), "/b": chk(2, 4, "b"), "/t": b"URI:LIT:abcd"}, dirs={}
+        )
+        assert sorted(recorded_caps(db)) == sorted(
+            ["URI:CHK:a:hash:2:4:1000", "URI:CHK:b:hash:2:4:1000", "URI:LIT:abcd"]
+        )
+
+    def test_missing_or_broken_database_is_empty(self, tmp_path: Path):
+        assert recorded_caps(tmp_path / "absent.sqlite") == []
+        (tmp_path / "bad.sqlite").write_bytes(b"not a database")
+        assert recorded_caps(tmp_path / "bad.sqlite") == []

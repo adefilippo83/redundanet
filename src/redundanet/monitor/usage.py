@@ -27,18 +27,28 @@ def usage_payload(
     footprint: Footprint,
     now: datetime | None = None,
     enforce_override: bool | None = None,
+    in_progress: Footprint | None = None,
 ) -> dict[str, Any]:
-    """The JSON body served at /usage and written to USAGE_FILE."""
+    """The JSON body served at /usage and written to USAGE_FILE.
+
+    ``footprint`` is everything the member occupies, including uploads of a
+    backup still running (recorded in the backupdb, not yet linked into a
+    snapshot); ``in_progress`` is that unlinked part on its own, so the page
+    can say "N files uploading" instead of showing nothing for a day.
+    """
     now = now or datetime.now(UTC)
     member, allocation, settings = node_allocation(manifest, node_name)
     needed, total = encoding(manifest)
     enforce = settings.enforce if enforce_override is None else enforce_override
+    pending = in_progress or Footprint(0, 0, 0)
     return {
         "node": node_name,
         "member": member,
         "used_bytes": footprint.used_bytes,
         "data_bytes": footprint.data_bytes,
         "files": footprint.files,
+        "in_progress_files": pending.files,
+        "in_progress_bytes": pending.used_bytes,
         "allocation_bytes": allocation,
         "reserve": settings.reserve,
         "enforce": enforce,
