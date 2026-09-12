@@ -12,11 +12,12 @@ from redundanet.core.manifest import read_manifest
 from redundanet.core.quota import resolve_encoding
 from redundanet.storage.introducers import dedupe, introducer_furls_from_manifest
 from redundanet.storage.storage import TahoeStorage, TahoeStorageConfig
+from redundanet.vpn.traffic import STORAGE_TUB_PORT
 
 # Ports used inside the (shared) tinc network namespace. Introducer/storage/client
 # all live in the same netns when using `network_mode: service:tinc`, so these
 # must not collide.
-TUB_PORT = 3457
+TUB_PORT = STORAGE_TUB_PORT  # the port the storage traffic limits match on
 WEB_PORT = 4457
 
 

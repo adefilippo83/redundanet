@@ -19,6 +19,7 @@ from redundanet.utils.logging import get_logger, setup_logging
 from redundanet.vpn.gpg_tinc import gpg_public_to_tinc_pub, gpg_secret_to_tinc_priv
 from redundanet.vpn.peers import render_host_file, sync_peer_host_files, tinc_name
 from redundanet.vpn.tinc import TincConfig, TincManager
+from redundanet.vpn.traffic import parse_rate
 
 GPG_SECRET_PATH = Path("/run/secrets/gpg_private_key")
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
@@ -73,6 +74,32 @@ def gpg_secret_error(path: Path) -> str | None:
     return None
 
 
+def storage_limits(environ: dict[str, str], logger) -> tuple[str | None, str | None]:
+    """(STORAGE_RATE_IN, STORAGE_RATE_OUT) as tc rates, from the environment.
+
+    Applied by tinc-up to the storage port only (see redundanet.vpn.traffic).
+    A value tc would not understand is logged and ignored rather than
+    breaking the VPN; empty means unlimited."""
+    limits: list[str | None] = []
+    for key in ("REDUNDANET_STORAGE_RATE_IN", "REDUNDANET_STORAGE_RATE_OUT"):
+        raw = environ.get(key, "").strip()
+        rate = parse_rate(raw)
+        if raw and rate is None:
+            logger.warning(
+                "Ignoring invalid storage rate limit (use tc units, e.g. 20mbit or 500kbit)",
+                variable=key,
+                value=raw,
+            )
+        limits.append(rate)
+    if limits[0] or limits[1]:
+        logger.info(
+            "Storage traffic limits",
+            inbound=limits[0] or "unlimited",
+            outbound=limits[1] or "unlimited",
+        )
+    return limits[0], limits[1]
+
+
 def main() -> None:
     setup_logging(level=os.environ.get("REDUNDANET_LOG_LEVEL", "INFO"))
     logger = get_logger()
@@ -84,6 +111,7 @@ def main() -> None:
     manifest_repo = os.environ.get("REDUNDANET_MANIFEST_REPO", "")
     manifest_branch = os.environ.get("REDUNDANET_MANIFEST_BRANCH", "main")
     debug = os.environ.get("REDUNDANET_DEBUG", "false").lower() == "true"
+    rate_in, rate_out = storage_limits(dict(os.environ), logger)
 
     if not node_name:
         logger.error("REDUNDANET_NODE_NAME is required")
@@ -147,6 +175,8 @@ def main() -> None:
         port=self_port,
         connect_to=[],
         config_dir=TINC_CONFIG_DIR.parent,  # network_dir appends /redundanet
+        storage_rate_in=rate_in,
+        storage_rate_out=rate_out,
     )
     tinc = TincManager(config=config)
     network_dir = config.network_dir

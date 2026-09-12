@@ -38,6 +38,11 @@ services:
       - REDUNDANET_SYNC_INTERVAL=${SYNC_INTERVAL:-300}
       - REDUNDANET_DEBUG=${DEBUG:-false}
       - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Storage traffic limits on the VPN interface, storage port only (tc rates
+      # such as 20mbit or 500kbit; empty = unlimited). IN caps writes into this
+      # node's shares, OUT caps the shares it serves. See docs/configuration.md.
+      - REDUNDANET_STORAGE_RATE_IN=${STORAGE_RATE_IN:-}
+      - REDUNDANET_STORAGE_RATE_OUT=${STORAGE_RATE_OUT:-}
     volumes:
       - tinc-config:/etc/tinc/redundanet
       - manifest:/var/lib/redundanet/manifest

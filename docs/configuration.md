@@ -173,6 +173,37 @@ seconds it re-syncs the manifest repository, refreshes the Tinc peer host files
 membership changes reach running nodes without a restart. Set it via
 `SYNC_INTERVAL` in the compose `.env`.
 
+### Storage traffic limits
+
+| `.env` key | Default | Description |
+|------------|---------|-------------|
+| `STORAGE_RATE_IN` | unlimited | Cap on shares written into this node, e.g. `10mbit` |
+| `STORAGE_RATE_OUT` | unlimited | Cap on shares this node serves to others, e.g. `20mbit` |
+
+Both limit the **storage service only**: they are `tc` rules on the VPN
+interface matching the storage server's port (3457), applied by the
+generated `tinc-up` script every time the interface comes up. The node's own
+client (backups, restores, re-encoding), tinc, the census and the manifest
+sync are not limited. Values use tc's units: `500kbit`, `10mbit`, `1gbit`,
+bits per second. An invalid value is logged and ignored; a rule the kernel
+refuses is logged and the VPN still comes up.
+
+Why they exist: Tahoe and tinc have no bandwidth settings, and one member's
+large first backup writes its shares to almost every storage node at once.
+An upload completes at the pace of the slowest server it writes to, so the
+storage nodes' `STORAGE_RATE_IN` values are the grid's effective upload
+speed: a few nodes at `10mbit` hold any flood to roughly 1.25 MB/s of shares
+each. Inbound is policed (excess is dropped and the sender's TCP backs off),
+outbound is shaped (queued), which is the best Linux can do on the receiving
+side without extra virtual devices.
+
+Guidance: set `STORAGE_RATE_IN` to a quarter to a half of the line's
+download capacity and `STORAGE_RATE_OUT` to about two thirds of its upload
+capacity, so the household stays usable while the grid is busy. Apply with
+a recreate of the tinc stack (`redundanet update`, or the full force-recreate
+in the installation guide; tinc-up runs when the interface comes up). Check
+with `docker logs redundanet-tinc | grep STORAGE_RATE`.
+
 ### Deployment Settings (host CLI)
 
 The `redundanet network`/`storage` commands drive the docker-compose stack;
