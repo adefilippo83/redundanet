@@ -43,3 +43,40 @@ class TestGpgSecretError:
         message = tinc_entrypoint.gpg_secret_error(key)
         assert message is not None
         assert "EMPTY" in message
+
+
+class FakeLogger:
+    def __init__(self):
+        self.warnings: list[dict] = []
+        self.infos: list[dict] = []
+
+    def warning(self, msg, **kw):
+        self.warnings.append({"msg": msg, **kw})
+
+    def info(self, msg, **kw):
+        self.infos.append({"msg": msg, **kw})
+
+
+class TestStorageLimits:
+    def test_unset_means_unlimited_and_silent(self):
+        log = FakeLogger()
+        assert tinc_entrypoint.storage_limits({}, log) == (None, None)
+        assert log.warnings == [] and log.infos == []
+
+    def test_valid_rates_are_normalized_and_logged(self):
+        log = FakeLogger()
+        limits = tinc_entrypoint.storage_limits(
+            {"REDUNDANET_STORAGE_RATE_IN": "10Mbit", "REDUNDANET_STORAGE_RATE_OUT": " 20mbit "}, log
+        )
+        assert limits == ("10mbit", "20mbit")
+        assert log.infos[0]["inbound"] == "10mbit" and log.infos[0]["outbound"] == "20mbit"
+
+    def test_invalid_value_is_ignored_with_a_warning(self):
+        """A typo in .env must not take the VPN down."""
+        log = FakeLogger()
+        limits = tinc_entrypoint.storage_limits(
+            {"REDUNDANET_STORAGE_RATE_IN": "20MB/s", "REDUNDANET_STORAGE_RATE_OUT": "5mbit"}, log
+        )
+        assert limits == (None, "5mbit")
+        assert log.warnings[0]["variable"] == "REDUNDANET_STORAGE_RATE_IN"
+        assert log.infos[0]["inbound"] == "unlimited"

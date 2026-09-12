@@ -200,6 +200,19 @@ services:
 EOF
 ```
 
+### Optional: cap the storage traffic
+
+If the node sits on a home line, cap what the grid may write into it and
+read from it, in `/opt/redundanet/.env` (tc units, bits per second):
+
+```bash
+STORAGE_RATE_IN=10mbit      # shares written into this node
+STORAGE_RATE_OUT=20mbit     # shares served to other nodes
+```
+
+Only the storage service is limited; your own backups and restores are not.
+See "Storage traffic limits" in [configuration.md](configuration.md).
+
 ## 8. Start the node
 
 The join printed the exact command; in general:
