@@ -123,7 +123,8 @@ Then, in `/opt/redundanet/.env`:
 ```bash
 SYNC_ENABLED=true
 SYNC_DIR=/mnt/storage/share
-# SYNC_INTERVAL=900        # seconds; default 15 minutes
+# SYNC_INTERVAL=900        # seconds between checks; default 15 minutes
+# SYNC_MAX_AGE=86400       # snapshot at least this often even if unchanged; default a day
 # SYNC_TIMEOUT=21600       # per-run ceiling; default 6h (first syncs are slow)
 # SYNC_EXCLUDE=.DS_Store,*.tmp   # name globs left out of every snapshot
 # SYNC_REENCODE=true       # re-upload at a new k-of-n automatically (see Notes)
@@ -211,6 +212,14 @@ or restore from a *different* node, share the alias capability with that node
 ## Notes
 
 - The sync only ever **reads** the share (the bind-mount is read-only).
+- **Unchanged shares are not re-snapshotted.** Every `SYNC_INTERVAL` the
+  sync fingerprints the share (paths, sizes, mtimes, one walk) and runs
+  `tahoe backup` only when something changed, or when the last snapshot is
+  older than `SYNC_MAX_AGE` (a daily heartbeat). Before this, an idle share
+  got a snapshot every 15 minutes: nothing uploaded, but the mutable
+  `Archives/` directory rewritten each time and one more identical entry in
+  it, forever. The log says `share unchanged since the last snapshot;
+  skipping this run`.
 - If the grid is unreachable, the share keeps working; the sync retries every
   cycle and catches up.
 - Large initial syncs can take a while: the loop logs duration and the

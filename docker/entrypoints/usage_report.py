@@ -16,7 +16,8 @@ quota`).
 
 Environment:
   REDUNDANET_NODE_NAME, REDUNDANET_INTERNAL_VPN_IP
-  REDUNDANET_USAGE_INTERVAL   seconds between measurements (default 900)
+  REDUNDANET_USAGE_INTERVAL   seconds between measurements (default 3600);
+                              a backup that made a snapshot triggers one at once
   REDUNDANET_QUOTA_ENFORCE    "true"/"false" overrides the manifest's setting
 """
 
@@ -36,6 +37,8 @@ from redundanet.core.manifest import read_manifest
 from redundanet.monitor.usage import USAGE_FILE, USAGE_PORT, usage_payload, write_usage_file
 from redundanet.storage.backupdb import BACKUPDB_FILE, recorded_caps
 from redundanet.storage.inventory import all_file_caps, grid_footprint
+
+BACKUP_DONE_FILE = Path("/var/lib/tahoe-client/redundanet-backup-done")
 
 NODE_DIR = "/var/lib/tahoe-client"
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
@@ -114,23 +117,42 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def meter_loop(node_name: str, interval: int) -> None:
+def backup_done_at(marker: Path = BACKUP_DONE_FILE) -> float:
+    """When the backup sync last made a snapshot (0 when it never did)."""
+    try:
+        return marker.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def measure_due(last_measured: float, interval: int, marker_mtime: float, now: float) -> bool:
+    """Every ``interval`` seconds, and right after a backup that made a
+    snapshot: that is when usage actually changes. In between a walk of the
+    aliases would only re-read the same directories."""
+    return now - last_measured >= interval or marker_mtime > last_measured
+
+
+def meter_loop(node_name: str, interval: int, tick: int = 60) -> None:
     time.sleep(STARTUP_DELAY)
+    last_measured = 0.0
     while True:
-        try:
-            payload = measure(node_name, dict(os.environ))
-            Handler.latest = payload
-            log(
-                f"{payload['member']}: {payload['used_bytes']} of {payload['allocation_bytes']} "
-                f"bytes used ({payload['files']} files, "
-                f"{payload['in_progress_files']} uploading, {payload['encoding']}, "
-                f"enforce={payload['enforce']})"
-            )
-        except subprocess.TimeoutExpired:
-            log("a tahoe command timed out; will retry next cycle")
-        except Exception as e:  # the meter must survive anything transient
-            log(f"measurement failed (will retry next cycle): {e}")
-        time.sleep(interval)
+        now = time.time()
+        if measure_due(last_measured, interval, backup_done_at(), now):
+            try:
+                payload = measure(node_name, dict(os.environ))
+                Handler.latest = payload
+                log(
+                    f"{payload['member']}: {payload['used_bytes']} of "
+                    f"{payload['allocation_bytes']} bytes used ({payload['files']} files, "
+                    f"{payload['in_progress_files']} uploading, {payload['encoding']}, "
+                    f"enforce={payload['enforce']})"
+                )
+            except subprocess.TimeoutExpired:
+                log("a tahoe command timed out; will retry next cycle")
+            except Exception as e:  # the meter must survive anything transient
+                log(f"measurement failed (will retry next cycle): {e}")
+            last_measured = now
+        time.sleep(tick)
 
 
 def main() -> int:
@@ -148,7 +170,7 @@ def main() -> int:
         log("REDUNDANET_INTERNAL_VPN_IP is required")
         return 1
     try:
-        interval = int(os.environ.get("REDUNDANET_USAGE_INTERVAL", "900"))
+        interval = int(os.environ.get("REDUNDANET_USAGE_INTERVAL", "3600"))
     except ValueError:
         interval = 900
 

@@ -84,3 +84,19 @@ class TestMeasure:
             "n1", {}, run=FakeRun({"a.bin": chk("a")}), backupdb=tmp_path / "none"
         )
         assert payload["files"] == 1 and payload["in_progress_files"] == 0
+
+
+class TestMeasureDue:
+    def test_interval_and_backup_marker(self, tmp_path: Path):
+        assert usage_report.measure_due(0.0, 3600, 0.0, now=10_000.0) is True  # never measured
+        assert usage_report.measure_due(1000.0, 3600, 0.0, now=1500.0) is False
+        assert usage_report.measure_due(1000.0, 3600, 0.0, now=4600.0) is True
+        # a backup that made a snapshot after the last measurement triggers one
+        assert usage_report.measure_due(1000.0, 3600, 1200.0, now=1500.0) is True
+        assert usage_report.measure_due(1300.0, 3600, 1200.0, now=1500.0) is False
+
+    def test_backup_marker_mtime(self, tmp_path: Path):
+        marker = tmp_path / "done"
+        assert usage_report.backup_done_at(marker) == 0.0
+        marker.touch()
+        assert usage_report.backup_done_at(marker) > 0.0

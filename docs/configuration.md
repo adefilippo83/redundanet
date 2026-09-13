@@ -124,7 +124,9 @@ it; see [nas-backup.md](nas-backup.md)). Old snapshots stay at the old
 encoding, which is still the durability they were made with.
 
 Tunables in `.env`: `REBALANCE_ENABLED` (default `true`), `REBALANCE_INTERVAL`
-(default 86400s).
+(default 86400s). The rebalancer and the weekly repair sweep remember when
+they last ran (in the client volume), so a container recreate does not
+start a full walk of every alias again unless one is due.
 
 ### Node Section
 
@@ -172,6 +174,18 @@ seconds it re-syncs the manifest repository, refreshes the Tinc peer host files
 (adding newly joined nodes, removing revoked ones), and reloads tincd — so
 membership changes reach running nodes without a restart. Set it via
 `SYNC_INTERVAL` in the compose `.env`.
+
+### Storage protocol
+
+Both templates set `force_foolscap = true`: the client only speaks Foolscap
+to storage servers and the server does not advertise HTTPS. Tahoe 1.20's
+HTTP storage client re-fetches every announced server's version once per
+second as a liveness check, and retries an unreachable server (for example a
+stale identity of a node that recreated its volumes) every second with no
+backoff, which on a node showed as 180 connection log lines per minute and
+six TLS handshakes per second against one peer. Foolscap keeps one persistent
+connection per server and backs off exponentially. The port is the same
+(3457), so the storage traffic limits below apply either way.
 
 ### Storage traffic limits
 

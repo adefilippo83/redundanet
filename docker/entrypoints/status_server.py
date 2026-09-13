@@ -20,6 +20,7 @@ import os
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -99,19 +100,39 @@ def introducer_announcements() -> list[Announcement] | None:
     return parse_announcements(page)
 
 
-def fetch_census(vpn_ip: str) -> dict | None:
-    """A storage node's /census payload over the VPN, or None."""
-    if not vpn_ip:
-        return None
-    try:
-        with urllib.request.urlopen(
-            f"http://{vpn_ip}:{CENSUS_PORT}/census", timeout=CENSUS_TIMEOUT
-        ) as response:
-            return json.load(response)
-    except Exception:
-        return None
+class ConditionalCensusFetcher:
+    """Fetch a node's /census with If-None-Match: a node whose inventory has
+    not changed answers 304 and the last payload is returned, so an idle
+    node costs a few hundred bytes per refresh instead of megabytes."""
+
+    def __init__(self) -> None:
+        self._known: dict[str, tuple[str, dict]] = {}  # vpn_ip -> (etag, payload)
+
+    def __call__(self, vpn_ip: str) -> dict | None:
+        if not vpn_ip:
+            return None
+        known = self._known.get(vpn_ip)
+        request = urllib.request.Request(f"http://{vpn_ip}:{CENSUS_PORT}/census")
+        if known:
+            request.add_header("If-None-Match", known[0])
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - http:// to a VPN address built above
+                request, timeout=CENSUS_TIMEOUT
+            ) as response:
+                payload = json.load(response)
+                etag = response.headers.get("ETag", "")
+        except urllib.error.HTTPError as e:
+            if e.code == 304 and known:
+                return known[1]
+            return None
+        except Exception:
+            return None
+        if etag:
+            self._known[vpn_ip] = (etag, payload)
+        return payload
 
 
+fetch_census = ConditionalCensusFetcher()
 census_fetcher = ThrottledFetcher(fetch_census, ttl=CENSUS_REFRESH)
 
 
@@ -124,6 +145,10 @@ def fetch_usage(vpn_ip: str) -> dict | None:
             return json.load(response)
     except Exception:
         return None
+
+
+# Usage changes hourly at most (the meter's cadence); ask each client this often.
+usage_fetcher = ThrottledFetcher(fetch_usage, ttl=CENSUS_REFRESH)
 
 
 def manifest_synced_at() -> datetime | None:
@@ -174,7 +199,7 @@ def collect_once(node_name: str) -> None:
         manifest_synced_at=manifest_synced_at(),
         fetch_census=census_fetcher,
         census_cache_dir=CENSUS_CACHE_DIR,
-        fetch_usage=fetch_usage,
+        fetch_usage=usage_fetcher,
         usage_cache_dir=USAGE_CACHE_DIR,
         announcements=introducer_announcements(),
     )

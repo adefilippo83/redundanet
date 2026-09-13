@@ -29,6 +29,28 @@ class TestStorageCfg:
         assert "storage_dir = /data/storage" in cfg
         assert "shares.happy = 3" in cfg
 
+    def test_foolscap_only_on_both_sides(self):
+        """Tahoe 1.20's HTTP storage client polls each server every second;
+        both the client section and the server section opt out of HTTPS."""
+        import configparser
+
+        cfg = _render_storage_cfg(
+            nickname="n1-storage",
+            web_port=4457,
+            tub_port=3457,
+            tub_location="tcp:10.100.0.2:3457",
+            introducer_furl="pb://abc@tcp:10.100.0.1:3458/swiss",
+            reserved_space="1G",
+            storage_dir="/data/storage",
+            shares_needed=2,
+            shares_happy=3,
+            shares_total=3,
+        )
+        parsed = configparser.ConfigParser(interpolation=None)
+        parsed.read_string(cfg)
+        assert parsed.getboolean("client", "force_foolscap") is True
+        assert parsed.getboolean("storage", "force_foolscap") is True
+
     def test_gc_can_be_disabled_and_duration_tuned(self):
         cfg = _render_storage_cfg(
             nickname="n1-storage",
@@ -75,6 +97,23 @@ class TestClientCfg:
         assert "nickname = n1-client" in cfg
         assert "introducer.furl = pb://abc@tcp:10.100.0.1:3458/swiss" in cfg
         assert "[storage]\nenabled = false" in cfg
+
+    def test_client_is_foolscap_only(self):
+        import configparser
+
+        cfg = _render_client_cfg(
+            nickname="n1-client",
+            web_port=4456,
+            tub_port=3456,
+            tub_location="tcp:10.100.0.2:3456",
+            introducer_furl="pb://abc@tcp:10.100.0.1:3458/swiss",
+            shares_needed=1,
+            shares_happy=1,
+            shares_total=2,
+        )
+        parsed = configparser.ConfigParser(interpolation=None)
+        parsed.read_string(cfg)
+        assert parsed.getboolean("client", "force_foolscap") is True
 
 
 FURL_A = "pb://aaaa@tcp:10.100.0.1:3458/swissa"

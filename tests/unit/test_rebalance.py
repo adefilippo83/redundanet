@@ -259,3 +259,19 @@ class TestNodeEncodingGuard:
         )
         stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
         assert stats["reencoded"] == 1 and stats["node_stale"] == 0
+
+
+class TestRunsOnlyWhenDue:
+    def test_no_record_means_due_now(self, tmp_path):
+        assert rebalance.seconds_until_due(86400, tmp_path / "none", now=1000.0) == 0.0
+
+    def test_recent_run_waits_for_the_rest_of_the_interval(self, tmp_path):
+        state = tmp_path / "last"
+        rebalance.record_run(state, now=1000.0)
+        assert rebalance.seconds_until_due(86400, state, now=2000.0) == 85400.0
+        assert rebalance.seconds_until_due(86400, state, now=1000.0 + 86400) == 0.0
+
+    def test_garbage_record_means_due_now(self, tmp_path):
+        state = tmp_path / "last"
+        state.write_text("yesterday")
+        assert rebalance.seconds_until_due(86400, state, now=1.0) == 0.0

@@ -54,6 +54,9 @@ TAHOE_CFG = Path(NODE_DIR) / "tahoe.cfg"
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 TMP_FILE = Path("/tmp/rebalance.tmp")  # noqa: S108 - private container tmp
 STARTUP_DELAY = 180  # let the client connect to the grid first
+# When the last cycle finished: a container recreate must not walk every
+# alias again if the daily cycle is not due yet.
+STATE_FILE = Path(NODE_DIR) / "redundanet-rebalance-last-run"
 
 
 def log(message: str) -> None:
@@ -118,6 +121,25 @@ def walk_files(root: str, run=run_tahoe) -> list[tuple[str, str]]:
     snapshots) are skipped: a re-encoded file cannot be relinked inside them,
     so trying would download and fail on every cycle."""
     return inventory.walk_files(root, run, log=log, skip_immutable=True)
+
+
+def seconds_until_due(
+    interval: int, state_file: Path = STATE_FILE, now: float | None = None
+) -> float:
+    """How long until the next cycle is due, from the recorded last run.
+    Zero when there is no record or it is unreadable."""
+    now = time.time() if now is None else now
+    try:
+        last = float(state_file.read_text().strip())
+    except (OSError, ValueError):
+        return 0.0
+    return max(last + interval - now, 0.0)
+
+
+def record_run(state_file: Path = STATE_FILE, now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    with contextlib.suppress(OSError):
+        state_file.write_text(f"{now:.0f}\n")
 
 
 class NodeEncodingMismatch(Exception):
@@ -232,6 +254,11 @@ def main() -> None:
     time.sleep(STARTUP_DELAY)
     while True:
         try:
+            wait = seconds_until_due(config.interval)
+            if wait > 0:
+                log(f"last cycle is recent; next in {int(wait)}s")
+                time.sleep(wait)
+                continue
             # Re-read the target each cycle: the manifest syncs every few minutes,
             # so an encoding change is picked up without a restart.
             config = parse_config(dict(os.environ), read_manifest(MANIFEST_DIR))
@@ -241,6 +268,7 @@ def main() -> None:
                 time.sleep(config.interval)
                 continue
             stats = run_cycle(config)
+            record_run()
             if stats["mismatched"] or stats["failed"]:
                 log(
                     f"cycle done: {stats['scanned']} scanned, "

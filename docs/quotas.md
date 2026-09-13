@@ -108,7 +108,8 @@ nodes:
 ```
 
 Environment overrides on a client node (`/opt/redundanet/.env`):
-`USAGE_INTERVAL` (seconds between measurements, default 900) and
+`USAGE_INTERVAL` (seconds between measurements, default 3600; a backup that
+made a snapshot triggers one at once) and
 `QUOTA_ENFORCE=true|false` to override the manifest's setting locally.
 
 ## Known limits

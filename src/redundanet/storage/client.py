@@ -58,6 +58,11 @@ introducer.furl = {introducer_furl}
 shares.needed = {shares_needed}
 shares.happy = {shares_happy}
 shares.total = {shares_total}
+# Foolscap only. Tahoe 1.20's HTTP storage client polls every announced server
+# once per second and retries an unreachable one every second without backoff;
+# Foolscap keeps one persistent connection per server and backs off
+# exponentially. Same port either way (the server speaks both on 3457).
+force_foolscap = true
 
 [storage]
 enabled = false

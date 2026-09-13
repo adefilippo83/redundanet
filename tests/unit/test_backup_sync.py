@@ -287,3 +287,66 @@ class TestQuotaBlocks:
             json.dumps({"enforce": False, "used_bytes": 200, "allocation_bytes": 100})
         )
         assert backup_sync.quota_blocks(report) is False
+
+
+class TestSkipUnchanged:
+    def config(self, max_age: int = 86400) -> backup_sync.SyncConfig:
+        return backup_sync.SyncConfig(
+            enabled=True, interval=900, sync_dir="/x", alias="backups", timeout=1, max_age=max_age
+        )
+
+    def test_fingerprint_changes_on_any_edit(self, tmp_path: Path):
+        share = tmp_path / "share"
+        (share / "a").mkdir(parents=True)
+        (share / "a" / "f.txt").write_text("one")
+        base = backup_sync.tree_fingerprint(str(share))
+        assert backup_sync.tree_fingerprint(str(share)) == base  # stable
+        (share / "a" / "f.txt").write_text("two!")  # size changes
+        changed = backup_sync.tree_fingerprint(str(share))
+        assert changed != base
+        (share / "b").mkdir()  # an empty directory counts too
+        assert backup_sync.tree_fingerprint(str(share)) != changed
+        (share / "a" / "f.txt").rename(share / "a" / "g.txt")  # renames count
+        assert backup_sync.tree_fingerprint(str(share)) not in (base, changed)
+
+    def test_symlinks_are_not_followed(self, tmp_path: Path):
+        share = tmp_path / "share"
+        share.mkdir()
+        (tmp_path / "outside.txt").write_text("x")
+        (share / "link").symlink_to(tmp_path / "outside.txt")
+        base = backup_sync.tree_fingerprint(str(share))
+        (tmp_path / "outside.txt").write_text("changed")
+        assert backup_sync.tree_fingerprint(str(share)) == base
+
+    def test_unchanged_recent_run_is_skipped_until_max_age(self):
+        state = {"fingerprint": "abc", "last_run_at": 1000.0}
+        assert backup_sync.unchanged_since_last_run(self.config(), "abc", state, now=1900) is True
+        assert backup_sync.unchanged_since_last_run(self.config(), "abc", state, now=1000 + 86399)
+        # a daily snapshot still happens
+        assert (
+            backup_sync.unchanged_since_last_run(self.config(), "abc", state, now=1000 + 86400)
+            is False
+        )
+
+    def test_changed_share_or_no_state_runs(self):
+        state = {"fingerprint": "abc", "last_run_at": 1000.0}
+        assert backup_sync.unchanged_since_last_run(self.config(), "def", state, now=1900) is False
+        assert backup_sync.unchanged_since_last_run(self.config(), "abc", {}, now=1900) is False
+        assert (
+            backup_sync.unchanged_since_last_run(
+                self.config(), "abc", {"fingerprint": "abc", "last_run_at": "bad"}, now=1900
+            )
+            is False
+        )
+
+    def test_state_round_trip(self, tmp_path: Path):
+        path = tmp_path / "state.json"
+        assert backup_sync.load_state(path) == {}
+        backup_sync.save_state({"fingerprint": "abc", "last_run_at": 5.0}, path)
+        assert backup_sync.load_state(path) == {"fingerprint": "abc", "last_run_at": 5.0}
+        path.write_text("[]")  # wrong shape
+        assert backup_sync.load_state(path) == {}
+
+    def test_max_age_from_env(self):
+        assert backup_sync.parse_config({}).max_age == 86400
+        assert backup_sync.parse_config({"REDUNDANET_SYNC_MAX_AGE": "3600"}).max_age == 3600

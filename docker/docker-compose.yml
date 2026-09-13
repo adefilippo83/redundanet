@@ -140,7 +140,7 @@ services:
       - REDUNDANET_REPAIR_ENABLED=${REPAIR_ENABLED:-true}
       # Usage meter: member usage vs allocation (see docs/quotas.md). Enforcement
       # follows the manifest's network.quota.enforce unless overridden here.
-      - REDUNDANET_USAGE_INTERVAL=${USAGE_INTERVAL:-900}
+      - REDUNDANET_USAGE_INTERVAL=${USAGE_INTERVAL:-3600}
       - REDUNDANET_QUOTA_ENFORCE=${QUOTA_ENFORCE:-}
     volumes:
       - tahoe-client:/var/lib/tahoe-client
