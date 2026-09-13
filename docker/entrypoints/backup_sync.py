@@ -24,6 +24,15 @@ Environment:
   REDUNDANET_SYNC_REENCODE  "true" (default) to forget backupdb entries made
                             at an older k-of-n before each run, so the files
                             are re-uploaded at the node's current encoding
+  REDUNDANET_SYNC_MAX_AGE   seconds after which a run happens even if the
+                            share is unchanged (default 86400): one snapshot
+                            a day as a heartbeat, not one every interval
+
+A run is skipped when the share has not changed since the last one: ``tahoe
+backup`` would upload nothing but still rewrite the mutable Archives/
+directory (four shares of a listing that grows by one entry per run) and
+link one more identical snapshot. The share is fingerprinted with one walk
+(paths, sizes, mtimes), a fraction of what the backup itself walks.
 
 Symlinks and special files are skipped by tahoe backup itself (it has no
 option to follow them); the run still succeeds and the skipped paths are
@@ -36,6 +45,9 @@ Archives/ is a deliberate future feature tied to the lease/GC policy work.
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
+import json
 import os
 import sqlite3
 import subprocess
@@ -50,6 +62,10 @@ from redundanet.storage.backupdb import BACKUPDB_FILE, prune_stale
 
 NODE_DIR = "/var/lib/tahoe-client"
 TAHOE_CFG = Path(NODE_DIR) / "tahoe.cfg"
+# What the last run saw (fingerprint, time), so an unchanged share skips runs.
+STATE_FILE = Path(NODE_DIR) / "redundanet-sync-state.json"
+# Touched after a run that made a snapshot: the usage meter measures again.
+BACKUP_DONE_FILE = Path(NODE_DIR) / "redundanet-backup-done"
 # tahoe backup's exit status when the snapshot was made but entries were
 # skipped (symlinks, special files, unreadable paths).
 EXIT_SKIPPED = 2
@@ -72,6 +88,7 @@ class SyncConfig:
     timeout: int
     exclude: list[str] = field(default_factory=list)
     reencode: bool = True
+    max_age: int = 86400
 
 
 def _int_env(environ: dict[str, str], name: str, default: int) -> int:
@@ -103,6 +120,7 @@ def parse_config(environ: dict[str, str]) -> SyncConfig:
             if pattern.strip()
         ],
         reencode=environ.get("REDUNDANET_SYNC_REENCODE", "true").lower() != "false",
+        max_age=_int_env(environ, "REDUNDANET_SYNC_MAX_AGE", 86400),
     )
 
 
@@ -163,6 +181,66 @@ def quota_blocks(usage_file: Path = USAGE_FILE) -> bool:
         "(delete data, or contribute more storage)"
     )
     return True
+
+
+def tree_fingerprint(sync_dir: str) -> str:
+    """A digest of every entry's path, size and mtime under the share (one
+    scandir walk, symlinks not followed). Any create, delete, rename, write
+    or touch changes it."""
+    digest = hashlib.sha256()
+
+    def walk(path: str) -> None:
+        try:
+            with os.scandir(path) as entries:
+                children = sorted(entries, key=lambda e: e.name)
+        except OSError:
+            return
+        for entry in children:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    digest.update(f"d:{entry.path}\0".encode(errors="surrogateescape"))
+                    walk(entry.path)
+                elif entry.is_file(follow_symlinks=False):
+                    st = entry.stat(follow_symlinks=False)
+                    digest.update(
+                        f"f:{entry.path}:{st.st_size}:{st.st_mtime_ns}\0".encode(
+                            errors="surrogateescape"
+                        )
+                    )
+            except OSError:
+                continue
+
+    walk(sync_dir)
+    return digest.hexdigest()
+
+
+def load_state(path: Path = STATE_FILE) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_state(state: dict, path: Path = STATE_FILE) -> None:
+    try:
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state))
+        tmp.replace(path)
+    except OSError as e:
+        log(f"cannot write {path}: {e}")
+
+
+def unchanged_since_last_run(
+    config: SyncConfig, fingerprint: str, state: dict, now: float | None = None
+) -> bool:
+    """Whether this run can be skipped: same fingerprint as the last successful
+    run, and that run is younger than max_age (a daily snapshot still happens)."""
+    now = time.time() if now is None else now
+    last_at = state.get("last_run_at")
+    if state.get("fingerprint") != fingerprint or not isinstance(last_at, int | float):
+        return False
+    return now - last_at < config.max_age
 
 
 def forget_stale_encoding(
@@ -245,13 +323,24 @@ def main() -> None:
         while True:  # sleep forever without supervisord restart churn
             time.sleep(3600)
 
-    log(f"enabled: backing up {config.sync_dir} to {config.alias}: every {config.interval}s")
+    log(
+        f"enabled: backing up {config.sync_dir} to {config.alias}: every {config.interval}s "
+        f"when the share changed, at least every {config.max_age}s"
+    )
     time.sleep(STARTUP_DELAY)
     while True:
         try:
             if not quota_blocks() and ensure_alias(config.alias):
-                forget_stale_encoding(config)
-                run_backup(config)
+                fingerprint = tree_fingerprint(config.sync_dir)
+                state = load_state()
+                if unchanged_since_last_run(config, fingerprint, state):
+                    log("share unchanged since the last snapshot; skipping this run")
+                else:
+                    forget_stale_encoding(config)
+                    if run_backup(config):
+                        save_state({"fingerprint": fingerprint, "last_run_at": time.time()})
+                        with contextlib.suppress(OSError):
+                            BACKUP_DONE_FILE.touch()
         except subprocess.TimeoutExpired:
             log("backup timed out; will retry next cycle")
         except Exception as e:  # never die: the loop must survive transient errors

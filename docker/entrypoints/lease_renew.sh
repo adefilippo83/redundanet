@@ -15,6 +15,9 @@
 # Bare capabilities that are not linked into any alias are neither renewed nor
 # repaired here; their owner must do it (redundanet storage renew <cap>).
 NODE_DIR=/var/lib/tahoe-client
+# When the last sweep finished, so a container recreate (every redundanet
+# update) does not start a full deep-check of every alias all over again.
+STATE_FILE=$NODE_DIR/redundanet-lease-last-run
 INTERVAL="${REDUNDANET_LEASE_RENEW_INTERVAL:-604800}"  # 7 days
 TIMEOUT="${REDUNDANET_LEASE_RENEW_TIMEOUT:-21600}"     # per-alias ceiling, 6h
 REPAIR="${REDUNDANET_REPAIR_ENABLED:-true}"
@@ -37,6 +40,15 @@ fi
 while :; do
     # Give the client time to connect to the grid (first boot / restart).
     sleep 300
+    now=$(date +%s)
+    last=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    remaining=$((last + INTERVAL - now))
+    if [ "$remaining" -gt 0 ]; then
+        echo "lease-repair: last sweep $((now - last))s ago; next in ${remaining}s"
+        sleep "$remaining"
+        continue
+    fi
     aliases=$(tahoe -d "$NODE_DIR" list-aliases 2>/dev/null | cut -d: -f1)
     for a in $aliases; do
         echo "lease-repair: sweeping $a: ($MODE)"
@@ -51,5 +63,5 @@ while :; do
             echo "lease-repair: FAILED for $a: (exit $rc; will retry next cycle)"
         fi
     done
-    sleep "$INTERVAL"
+    date +%s > "$STATE_FILE" 2>/dev/null || true
 done

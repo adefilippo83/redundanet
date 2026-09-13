@@ -53,13 +53,14 @@ class TestHandler:
         Thread(target=server.serve_forever, daemon=True).start()
         return server
 
-    def get(self, server, path="/census"):
+    def get(self, server, path="/census", headers=None):
         conn = HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
-        conn.request("GET", path)
+        conn.request("GET", path, headers=headers or {})
         response = conn.getresponse()
         body = response.read()
+        etag = response.getheader("ETag")
         conn.close()
-        return response.status, body
+        return response.status, body, etag
 
     def test_503_until_the_first_walk_is_done(self):
         share_census.Handler.latest = b""
@@ -75,9 +76,24 @@ class TestHandler:
         (shares / "aa" / "aaindex1" / "0").unlink()  # disk changed, cache did not
         server = self.serve()
         try:
-            status, body = self.get(server)
+            status, body, etag = self.get(server)
             assert status == 200
             assert json.loads(body)["storage_indexes"] == ["aaindex1"]
             assert self.get(server, "/other")[0] == 404
+            # the hub sends the tag back: unchanged inventory -> 304, no body
+            status, body, etag2 = self.get(server, headers={"If-None-Match": etag})
+            assert (status, body, etag2) == (304, b"", etag)
+            assert self.get(server, headers={"If-None-Match": '"stale"'})[0] == 200
         finally:
             server.shutdown()
+
+    def test_etag_ignores_the_timestamp_but_not_the_inventory(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": 10})
+        share_census.refresh("n1", shares)
+        first = share_census.Handler.etag
+        share_census.refresh("n1", shares)  # a later walk, same shares
+        assert share_census.Handler.etag == first
+        (shares / "bb" / "bbindex2").mkdir(parents=True)
+        (shares / "bb" / "bbindex2" / "0").write_bytes(b"y")
+        share_census.refresh("n1", shares)
+        assert share_census.Handler.etag != first

@@ -148,11 +148,15 @@ services manually, recreate them as a group, not individually.
   schedule (`CENSUS_INTERVAL` in its `.env`, default 300s) and serves the
   result from memory at `/census` on its VPN address, so the answer is
   instant whatever the object count. The hub asks each node again only
-  every 5 minutes (20s timeout; a big node's census is a few megabytes) and
-  reuses the last answer in between, so the replication tile lags an
-  encoding change or a large upload by up to 10 minutes. Pings, and the
-  uptime they feed, stay at one minute. A node whose census cannot be
-  fetched keeps its last inventory on the page, marked with its age.
+  every 5 minutes (20s timeout) and reuses the last answer in between, so
+  the replication tile lags an encoding change or a large upload by up to
+  10 minutes. The fetch is conditional: the node tags its inventory with an
+  `ETag`, the hub sends it back, and an unchanged inventory answers `304`
+  with no body, so an idle node costs a few hundred bytes per refresh
+  instead of megabytes (a node with 150k objects has a 4 MB census). Usage
+  reports are fetched on the same 5 minute cadence; pings, and the uptime
+  they feed, stay at one minute. A node whose census cannot be fetched
+  keeps its last inventory on the page, marked with its age.
 - **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
   manifest on purpose. Fly's edge proxy terminates every TCP connection, so
   tincd on the hub sees the proxy's internal address (172.16.x.x) as the

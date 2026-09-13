@@ -21,6 +21,7 @@ query it. Storage indexes reveal nothing about file contents, names, or owners.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import threading
@@ -33,11 +34,13 @@ from redundanet.utils.logging import get_logger, setup_logging
 
 SHARES_DIR = Path("/data/storage/shares")
 DEFAULT_INTERVAL = 300
+VOLATILE_FIELDS = frozenset({"computed_at", "disk_free_bytes"})
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "redundanet-census"
     latest: bytes = b""  # the last census, already serialized
+    etag: str = ""  # digest of ``latest``; the hub sends it back in If-None-Match
 
     def do_GET(self) -> None:
         if not self.path.startswith("/census"):
@@ -47,9 +50,17 @@ class Handler(BaseHTTPRequestHandler):
         if not body:
             self.send_error(503, "census not computed yet")
             return
+        # An unchanged inventory is the common case on an idle node, and the
+        # full one is megabytes: answer 304 when the reader already has it.
+        if Handler.etag and self.headers.get("If-None-Match") == Handler.etag:
+            self.send_response(304)
+            self.send_header("ETag", Handler.etag)
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("ETag", Handler.etag)
         self.end_headers()
         # A reader that gave up waiting is not our problem.
         with contextlib.suppress(BrokenPipeError, ConnectionResetError):
@@ -63,7 +74,14 @@ def refresh(node_name: str, shares_dir: Path = SHARES_DIR) -> dict[str, object]:
     """Walk the shares tree once and publish the result to the handler."""
     started = time.monotonic()
     payload = census_payload(node_name, shares_dir)
-    Handler.latest = json.dumps(payload).encode()
+    body = json.dumps(payload).encode()
+    # The tag covers the inventory, not the timestamp or the free space
+    # (which drifts with every write on the machine): a walk that finds the
+    # same shares must yield the same tag or the 304 path never triggers.
+    tagged = {k: v for k, v in payload.items() if k not in VOLATILE_FIELDS}
+    digest = hashlib.sha256(json.dumps(tagged, sort_keys=True).encode()).hexdigest()
+    Handler.etag = f'"{digest[:32]}"'
+    Handler.latest = body
     return {
         "objects": payload["object_count"],
         "disk_used_bytes": payload["disk_used_bytes"],
