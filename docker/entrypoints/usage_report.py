@@ -34,9 +34,15 @@ from pathlib import Path
 from typing import Any
 
 from redundanet.core.manifest import read_manifest
-from redundanet.monitor.usage import USAGE_FILE, USAGE_PORT, usage_payload, write_usage_file
+from redundanet.monitor.usage import (
+    USAGE_FILE,
+    USAGE_PORT,
+    load_usage_file,
+    usage_payload,
+    write_usage_file,
+)
 from redundanet.storage.backupdb import BACKUPDB_FILE, recorded_caps
-from redundanet.storage.inventory import all_file_caps, grid_footprint
+from redundanet.storage.inventory import LISTING_TIMEOUT, all_file_caps, grid_footprint
 
 BACKUP_DONE_FILE = Path("/var/lib/tahoe-client/redundanet-backup-done")
 
@@ -80,16 +86,24 @@ def measure(
 ) -> dict[str, Any]:
     """Everything this client put on the grid: the alias trees, plus what a
     running backup has uploaded but not linked yet (its backupdb rows)."""
-    linked = all_file_caps(run, log=log)
+    skipped: list[str] = []
+    linked = all_file_caps(run, log=log, skipped=skipped)
     reachable = set(linked)
     pending = [cap for cap in recorded_caps(backupdb) if cap not in reachable]
     footprint = grid_footprint([*linked, *pending])
+    if skipped:
+        log(
+            f"partial measurement: {len(skipped)} directories could not be listed within "
+            f"{LISTING_TIMEOUT}s: {', '.join(skipped[:3])}"
+        )
     payload = usage_payload(
         node_name,
         load_manifest(),
         footprint,
         enforce_override=enforce_override(environ),
         in_progress=grid_footprint(pending),
+        partial=bool(skipped),
+        skipped_dirs=len(skipped),
     )
     try:
         write_usage_file(payload, USAGE_FILE)
@@ -130,6 +144,14 @@ def measure_due(last_measured: float, interval: int, marker_mtime: float, now: f
     snapshot: that is when usage actually changes. In between a walk of the
     aliases would only re-read the same directories."""
     return now - last_measured >= interval or marker_mtime > last_measured
+
+
+def initial_report(path: Path = USAGE_FILE) -> dict[str, Any]:
+    """The report the previous container life wrote, to serve until the first
+    measurement completes. A restart must not blank the endpoint: a first
+    measurement of a big archive takes a while, and the hub would otherwise
+    fall back to its own, older, copy."""
+    return load_usage_file(path) or {}
 
 
 def meter_loop(node_name: str, interval: int, tick: int = 60) -> None:
@@ -174,6 +196,12 @@ def main() -> int:
     except ValueError:
         interval = 900
 
+    Handler.latest = initial_report()
+    if Handler.latest:
+        log(
+            f"serving the last report (computed {Handler.latest.get('computed_at')}) "
+            "until the first measurement completes"
+        )
     threading.Thread(target=meter_loop, args=(node_name, interval), daemon=True).start()
     # The VPN interface comes up after tinc starts; retry until we can bind.
     while True:

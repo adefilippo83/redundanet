@@ -242,3 +242,39 @@ class TestParseEncoding:
         assert parse_encoding("URI:DIR2-LIT:abcd") is None
         assert parse_encoding("URI:CHK:key:hash:x:4:1000") is None
         assert parse_encoding("garbage") is None
+
+
+class TestSlowDirectory:
+    def test_listing_timeout_skips_the_subtree_and_marks_it(self):
+        """One directory that cannot be listed in time must not sink the walk."""
+        import subprocess
+
+        from redundanet.storage.inventory import all_file_caps
+
+        class SlowRun(FakeRun):
+            def __call__(self, args, timeout=3600):
+                if args[0] == "ls" and args[-1] == "home:big":
+                    raise subprocess.TimeoutExpired(args, timeout)
+                return super().__call__(args, timeout)
+
+        run = SlowRun(
+            {
+                "list-aliases": completed(stdout="home: URI:DIR2:x:y\n"),
+                ("ls", "home:"): completed(
+                    stdout=dirnode_json(
+                        {
+                            "big": ("dirnode", "URI:DIR2:big:x"),
+                            "ok": ("dirnode", "URI:DIR2:ok:x"),
+                            "top.bin": ("filenode", chk(2, 4, 10, "top")),
+                        }
+                    )
+                ),
+                ("ls", "home:ok"): completed(
+                    stdout=dirnode_json({"f.bin": ("filenode", chk(2, 4, 20, "f"))})
+                ),
+            }
+        )
+        skipped: list[str] = []
+        caps = all_file_caps(run, skipped=skipped)
+        assert sorted(caps) == sorted([chk(2, 4, 10, "top"), chk(2, 4, 20, "f")])
+        assert skipped == ["home:big"]

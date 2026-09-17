@@ -100,3 +100,72 @@ class TestMeasureDue:
         assert usage_report.backup_done_at(marker) == 0.0
         marker.touch()
         assert usage_report.backup_done_at(marker) > 0.0
+
+
+class TestPartialAndStartup:
+    def test_partial_measurement_when_a_listing_times_out(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(usage_report, "load_manifest", lambda: {})
+        monkeypatch.setattr(usage_report, "USAGE_FILE", tmp_path / "usage.json")
+
+        class SlowRun(FakeRun):
+            def __call__(self, args, timeout=3600):
+                if args[0] == "ls" and args[-1] == "backups:big":
+                    raise subprocess.TimeoutExpired(args, timeout)
+                return super().__call__(args, timeout)
+
+        run = SlowRun({"a.bin": chk("a")})
+        run.linked = {"a.bin": chk("a"), "big": None}
+
+        def dir_json(children):
+            import json
+
+            return json.dumps(
+                [
+                    "dirnode",
+                    {
+                        "children": {
+                            name: (
+                                ["dirnode", {"ro_uri": "URI:DIR2-CHK:big:x:2:4:9"}]
+                                if cap is None
+                                else ["filenode", {"ro_uri": cap, "size": 1}]
+                            )
+                            for name, cap in children.items()
+                        }
+                    },
+                ]
+            )
+
+        def call(args, timeout=3600):
+            if args[0] == "list-aliases":
+                return subprocess.CompletedProcess(args, 0, "backups: URI:DIR2:x:y\n", "")
+            if args[0] == "ls" and args[-1] == "backups:big":
+                raise subprocess.TimeoutExpired(args, timeout)
+            if args[0] == "ls":
+                return subprocess.CompletedProcess(args, 0, dir_json(run.linked), "")
+            return subprocess.CompletedProcess(args, 1, "", "unexpected")
+
+        payload = usage_report.measure("n1", {}, run=call, backupdb=tmp_path / "none")
+        assert payload["files"] == 1
+        assert payload["partial"] is True and payload["skipped_dirs"] == 1
+
+    def test_complete_measurement_is_not_partial(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(usage_report, "load_manifest", lambda: {})
+        monkeypatch.setattr(usage_report, "USAGE_FILE", tmp_path / "usage.json")
+        payload = usage_report.measure(
+            "n1", {}, run=FakeRun({"a.bin": chk("a")}), backupdb=tmp_path / "none"
+        )
+        assert payload["partial"] is False and payload["skipped_dirs"] == 0
+
+    def test_last_report_is_served_until_the_first_measurement(self, tmp_path: Path):
+        """A restart must not blank /usage: the previous life's report stands
+        (with its own computed_at) until a new measurement completes."""
+        import json
+
+        path = tmp_path / "usage.json"
+        assert usage_report.initial_report(path) == {}
+        path.write_text(
+            json.dumps({"node": "n1", "used_bytes": 5, "computed_at": "2026-09-14T17:15:36+00:00"})
+        )
+        assert usage_report.initial_report(path)["computed_at"] == "2026-09-14T17:15:36+00:00"
+        path.write_text("garbage")
+        assert usage_report.initial_report(path) == {}

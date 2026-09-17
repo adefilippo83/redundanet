@@ -28,6 +28,8 @@ def usage_payload(
     now: datetime | None = None,
     enforce_override: bool | None = None,
     in_progress: Footprint | None = None,
+    partial: bool = False,
+    skipped_dirs: int = 0,
 ) -> dict[str, Any]:
     """The JSON body served at /usage and written to USAGE_FILE.
 
@@ -49,6 +51,10 @@ def usage_payload(
         "files": footprint.files,
         "in_progress_files": pending.files,
         "in_progress_bytes": pending.used_bytes,
+        # True when a directory could not be listed in time: the figures are
+        # a lower bound, and the page says so.
+        "partial": partial,
+        "skipped_dirs": skipped_dirs,
         "allocation_bytes": allocation,
         "reserve": settings.reserve,
         "enforce": enforce,

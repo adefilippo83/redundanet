@@ -112,6 +112,24 @@ Environment overrides on a client node (`/opt/redundanet/.env`):
 made a snapshot triggers one at once) and
 `QUOTA_ENFORCE=true|false` to override the manifest's setting locally.
 
+## Reading the usage column
+
+- **no report yet**: no client of that member has ever answered the hub.
+- **(cached)**: the node did not answer this time; the hub shows its last
+  answer.
+- **(report 2.7d old)**: the figures come from a report computed that long
+  ago. The node's meter has not completed a measurement since: it measures
+  hourly, and a measurement that fails (a directory that cannot be listed in
+  time, a Tahoe command that hangs) is retried an hour later while the last
+  good report keeps being served. A note on the page names the node. Older
+  than six hours means something is wrong on that node.
+- **(partial)**: a directory could not be listed within the time limit and
+  its subtree was skipped, so the usage is a lower bound. Typical for a
+  backup snapshot of a flat share with a hundred thousand files, which is
+  one enormous directory.
+- **N files uploading**: files a running backup has stored but not linked
+  into a snapshot yet.
+
 ## Known limits
 
 - Tahoe spreads shares evenly across servers regardless of their size, so a

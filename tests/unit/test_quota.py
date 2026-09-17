@@ -216,3 +216,37 @@ class TestNodeEncoding:
         assert node_encoding(tmp_path / "bad.cfg") is None
         (tmp_path / "nosection.cfg").write_text("[node]\nnickname = n\n")
         assert node_encoding(tmp_path / "nosection.cfg") is None
+
+
+class TestReportAge:
+    def test_age_from_computed_at(self):
+        from datetime import UTC, datetime
+
+        from redundanet.core.quota import report_age
+
+        now = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
+        assert report_age({"computed_at": "2026-09-14T17:15:36+00:00"}, now) == 240264.0
+        assert report_age({"computed_at": "2026-09-17T11:00:00"}, now) == 3600.0  # naive = UTC
+        assert report_age({"computed_at": "2026-09-17T13:00:00+00:00"}, now) == 0.0  # clock skew
+        assert report_age({}, now) is None
+        assert report_age({"computed_at": "yesterday"}, now) is None
+
+    def test_member_carries_oldest_report_age_and_partial(self):
+        from datetime import UTC, datetime
+
+        now = datetime(2026, 9, 17, 12, 0, tzinfo=UTC)
+        m = manifest([storage("n1", "500GB", "ale"), storage("n2", "500GB", "ale")])
+        usage = {
+            "n1": {"used_bytes": 1, "files": 1, "computed_at": "2026-09-17T11:30:00+00:00"},
+            "n2": {
+                "used_bytes": 1,
+                "files": 1,
+                "computed_at": "2026-09-14T12:00:00+00:00",
+                "partial": True,
+            },
+        }
+        (quota,) = compute_quotas(m, usage, {}, now=now)
+        assert quota.report_age_seconds == 3 * 86400.0
+        assert quota.partial is True
+        (quota,) = compute_quotas(m, {"n1": {"used_bytes": 1, "files": 1}}, {}, now=now)
+        assert quota.report_age_seconds is None and quota.partial is False

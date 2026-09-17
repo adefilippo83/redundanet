@@ -9,7 +9,9 @@ accessible/table view of the data.
 from __future__ import annotations
 
 from redundanet.core.quota import format_size
-from redundanet.monitor.status import NetworkStatus
+from redundanet.monitor.status import NetworkStatus, _human_age
+
+STALE_REPORT_AFTER = 3 * 3600  # seconds; older reports are labelled with their age
 
 _OVERALL = {
     "ok": ("●", "All systems operational", "good"),
@@ -130,7 +132,12 @@ def _availability_line(status: NetworkStatus) -> str:
 
 
 def _usage_cell(
-    percent: float | None, used: int | None, source: str, in_progress_files: int = 0
+    percent: float | None,
+    used: int | None,
+    source: str,
+    in_progress_files: int = 0,
+    age_seconds: float | None = None,
+    partial: bool = False,
 ) -> str:
     if used is None or percent is None:
         return '<span style="color:var(--text-2)">no report yet</span>'
@@ -138,7 +145,20 @@ def _usage_cell(
         "var(--good)" if percent < 80 else "var(--warning)" if percent <= 100 else "var(--critical)"
     )
     width = min(percent, 100.0)
-    cached = ' <span style="color:var(--text-2)">(cached)</span>' if source == "cached" else ""
+    # An old report matters more than where it came from: the meter on that
+    # node has not finished a measurement since it was computed.
+    if age_seconds is not None and age_seconds > STALE_REPORT_AFTER:
+        cached = (
+            f' <span style="color:var(--warning)" title="the meter has not reported since">'
+            f"(report {_human_age(age_seconds)} old)</span>"
+        )
+    else:
+        cached = ' <span style="color:var(--text-2)">(cached)</span>' if source == "cached" else ""
+    if partial:
+        cached += (
+            ' <span style="color:var(--warning)" title="a directory could not be listed in time">'
+            "(partial)</span>"
+        )
     # A backup still running has uploaded these but linked nothing yet.
     uploading = (
         f' <span style="color:var(--text-2)">({in_progress_files:,} files uploading)</span>'
@@ -175,7 +195,16 @@ def _members_table(status: NetworkStatus) -> str:
             f"<td>{contributed}</td>"
             f"<td>{_esc(format_size(quota.allocation_bytes))}</td>"
             f"<td>{used}</td>"
-            f"<td>{_usage_cell(quota.percent, quota.used_bytes, quota.usage_source, quota.in_progress_files)}</td>"
+            "<td>"
+            + _usage_cell(
+                quota.percent,
+                quota.used_bytes,
+                quota.usage_source,
+                quota.in_progress_files,
+                quota.report_age_seconds,
+                quota.partial,
+            )
+            + "</td>"
             "</tr>"
         )
     if not rows:
