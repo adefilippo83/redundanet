@@ -386,6 +386,61 @@ class TestQuotas:
         assert status.to_dict()["quotas"][0]["in_progress_files"] == 64000
         assert "64,000 files uploading" in render_html(status)
 
+    def test_stale_report_is_labelled_with_its_age(self):
+        """A meter that stopped reporting leaves an old computed_at behind;
+        the page must say how old, not just 'cached'."""
+
+        def usage(ip: str):
+            if ip != "10.100.0.10":
+                return None
+            return {
+                "used_bytes": 10**9,
+                "files": 98135,
+                "in_progress_files": 98135,
+                "computed_at": (NOW - timedelta(days=2, hours=17)).isoformat(),
+            }
+
+        status = self.collect(fetch_usage=usage)
+        ale = next(q for q in status.quotas if q.member == "ale")
+        assert ale.report_age_seconds == (2 * 24 + 17) * 3600
+        assert any("n1: usage report is 2.7d old" in n for n in status.notes)
+        assert status.to_dict()["quotas"][0]["report_age_seconds"] == ale.report_age_seconds
+        html = render_html(status)
+        assert "(report 2.7d old)" in html
+        assert "(cached)" not in html
+
+    def test_fresh_report_has_no_age_label(self):
+        status = self.collect(
+            fetch_usage=lambda ip: (
+                {
+                    "used_bytes": 10,
+                    "files": 1,
+                    "computed_at": (NOW - timedelta(minutes=20)).isoformat(),
+                }
+                if ip == "10.100.0.10"
+                else None
+            )
+        )
+        assert not any("usage report is" in n for n in status.notes)
+        assert "old)" not in render_html(status)
+
+    def test_partial_report_is_flagged(self):
+        status = self.collect(
+            fetch_usage=lambda ip: (
+                {
+                    "used_bytes": 10,
+                    "files": 1,
+                    "partial": True,
+                    "skipped_dirs": 2,
+                    "computed_at": NOW.isoformat(),
+                }
+                if ip == "10.100.0.10"
+                else None
+            )
+        )
+        assert any("n1: usage report is partial (2 directories" in n for n in status.notes)
+        assert "(partial)" in render_html(status)
+
     def test_cached_report_used_when_node_silent(self, tmp_path: Path):
         cache = tmp_path / "usage"
         self.collect(

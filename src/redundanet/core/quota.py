@@ -28,6 +28,7 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -197,6 +198,8 @@ class MemberQuota:
     files: int = 0
     in_progress_files: int = 0  # uploaded by a backup still running, not yet in a snapshot
     usage_source: str = "none"  # "live" | "cached" | "none"
+    report_age_seconds: float | None = None  # oldest computed_at among the member's reports
+    partial: bool = False  # a report could not list every directory: usage is a lower bound
     overstated: list[str] = field(default_factory=list)  # nodes whose disk is smaller than claimed
 
     @property
@@ -210,11 +213,28 @@ class MemberQuota:
         return self.used_bytes is not None and self.used_bytes > self.allocation_bytes
 
 
+def report_age(report: dict[str, Any], now: datetime | None = None) -> float | None:
+    """Seconds since a usage report was computed (its ``computed_at``), or
+    None when the report does not say."""
+    raw = report.get("computed_at")
+    if not isinstance(raw, str):
+        return None
+    try:
+        computed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if computed.tzinfo is None:
+        computed = computed.replace(tzinfo=UTC)
+    now = now or datetime.now(UTC)
+    return max((now - computed).total_seconds(), 0.0)
+
+
 def compute_quotas(
     manifest: dict[str, Any],
     usage: dict[str, dict[str, Any]] | None = None,
     disk_totals: dict[str, int | None] | None = None,
     reserve: float | None = None,
+    now: datetime | None = None,
 ) -> list[MemberQuota]:
     """Per-member quotas from the manifest plus the clients' usage reports.
 
@@ -254,6 +274,8 @@ def compute_quotas(
         files = 0
         in_progress = 0
         source = "none"
+        age: float | None = None
+        partial = False
         for node in nodes:
             report = usage.get(str(node.get("name")))
             if not report:
@@ -261,6 +283,10 @@ def compute_quotas(
             used = (used or 0) + int(report.get("used_bytes", 0))
             files += int(report.get("files", 0))
             in_progress += int(report.get("in_progress_files", 0) or 0)
+            partial = partial or bool(report.get("partial"))
+            this_age = report_age(report, now)
+            if this_age is not None and (age is None or this_age > age):
+                age = this_age
             report_source = str(report.get("source", "live"))
             if source == "none" or (report_source == "cached" and source == "live"):
                 source = report_source if source == "none" else "cached"
@@ -276,6 +302,8 @@ def compute_quotas(
                 files=files,
                 in_progress_files=in_progress,
                 usage_source=source,
+                report_age_seconds=age,
+                partial=partial,
                 overstated=overstated,
             )
         )

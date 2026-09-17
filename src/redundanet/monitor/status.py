@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from redundanet.core.quota import MemberQuota, compute_quotas, format_size
+from redundanet.core.quota import MemberQuota, compute_quotas, format_size, report_age
 from redundanet.monitor.introducer import Announcement, identity_notes, summarize_storage
 
 # A pinger takes a VPN IP and returns the RTT in milliseconds, or None.
@@ -25,6 +25,8 @@ Pinger = Callable[[str], "float | None"]
 CensusFetcher = Callable[[str], "dict[str, Any] | None"]
 # A usage fetcher takes a VPN IP and returns a client node's /usage payload, or None.
 UsageFetcher = Callable[[str], "dict[str, Any] | None"]
+# A usage report older than this gets a note: the node's meter is not reporting.
+STALE_USAGE_AFTER = 6 * 3600
 
 
 class ThrottledFetcher:
@@ -210,7 +212,9 @@ def _human_age(seconds: float) -> str:
         return f"{int(seconds)}s"
     if seconds < 5400:
         return f"{int(seconds / 60)}m"
-    return f"{seconds / 3600:.1f}h"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.1f}h"
+    return f"{seconds / 86400:.1f}d"
 
 
 def _collect_replication(
@@ -424,7 +428,19 @@ def collect_status(
         else {}
     )
     usage = _collect_usage(nodes, fetch_usage, usage_cache_dir, now) if fetch_usage else {}
-    quotas = compute_quotas(manifest, usage, disk_totals)
+    for node_name, report in sorted(usage.items()):
+        age = report_age(report, now)
+        if age is not None and age > STALE_USAGE_AFTER:
+            notes.append(
+                f"{node_name}: usage report is {_human_age(age)} old (its meter has not "
+                f"completed a measurement since {report.get('computed_at')})"
+            )
+        if report.get("partial"):
+            notes.append(
+                f"{node_name}: usage report is partial ({report.get('skipped_dirs', 0)} "
+                "directories could not be listed in time); usage is a lower bound"
+            )
+    quotas = compute_quotas(manifest, usage, disk_totals, now=now)
     for quota in quotas:
         if quota.over and quota.used_bytes is not None:
             notes.append(

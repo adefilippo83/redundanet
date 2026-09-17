@@ -13,6 +13,7 @@ is unit-testable.
 from __future__ import annotations
 
 import json
+import subprocess
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -80,12 +81,18 @@ def is_immutable_dir(cap: str) -> bool:
     return cap.startswith(("URI:DIR2-CHK:", "URI:DIR2-LIT:"))
 
 
+# One directory listing may take this long. A backup snapshot of a flat share
+# with ~100k files is one directory: about 335 s and 46 MB of JSON on a Pi.
+LISTING_TIMEOUT = 900
+
+
 def walk_files(
     root: str,
     run: Runner,
     log: Logger | None = None,
     *,
     skip_immutable: bool = False,
+    skipped: list[str] | None = None,
 ) -> list[tuple[str, str]]:
     """All (grid path, file cap) pairs reachable from ``root`` (an alias spec
     like ``backups:``), via recursive ``tahoe ls --json``. Directories are
@@ -104,7 +111,16 @@ def walk_files(
     while pending:
         subpath = pending.pop()
         spec = f"{root}{subpath}"
-        result = run(["ls", "--json", spec], timeout=300)
+        try:
+            result = run(["ls", "--json", spec], timeout=LISTING_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # One huge directory must not sink the whole measurement: skip
+            # its subtree, report the walk as partial, keep going.
+            if log:
+                log(f"listing {spec!r} took over {LISTING_TIMEOUT}s (skipping its subtree)")
+            if skipped is not None:
+                skipped.append(spec)
+            continue
         if result.returncode != 0:
             if log:
                 log(f"cannot list {spec!r} (skipping): {result.stderr.strip()[:120]}")
@@ -133,11 +149,14 @@ def walk_files(
     return files
 
 
-def all_file_caps(run: Runner, log: Logger | None = None) -> list[str]:
-    """Every file capability reachable from every alias of this client."""
+def all_file_caps(
+    run: Runner, log: Logger | None = None, skipped: list[str] | None = None
+) -> list[str]:
+    """Every file capability reachable from every alias of this client.
+    Directories that could not be listed in time are appended to ``skipped``."""
     caps: list[str] = []
     for alias in list_aliases(run):
-        caps.extend(cap for _path, cap in walk_files(f"{alias}:", run, log=log))
+        caps.extend(cap for _path, cap in walk_files(f"{alias}:", run, log=log, skipped=skipped))
     return caps
 
 
