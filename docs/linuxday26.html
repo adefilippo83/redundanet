@@ -213,7 +213,7 @@
   <h1><span class="logo">Redunda<span>Net</span></span></h1>
   <p style="font-size:30px;margin-top:18px;max-width:1050px">E se una rete di storage non avesse un'azienda alle spalle, ma solo persone che si fidano?</p>
   <p class="muted" style="margin-top:22px;font-size:20px;max-width:1100px">Storage distribuito, cifrato sul tuo dispositivo, <em>molto</em> ridondante. Lo gestisce una comunità di volontari, non un'azienda.</p>
-  <p class="muted" style="margin-top:26px;font-size:18px">Tahoe-LAFS · mesh VPN Tinc · identità GPG · un repo Git come fonte di verità · Docker Compose · Raspberry Pi, vecchi PC, un VPS da 4 €</p>
+  <p class="muted" style="margin-top:26px;font-size:18px">Tahoe-LAFS · mesh VPN Tinc · identità GPG · un repo Git come source of truth · Docker Compose · Raspberry Pi, vecchi PC, un VPS da 4 €</p>
   <p class="muted" style="margin-top:30px;font-size:16px">redundanet.com · github.com/adefilippo83/redundanet</p>
   <div class="notes"><strong>⏱ 0:20 · a fine slide 0:20.</strong> Totale pianificato 24:00 su 25, con due slide saltabili (17 e 20) se vado lungo. Premo T per far partire il cronometro quando dico la prima parola.<br><br>Una frase sola e via: una rete di storage in cui si entra con una pull request, dove i file sopravvivono a qualunque macchina che muore e chi li ospita non li può leggere. Non mi presento qui, c'è la slide dopo.</div>
 </section>
@@ -255,7 +255,7 @@
     <g>
       <circle cx="480" cy="150" r="12" fill="#f59e0b"/>
       <text x="480" y="110" text-anchor="middle" class="t">poi</text>
-      <text x="480" y="195" text-anchor="middle">Svolta verso l'enterprise</text>
+      <text x="480" y="195" text-anchor="middle">Pivot verso l'enterprise</text>
       <text x="480" y="217" text-anchor="middle" class="l">scelta di business giusta;</text>
       <text x="480" y="235" text-anchor="middle" class="l">l'idea consumer resta orfana</text>
     </g>
@@ -282,11 +282,11 @@
   <h2>Sei principi</h2>
   <div class="cols-3">
     <div class="tile"><div class="ic">🔒</div><h3>Nessuno può leggere i tuoi dati</h3><p>La cifratura avviene sul tuo dispositivo. Chi ospita vede solo ciphertext.</p></div>
-    <div class="tile"><div class="ic">💥</div><h3>Qualunque nodo può morire</h3><p>Erasure coding, k-di-n configurabile.</p></div>
+    <div class="tile"><div class="ic">💥</div><h3>Qualunque nodo può morire</h3><p>Erasure coding, k-of-n configurabile.</p></div>
     <div class="tile"><div class="ic">🗂️</div><h3>Nessuna autorità centrale</h3><p>Identità = la tua chiave GPG. Membership = un file in Git.</p></div>
     <div class="tile"><div class="ic">🏠</div><h3>Hardware qualunque, dietro NAT</h3><p>Router di casa, niente port forwarding. Una mesh VPN fa da relay.</p></div>
     <div class="tile"><div class="ic">🤝</div><h3>Membri verificati, non anonimi</h3><p>Persone approvate da persone. Alcune regole sono sulla fiducia, e lo diciamo.</p></div>
-    <div class="tile"><div class="ic">🧘</div><h3>Operazioni noiose</h3><p>Una CLI, uno stack compose, aggiornamento automatico con rollback, una pagina di stato.</p></div>
+    <div class="tile"><div class="ic">🧘</div><h3>Operatività noiosa</h3><p>Una CLI, uno stack compose, aggiornamento automatico con rollback, una status page.</p></div>
   </div>
   <div class="notes"><strong>⏱ 1:15 · a fine slide 3:30.</strong> Mi fermo su "verificati, non anonimi". È il modello di fiducia su cui si appoggia tutto il resto: i membri sono persone approvate, quindi certe cose, le quote per esempio, possono stare sulla fiducia. È una scelta, non ingenuità. Gli altri cinque li leggo veloci: li rivedono tutti nelle slide dopo.</div>
 </section>
@@ -296,10 +296,10 @@
   <h2>Architettura</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1240 520" role="img" aria-label="Architettura di RedundaNet">
     <rect class="box warn" x="20" y="30" width="310" height="118"/>
-    <text x="40" y="60" class="t">Repo GitHub = fonte di verità</text>
+    <text x="40" y="60" class="t">Repo GitHub = source of truth</text>
     <text class="l" x="40" y="86">manifest.yaml: nodi, IP VPN, ruoli,</text>
-    <text class="l" x="40" y="106">fingerprint GPG, codifica k-di-n</text>
-    <text class="l" x="40" y="128">entra: issue → PR del bot → validate → merge</text>
+    <text class="l" x="40" y="106">fingerprint GPG, encoding k-of-n</text>
+    <text class="l" x="40" y="128">join: issue → PR del bot → validate → merge</text>
     <rect class="box" x="20" y="180" width="310" height="70"/>
     <text x="40" y="208" class="t">Keyserver GPG pubblici</text>
     <text class="l" x="40" y="232">PKI: chiavi per fingerprint completo</text>
@@ -307,13 +307,13 @@
     <text x="410" y="60" class="t">Hub rendezvous · un VPS normale</text>
     <text class="l" x="410" y="86">nodo tinc con un IP pubblico vero:</text>
     <text class="l" x="410" y="106">relay NAT↔NAT, distribuisce gli indirizzi veri</text>
-    <text class="l" x="410" y="128">introducer n. 2</text>
+    <text class="l" x="410" y="128">introducer #2</text>
     <text class="l" x="410" y="150">deve vedere gli IP veri: mai dietro un proxy</text>
     <rect class="box accent" x="750" y="30" width="310" height="150"/>
-    <text x="770" y="60" class="t">Hub di stato · fly.io</text>
-    <text class="l" x="770" y="86">introducer n. 1 (primario)</text>
-    <text class="l" x="770" y="106">pagina di stato: censimento, uptime, membri</text>
-    <text class="l" x="770" y="128">dietro un proxy: foglia, non rendezvous</text>
+    <text x="770" y="60" class="t">Status hub · fly.io</text>
+    <text class="l" x="770" y="86">introducer #1 (primario)</text>
+    <text class="l" x="770" y="106">status page: censimento, uptime, membri</text>
+    <text class="l" x="770" y="128">dietro un proxy: non può fare da rendezvous</text>
     <text class="l" x="770" y="150">può cadere uno dei due introducer</text>
     <path class="vpn" d="M750 105 L720 105" marker-end="url(#arr-i)"/>
     <rect class="box" x="340" y="290" width="290" height="190"/>
@@ -330,7 +330,7 @@
     <text class="l" x="670" y="370">ruoli storage + client</text>
     <text class="l" x="670" y="392">disco interno, dietro il NAT di casa</text>
     <rect class="box" x="960" y="290" width="270" height="190"/>
-    <text x="980" y="320" class="t">Nodo · un server di casa</text>
+    <text x="980" y="320" class="t">Nodo · un home server</text>
     <text class="l" x="980" y="348">stesso stack, solo storage</text>
     <text class="l" x="980" y="370">qualunque Linux con Docker</text>
     <path class="vpn" d="M555 180 L485 290"/>
@@ -342,18 +342,18 @@
     <path class="good-line" d="M1010 180 L1010 290"/>
     <text class="l" x="1022" y="226" fill="#86efac">FURL degli introducer</text>
     <text class="l" x="1022" y="246" fill="#86efac">(dal manifest): i server si</text>
-    <text class="l" x="1022" y="266" fill="#86efac">annunciano, i client trovano</text>
+    <text class="l" x="1022" y="266" fill="#86efac">annunciano, i client scoprono</text>
     <path class="warn-line" style="stroke-dasharray:3 4" d="M330 90 L390 90"/>
     <text class="l" x="337" y="108" fill="#fde68a">git sync</text>
     <path class="warn-line" style="stroke-dasharray:3 4" d="M300 148 C 320 230, 320 300, 350 290"/>
     <path class="warn-line" style="stroke-dasharray:3 4" d="M330 215 L365 290"/>
   </svg></div>
-  <div class="notes"><strong>⏱ 2:15 · a fine slide 5:45.</strong> La leggo da sinistra a destra: il repo è la fonte di verità e i nodi lo sincronizzano; i keyserver sono la PKI; due hub. Il rendezvous è un VPS normale perché deve vedere gli indirizzi veri dei client; fly sta dietro un proxy e non poteva, ed è l'incidente che racconto dopo. Due introducer, ne può cadere uno. Ogni nodo esegue lo stesso stack su qualunque ferro. Dire che il container tinc possiede il namespace di rete e i container Tahoe ci entrano dentro: mi serve per la trappola di dopo.</div>
+  <div class="notes"><strong>⏱ 2:15 · a fine slide 5:45.</strong> La leggo da sinistra a destra: il repo è la source of truth e i nodi lo sincronizzano; i keyserver sono la PKI; due hub. Il rendezvous è un VPS normale perché deve vedere gli indirizzi veri dei client; fly sta dietro un proxy e non poteva, ed è l'incidente che racconto dopo. Due introducer, ne può cadere uno. Ogni nodo esegue lo stesso stack su qualunque ferro. Dire che il container tinc possiede il namespace di rete e i container Tahoe ci entrano dentro: mi serve per la trappola di dopo.</div>
 </section>
 
 <!-- 6 · Perché Tahoe: il confine di fiducia -->
 <section class="slide">
-  <h2>Perché <span class="k">Tahoe-LAFS</span>: il confine di fiducia</h2>
+  <h2>Perché <span class="k">Tahoe-LAFS</span>: il trust boundary</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Cifratura ed erasure coding lato client prima di superare il confine di fiducia">
     <rect class="zone" x="20" y="20" width="520" height="290"/>
     <text x="40" y="50" class="t" fill="#c7d2fe">Il tuo dispositivo (fidato)</text>
@@ -361,35 +361,35 @@
     <text x="110" y="141" text-anchor="middle">file</text>
     <path d="M170 135 L215 135" marker-end="url(#arr)"/>
     <rect class="box good" x="215" y="100" width="130" height="70"/>
-    <text x="280" y="129" text-anchor="middle">cifra</text>
+    <text x="280" y="129" text-anchor="middle">cifratura</text>
     <text x="280" y="151" text-anchor="middle" class="l">la chiave resta qui</text>
     <path d="M345 135 L390 135" marker-end="url(#arr)"/>
     <rect class="box good" x="390" y="100" width="130" height="70"/>
     <text x="455" y="129" text-anchor="middle">erasure coding</text>
-    <text x="455" y="151" text-anchor="middle" class="l">k-di-n share</text>
+    <text x="455" y="151" text-anchor="middle" class="l">k-of-n share</text>
     <text x="40" y="250" class="l">capability = l'URI non indovinabile che è, di per sé, il diritto di accesso.</text>
     <text x="40" y="272" class="l">Niente server di ACL, niente account da gestire.</text>
     <line x1="590" y1="20" x2="590" y2="310" class="bad-line" style="stroke-dasharray:8 6;stroke-width:3"/>
-    <text x="590" y="14" text-anchor="middle" class="l" fill="#fca5a5">confine di fiducia</text>
+    <text x="590" y="14" text-anchor="middle" class="l" fill="#fca5a5">trust boundary</text>
     <g>
       <rect class="box" x="660" y="40" width="500" height="250"/>
-      <text x="680" y="70" class="t">Host di storage (non fidati, per progetto)</text>
+      <text x="680" y="70" class="t">Host di storage (untrusted by design)</text>
       <rect class="share" x="700" y="110" width="90" height="46"/><text x="745" y="139" text-anchor="middle" class="m">share 1</text>
       <rect class="share" x="810" y="110" width="90" height="46"/><text x="855" y="139" text-anchor="middle" class="m">share 2</text>
       <rect class="share" x="920" y="110" width="90" height="46"/><text x="965" y="139" text-anchor="middle" class="m">share 3</text>
       <rect class="share" x="1030" y="110" width="90" height="46"/><text x="1075" y="139" text-anchor="middle" class="m">share 4</text>
-      <text x="700" y="195" class="l">solo ciphertext: un host, il Pi di uno sconosciuto o un mandato</text>
+      <text x="700" y="195" class="l">solo ciphertext: un host, il Pi di uno sconosciuto o un sequestro giudiziario</text>
       <text x="700" y="217" class="l">non vedono niente di leggibile</text>
-      <text x="700" y="260" class="l">esattamente il modello di minaccia dell'host volontario</text>
+      <text x="700" y="260" class="l">esattamente il threat model dell'host volontario</text>
     </g>
     <path d="M520 135 L660 135" marker-end="url(#arr-g)" class="good-line"/>
   </svg></div>
   <div class="cols-3" style="margin-top:14px">
     <div class="card"><h3>IPFS</h3><p class="muted">pubblico, la persistenza dipende dalla popolarità</p></div>
-    <div class="card"><h3>Ceph / MinIO</h3><p class="muted">ottimi per un cluster fidato che possiedi tu</p></div>
+    <div class="card"><h3>Ceph / MinIO</h3><p class="muted">ottimi per un cluster fidato che gestisci tu</p></div>
     <div class="card"><h3>Storj / Sia</h3><p class="muted">un mercato di token, non un contratto sociale</p></div>
   </div>
-  <div class="notes"><strong>⏱ 1:45 · a fine slide 7:30.</strong> Il criterio è stato il modello di minaccia, non la lista delle feature. Host non fidati vuol dire che la cifratura deve avvenire nel client, ed è esattamente la tesi di Tahoe. Lo dico subito: upstream si muove piano, l'ho scelto sapendolo. Sulle alternative non mi dilungo, una riga a testa.</div>
+  <div class="notes"><strong>⏱ 1:45 · a fine slide 7:30.</strong> Il criterio è stato il threat model, non la lista delle feature. Host non fidati vuol dire che la cifratura deve avvenire nel client, ed è esattamente la tesi di Tahoe. Lo dico subito: upstream si muove piano, l'ho scelto sapendolo. Sulle alternative non mi dilungo, una riga a testa.</div>
 </section>
 
 <!-- 7 · Tinc + GPG -->
@@ -411,8 +411,8 @@
     <text x="355" y="90" text-anchor="middle" class="l" fill="#a5b4fc">via relay</text>
     <text x="845" y="90" text-anchor="middle" class="l" fill="#a5b4fc">via relay</text>
     <path class="vpn" d="M110 150 C 300 260, 900 260, 1090 150" style="stroke-dasharray:3 6"/>
-    <text x="600" y="215" text-anchor="middle" class="l" fill="#a5b4fc">diretto quando il NAT lo permette (tinc alza il percorso da solo)</text>
-    <text x="20" y="278" class="t">Ingresso nella rete: fallisce chiuso</text>
+    <text x="600" y="215" text-anchor="middle" class="l" fill="#a5b4fc">diretto quando il NAT lo permette (tinc crea il percorso da solo)</text>
+    <text x="20" y="278" class="t">Join nella rete: fail closed</text>
     <g>
       <rect class="box" x="20" y="300" width="170" height="70"/><text x="105" y="330" text-anchor="middle">pubblica la chiave</text><text x="105" y="352" text-anchor="middle" class="l">fingerprint completo</text>
       <path d="M190 335 L225 335" marker-end="url(#arr)"/>
@@ -424,7 +424,7 @@
       <path d="M795 335 L830 335" marker-end="url(#arr)"/>
       <rect class="box" x="830" y="300" width="160" height="70"/><text x="910" y="330" text-anchor="middle">sync dei sidecar</text><text x="910" y="352" text-anchor="middle" class="l">ogni nodo, 5 min</text>
       <path d="M990 335 L1025 335" marker-end="url(#arr-g)" class="good-line"/>
-      <rect class="box good" x="1025" y="300" width="155" height="70"/><text x="1102" y="330" text-anchor="middle">la mesh ammette</text><text x="1102" y="352" text-anchor="middle" class="l">pochi minuti dopo</text>
+      <rect class="box good" x="1025" y="300" width="155" height="70"/><text x="1102" y="330" text-anchor="middle">sei dentro</text><text x="1102" y="352" text-anchor="middle" class="l">pochi minuti dopo</text>
     </g>
   </svg></div>
   <div class="notes"><strong>⏱ 1:45 · a fine slide 9:15.</strong> Perché i fingerprint completi: un key id corto sono le ultime 8 o 16 cifre esadecimali dell'hash, ed Evil32 ha dimostrato che se ne forgia uno in pochi secondi. Le prime versioni accettavano gli id corti e confrontavano per suffisso: bastava caricare una chiave in collisione per diventare un nodo. Ora è rifiutato ovunque.<br><br>Perché tinc e non WireGuard: WireGuard è un tunnel, a me serviva una mesh con relay e un'identità sola; tinc mi dà entrambe le cose, pago in throughput che non mi serve. Una cosa che tinc mi ha insegnato a mie spese: si tiene il primo indirizzo che impara di un peer, quindi un rendezvous dietro un proxy avvelena la tabella di tutti. Il rendezvous deve vedere gli IP veri.</div>
@@ -462,22 +462,22 @@
     <path class="warn-line" d="M900 220 L840 220" marker-end="url(#arr-a)"/>
     <text x="870" y="212" text-anchor="middle" class="l" fill="#fde68a">bind</text>
   </svg></div>
-  <p class="caption"><code>docker compose -p redundanet --profile storage --profile client up -d</code> · i container Tahoe <strong>entrano</strong> nel namespace di tinc: niente porte da collegare, e una trappola che vi faccio vedere tra poco.</p>
+  <p class="caption"><code>docker compose -p redundanet --profile storage --profile client up -d</code> · i container Tahoe <strong>entrano</strong> nel namespace di tinc: niente port mapping da fare, e una trappola che vi faccio vedere tra poco.</p>
   <div class="notes"><strong>⏱ 0:45 · a fine slide 10:00.</strong> Il namespace condiviso è elegante e mi ha teso una trappola. Non la spiego qui, pianto solo il seme e vado avanti.</div>
 </section>
 
 <!-- 9 · Demo 1 -->
 <section class="slide">
-  <div class="tag demo">Demo dal vivo 1</div>
+  <div class="tag demo">Live demo 1</div>
   <h2>La rete, adesso</h2>
   <div class="cols">
     <div>
       <p style="font-size:26px;margin-bottom:14px">Apro <strong class="mono">redundanet-hub.fly.dev</strong></p>
       <ul>
-        <li>Nodi: raggiungibilità, RTT, uptime a 24 h / 7 g / 30 g</li>
+        <li>Nodi: raggiungibilità, RTT, uptime su 24h / 7d / 30d</li>
         <li>Server di storage annunciati agli introducer</li>
-        <li><strong>Censimento della replica</strong>: copie per oggetto rispetto all'obiettivo, in continuo</li>
-        <li><strong>Membri</strong>: contributo, allocazione, uso</li>
+        <li><strong>Censimento della replica</strong>: copie per oggetto rispetto al target, in continuo</li>
+        <li><strong>Membri</strong>: contributo, allocazione, utilizzo</li>
       </ul>
     </div>
     <pre><span class="c"># gli stessi dati della pagina (la forma; i valori li leggo dal vivo)</span>
@@ -491,16 +491,16 @@ curl -s https://redundanet-hub.fly.dev/status.json \
   "unreadable_now": 0
 }</pre>
   </div>
-  <div class="notes"><strong>⏱ 2:00 · a fine slide 12:00.</strong> Apro la pagina di stato. Indico il censimento: lo costruisce ogni nodo di storage dalla propria lista di storage index opachi, niente nomi di file, niente contenuti, e viene servito solo sulla VPN. L'hub interseca le liste e si tiene l'ultimo inventario, così un nodo spento non acceca il conteggio. I numeri li leggo dal vivo, non dalla slide. Se il censimento mostra oggetti sotto-replicati dico perché: dopo un cambio di codifica ogni file vecchio conta contro il nuovo obiettivo finché il rebalancer non lo converte, e la pagina è la barra di avanzamento.<br><br>Piano B se la rete della sala non va: racconto la pagina dalla slide e passo avanti. Non perderci più di un minuto.</div>
+  <div class="notes"><strong>⏱ 2:00 · a fine slide 12:00.</strong> Apro la status page. Indico il censimento: lo costruisce ogni nodo di storage dalla propria lista di storage index opachi, niente nomi di file, niente contenuti, e viene servito solo sulla VPN. L'hub interseca le liste e si tiene l'ultimo inventario, così un nodo spento non acceca il conteggio. I numeri li leggo dal vivo, non dalla slide. Se il censimento mostra oggetti sotto-replicati dico perché: dopo un cambio di codifica ogni file vecchio conta contro il nuovo obiettivo finché il rebalancer non lo converte, e la pagina è la progress bar.<br><br>Piano B se la rete della sala non va: racconto la pagina dalla slide e passo avanti. Non perderci più di un minuto.</div>
 </section>
 
 <!-- 10 · Erasure coding -->
 <section class="slide">
   <h2>Ridondanza <span class="k">misurata, non presunta</span></h2>
-  <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Erasure coding 2-di-4 che sopravvive alla perdita di due server">
+  <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Erasure coding 2-of-4 che sopravvive alla perdita di due server">
     <rect class="box" x="20" y="120" width="120" height="70"/><text x="80" y="161" text-anchor="middle">file</text>
     <path d="M140 155 L190 155" marker-end="url(#arr)"/>
-    <rect class="box good" x="190" y="120" width="140" height="70"/><text x="260" y="149" text-anchor="middle">codifica</text><text x="260" y="171" text-anchor="middle" class="l">2-di-4</text>
+    <rect class="box good" x="190" y="120" width="140" height="70"/><text x="260" y="149" text-anchor="middle">encoding</text><text x="260" y="171" text-anchor="middle" class="l">2-of-4</text>
     <path d="M330 155 L400 60" marker-end="url(#arr)"/><path d="M330 155 L400 125" marker-end="url(#arr)"/><path d="M330 155 L400 190" marker-end="url(#arr)"/><path d="M330 155 L400 255" marker-end="url(#arr)"/>
     <g>
       <rect class="share" x="400" y="40" width="200" height="44"/><text x="500" y="67" text-anchor="middle" class="m">share 1 · server A</text>
@@ -511,22 +511,22 @@ curl -s https://redundanet-hub.fly.dev/status.json \
       <line x1="405" y1="240" x2="595" y2="274" class="x"/><line x1="405" y1="274" x2="595" y2="240" class="x"/>
     </g>
     <path class="good-line" d="M600 62 L690 155" marker-end="url(#arr-g)"/><path class="good-line" d="M600 192 L690 155" marker-end="url(#arr-g)"/>
-    <rect class="box good" x="690" y="120" width="140" height="70"/><text x="760" y="149" text-anchor="middle">decodifica</text><text x="760" y="171" text-anchor="middle" class="l">ne bastano 2</text>
+    <rect class="box good" x="690" y="120" width="140" height="70"/><text x="760" y="149" text-anchor="middle">decoding</text><text x="760" y="171" text-anchor="middle" class="l">ne bastano 2</text>
     <path class="good-line" d="M830 155 L880 155" marker-end="url(#arr-g)"/>
     <rect class="box" x="880" y="120" width="120" height="70"/><text x="940" y="161" text-anchor="middle">file ✓</text>
     <text x="640" y="300" class="l">perdi due server qualsiasi, non perdi niente · costo di storage 2×</text>
     <rect class="pill" x="1000" y="50" width="190" height="26"/><text x="1095" y="68" text-anchor="middle" class="pill-text">parametri nel manifest</text>
     <rect class="pill" x="1000" y="90" width="190" height="26"/><text x="1095" y="108" text-anchor="middle" class="pill-text">il censimento conta le copie</text>
-    <rect class="pill" x="1000" y="130" width="190" height="26"/><text x="1095" y="148" text-anchor="middle" class="pill-text">prove di guasto, anche in CI</text>
-    <rect class="pill" x="1000" y="170" width="190" height="26"/><text x="1095" y="188" text-anchor="middle" class="pill-text">ricodifica automatica</text>
+    <rect class="pill" x="1000" y="130" width="190" height="26"/><text x="1095" y="148" text-anchor="middle" class="pill-text">test di guasto, anche in CI</text>
+    <rect class="pill" x="1000" y="170" width="190" height="26"/><text x="1095" y="188" text-anchor="middle" class="pill-text">re-encoding automatico</text>
   </svg></div>
-  <p class="caption">La rete è partita come mirror <strong>1-di-2</strong> ed è passata a <strong>2-di-4</strong>: stesso costo 2×, sopravvive a due nodi. Il cambio è una riga nel manifest; ogni nodo la legge, i nuovi upload la usano subito e il rebalancer converte da solo i file vecchi.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 13:30.</strong> Il punto di onestà lo dico io per primo: la documentazione diceva 3-di-10 mentre in produzione girava 1-di-2. Ho corretto la documentazione perché dica quello che gira davvero. Dichiara quello che esegui. La codifica è cucita dentro ogni file al momento dell'upload, quindi cambiare il manifest ha richiesto un loop che ricodifica: legge k e n direttamente dalla stringa della capability e ricarica prendendo i dati dal grid stesso. Uno sweep settimanale ripara anche gli oggetti che hanno perso una share, partendo da quelle rimaste. Una ridondanza che non ripari mai è una speranza, non una proprietà.</div>
+  <p class="caption">La rete è partita come mirror <strong>1-of-2</strong> ed è passata a <strong>2-of-4</strong>: stesso costo 2×, sopravvive a due nodi. Il cambio è una riga nel manifest; ogni nodo la legge, i nuovi upload la usano subito e il rebalancer converte da solo i file vecchi.</p>
+  <div class="notes"><strong>⏱ 1:30 · a fine slide 13:30.</strong> Il punto di onestà lo dico io per primo: la documentazione diceva 3-of-10 mentre in produzione girava 1-of-2. Ho corretto la documentazione perché dica quello che gira davvero. Dichiara solo quello che gira davvero. L'encoding è fissato dentro ogni file al momento dell'upload, quindi cambiare il manifest ha richiesto un loop che fa il re-encoding: legge k e n direttamente dalla stringa della capability e ricarica prendendo i dati dal grid stesso. Uno sweep settimanale ripara anche gli oggetti che hanno perso una share, partendo da quelle rimaste. Una ridondanza che non ripari mai è una speranza, non una proprietà.</div>
 </section>
 
 <!-- 11 · Demo 2 -->
 <section class="slide">
-  <div class="tag demo">Demo dal vivo 2</div>
+  <div class="tag demo">Live demo 2</div>
   <h2>Spengo un nodo, il file resta</h2>
   <pre><span class="c"># nodo A (client): carico il file, mi segno l'hash</span>
 sha256sum talk.pdf
@@ -535,7 +535,7 @@ redundanet storage upload talk.pdf home:talk.pdf
 <span class="c"># nodo B (storage): lo butto giù</span>
 docker stop redundanet-tahoe-storage
 
-<span class="c"># pagina di stato: un server in meno, il censimento mostra disponibilità ridotta
+<span class="c"># status page: un server in meno, il censimento mostra disponibilità ridotta
 # nodo A: il download funziona ancora, dalle copie rimaste</span>
 redundanet storage download home:talk.pdf /tmp/back.pdf
 sha256sum /tmp/back.pdf     <span class="g"># identico</span>
@@ -567,7 +567,7 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <rect class="box" x="660" y="90" width="140" height="60"/><text x="730" y="126" text-anchor="middle">tinc</text>
     <text x="660" y="215" class="l">da solo</text>
     <path d="M830 145 L900 145" marker-end="url(#arr-g)" class="good-line"/>
-    <text x="865" y="130" text-anchor="middle" class="l" fill="#86efac">la correzione</text>
+    <text x="865" y="130" text-anchor="middle" class="l" fill="#86efac">il fix</text>
     <text x="910" y="28" class="t">Sempre: tinc prima, poi tahoe</text>
     <rect class="zone" x="910" y="45" width="270" height="200"/>
     <text x="930" y="72" class="l" fill="#c7d2fe">netns B</text>
@@ -577,16 +577,16 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="930" y="222" class="l">= force-recreate, tinc per primo</text>
   </svg></div>
   <div class="cols-3" style="margin-top:8px">
-    <div class="card bad"><h3>Il disco sparito</h3><p class="muted">Un <code>-f compose.yml</code> esplicito spegne il caricamento automatico dell'override di Docker; un aggiornamento ha staccato in silenzio un disco da 1 TB. Corretto nella CLI, con un test che pretende due flag <code>-f</code>.</p></div>
-    <div class="card bad"><h3>Il nodo nuovo che si rompe</h3><p class="muted">L'immagine per il Pi aveva Compose v1; un refuso nel manifest ha rotto un ingresso per 11 minuti. Ora: Compose v2 fissato e verificato in build, errori che dicono cosa fare al posto dei traceback.</p></div>
-    <div class="card bad"><h3>Il rendezvous che mentiva</h3><p class="muted">Una cattura di pacchetti: ogni byte tra nodi passava dall'hub, in TCP. Il proxy di fly nascondeva gli indirizzi veri, e tinc si tiene il primo indirizzo che impara. Soluzione: un VPS da 4 € come rendezvous, una riga nel manifest.</p></div>
+    <div class="card bad"><h3>Il disco sparito</h3><p class="muted">Un <code>-f compose.yml</code> esplicito disattiva l'auto-load dell'override di Docker; un update ha staccato in silenzio un disco da 1 TB. Corretto nella CLI, con un test che pretende due flag <code>-f</code>.</p></div>
+    <div class="card bad"><h3>Il nodo nuovo che non parte</h3><p class="muted">L'immagine per il Pi aveva Compose v1; un refuso nel manifest ha rotto un join per 11 minuti. Ora: Compose v2 pinnato e verificato in build, errori che dicono cosa fare al posto dei traceback.</p></div>
+    <div class="card bad"><h3>Il rendezvous che mentiva</h3><p class="muted">Un packet capture: ogni byte tra nodi passava dall'hub, in TCP. Il proxy di fly nascondeva gli indirizzi veri, e tinc si tiene il primo indirizzo che impara. Fix: un VPS da 4 € come rendezvous, una riga nel manifest.</p></div>
   </div>
-  <div class="notes"><strong>⏱ 2:00 · a fine slide 18:00.</strong> Se sono corto di tempo racconto solo il disco e il rendezvous. Il disco: il comando sembrava giusto, ma un -f esplicito spegne il caricamento automatico dell'override, così un aggiornamento ha staccato in silenzio un disco da 1 TB; i dati stavano benissimo, il nodo semplicemente non li vedeva più. Il rendezvous: davo per scontato che la mesh fosse una mesh. Una cattura su un nodo: zero pacchetti verso l'indirizzo vero di qualunque peer, tutto verso fly, in TCP, perché il proxy di fly mostrava all'hub il proprio indirizzo come sorgente di ogni peer, e tinc si ricorda il primo indirizzo che impara. La lezione sta nell'ultima slide: la topologia può mentire, misura i pacchetti.</div>
+  <div class="notes"><strong>⏱ 2:00 · a fine slide 18:00.</strong> Se sono corto di tempo racconto solo il disco e il rendezvous. Il disco: il comando sembrava giusto, ma un -f esplicito disattiva l'auto-load dell'override, così un update ha staccato in silenzio un disco da 1 TB; i dati stavano benissimo, il nodo semplicemente non li vedeva più. Il rendezvous: davo per scontato che la mesh fosse una mesh. Un tcpdump su un nodo: zero pacchetti verso l'indirizzo vero di qualunque peer, tutto verso fly, in TCP, perché il proxy di fly mostrava all'hub il proprio indirizzo come sorgente di ogni peer, e tinc si ricorda il primo indirizzo che impara. La lezione sta nell'ultima slide: la topologia può mentire, misura i pacchetti.</div>
 </section>
 
 <!-- 13 · Upstream dormiente -->
 <section class="slide">
-  <div class="tag pain">Difficoltà · i bordi di Tahoe</div>
+  <div class="tag pain">Difficoltà · i limiti di Tahoe</div>
   <h2>Convivere con un <span class="k">upstream dormiente</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 240" role="img" aria-label="Linea del tempo delle release di Tahoe-LAFS">
     <line x1="60" y1="100" x2="1140" y2="100"/>
@@ -597,32 +597,32 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <line x1="750" y1="100" x2="1140" y2="100" class="bad-line" style="stroke-dasharray:6 6;stroke-width:3"/>
     <text x="990" y="70" text-anchor="middle" class="t" fill="#fca5a5">niente da allora</text>
     <text x="990" y="135" text-anchor="middle" class="l">SFTP: ultima modifica nel 2023</text>
-    <text x="60" y="195" class="l">SFTP non chiude mai le sessioni (bisezionato: non è il client, non la rete, non Twisted) · niente accounting, quindi le quote stanno lato client</text>
-    <text x="60" y="220" class="l">dipendenze transitive fissate dopo che una release di pyOpenSSL 25 ha buttato giù tutti i container</text>
+    <text x="60" y="195" class="l">SFTP non chiude mai le sessioni (bisect fatto: non è il client, non la rete, non Twisted) · niente accounting, quindi le quote stanno lato client</text>
+    <text x="60" y="220" class="l">dipendenze transitive pinnate dopo che una release di pyOpenSSL 25 ha buttato giù tutti i container</text>
   </svg></div>
   <div class="cols">
-    <div class="card accent"><h3>La risposta</h3><p class="muted">Piccoli workaround testati nelle nostre immagini · fissiamo quello che upstream non fissa · aggiriamo i frontend morti (web gateway, il pattern NAS) · documentiamo le stranezze dove l'utente le incontra.</p></div>
-    <div class="card"><h3>L'assicurazione</h3><p class="muted">Identità, membership e mesh non sanno che il motore di storage è Tahoe. Il motore si può sostituire; la rete no.</p></div>
+    <div class="card accent"><h3>La risposta</h3><p class="muted">Piccoli workaround testati nelle nostre immagini · pinniamo le dipendenze che upstream non pinna · aggiriamo i frontend morti (web gateway, il pattern NAS) · documentiamo le stranezze dove l'utente le incontra.</p></div>
+    <div class="card"><h3>L'assicurazione</h3><p class="muted">Identità, membership e mesh non sanno che lo storage engine è Tahoe. L'engine si può sostituire; la rete no.</p></div>
   </div>
   <div class="notes"><strong>⏱ 0:45 · a fine slide 18:45.</strong> Ho scelto Tahoe sapendo che si muove piano. La mitigazione è architetturale, non una speranza: identità, membership e mesh non sanno che sotto c'è Tahoe.</div>
 </section>
 
 <!-- 14 · Sicurezza -->
 <section class="slide">
-  <h2>Hardening da un <span class="k">audit con 50 rilievi</span></h2>
+  <h2>Hardening da un <span class="k">audit con 50 finding</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Cancelli tra le fonti di verità e la flotta, e la macchina a stati dell'aggiornamento automatico">
-    <text x="20" y="28" class="t">Cancelli davanti alla fonte di verità</text>
+    <text x="20" y="28" class="t">Gate davanti alla source of truth</text>
     <rect class="box warn" x="20" y="50" width="170" height="60"/><text x="105" y="86" text-anchor="middle">manifest Git</text>
     <rect class="box" x="20" y="130" width="170" height="60"/><text x="105" y="166" text-anchor="middle">keyserver</text>
     <g>
       <rect class="box good" x="250" y="40" width="200" height="50"/><text x="350" y="70" text-anchor="middle" class="l">solo fingerprint completi</text>
-      <rect class="box good" x="250" y="100" width="200" height="50"/><text x="350" y="130" text-anchor="middle" class="l">l'ingresso fallisce chiuso</text>
+      <rect class="box good" x="250" y="100" width="200" height="50"/><text x="350" y="130" text-anchor="middle" class="l">join fail-closed</text>
       <rect class="box good" x="250" y="160" width="200" height="50"/><text x="350" y="190" text-anchor="middle" class="l">pubblica solo la CI verde</text>
       <rect class="box good" x="250" y="220" width="200" height="50"/><text x="350" y="250" text-anchor="middle" class="l">validate esce con errore</text>
     </g>
     <path d="M190 80 L250 65" marker-end="url(#arr)"/><path d="M190 160 L250 125" marker-end="url(#arr)"/>
     <path d="M450 155 L520 155" marker-end="url(#arr-g)" class="good-line"/>
-    <rect class="box accent" x="520" y="120" width="130" height="70"/><text x="585" y="150" text-anchor="middle">la flotta</text><text x="585" y="172" text-anchor="middle" class="l">pull di :latest</text>
+    <rect class="box accent" x="520" y="120" width="130" height="70"/><text x="585" y="150" text-anchor="middle">i nodi</text><text x="585" y="172" text-anchor="middle" class="l">pull di :latest</text>
     <text x="700" y="28" class="t">redundanet update</text>
     <g>
       <rect class="box" x="700" y="50" width="120" height="50"/><text x="760" y="80" text-anchor="middle">pull</text>
@@ -631,14 +631,14 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
       <path d="M1010 75 L1050 75" marker-end="url(#arr)"/>
       <rect class="box accent" x="1050" y="50" width="130" height="50"/><text x="1115" y="80" text-anchor="middle">health check</text>
       <path class="good-line" d="M1115 100 L1115 150" marker-end="url(#arr-g)"/>
-      <rect class="box good" x="1050" y="150" width="130" height="50"/><text x="1115" y="180" text-anchor="middle">sano ✓</text>
+      <rect class="box good" x="1050" y="150" width="130" height="50"/><text x="1115" y="180" text-anchor="middle">healthy ✓</text>
       <path class="bad-line" d="M1050 75 C 980 120, 980 200, 1010 225" marker-end="url(#arr-r)"/>
       <rect class="box bad" x="860" y="200" width="150" height="50"/><text x="935" y="230" text-anchor="middle">rollback immagini</text>
       <text x="700" y="300" class="l">un :latest rotto non può lasciare un nodo a terra</text>
     </g>
   </svg></div>
-  <p class="caption">Metodo: sei revisori per dimensione → verifica in contraddittorio di ogni rilievo → sei lotti ordinati per raggio d'esplosione, rilasciati a piccole release. Poi un secondo giro dall'interno: cosa può fare un <em>membro</em> malintenzionato? DoS sul relay, dirottamento di indirizzi, server di storage canaglia. Classificati, in parte corretti, il resto in roadmap.</p>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 20:00.</strong> Se mi chiedono perché il manifest non è firmato: era il rilievo più grosso e l'ho rimandato apposta. Oggi il confine è l'autenticazione di GitHub, la branch protection e la review. La firma proteggerebbe da un account GitHub compromesso. Buco noto, in lista.<br><br>Il giro dall'interno vale una frase: un membro non può leggere i dati degli altri né falsificare un'identità, perché la cifratura è lato client e ogni connessione Tahoe inchioda la chiave del server. Quello che può fare è buttare giù la rete o indebolirla in silenzio, e le correzioni sono righe singole in tinc e nel censimento, più i certificati grid-manager di Tahoe per il caso del server canaglia.</div>
+  <p class="caption">Metodo: sei revisori per dimensione → verifica in contraddittorio di ogni finding → sei batch ordinati per blast radius, rilasciati in piccole release. Poi un secondo giro dall'interno: cosa può fare un <em>membro</em> malintenzionato? DoS sul relay, hijack degli indirizzi, storage server rogue. Classificati, in parte corretti, il resto in roadmap.</p>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 20:00.</strong> Se mi chiedono perché il manifest non è firmato: era il finding più grosso e l'ho rimandato apposta. Oggi il confine è l'autenticazione di GitHub, la branch protection e la review. La firma proteggerebbe da un account GitHub compromesso. Buco noto, in lista.<br><br>Il giro dall'interno vale una frase: un membro non può leggere i dati degli altri né falsificare un'identità, perché la cifratura è lato client e ogni connessione Tahoe fa il pinning della chiave del server. Quello che può fare è buttare giù la rete o indebolirla in silenzio, e le correzioni sono righe singole in tinc e nel censimento, più i certificati grid-manager di Tahoe per il caso del server rogue.</div>
 </section>
 
 <!-- 15 · Test -->
@@ -653,9 +653,9 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="600" y="185" text-anchor="middle" class="l">mesh VPN · grid erasure-coded che sopravvive a un nodo · bootstrap dell'hub</text>
     <polygon points="240,215 960,215 1100,310 100,310" fill="rgba(148,163,184,.12)" stroke="#94a3b8" stroke-width="2"/>
     <text x="600" y="255" text-anchor="middle" class="t">unit test per ogni entrypoint · ruff · mypy strict · pubblica solo la CI</text>
-    <text x="600" y="282" text-anchor="middle" class="l">entrypoint scritti come funzioni pure con runner iniettati: la logica dei container si testa in unità</text>
+    <text x="600" y="282" text-anchor="middle" class="l">entrypoint scritti come funzioni pure con runner iniettati: la logica dei container ha unit test</text>
   </svg></div>
-  <p class="caption">Quello che i test <strong>non</strong> potevano prendere: la trappola del netns, l'override perso, Compose v1 su un OS nuovo. Semantica dell'ambiente. Ognuno è diventato uno unit test sulla costruzione dei comandi della CLI, perché il bug stava lì. E anche la build era un bug: la dipendenza Rust di Tahoe non ha wheel per ARM, quindi ogni release la compilava per un'ora sotto emulazione. Ora un'immagine base si ricostruisce solo quando cambia il lock, nativa per architettura, e una release ci mette minuti.</p>
+  <p class="caption">Quello che i test <strong>non</strong> potevano intercettare: la trappola del netns, l'override perso, Compose v1 su un OS nuovo. Semantica dell'ambiente. Ognuno è diventato un unit test sulla costruzione dei comandi della CLI, perché il bug stava lì. E anche la build era un bug: la dipendenza Rust di Tahoe non ha wheel per ARM, quindi ogni release la compilava per un'ora sotto QEMU. Ora un'immagine base si ricostruisce solo quando cambia il lock, nativa per architettura, e una release ci mette minuti.</p>
   <div class="notes"><strong>⏱ 0:45 · a fine slide 20:45.</strong> Essere onesto su cosa la piramide non copre: l'immagine dell'hub non è ancora costruita in CI. In roadmap, non nascosto. La storia della build da un'ora la racconto solo se ho tempo.</div>
 </section>
 
@@ -665,32 +665,32 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 295" role="img" aria-label="Share Samba sincronizzata a senso unico nel grid">
     <rect class="box" x="20" y="80" width="160" height="80"/><text x="100" y="114" text-anchor="middle">dispositivi in LAN</text><text x="100" y="138" text-anchor="middle" class="l">Mac, Windows, telefono</text>
     <path d="M180 120 L250 120" marker-end="url(#arr)"/><text x="215" y="108" text-anchor="middle" class="l">SMB</text>
-    <rect class="box warn" x="250" y="70" width="220" height="100"/><text x="360" y="104" text-anchor="middle">share Samba sul nodo</text><text x="360" y="128" text-anchor="middle" class="l">disco vero: veloce, file normali</text><text x="360" y="150" text-anchor="middle" class="l">la fonte di verità</text>
-    <path d="M470 120 L540 120" marker-end="url(#arr)"/><text x="505" y="108" text-anchor="middle" class="l">lettura</text>
+    <rect class="box warn" x="250" y="70" width="220" height="100"/><text x="360" y="104" text-anchor="middle">share Samba sul nodo</text><text x="360" y="128" text-anchor="middle" class="l">disco vero: veloce, file normali</text><text x="360" y="150" text-anchor="middle" class="l">la source of truth</text>
+    <path d="M470 120 L540 120" marker-end="url(#arr)"/><text x="505" y="108" text-anchor="middle" class="l">read-only</text>
     <rect class="box" x="540" y="70" width="220" height="100"/><text x="650" y="104" text-anchor="middle">tahoe backup</text><text x="650" y="128" text-anchor="middle" class="l">ogni 15 min, incrementale</text><text x="650" y="150" text-anchor="middle" class="l">salta i file invariati</text>
     <path d="M760 120 L830 120" marker-end="url(#arr-g)" class="good-line"/>
     <rect class="box good" x="830" y="50" width="350" height="140"/><text x="1005" y="84" text-anchor="middle">grid</text><text x="1005" y="112" text-anchor="middle" class="m">backups:Archives/&lt;timestamp&gt;/</text><text x="1005" y="136" text-anchor="middle" class="m">backups:Latest/</text><text x="1005" y="160" text-anchor="middle" class="l">gli snapshot si accumulano:</text><text x="1005" y="178" text-anchor="middle" class="l">protezione da errori e ransomware</text>
-    <text x="20" y="225" class="l">a senso unico per scelta: la sincronizzazione bidirezionale vuol dire risolvere conflitti, e il Magic Folder di upstream ci ha provato e ha rinunciato</text>
+    <text x="20" y="225" class="l">one-way per scelta: il sync bidirezionale vuol dire risolvere conflitti, e Magic Folder di upstream ci ha provato e ha rinunciato</text>
     <text x="20" y="250" class="l">l'ha proposto un membro; ha battuto la mia idea con FUSE perché lavora con i file immutabili invece che contro</text>
-    <text x="20" y="275" class="l">il misuratore conta un file invariato una volta sola tra tutti gli snapshot; il backup si ferma se un membro supera l'allocazione</text>
+    <text x="20" y="275" class="l">l'usage meter conta un file invariato una volta sola tra tutti gli snapshot; il backup si ferma se un membro supera l'allocazione</text>
   </svg></div>
   <div class="notes"><strong>⏱ 0:45 · a fine slide 21:30.</strong> Questo design l'ha proposto un membro; io avevo proposto la strada FUSE. La sua era migliore perché lavora con il modello immutabile di Tahoe invece che contro. Dirlo, è il punto della penultima slide. Demo facoltativa solo se sono in anticipo: butto un file sulla share e lo vedo comparire in backups:Latest/.</div>
 </section>
 
 <!-- 17 · Operazioni (saltabile) -->
 <section class="slide">
-  <h2>Il giorno dopo: operazioni</h2>
-  <pre><span class="c"># ingresso: scrive .env, esporta la chiave GPG, stampa il comando esatto di avvio</span>
+  <h2>Day-2 operations</h2>
+  <pre><span class="c"># join: scrive .env, esporta la chiave GPG, stampa il comando esatto di avvio</span>
 redundanet network join --repo &lt;repo del manifest&gt; --name node-303c084b
 
-<span class="c"># aggiornamento sicuro: rileva via docker inspect, ricrea prima tinc, health check, rollback</span>
+<span class="c"># update sicuro: rileva via docker inspect, ricrea prima tinc, health check, rollback</span>
 redundanet update --check
 redundanet update
 
 <span class="c"># file e rete</span>
 redundanet storage upload foto.jpg home:foto.jpg
 redundanet storage ls backups:Latest/
-redundanet storage quota      <span class="c"># la mia allocazione contro quello che uso sul grid</span>
+redundanet storage quota      <span class="c"># la mia allocazione e quanto uso sul grid</span>
 redundanet network peers
 redundanet validate manifests/manifest.yaml</pre>
   <p class="caption">Tutto quello che serve a un nodo: <code>/opt/redundanet/.env</code> + un file di override per il disco. Gli errori dicono <strong>cosa lanciare dopo</strong>.</p>
@@ -702,19 +702,19 @@ redundanet validate manifests/manifest.yaml</pre>
   <h2>Cosa viene dopo <span class="muted" style="font-size:22px">(in ordine di rischio, non di divertimento)</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 300" role="img" aria-label="Tabellone della roadmap">
     <rect class="box good" x="20" y="20" width="370" height="260"/><text x="40" y="52" class="t">Fatto: le promesse di ridondanza</text>
-    <text x="40" y="90" class="l">• 2-di-4, convertito dal rebalancer</text>
+    <text x="40" y="90" class="l">• 2-of-4, convertito dal rebalancer</text>
     <text x="40" y="118" class="l">• due introducer, ne può cadere uno</text>
     <text x="40" y="146" class="l">• sweep settimanale di repair, rinnovo dei lease</text>
     <text x="40" y="174" class="l">• quote: allocazione per contributo, per membro</text>
     <text x="40" y="202" class="l">• un rendezvous che vede gli indirizzi veri</text>
     <text x="40" y="230" class="l">• release in minuti, non in un'ora</text>
-    <rect class="box warn" x="415" y="20" width="370" height="260"/><text x="435" y="52" class="t">Adesso: irrobustire e potare</text>
+    <rect class="box warn" x="415" y="20" width="370" height="260"/><text x="435" y="52" class="t">Adesso: hardening e pulizia</text>
     <text x="435" y="90" class="l">• hardening della mesh: subnet strette,</text>
     <text x="435" y="118" class="l">  cache del censimento, meno privilegi ai container</text>
     <text x="435" y="146" class="l">• contributo pesato per uptime e spazio libero</text>
-    <text x="435" y="174" class="l">• potatura degli snapshot e politica di GC</text>
+    <text x="435" y="174" class="l">• pruning degli snapshot e policy di GC</text>
     <text x="435" y="202" class="l">• immagine dell'hub in CI, e2e notturni, alerting</text>
-    <text x="435" y="230" class="l">• strumenti per il disco del Pi</text>
+    <text x="435" y="230" class="l">• tooling per il disco del Pi</text>
     <rect class="box" x="810" y="20" width="370" height="260"/><text x="830" y="52" class="t">Poi: fiducia e la storia del fork</text>
     <text x="830" y="90" class="l">• certificati grid-manager: solo server verificati</text>
     <text x="830" y="118" class="l">• accounting lato server (spending pass)</text>
@@ -723,18 +723,18 @@ redundanet validate manifests/manifest.yaml</pre>
     <text x="830" y="202" class="l">  la tua rete, per esempio sui PC fermi in ufficio</text>
     <text x="830" y="230" class="l">• firma del manifest (rimandata apposta)</text>
   </svg></div>
-  <div class="notes"><strong>⏱ 0:30 · a fine slide 22:30.</strong> La colonna a sinistra è quello che quest'anno ha comprato. Quella in mezzo è in ordine di rischio: le voci sull'hardening della mesh sono righe singole che chiudono quello che un membro malintenzionato potrebbe fare. La colonna a destra cambia il modello di fiducia più che il codice, e la comincerei solo se la rete cresce oltre le persone che conosco.</div>
+  <div class="notes"><strong>⏱ 0:30 · a fine slide 22:30.</strong> La colonna a sinistra è quello che quest'anno ha portato. Quella in mezzo è in ordine di rischio: le voci sull'hardening della mesh sono one-liner che chiudono quello che un membro malintenzionato potrebbe fare. La colonna a destra cambia il modello di fiducia più che il codice, e la comincerei solo se la rete cresce oltre le persone che conosco.</div>
 </section>
 
 <!-- 19 · Lezioni -->
 <section class="slide">
   <h2>Cosa direi a me stesso all'inizio</h2>
   <ul style="max-width:1050px;font-size:22px">
-    <li><strong>Fai girare la tua rete dal primo giorno.</strong> Ogni bug serio è arrivato dalla flotta viva, e poi è diventato un test.</li>
-    <li><strong>Una validazione fuori dal percorso vivo è codice morto.</strong></li>
-    <li><strong>Scegli in base al modello di minaccia, poi isola la scelta.</strong></li>
-    <li><strong>Dichiara quello che esegui.</strong></li>
-    <li><strong>Rendi leggibile il fallimento:</strong> le correzioni migliori sono stati messaggi d'errore che dicono cosa lanciare dopo.</li>
+    <li><strong>Fai girare la tua rete dal primo giorno.</strong> Ogni bug serio è arrivato dalla rete in produzione, e poi è diventato un test.</li>
+    <li><strong>Una validazione fuori dal percorso reale è codice morto.</strong></li>
+    <li><strong>Scegli in base al threat model, poi isola la scelta.</strong></li>
+    <li><strong>Dichiara solo quello che gira davvero.</strong></li>
+    <li><strong>Rendi leggibile il fallimento:</strong> i fix migliori sono stati messaggi d'errore che dicono cosa lanciare dopo.</li>
     <li><strong>La topologia può mentire: misura i pacchetti.</strong></li>
     <li><strong>Una comunità progetta meglio di te.</strong></li>
   </ul>
@@ -745,16 +745,16 @@ redundanet validate manifests/manifest.yaml</pre>
 <section class="slide">
   <h2>In numeri</h2>
   <div class="cols-3">
-    <div class="stat"><div class="big">2-di-4</div><div class="lbl">possono morire due server qualsiasi; costo di storage 2×</div></div>
+    <div class="stat"><div class="big">2-of-4</div><div class="lbl">possono morire due server qualsiasi; costo di storage 2×</div></div>
     <div class="stat"><div class="big">4</div><div class="lbl">tipi di hardware: Raspberry Pi, vecchio PC, server di casa, un VPS da 4 €</div></div>
     <div class="stat"><div class="big">0</div><div class="lbl">persone che possono leggere i tuoi file, host compresi</div></div>
   </div>
   <div class="cols-3" style="margin-top:28px">
-    <div class="stat"><div class="big">50</div><div class="lbl">rilievi dell'audit, smistati in 6 lotti</div></div>
+    <div class="stat"><div class="big">50</div><div class="lbl">finding dell'audit, smistati in 6 batch</div></div>
     <div class="stat"><div class="big">5 min</div><div class="lbl">perché un cambio al manifest arrivi su ogni nodo; il censimento si aggiorna alla stessa cadenza</div></div>
     <div class="stat"><div class="big">1</div><div class="lbl">pull request per entrare</div></div>
   </div>
-  <div class="notes"><strong>⏱ 0:15 · a fine slide 23:30 · SALTABILE.</strong> Quindici secondi e chiudo. I numeri vivi (nodi, oggetti, uptime) stanno sulla pagina di stato, non sulla slide, così il deck resta vero in qualunque momento lo presenti.</div>
+  <div class="notes"><strong>⏱ 0:15 · a fine slide 23:30 · SALTABILE.</strong> Quindici secondi e chiudo. I numeri vivi (nodi, oggetti, uptime) stanno sulla status page, non sulla slide, così il deck resta vero in qualunque momento lo presenti.</div>
 </section>
 
 <!-- 21 · Chiusura -->
@@ -764,12 +764,12 @@ redundanet validate manifests/manifest.yaml</pre>
   <div class="cols" style="margin-top:40px">
     <dl class="kv">
       <dt>Codice</dt><dd class="mono">github.com/adefilippo83/redundanet</dd>
-      <dt>Stato</dt><dd class="mono">redundanet-hub.fly.dev</dd>
-      <dt>Entrare</dt><dd class="mono">redundanet.com/join.html</dd>
+      <dt>Status</dt><dd class="mono">redundanet-hub.fly.dev</dd>
+      <dt>Join</dt><dd class="mono">redundanet.com/join.html</dd>
       <dt>Contatti</dt><dd class="mono">alessandro@defilippo.me · defilippo.me</dd>
       <dt>Stack</dt><dd>Python · Tahoe-LAFS · Tinc · GPG · Docker · GitHub Actions · fly.io</dd>
     </dl>
-    <div class="card accent"><h3>Domande che mi piacciono</h3><p class="muted">Modello di minaccia e capability · perché non IPFS o Ceph · tinc contro WireGuard · perché un proxy non può fare da rendezvous · come funziona il censimento · cosa succede se muore un hub · quote senza accounting · cosa può fare un membro malintenzionato</p></div>
+    <div class="card accent"><h3>Domande che mi piacciono</h3><p class="muted">Threat model e capability · perché non IPFS o Ceph · tinc vs WireGuard · perché un proxy non può fare da rendezvous · come funziona il censimento · cosa succede se muore un hub · quote senza accounting · cosa può fare un membro malintenzionato</p></div>
   </div>
   <div class="notes"><strong>⏱ 0:30 · a fine slide 24:00.</strong> Un minuto di margine sui 25. Riproporre la demo per le domande: volete vedermi spegnere un nodo? Se sono in anticipo uso il tempo per la demo del NAS. Ringraziare i LUG che organizzano, e chi mi ha fatto da nodo.</div>
 </section>
