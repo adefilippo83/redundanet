@@ -191,6 +191,24 @@
     .me { flex-direction: column; align-items: flex-start; gap: 16px; }
     .me img { width: 120px; height: 120px; }
   }
+  /* Presenter / audience roles (see the script at the end): ?role=presenter shows the notes,
+     a stopwatch and a preview of the next slide; ?role=audience shows the slides only. */
+  .timer { display: none; position: absolute; top: 14px; left: 24px; z-index: 6;
+    font: 600 22px 'JetBrains Mono', monospace; color: #c7d2fe; }
+  .next { display: none; position: absolute; left: 24px; bottom: 16px; width: 336px; height: 189px; overflow: hidden;
+    border: 1px solid var(--primary); border-radius: 12px; background: var(--bg-deep); z-index: 5; }
+  .next iframe { width: 1600px; height: 900px; border: 0; transform: scale(.21); transform-origin: 0 0; pointer-events: none; }
+  .next span { position: absolute; top: 6px; left: 8px; z-index: 2; font-size: 12px; color: #c7d2fe;
+    background: rgba(11,17,32,.85); padding: 2px 7px; border-radius: 6px; }
+  .npanel { display: none; position: absolute; left: 384px; right: 24px; bottom: 16px; height: calc(28% - 32px);
+    overflow: auto; background: rgba(11,17,32,.96); border: 1px solid var(--primary); border-radius: 12px;
+    padding: 14px 18px; font-size: 17px; line-height: 1.45; color: #cbd5e1; z-index: 5; }
+  body.presenter .deck { transform: scale(.72); transform-origin: 50% 0; }
+  body.presenter .timer, body.presenter .next, body.presenter .npanel { display: block; }
+  body.audience .hint, body.audience .notes, body.audience .timer, body.audience .next, body.audience .npanel,
+  body.preview .hint, body.preview .notes, body.preview .timer, body.preview .next, body.preview .npanel,
+  body.preview .mnav, body.preview .progress { display: none !important; }
+  @media print { .timer, .next, .npanel { display: none !important; } }
 </style>
 </head>
 <body>
@@ -775,58 +793,113 @@ redundanet validate manifests/manifest.yaml</pre>
 </section>
 
 </div>
-<div class="hint">← → naviga · N note · T cronometro · F schermo intero</div>
+<div class="hint">← → naviga · N note · T cronometro · P vista relatore · F schermo intero</div>
+<div class="timer" id="timer">⏱ 00:00</div>
+<div class="next" id="next"><span></span><iframe title="next slide" tabindex="-1"></iframe></div>
+<div class="npanel" id="npanel"></div>
 <div class="mnav"><button id="prevBtn" aria-label="Precedente">‹ Indietro</button><span class="count" id="mcount"></span><button class="notes-btn" id="notesBtn" aria-label="Mostra le note">Note</button><button id="nextBtn" aria-label="Successiva">Avanti ›</button></div>
 <div class="progress" id="progress"></div>
 
 <script>
 (function () {
+  const DECK = { footer: 'RedundaNet · Linux Day Prato 2026', nextLabel: 'prossima', endLabel: 'ultima slide' };
   const slides = Array.from(document.querySelectorAll('.slide'));
   const progress = document.getElementById('progress');
-  const hint = document.querySelector('.hint');
-  const hintText = hint.textContent;
+  const timerEl = document.getElementById('timer');
+  const npanel = document.getElementById('npanel');
+  const nextBox = document.getElementById('next');
+  const nextFrame = nextBox.querySelector('iframe');
+  const nextLabel = nextBox.querySelector('span');
+
+  // Roles. On the laptop open the deck with ?role=presenter (notes, stopwatch, next slide);
+  // on the projector with ?role=audience (slides only): the two windows follow each other.
+  // Or open one plain window and press P: it becomes the audience view and opens the
+  // presenter view next to it. Windows talk through a BroadcastChannel, with localStorage
+  // as the fallback; both need the same origin, so serve the file (python3 -m http.server)
+  // rather than opening it from disk if the sync does not work.
+  const params = new URLSearchParams(location.search);
+  let role = ['presenter', 'audience', 'preview'].includes(params.get('role')) ? params.get('role') : 'solo';
+  document.body.classList.add(role);
+  const KEY = 'redundanet-deck:' + location.pathname;
   let i = Math.max(0, Math.min(slides.length - 1, parseInt(location.hash.slice(1) || '1', 10) - 1));
   let notes = false;
-  // Cronometro: T lo fa partire e fermare; il tempo passato compare in alto a destra,
-  // da confrontare con l'obiettivo cumulato scritto in testa a ogni nota.
   let startedAt = null, ticker = null;
 
   slides.forEach((s, k) => {
     const foot = document.createElement('div'); foot.className = 'foot';
-    foot.innerHTML = '<span>RedundaNet · Linux Day Prato 2026</span><span>' + (k + 1) + ' / ' + slides.length + '</span>';
+    foot.innerHTML = '<span>' + DECK.footer + '</span><span>' + (k + 1) + ' / ' + slides.length + '</span>';
     s.appendChild(foot);
   });
 
-  function tick() {
-    const s = Math.floor((Date.now() - startedAt) / 1000);
-    hint.textContent = '⏱ ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  let channel = null;
+  function remote(d) { if (d && typeof d.i === 'number' && d.i !== i) show(d.i, true); }
+  if (role !== 'preview') {
+    try { channel = new BroadcastChannel(KEY); channel.onmessage = e => remote(e.data); } catch (e) { channel = null; }
+    window.addEventListener('storage', e => {
+      if (e.key === KEY && e.newValue) { try { remote(JSON.parse(e.newValue)); } catch (_) { /* ignore */ } }
+    });
+    if (!location.hash && role !== 'solo') {
+      // A window opened after the other one starts where that one is.
+      try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d && Date.now() - d.t < 3600000) i = d.i; } catch (_) { /* ignore */ }
+    }
+  } else {
+    window.addEventListener('message', e => { if (e.data && typeof e.data.show === 'number') show(e.data.show, true); });
   }
-  function toggleTimer() {
-    if (ticker) { clearInterval(ticker); ticker = null; hint.textContent = hintText; startedAt = null; return; }
-    startedAt = Date.now(); tick(); ticker = setInterval(tick, 1000);
+  function broadcast() {
+    const msg = { i: i, t: Date.now() };
+    if (channel) channel.postMessage(msg);
+    try { localStorage.setItem(KEY, JSON.stringify(msg)); } catch (_) { /* ignore */ }
   }
 
-  function show(n) {
+  function fmt(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+  function tick() { timerEl.textContent = '⏱ ' + fmt(Math.floor((Date.now() - startedAt) / 1000)); }
+  // T starts the stopwatch; T again freezes it; T once more restarts from zero.
+  function toggleTimer() {
+    if (ticker) { clearInterval(ticker); ticker = null; return; }
+    startedAt = Date.now(); timerEl.style.display = 'block'; tick(); ticker = setInterval(tick, 1000);
+  }
+
+  function show(n, fromRemote) {
     i = Math.max(0, Math.min(slides.length - 1, n));
     slides.forEach((s, k) => s.classList.toggle('active', k === i));
     progress.style.width = ((i + 1) / slides.length * 100) + '%';
-    history.replaceState(null, '', '#' + (i + 1));
+    history.replaceState(null, '', location.pathname + location.search + '#' + (i + 1));
     slides[i].querySelectorAll('.notes').forEach(el => el.classList.toggle('show', notes));
+    if (role === 'presenter') {
+      const src = slides[i].querySelector('.notes');
+      npanel.innerHTML = src ? src.innerHTML : '';
+      if (i + 1 < slides.length) {
+        nextLabel.textContent = DECK.nextLabel + ' ' + (i + 2) + '/' + slides.length;
+        if (!nextFrame.getAttribute('src')) nextFrame.src = location.pathname + '?role=preview#' + (i + 2);
+        else if (nextFrame.contentWindow) nextFrame.contentWindow.postMessage({ show: i + 1 }, '*');
+      } else {
+        nextLabel.textContent = DECK.endLabel;
+        if (nextFrame.contentWindow) nextFrame.contentWindow.postMessage({ show: i }, '*');
+      }
+    }
     const mc = document.getElementById('mcount'); if (mc) mc.textContent = (i + 1) + '/' + slides.length;
     slides[i].scrollTop = 0;
+    if (!fromRemote && role !== 'preview') broadcast();
+  }
+  function openPresenter() {
+    if (role !== 'solo') return;
+    role = 'audience'; document.body.classList.replace('solo', 'audience'); notes = false; show(i);
+    window.open(location.pathname + '?role=presenter#' + (i + 1), 'redundanet-presenter', 'width=1280,height=760');
   }
   document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
     if (['ArrowRight', ' ', 'PageDown', 'l', 'j'].includes(e.key)) { e.preventDefault(); show(i + 1); }
     else if (['ArrowLeft', 'PageUp', 'h', 'k'].includes(e.key)) { e.preventDefault(); show(i - 1); }
     else if (e.key === 'Home') show(0);
     else if (e.key === 'End') show(slides.length - 1);
-    else if (e.key.toLowerCase() === 'n') { notes = !notes; show(i); }
-    else if (e.key.toLowerCase() === 't') { toggleTimer(); }
-    else if (e.key.toLowerCase() === 'f') { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
+    else if (key === 'n') { notes = !notes; show(i, true); }
+    else if (key === 't') { toggleTimer(); }
+    else if (key === 'p') { openPresenter(); }
+    else if (key === 'f') { document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); }
   });
   document.getElementById('prevBtn').addEventListener('click', e => { e.stopPropagation(); show(i - 1); });
   document.getElementById('nextBtn').addEventListener('click', e => { e.stopPropagation(); show(i + 1); });
-  document.getElementById('notesBtn').addEventListener('click', e => { e.stopPropagation(); notes = !notes; show(i); });
+  document.getElementById('notesBtn').addEventListener('click', e => { e.stopPropagation(); notes = !notes; show(i, true); });
   let touchX = null, touchY = null;
   document.addEventListener('touchstart', e => { if (e.target.closest('.diagram, pre')) { touchX = null; return; } touchX = e.touches[0].clientX; touchY = e.touches[0].clientY; });
   document.addEventListener('touchend', e => {
@@ -835,7 +908,7 @@ redundanet validate manifests/manifest.yaml</pre>
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) show(dx < 0 ? i + 1 : i - 1);
   });
   document.addEventListener('click', e => {
-    if (e.target.closest('a, pre, .notes, .diagram, .mnav')) return;
+    if (e.target.closest('a, pre, .notes, .npanel, .next, .diagram, .mnav')) return;
     if (window.matchMedia('(max-width: 900px)').matches) return;
     show(e.clientX > window.innerWidth / 2 ? i + 1 : i - 1);
   });
