@@ -416,3 +416,58 @@ def test_compose_files_differ(tmp_path):
     assert compose_files_differ(repo, install) is False
     (install / "docker-compose.yml").write_text("B\n")
     assert compose_files_differ(repo, install) is True
+
+
+class TestComposeFileResolution:
+    """Which compose file the CLI drives when REDUNDANET_COMPOSE_FILE is unset.
+
+    The repo clone that `update` maintains has no override next to it, so it
+    must never win over the installed stack (a storage node lost its disk
+    bind-mount that way).
+    """
+
+    def _compose(self, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("services: {}\n")
+        return path
+
+    def test_installed_file_wins_over_checkout_and_clone(self, tmp_path, monkeypatch):
+        import redundanet.core.deployment as dep_mod
+
+        install = self._compose(tmp_path / "opt" / "docker" / "docker-compose.yml")
+        monkeypatch.setattr(dep_mod, "INSTALL_COMPOSE_FILE", install)
+        data_dir = tmp_path / "data"
+        self._compose(data_dir / "repo" / "docker" / "docker-compose.yml")
+        checkout = tmp_path / "checkout"
+        self._compose(checkout / "docker" / "docker-compose.yml")
+        monkeypatch.chdir(checkout)
+        dep = Deployment(AppSettings(data_dir=data_dir))
+        assert dep.compose_file == install
+
+    def test_clone_is_the_last_resort(self, tmp_path, monkeypatch):
+        import redundanet.core.deployment as dep_mod
+
+        monkeypatch.setattr(
+            dep_mod, "INSTALL_COMPOSE_FILE", tmp_path / "opt" / "docker" / "none.yml"
+        )
+        data_dir = tmp_path / "data"
+        clone = self._compose(data_dir / "repo" / "docker" / "docker-compose.yml")
+        monkeypatch.chdir(tmp_path)  # no docker/ here
+        dep = Deployment(AppSettings(data_dir=data_dir))
+        assert dep.compose_file == clone
+
+    def test_misplaced_override_is_reported(self, tmp_path, monkeypatch):
+        import redundanet.core.deployment as dep_mod
+
+        install = self._compose(tmp_path / "opt" / "docker" / "docker-compose.yml")
+        override = install.parent / "docker-compose.override.yml"
+        override.write_text("services: {}\n")
+        monkeypatch.setattr(dep_mod, "INSTALL_COMPOSE_FILE", install)
+        clone = self._compose(tmp_path / "data" / "repo" / "docker" / "docker-compose.yml")
+        # resolved to the clone (no override there): the installed one would be dropped
+        assert Deployment(AppSettings(compose_file=clone)).misplaced_override() == override
+        # resolved to the installed file: fine
+        assert Deployment(AppSettings(compose_file=install)).misplaced_override() is None
+        # a checkout with its own override: fine too
+        (clone.parent / "docker-compose.override.yml").write_text("services: {}\n")
+        assert Deployment(AppSettings(compose_file=clone)).misplaced_override() is None

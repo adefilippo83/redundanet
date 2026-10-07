@@ -159,3 +159,27 @@ class TestAppSettings:
         )
         assert settings.config_dir == tmp_path / "config"
         assert settings.data_dir == tmp_path / "data"
+
+
+class TestPersistSettings:
+    def test_merges_keys_and_keeps_the_rest(self, tmp_path):
+        from redundanet.core.config import persist_settings
+
+        config_dir = tmp_path / "etc"
+        config_dir.mkdir()
+        (config_dir / ".env").write_text(
+            "REDUNDANET_NODE_NAME=node-1\nREDUNDANET_COMPOSE_FILE=/old\n"
+        )
+        assert persist_settings(config_dir, {"REDUNDANET_COMPOSE_FILE": "/opt/x.yml"}) is True
+        assert (config_dir / ".env").read_text() == (
+            "REDUNDANET_NODE_NAME=node-1\nREDUNDANET_COMPOSE_FILE=/opt/x.yml\n"
+        )
+
+    def test_creates_the_file_and_reports_unwritable(self, tmp_path):
+        from redundanet.core.config import persist_settings
+
+        assert persist_settings(tmp_path / "new", {"A": "1"}) is True
+        assert (tmp_path / "new" / ".env").read_text() == "A=1\n"
+        blocker = tmp_path / "file"
+        blocker.write_text("")
+        assert persist_settings(blocker / "sub", {"A": "1"}) is False  # a file in the way

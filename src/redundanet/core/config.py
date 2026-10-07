@@ -256,6 +256,27 @@ def load_settings() -> AppSettings:
     )
 
 
+def persist_settings(config_dir: Path, values: dict[str, str]) -> bool:
+    """Merge ``values`` into the persisted node config at ``<config_dir>/.env``.
+
+    Existing keys are replaced, every other line is kept. Returns False when
+    the directory is not writable (a CLI run without root); nothing else is
+    touched in that case.
+    """
+    target = config_dir / ".env"
+    lines: list[str] = []
+    if target.exists():
+        lines = target.read_text().splitlines()
+    kept = [line for line in lines if line.split("=", 1)[0].strip() not in values]
+    kept += [f"{key}={value}" for key, value in values.items()]
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        target.write_text("\n".join(kept) + "\n")
+    except OSError:
+        return False
+    return True
+
+
 def get_default_manifest_path(settings: AppSettings | None = None) -> Path:
     """Get the default manifest file path."""
     if settings is None:
