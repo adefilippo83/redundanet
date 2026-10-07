@@ -35,7 +35,11 @@ that chain.
 - **Every CLI compose invocation must include the override file.** Passing
   `-f` disables Docker's auto-load of `docker-compose.override.yml`, which
   holds storage disk bind-mounts; dropping it silently detaches node disks.
-  `Deployment._base()` handles this — route compose calls through it.
+  `Deployment._base()` handles this — route compose calls through it. The
+  override is found next to the compose file the CLI resolved, so that file
+  must be the installed one: `join` pins it (`REDUNDANET_COMPOSE_FILE`), the
+  repo clone is the last candidate, and `update` refuses when the installed
+  override would be dropped.
 - **Compose project name is `redundanet`** (`-p redundanet`); without it the
   CLI cannot see the containers.
 - **GPG identities are full 40-char fingerprints, exact match, fail closed.**

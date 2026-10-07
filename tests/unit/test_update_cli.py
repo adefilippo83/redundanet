@@ -32,9 +32,13 @@ class FakeDeployment:
         # then no-ops (no repo clone), leaving image-only behavior unchanged.
         self.compose_file = None
         self.env_file = None
+        self.misplaced = None  # the installed override a recreate would drop
 
     def require(self):
         return None
+
+    def misplaced_override(self):
+        return self.misplaced
 
     def running_services(self):
         return self._running
@@ -88,6 +92,18 @@ def patch_deployment(monkeypatch):
 
 
 class TestUpdate:
+    def test_refuses_when_the_installed_override_would_be_dropped(self, patch_deployment, tmp_path):
+        """Resolved to a checkout or the repo clone while /opt holds an
+        override: recreating would detach the storage disk. Stop before pulling."""
+        dep = patch_deployment["install"](FakeDeployment(changed=["tinc"]))
+        dep.compose_file = tmp_path / "repo" / "docker" / "docker-compose.yml"
+        dep.misplaced = tmp_path / "opt" / "docker" / "docker-compose.override.yml"
+        result = runner.invoke(app, ["update", "--yes"])
+        assert result.exit_code == 1
+        assert "Refusing to update" in result.output
+        assert "REDUNDANET_COMPOSE_FILE=" in result.output
+        assert dep.pulled is False and dep.recreated is None
+
     def test_no_change_reports_up_to_date(self, patch_deployment):
         dep = patch_deployment["install"](FakeDeployment(changed=[]))
         result = runner.invoke(app, ["update", "--yes"])

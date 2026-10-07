@@ -22,6 +22,18 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# Where `network join` installs the stack; the compose file the CLI should drive
+# on a node unless REDUNDANET_COMPOSE_FILE says otherwise.
+INSTALL_COMPOSE_FILE = Path("/opt/redundanet/docker/docker-compose.yml")
+# Override file names Docker would auto-load next to a compose file.
+OVERRIDE_NAMES = (
+    "docker-compose.override.yml",
+    "docker-compose.override.yaml",
+    "compose.override.yml",
+    "compose.override.yaml",
+)
+
+
 class DeploymentError(Exception):
     """Raised when the Docker Compose deployment cannot be used."""
 
@@ -45,14 +57,39 @@ class Deployment:
         self.env_file = self._locate_env_file()
 
     def _locate_compose_file(self) -> Path | None:
+        """The compose file the CLI drives, unless REDUNDANET_COMPOSE_FILE pins it.
+
+        On a joined node the installed file wins. The manifest repo clone
+        comes last: ``update`` maintains that clone on every node, and its
+        ``docker/`` directory holds no override, so resolving to it would
+        recreate the stack without the storage disk's bind-mount.
+        """
         if self.settings.compose_file is not None:
             return self.settings.compose_file if self.settings.compose_file.exists() else None
         candidates = [
+            INSTALL_COMPOSE_FILE,
             Path("docker/docker-compose.yml"),
             self.settings.data_dir / "repo" / "docker" / "docker-compose.yml",
-            Path("/opt/redundanet/docker/docker-compose.yml"),
         ]
         for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def misplaced_override(self) -> Path | None:
+        """The installed override that a recreate from the resolved compose
+        file would silently drop, or None when there is no such risk.
+
+        True when the resolved compose file is not the installed one, the
+        installed directory has an override and the resolved one does not: a
+        node that resolved to a checkout or to the repo clone.
+        """
+        if self.compose_file is None or self._override_files():
+            return None
+        if self.compose_file.resolve() == INSTALL_COMPOSE_FILE.resolve():
+            return None
+        for name in OVERRIDE_NAMES:
+            candidate = INSTALL_COMPOSE_FILE.parent / name
             if candidate.exists():
                 return candidate
         return None
@@ -89,12 +126,7 @@ class Deployment:
         if self.compose_file is None:
             return []
         parent = self.compose_file.parent
-        names = (
-            "docker-compose.override.yml",
-            "docker-compose.override.yaml",
-            "compose.override.yml",
-            "compose.override.yaml",
-        )
+        names = OVERRIDE_NAMES
         return [parent / name for name in names if (parent / name).exists()]
 
     def _base(self) -> list[str]:

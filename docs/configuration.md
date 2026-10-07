@@ -225,9 +225,19 @@ these tell the CLI where it is:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `REDUNDANET_COMPOSE_FILE` | auto-detected | Path to `docker-compose.yml` |
+| `REDUNDANET_COMPOSE_FILE` | pinned by `join` | Path to `docker-compose.yml` (see below) |
 | `REDUNDANET_COMPOSE_PROJECT` | `redundanet` | Compose project name |
 | `REDUNDANET_COMPOSE_ENV_FILE` | `/opt/redundanet/.env` | Compose env file |
+
+`network join` pins `REDUNDANET_COMPOSE_FILE` and `REDUNDANET_COMPOSE_ENV_FILE`
+in the persisted node config (`/etc/redundanet/.env`), so every later command
+drives the installed stack under `/opt/redundanet`. Without the pin the CLI
+searches, in this order: the installed file, `docker/docker-compose.yml` under
+the current directory, then the manifest repo clone that `update` maintains.
+The clone's directory has no override, so a recreate from it would detach a
+storage node's data disk: `update` refuses to run when the file it resolved is
+not the installed one while an installed override exists, and writes the pin
+itself when it is missing on a node joined before this existed.
 
 ### Tahoe Settings
 

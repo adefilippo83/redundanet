@@ -16,8 +16,9 @@ from redundanet import __version__
 from redundanet.cli.network import app as network_app
 from redundanet.cli.node import app as node_app
 from redundanet.cli.storage import app as storage_app
-from redundanet.core.config import AppSettings, load_settings
+from redundanet.core.config import AppSettings, load_settings, persist_settings
 from redundanet.core.deployment import (
+    INSTALL_COMPOSE_FILE,
     Deployment,
     compose_files_differ,
     git_sync,
@@ -389,6 +390,31 @@ def update(
     except Exception as e:  # DeploymentError and friends
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from None
+
+    # A recreate from the wrong compose file drops the installed override and
+    # with it a storage node's data disk. Refuse rather than guess.
+    dropped = deployment.misplaced_override()
+    if dropped is not None:
+        console.print(
+            f"[red]Refusing to update:[/red] the CLI resolved {deployment.compose_file}, "
+            f"but the installed override {dropped} would not be applied to the recreate.\n"
+            f"Pin the installed compose file and retry:\n"
+            f"  echo 'REDUNDANET_COMPOSE_FILE={INSTALL_COMPOSE_FILE}' | sudo tee -a "
+            f"{settings.config_dir / '.env'}"
+        )
+        raise typer.Exit(1)
+    # A node joined before the pin was persisted: record it now, so the
+    # candidate search above is never needed again on this node.
+    if (
+        settings.compose_file is None
+        and deployment.compose_file is not None
+        and deployment.compose_file.resolve() == INSTALL_COMPOSE_FILE.resolve()
+    ):
+        pins = {"REDUNDANET_COMPOSE_FILE": str(deployment.compose_file)}
+        if deployment.env_file is not None:
+            pins["REDUNDANET_COMPOSE_ENV_FILE"] = str(deployment.env_file)
+        if persist_settings(settings.config_dir, pins):
+            console.print(f"[dim]Pinned the compose file in {settings.config_dir / '.env'}.[/dim]")
 
     services = deployment.running_services()
     if not services:

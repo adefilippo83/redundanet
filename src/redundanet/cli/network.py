@@ -11,7 +11,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from redundanet.core.config import AppSettings, get_default_manifest_path, load_settings
+from redundanet.core.config import (
+    AppSettings,
+    get_default_manifest_path,
+    load_settings,
+    persist_settings,
+)
 from redundanet.core.deployment import Deployment, DeploymentError, git_sync
 from redundanet.core.manifest import Manifest
 
@@ -377,6 +382,19 @@ def join_network(
     # Set up docker files
     with console.status("[bold green]Setting up Docker files..."):
         _setup_docker_files(REPO_DIR, install_dir)
+    # Pin the installed compose file for every later CLI command, so none of
+    # them has to guess between this install, a checkout and the repo clone.
+    if not persist_settings(
+        settings.config_dir,
+        {
+            "REDUNDANET_COMPOSE_FILE": str(install_dir / "docker" / "docker-compose.yml"),
+            "REDUNDANET_COMPOSE_ENV_FILE": str(install_dir / ".env"),
+        },
+    ):
+        console.print(
+            f"[yellow]Could not write {settings.config_dir / '.env'}[/yellow] (no root?); "
+            "set REDUNDANET_COMPOSE_FILE in your environment before running update."
+        )
 
     # Set up manifest
     with console.status("[bold green]Setting up manifest..."):
