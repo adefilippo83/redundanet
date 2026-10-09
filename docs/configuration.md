@@ -281,9 +281,9 @@ docker compose --profile introducer --profile storage up -d
 |--------|---------|
 | `tinc-config` | Tinc VPN configuration |
 | `tahoe-introducer` | Introducer state |
-| `tahoe-storage` | Storage node state |
+| `tahoe-storage` | Storage node state: identity, leases, the record of its shares disk |
 | `tahoe-client` | Client state |
-| `storage-data` | Actual stored data |
+| `storage-data` | The shares; a bind mount of the external disk via the override file, which carries the disk marker |
 | `manifest` | Manifest files (shared; also carries the introducer FURL) |
 | `logs` | Service logs |
 
@@ -411,6 +411,8 @@ cycles before its data is at risk.
 - Contributes disk space to network
 - Stores encrypted data shares
 - Cannot decrypt the data it stores
+- Marks its shares disk on first start and refuses to run on any other filesystem
+  (a missing mount stops the node; see the installation guide)
 
 ### Client
 
