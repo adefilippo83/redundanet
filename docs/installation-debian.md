@@ -177,8 +177,9 @@ exporting the key as above, and starting again.
 ## 7. Dedicated storage disk (do NOT skip)
 
 Without this step, grid data lands on the system disk inside a Docker
-volume — and after a reboot with a missing mount, the node silently appears
-empty.
+volume. With it, the node marks the disk on its first start and refuses to
+run on any other filesystem, so a mount that is missing after a reboot stops
+the node instead of emptying it (see "A missing disk stops the node" below).
 
 ```bash
 lsblk                                  # identify the disk (e.g. /dev/sda) — CAREFUL: formatting is destructive
@@ -234,6 +235,47 @@ Verify the storage container really reads from the external disk:
 docker inspect redundanet-tahoe-storage \
   --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' | grep /data/storage
 # expected: /mnt/storage/redundanet -> /data/storage
+```
+
+### A missing disk stops the node
+
+On its first start the storage container writes a random token to
+`/mnt/storage/redundanet/.redundanet-disk-id` (on the disk) and keeps a copy
+as `redundanet-disk-id` in the `redundanet_tahoe-storage` volume. Every later
+start compares the two, and so does the census sidecar before each walk. If
+the disk is not mounted by the time Docker starts (a USB drive or an iSCSI
+target that comes up after the boot), the bind mount captures the empty
+directory under `/mnt/storage` instead, and the node refuses to run rather
+than announce an empty server and write new shares to the system disk:
+
+- `docker ps` shows `redundanet-tahoe-storage` unhealthy, and its log
+  (`docker logs redundanet-tahoe-storage`) says `Refusing to start: The
+  shares directory /data/storage is not the disk this node was started on`.
+- The status page shows the node reachable but its storage server missing
+  and its census unreachable; the last known inventory is kept for a while.
+
+Recovery: mount the disk (`findmnt /mnt/storage` must show it), then restart
+the storage services. A running container does not see a mount made after
+its start:
+
+```bash
+redundanet storage stop && redundanet storage start
+```
+
+To keep the disk from going missing at boot, order Docker after the mount:
+`sudo systemctl edit docker.service` and add `RequiresMountsFor=/mnt/storage`
+under `[Unit]`. Docker then does not start at all without the disk, which is
+right for a dedicated node. A network disk (iSCSI, NFS) also needs `_netdev`
+on its fstab line.
+
+Moving to a new disk: copy the whole directory, marker included (`rsync -a
+/mnt/storage/redundanet/ /mnt/newdisk/redundanet/`), point the override at
+it, and the new disk is accepted as the same one. If the old disk is gone for
+good, delete the record and the next start adopts the disk it finds:
+
+```bash
+docker exec redundanet-tahoe-storage rm /var/lib/tahoe-storage/redundanet-disk-id
+redundanet storage stop && redundanet storage start
 ```
 
 ## 9. Verify

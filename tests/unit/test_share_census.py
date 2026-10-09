@@ -10,6 +10,8 @@ from pathlib import Path
 from socketserver import TCPServer
 from threading import Thread
 
+from redundanet.storage.disk import MARKER_FILE, RECORD_FILE, establish
+
 REPO_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "docker" / "entrypoints"))
 
@@ -97,3 +99,22 @@ class TestHandler:
         (shares / "bb" / "bbindex2" / "0").write_bytes(b"y")
         share_census.refresh("n1", shares)
         assert share_census.Handler.etag != first
+
+
+class TestCensusTick:
+    def test_withholds_the_census_when_the_disk_is_not_the_nodes(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": 10})
+        marker, record = shares.parent / MARKER_FILE, tmp_path / "node" / RECORD_FILE
+        establish(marker, record)
+        assert share_census.census_tick("n1", shares, marker, record) is True
+        assert share_census.Handler.latest
+        marker.unlink()  # the disk went away: an empty directory under the mountpoint
+        assert share_census.census_tick("n1", shares, marker, record) is False
+        assert share_census.Handler.latest == b"" and share_census.Handler.etag == ""
+
+    def test_walks_before_the_node_marked_its_disk(self, tmp_path: Path):
+        share_census.Handler.latest = b""
+        shares = make_shares(tmp_path, {"aaindex1": 10})
+        marker, record = shares.parent / MARKER_FILE, tmp_path / "node" / RECORD_FILE
+        assert share_census.census_tick("n1", shares, marker, record) is True
+        assert json.loads(share_census.Handler.latest)["storage_indexes"] == ["aaindex1"]

@@ -9,7 +9,10 @@ from memory, never per request: on a node with a hundred thousand objects a
 walk of the shares tree takes seconds on a Pi's USB disk, longer than the
 hub waits, and the hub asks every minute. Until the first walk finishes the
 endpoint answers 503, which the hub treats like an unreachable node (it
-keeps that node's last inventory).
+keeps that node's last inventory). The same happens when the shares directory
+is not the disk this node was started on (a missing mount, see
+redundanet.storage.disk): the census is withheld rather than an inventory of
+the system disk published.
 
 Environment:
   REDUNDANET_CENSUS_INTERVAL  seconds between walks (default 300)
@@ -30,9 +33,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from redundanet.monitor.census import CENSUS_PORT, census_payload
+from redundanet.storage.disk import MARKER_FILE, RECORD_FILE, explain, verify
 from redundanet.utils.logging import get_logger, setup_logging
 
-SHARES_DIR = Path("/data/storage/shares")
+STORAGE_DIR = Path("/data/storage")
+SHARES_DIR = STORAGE_DIR / "shares"
+NODE_DIR = Path("/var/lib/tahoe-storage")
+DISK_MARKER = STORAGE_DIR / MARKER_FILE
+DISK_RECORD = NODE_DIR / RECORD_FILE
 DEFAULT_INTERVAL = 300
 VOLATILE_FIELDS = frozenset({"computed_at", "disk_free_bytes"})
 
@@ -89,11 +97,38 @@ def refresh(node_name: str, shares_dir: Path = SHARES_DIR) -> dict[str, object]:
     }
 
 
-def census_loop(node_name: str, interval: int, shares_dir: Path = SHARES_DIR) -> None:
+def census_tick(
+    node_name: str,
+    shares_dir: Path = SHARES_DIR,
+    marker: Path = DISK_MARKER,
+    record: Path = DISK_RECORD,
+) -> bool:
+    """One walk, unless the shares directory is not this node's disk (the
+    entrypoint's check, see redundanet.storage.disk): then the published
+    census is withdrawn and the endpoint answers 503, so the hub keeps the
+    node's last real inventory instead of counting an empty system disk."""
+    logger = get_logger()
+    check = verify(marker, record)
+    if check.refused:
+        Handler.latest = b""
+        Handler.etag = ""
+        logger.error("Census withheld: " + explain(check, marker, record), status=check.status)
+        return False
+    logger.info("Census computed", **refresh(node_name, shares_dir))
+    return True
+
+
+def census_loop(
+    node_name: str,
+    interval: int,
+    shares_dir: Path = SHARES_DIR,
+    marker: Path = DISK_MARKER,
+    record: Path = DISK_RECORD,
+) -> None:
     logger = get_logger()
     while True:
         try:
-            logger.info("Census computed", **refresh(node_name, shares_dir))
+            census_tick(node_name, shares_dir, marker, record)
         except Exception as e:  # the endpoint must survive a bad walk
             logger.warning("Census walk failed", error=str(e))
         time.sleep(interval)

@@ -10,6 +10,7 @@ from pathlib import Path
 from redundanet.utils.logging import setup_logging, get_logger
 from redundanet.core.manifest import read_manifest
 from redundanet.core.quota import resolve_encoding
+from redundanet.storage.disk import MARKER_FILE, RECORD_FILE, DiskCheck, establish, explain, verify
 from redundanet.storage.introducers import dedupe, introducer_furls_from_manifest
 from redundanet.storage.storage import TahoeStorage, TahoeStorageConfig
 from redundanet.vpn.traffic import STORAGE_TUB_PORT
@@ -110,6 +111,53 @@ def existing_share_count(shares_dir: Path, limit: int = 1000) -> int:
     return count
 
 
+def check_storage_disk(storage_data_dir: Path, node_dir: Path) -> DiskCheck:
+    """Refuse to run on any filesystem but the one this node was started on.
+
+    Exiting here means supervisord gives up on the program, `tahoe run` never
+    starts, the container turns unhealthy and its log says why. Without the
+    check a missing mount makes the server run on the system disk, empty
+    (see redundanet.storage.disk).
+    """
+    logger = get_logger()
+    marker, record = storage_data_dir / MARKER_FILE, node_dir / RECORD_FILE
+    check = verify(marker, record)
+    if check.refused:
+        logger.error(
+            "Refusing to start: " + explain(check, marker, record),
+            status=check.status,
+            expected=check.expected,
+            found=check.found,
+        )
+        sys.exit(1)
+    if check.status == "ok":
+        logger.info("Storage disk verified", marker=str(marker))
+    return check
+
+
+def remember_storage_disk(check: DiskCheck, storage_data_dir: Path, node_dir: Path) -> None:
+    """On the node's first start, mark the disk and keep the record. Runs after
+    `tahoe create-node`, which refuses a non-empty node directory."""
+    if check.status != "first":
+        return
+    logger = get_logger()
+    marker, record = storage_data_dir / MARKER_FILE, node_dir / RECORD_FILE
+    adopted = marker.is_file()
+    try:
+        token = establish(marker, record)
+    except OSError as e:
+        logger.error("Cannot mark the storage disk", marker=str(marker), error=str(e))
+        sys.exit(1)
+    logger.info(
+        "Storage disk adopted: its marker was already there"
+        if adopted
+        else "Storage disk marked; later starts refuse any other filesystem",
+        marker=str(marker),
+        record=str(record),
+        token=token,
+    )
+
+
 def main():
     """Set up the storage node configuration, then exit.
 
@@ -148,6 +196,10 @@ def main():
 
     storage_dir = Path("/var/lib/tahoe-storage")
     storage_data_dir = Path("/data/storage")
+
+    # The shares directory must be the disk this node was started on; a
+    # missing mount puts the system disk there (see redundanet.storage.disk).
+    disk = check_storage_disk(storage_data_dir, storage_dir)
 
     # Fresh ext4 volumes contain lost+found, which makes `tahoe create-node`
     # refuse the "non-empty" base directory (see tahoe_introducer.py).
@@ -218,6 +270,7 @@ def main():
         logger.info("Using existing Tahoe storage configuration")
         storage.update_introducers(introducer_furls)
 
+    remember_storage_disk(disk, storage_data_dir, storage_dir)
     logger.info("Tahoe storage setup complete")
 
 
