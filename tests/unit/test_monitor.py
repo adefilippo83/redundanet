@@ -594,17 +594,19 @@ class TestStorageProbe:
         assert status.overall == "degraded"
         assert any("storage server not answering on port" in note for note in status.notes)
         assert status.grid.storage_listening == 1
-        assert (
-            status.grid.storage_connected == 1
-        )  # the lower of the introducer's 2 and the probe's 1
+        assert status.grid.storage_connected == 1  # the probe's count, not the introducer's 2
         flagged = [n for n in status.nodes if n.storage_listening is False]
         assert [n.vpn_ip for n in flagged] == ["10.100.0.11"]
         assert "storage server down" in render_html(status)
 
-    def test_unknown_introducer_count_takes_the_probe(self):
+    def test_the_probe_count_wins_over_the_introducer(self):
+        """Right after the hub restarts, the introducer has heard from no
+        one yet while the probe already sees every server."""
         status = self.collect(lambda _ip: True, storage_connected=None)
         assert status.grid.storage_connected == 2
         assert not any("storage server count unknown" in note for note in status.notes)
+        status = self.collect(lambda _ip: True, storage_connected=0)
+        assert status.grid.storage_connected == 2 and status.overall == "ok"
 
     def test_without_a_prober_nothing_is_probed(self):
         status = collect_status(

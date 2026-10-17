@@ -255,8 +255,21 @@ def collect_once(node_name: str) -> None:
     logger.info("Status collected", overall=status.overall)
 
 
+def wait_for_manifest(timeout: float = 120, poll: float = 5) -> bool:
+    """Give the manifest sync time to clone on a fresh machine: a sample
+    collected without a manifest shows a network of no nodes as down."""
+    deadline = time.monotonic() + timeout
+    while locate_manifest(MANIFEST_DIR) is None:
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll)
+    return True
+
+
 def collector_loop(node_name: str) -> None:
     logger = get_logger()
+    if not wait_for_manifest():
+        logger.warning("No manifest yet; collecting anyway")
     while True:
         try:
             collect_once(node_name)

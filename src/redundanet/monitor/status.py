@@ -102,9 +102,7 @@ class GridStatus:
     shares_happy: int
     shares_total: int
     storage_expected: int  # manifest nodes with the storage role
-    storage_connected: (
-        int | None
-    )  # servers announced to the introducer and answering; None = unknown
+    storage_connected: int | None  # servers answering (probe), else announced; None = unknown
     storage_identities: int | None = None  # announcements in total; > connected means churn
     storage_listening: int | None = (
         None  # storage nodes answering on their tub port; None = not probed
@@ -376,8 +374,10 @@ def collect_status(
     distinct servers (a node that recreated its volumes announces a new
     identity each time, and the introducer never forgets the old ones).
     With ``probe_storage`` every reachable storage node is also asked on
-    its tub port, and the count of servers is the lower of the two: the
-    introducer remembers a server that went down, the probe does not.
+    its tub port, and that count is the one shown as connected: the
+    introducer remembers a server that went down and, right after its own
+    restart, has not heard yet from servers that are up. Its count still
+    feeds the identity notes.
     """
     now = now or datetime.now(UTC)
     network = manifest.get("network", {}) or {}
@@ -425,8 +425,7 @@ def collect_status(
                 storage_listening += 1
             elif node.storage_listening is False:
                 storage_down.append(node.name)
-        if storage_connected is None or storage_listening < storage_connected:
-            storage_connected = storage_listening
+        storage_connected = storage_listening
 
     grid = GridStatus(
         shares_needed=int(tahoe.get("shares_needed", 3)),
