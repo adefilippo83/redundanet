@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 from redundanet.monitor.census_store import CensusStore, unchanged_marker
@@ -185,3 +186,23 @@ class TestPersistence:
         assert record is not None and not record.live and record.object_count == 1
         assert store.summary(1, 1).objects_total == 1
         assert store.import_legacy(tmp_path / "missing", 0.0) == []
+
+
+class TestThreads:
+    def test_usable_from_another_thread_than_the_one_that_opened_it(self, tmp_path: Path):
+        """The hub opens the store at start and uses it from its collector
+        thread; SQLite refuses that unless told otherwise."""
+        store = CensusStore(tmp_path / "census.sqlite")
+        outcome: list[object] = []
+
+        def collector() -> None:
+            try:
+                store.ingest("n1", "ip", full(["a"]), 1.0)
+                outcome.append(store.summary(1, 1).objects_total)
+            except Exception as e:
+                outcome.append(e)
+
+        thread = threading.Thread(target=collector)
+        thread.start()
+        thread.join()
+        assert outcome == [1]

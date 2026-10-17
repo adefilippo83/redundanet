@@ -224,8 +224,11 @@ print(f'{len(body)} {time.monotonic() - t:.2f}')")"
   record "census-fetch-storage-1" "${size#* }" "bytes=${size%% *}"
 
   log "Step 8: Tahoe 1.20 lease expirer after a restart mid-cycle (state file as the JSON round trip leaves it)"
+  # Stop first: the crawler writes its own state on shutdown and would
+  # overwrite a file copied into a running container.
+  docker stop rn-grid-storage-1 >/dev/null
   docker cp tests/scale/fixtures/lease_checker.state.json rn-grid-storage-1:/data/storage/lease_checker.state.json
-  docker restart rn-grid-storage-1 >/dev/null
+  docker start rn-grid-storage-1 >/dev/null
   sleep 420   # the crawler's slow_start is 360 s; the first slice follows
   if docker logs --since 8m rn-grid-storage-1 2>&1 | grep -q "list indices must be integers or slices, not tuple"; then
     record "expirer-crash-after-restart" 0 "reproduced=yes"
@@ -233,8 +236,9 @@ print(f'{len(body)} {time.monotonic() - t:.2f}')")"
     record "expirer-crash-after-restart" 0 "reproduced=no"
   fi
   log "Step 9: the remedy, a deleted state file (the crawler then starts a fresh cycle)"
-  docker exec rn-grid-storage-1 rm -f /data/storage/lease_checker.state.json
-  docker restart rn-grid-storage-1 >/dev/null
+  docker stop rn-grid-storage-1 >/dev/null
+  docker run --rm --volumes-from rn-grid-storage-1 alpine:3.20 rm -f /data/storage/lease_checker.state.json
+  docker start rn-grid-storage-1 >/dev/null
   sleep 420
   if docker logs --since 8m rn-grid-storage-1 2>&1 | grep -q "list indices must be integers or slices, not tuple"; then
     record "expirer-after-state-delete" 0 "crawler=crashed"

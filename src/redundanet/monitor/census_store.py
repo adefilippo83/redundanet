@@ -85,7 +85,9 @@ def unchanged_marker(_payload: dict[str, Any]) -> dict[str, Any]:
 
 class CensusStore:
     def __init__(self, path: Path | str = ":memory:") -> None:
-        self._conn = sqlite3.connect(str(path))
+        # Opened by the process at start, used by the collector thread: one
+        # thread at a time, not necessarily the one that opened it.
+        self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA cache_size=-16000")  # 16 MB, the memory ceiling
