@@ -242,7 +242,9 @@ docker inspect redundanet-tahoe-storage \
 On its first start the storage container writes a random token to
 `/mnt/storage/redundanet/.redundanet-disk-id` (on the disk) and keeps a copy
 as `redundanet-disk-id` in the `redundanet_tahoe-storage` volume. Every later
-start compares the two, and so does the census sidecar before each walk. If
+start compares the two, and so does the census sidecar before each refresh
+(the sidecar also keeps its inventory on the disk, as `.redundanet-census.json`
+next to the shares, so a restart does not walk the whole tree again). If
 the disk is not mounted by the time Docker starts (a USB drive or an iSCSI
 target that comes up after the boot), the bind mount captures the empty
 directory under `/mnt/storage` instead, and the node refuses to run rather

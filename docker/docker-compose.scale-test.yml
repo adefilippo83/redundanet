@@ -1,0 +1,29 @@
+# Scale-test overlay for docker-compose.grid-test.yml: the same grid, with
+# the client's sidecars kept quiet (scripts/scale-test.sh drives tahoe
+# backup, the usage meter and the lease sweep by hand, timed) and a local
+# directory bind-mounted as the client's sync source.
+#
+#   SCALE_SYNC_DIR=/path/to/tree docker compose -p rn-scale \
+#     -f docker/docker-compose.grid-test.yml -f docker/docker-compose.scale-test.yml up -d
+
+x-scale-storage: &scale-storage
+  environment:
+    REDUNDANET_CENSUS_INTERVAL: "60"
+    REDUNDANET_EXPIRE_ENABLED: "true"
+
+services:
+  storage-1:
+    <<: *scale-storage
+  storage-2:
+    <<: *scale-storage
+  storage-3:
+    <<: *scale-storage
+  client:
+    environment:
+      REDUNDANET_SYNC_ENABLED: "false"
+      # Later than any clock the test runs under: the meter and the sweep
+      # must never start on their own in the middle of a timed step.
+      REDUNDANET_USAGE_INTERVAL: "4000000000"
+      REDUNDANET_LEASE_RENEW_INTERVAL: "4000000000"
+    volumes:
+      - ${SCALE_SYNC_DIR:-/tmp/redundanet-scale-sync}:/data/sync:ro

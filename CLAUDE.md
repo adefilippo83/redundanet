@@ -22,6 +22,7 @@ poetry run pytest tests/unit -q       # unit tests (fast; run before proposing c
 poetry run ruff check src tests       # lint (also: ruff format)
 poetry run mypy src                   # strict typing
 bash scripts/grid-test.sh             # dockerized 3-node erasure-coding e2e (slow)
+bash scripts/scale-test.sh tier1|tier2 # object-count scaling benchmarks (tests/scale/README.md)
 ```
 
 CI gates publishing: images/PyPI only build from green commits. Never weaken

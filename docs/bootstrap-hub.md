@@ -144,19 +144,31 @@ services manually, recreate them as a group, not individually.
   notes such a node ("has announced N storage identities ... volumes were
   recreated") and a nickname that is in no manifest node. Restarting the
   introducer drops the stale identities.
-- **Replication census**: every storage node walks its shares tree on a
-  schedule (`CENSUS_INTERVAL` in its `.env`, default 300s) and serves the
-  result from memory at `/census` on its VPN address, so the answer is
-  instant whatever the object count. The hub asks each node again only
-  every 5 minutes (20s timeout) and reuses the last answer in between, so
-  the replication tile lags an encoding change or a large upload by up to
-  10 minutes. The fetch is conditional: the node tags its inventory with an
-  `ETag`, the hub sends it back, and an unchanged inventory answers `304`
-  with no body, so an idle node costs a few hundred bytes per refresh
-  instead of megabytes (a node with 150k objects has a 4 MB census). Usage
-  reports are fetched on the same 5 minute cadence; pings, and the uptime
-  they feed, stay at one minute. A node whose census cannot be fetched
-  keeps its last inventory on the page, marked with its age.
+- **Replication census**: every storage node keeps an inventory of its
+  shares tree and serves it from memory at `/census` on its VPN address, so
+  the answer is instant whatever the object count. The inventory is
+  incremental: every `CENSUS_INTERVAL` seconds (`.env`, default 300) the
+  sidecar stats the 1,024 prefix directories and re-lists only those whose
+  mtime moved, so a refresh costs what the recent uploads cost, not a walk
+  of every object; a full walk happens on the first start and once a day
+  as a safety net. The inventory is written to the storage disk itself
+  (`.redundanet-census.json` next to the shares, at most every 15 minutes
+  and on stop), so a restart resumes with an incremental refresh instead
+  of a cold walk of the tree, which on a hundred thousand objects takes
+  minutes and competes with Tahoe for the disk. Every change bumps a
+  generation, and `/census?since=<generation>` answers with just what was
+  added and removed since; a generation the node cannot account for (a
+  change too big to keep, or an inventory older than its memory) gets the
+  full list. The hub asks each node again only every 5 minutes (20s
+  timeout) and reuses the last answer in between, so the replication tile
+  lags an encoding change or a large upload by up to 10 minutes. The full
+  fetch is conditional: the node tags its inventory with an `ETag`, the hub
+  sends it back, and an unchanged inventory answers `304` with no body, so
+  an idle node costs a few hundred bytes per refresh instead of megabytes
+  (a node with 200k objects has a 6 MB census). Usage reports are fetched
+  on the same 5 minute cadence; pings, and the uptime they feed, stay at
+  one minute. A node whose census cannot be fetched keeps its last
+  inventory on the page, marked with its age.
 - **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
   manifest on purpose. Fly's edge proxy terminates every TCP connection, so
   tincd on the hub sees the proxy's internal address (172.16.x.x) as the

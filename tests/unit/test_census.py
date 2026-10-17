@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 from redundanet.monitor.census import (
+    HISTORY_MAX_CHANGE,
+    Inventory,
     census_payload,
+    delta_payload,
     disk_used_bytes,
+    inventory_payload,
     list_storage_indexes,
     scan_shares,
 )
@@ -344,3 +351,216 @@ class TestCensusCache:
         assert replication.unreadable_now == 1  # si2 has 0 live copies < needed=1
         assert status.overall == "degraded"
         assert any("unreadable until a server returns" in note for note in status.notes)
+
+
+# --- the incremental inventory -----------------------------------------------
+
+T0 = 1_700_000_000 * 10**9  # an old, fixed clock for the trees below
+
+
+def settle(shares: Path, when_ns: int = T0) -> None:
+    """Give every prefix directory an old mtime, so the tree looks like it
+    was last modified long before the inventory listed it."""
+    for prefix in shares.iterdir():
+        if prefix.is_dir():
+            os.utime(prefix, ns=(when_ns, when_ns))
+
+
+def add_share(shares: Path, si: str, size: int = 100, num: int = 0) -> None:
+    si_dir = shares / si[:2] / si
+    si_dir.mkdir(parents=True, exist_ok=True)
+    (si_dir / str(num)).write_bytes(b"x" * size)
+
+
+class TestInventory:
+    def test_first_refresh_is_a_full_walk(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0, 1], "bbindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        walk = inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        assert (walk.mode, walk.prefixes, walk.listed, walk.added, walk.removed) == (
+            "full",
+            2,
+            2,
+            2,
+            0,
+        )
+        assert inventory.storage_indexes() == ["aaindex1", "bbindex2"]
+        assert inventory.disk_used_bytes == 300
+        assert inventory.generation == 1
+        assert inventory.full_walk_at_ns == T0 + 60 * 10**9
+
+    def test_unchanged_prefixes_are_not_listed_again(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0], "bbindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        walk = inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        assert (walk.mode, walk.listed, walk.added, walk.removed) == ("incremental", 0, 0, 0)
+        assert inventory.generation == 1  # nothing changed, no new generation
+
+    def test_an_upload_changes_only_its_prefix(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0], "bbindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        add_share(shares, "bbindex3")  # the prefix directory's mtime moves to now
+        walk = inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        assert (walk.listed, walk.added, walk.removed) == (1, 1, 0)
+        assert inventory.storage_indexes() == ["aaindex1", "bbindex2", "bbindex3"]
+        assert inventory.changes_since(1) == ({"bbindex3"}, set())
+
+    def test_garbage_collection_is_seen_as_a_removal(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0], "aaindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        shutil.rmtree(shares / "aa" / "aaindex2")
+        walk = inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        assert (walk.added, walk.removed) == (0, 1)
+        assert inventory.changes_since(1) == (set(), {"aaindex2"})
+        shutil.rmtree(shares / "aa")  # the whole prefix goes
+        inventory.refresh(shares, now_ns=T0 + 660 * 10**9)
+        assert inventory.storage_indexes() == []
+
+    def test_a_prefix_modified_around_its_listing_is_listed_once_more(self, tmp_path: Path):
+        """A change that lands in the same second as the listing may or may
+        not be in it: the prefix stays hot for one more refresh."""
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        settle(shares, T0)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 10**9)  # listed one second after the change
+        walk = inventory.refresh(shares, now_ns=T0 + 300 * 10**9)
+        assert walk.listed == 1
+        walk = inventory.refresh(shares, now_ns=T0 + 600 * 10**9)
+        assert walk.listed == 0
+
+    def test_full_walk_relists_everything_without_a_new_generation(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0], "bbindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        walk = inventory.refresh(shares, now_ns=T0 + 360 * 10**9, full=True)
+        assert (walk.mode, walk.listed) == ("full", 2)
+        assert inventory.generation == 1
+        assert inventory.full_walk_at_ns == T0 + 360 * 10**9
+
+    def test_incoming_counts_bytes_only_and_is_refreshed_every_time(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        staging = shares / "incoming" / "zz" / "zzindex9"
+        staging.mkdir(parents=True)
+        (staging / "0").write_bytes(b"y" * 50)
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        assert (inventory.object_count, inventory.disk_used_bytes) == (1, 150)
+        shutil.rmtree(shares / "incoming")
+        inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        assert inventory.disk_used_bytes == 100
+
+    def test_matches_the_full_scan(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0, 1], "abindex2": [0], "zzindex3": [2]})
+        inventory = Inventory()
+        inventory.refresh(shares)
+        assert (inventory.storage_indexes(), inventory.disk_used_bytes) == scan_shares(shares)
+
+    def test_missing_tree_is_empty(self, tmp_path: Path):
+        inventory = Inventory()
+        walk = inventory.refresh(tmp_path / "nope")
+        assert (walk.prefixes, inventory.object_count, inventory.generation) == (0, 0, 0)
+
+
+class TestChangesSince:
+    def inventory(self) -> Inventory:
+        inventory = Inventory()
+        inventory.generation = 0
+        return inventory
+
+    def test_deltas_net_out_across_generations(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)  # generation 1
+        add_share(shares, "bbindex2")
+        inventory.refresh(shares, now_ns=T0 + 360 * 10**9)  # 2: +bbindex2
+        shutil.rmtree(shares / "bb")
+        add_share(shares, "ccindex3")
+        inventory.refresh(shares, now_ns=T0 + 660 * 10**9)  # 3: -bbindex2 +ccindex3
+        assert inventory.generation == 3
+        assert inventory.changes_since(3) == (set(), set())
+        assert inventory.changes_since(2) == ({"ccindex3"}, {"bbindex2"})
+        assert inventory.changes_since(1) == ({"ccindex3"}, set())  # bbindex2 came and went
+        assert inventory.changes_since(0) == ({"aaindex1", "ccindex3"}, set())
+
+    def test_unknown_or_future_generation_means_full(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        inventory = Inventory()
+        inventory.refresh(shares)
+        assert inventory.changes_since(5) is None
+        inventory.history.clear()  # a restart that lost its memory
+        assert inventory.changes_since(0) is None
+        assert inventory.changes_since(1) == (set(), set())
+
+    def test_a_huge_change_is_not_kept_as_a_delta(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr("redundanet.monitor.census.HISTORY_MAX_CHANGE", 1)
+        assert HISTORY_MAX_CHANGE > 1  # the module constant, untouched for other tests
+        shares = make_shares(tmp_path, {"aaindex1": [0], "bbindex2": [0]})
+        inventory = Inventory()
+        inventory.refresh(shares)
+        assert inventory.generation == 1 and not inventory.history
+        assert inventory.changes_since(0) is None
+
+
+class TestInventoryPersistence:
+    def test_round_trip(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0, 1], "bbindex2": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        add_share(shares, "bbindex3")
+        os.utime(shares / "bb", ns=(T0 + 300 * 10**9, T0 + 300 * 10**9))  # well before the listing
+        inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        restored = Inventory.from_json(json.loads(json.dumps(inventory.to_json())))
+        assert restored.storage_indexes() == inventory.storage_indexes()
+        assert restored.disk_used_bytes == inventory.disk_used_bytes
+        assert restored.generation == 2
+        assert restored.full_walk_at_ns == T0 + 60 * 10**9
+        assert restored.changes_since(1) == ({"bbindex3"}, set())
+        # The restored inventory picks up where the old one left: nothing to list.
+        walk = restored.refresh(shares, now_ns=T0 + 660 * 10**9)
+        assert (walk.mode, walk.listed) == ("incremental", 0)
+
+    def test_rejects_other_versions_and_garbage(self):
+        for data in ({"version": 99}, [], "x", {"version": 1, "prefixes": "nope"}):
+            try:
+                Inventory.from_json(data)
+            except ValueError:
+                continue
+            raise AssertionError(f"accepted {data!r}")
+
+
+class TestPayloads:
+    def test_full_payload_has_the_list_and_the_walk(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        inventory = Inventory()
+        walk = inventory.refresh(shares)
+        payload = inventory_payload("n1", inventory, shares, walk, now=NOW)
+        assert payload["storage_indexes"] == ["aaindex1"]
+        assert payload["generation"] == 1 and payload["object_count"] == 1
+        assert payload["walk"]["mode"] == "full" and payload["walk"]["listed"] == 1
+        assert payload["computed_at"] == "2026-08-10T12:00:00+00:00"
+        assert payload["disk_total_bytes"] is not None
+
+    def test_delta_payload_or_none(self, tmp_path: Path):
+        shares = make_shares(tmp_path, {"aaindex1": [0]})
+        settle(shares)
+        inventory = Inventory()
+        inventory.refresh(shares, now_ns=T0 + 60 * 10**9)
+        add_share(shares, "bbindex2")
+        inventory.refresh(shares, now_ns=T0 + 360 * 10**9)
+        delta = delta_payload("n1", inventory, 1, shares, now=NOW)
+        assert delta is not None
+        assert (delta["base"], delta["generation"]) == (1, 2)
+        assert (delta["added"], delta["removed"]) == (["bbindex2"], [])
+        assert "storage_indexes" not in delta
+        assert delta_payload("n1", inventory, 7, shares, now=NOW) is None
