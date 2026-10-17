@@ -122,12 +122,19 @@ def read_node_url(path: Path) -> str:
 
 
 def web_lister(node_url: str, timeout: float = LISTING_TIMEOUT) -> Lister:
-    """A lister that asks the node's web API for a directory by capability."""
+    """A lister that asks the node's web API for a directory by capability.
+
+    ``node_url`` is the node's own ``node.url`` (its local web port); only
+    http and https are accepted, so a mangled file can never turn the
+    walker into a reader of local files or other schemes.
+    """
+    if urllib.parse.urlsplit(node_url).scheme not in ("http", "https"):
+        raise ValueError(f"node URL must be http(s), not {node_url!r}")
     base = node_url.rstrip("/")
 
     def list_dir(cap: str) -> tuple[str, dict[str, Any]]:
         url = f"{base}/uri/{urllib.parse.quote(cap, safe='')}?t=json"
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - node.url
+        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310  # nosec B310
             node_type, payload = json.load(response)
         return str(node_type), payload
 

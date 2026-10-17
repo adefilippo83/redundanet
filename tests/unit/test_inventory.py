@@ -102,6 +102,15 @@ class TestAliases:
 
         assert alias_caps(failing) == {}
 
+    def test_web_lister_accepts_only_http(self):
+        import pytest
+
+        from redundanet.storage.inventory import web_lister
+
+        assert callable(web_lister("http://127.0.0.1:3456/"))
+        with pytest.raises(ValueError, match="http"):
+            web_lister("file:///etc/passwd")
+
     def test_node_url(self, tmp_path: Path):
         (tmp_path / "node.url").write_text("http://127.0.0.1:3456/\n")
         assert read_node_url(tmp_path / "node.url") == "http://127.0.0.1:3456/"
