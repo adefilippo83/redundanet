@@ -51,6 +51,7 @@ from redundanet.storage import inventory
 
 NODE_DIR = "/var/lib/tahoe-client"
 TAHOE_CFG = Path(NODE_DIR) / "tahoe.cfg"
+NODE_URL_FILE = Path(NODE_DIR) / "node.url"
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 TMP_FILE = Path("/tmp/rebalance.tmp")  # noqa: S108 - private container tmp
 STARTUP_DELAY = 180  # let the client connect to the grid first
@@ -111,16 +112,13 @@ def run_tahoe(args: list[str], timeout: int = 3600) -> subprocess.CompletedProce
     )
 
 
-def list_aliases(run=run_tahoe) -> list[str]:
-    return inventory.list_aliases(run)
-
-
-def walk_files(root: str, run=run_tahoe) -> list[tuple[str, str]]:
-    """All (grid path, file cap) pairs under an alias spec like ``backups:``.
-    Directories are walked, not returned. Immutable directories (backup
-    snapshots) are skipped: a re-encoded file cannot be relinked inside them,
-    so trying would download and fail on every cycle."""
-    return inventory.walk_files(root, run, log=log, skip_immutable=True)
+def walk_files(root_cap: str, list_dir: inventory.Lister, label: str = "") -> list[tuple[str, str]]:
+    """All (grid path, file cap) pairs under an alias's root directory,
+    listed through the node's web API. Directories are walked, not returned.
+    Immutable directories (backup snapshots) are skipped: a re-encoded file
+    cannot be relinked inside them, so trying would download and fail on
+    every cycle."""
+    return inventory.walk_tree(root_cap, list_dir, label=label, log=log, skip_immutable=True)
 
 
 def seconds_until_due(
@@ -195,8 +193,11 @@ def run_cycle(
     run=run_tahoe,
     sleep=time.sleep,
     clock=time.monotonic,
+    list_dir: inventory.Lister | None = None,
 ) -> dict[str, int]:
     """One pass over all aliases. Returns counters for logging/tests."""
+    if list_dir is None:
+        list_dir = inventory.web_lister(inventory.read_node_url(NODE_URL_FILE))
     stats = {
         "scanned": 0,
         "mismatched": 0,
@@ -207,9 +208,9 @@ def run_cycle(
     }
     target = (config.needed, config.total)
     started = clock()
-    for alias in list_aliases(run=run):
+    for alias, root_cap in inventory.alias_caps(run).items():
         root = f"{alias}:"
-        for path, cap in walk_files(root, run=run):
+        for path, cap in walk_files(root_cap, list_dir, label=root):
             stats["scanned"] += 1
             params = parse_chk_params(cap)
             if params is None or params == target:

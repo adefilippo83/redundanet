@@ -48,9 +48,13 @@ disk is smaller than its declared contribution counts as what it actually has
 whose bytes they hold: shares carry no owner and lease secrets are hashed per
 file and per server, by design. But every client knows exactly what it stores,
 and every capability string carries the file's size and its k and n. The
-usage meter in the client container walks the client's aliases every 15
-minutes and sums, per file, size x n/k with the file's own encoding. That sum
-is the member's real footprint on the grid. It is served over the VPN to the
+usage meter in the client container walks the client's aliases every hour
+(and right after a backup that made a snapshot) and sums, per file, size x
+n/k with the file's own encoding. That sum is the member's real footprint on
+the grid. The walk lists directories through the node's web API, several at
+a time, and keeps the listings of immutable snapshot directories in
+`redundanet-dircache.sqlite` in the client volume, so after the first
+measurement a run lists only what the latest backup added. It is served over the VPN to the
 hub, which shows every member's contribution, allocation and usage on the
 public status page, and written locally for the enforcement points below.
 

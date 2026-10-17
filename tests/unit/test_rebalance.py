@@ -48,6 +48,30 @@ class FakeRun:
         return completed()
 
 
+ROOT = "URI:DIR2:x:y"
+
+
+def lister_for(listings: dict[str, str]):
+    """The node's web API: directory capability -> the ``ls --json`` text."""
+
+    def list_dir(cap: str):
+        if cap not in listings:
+            raise OSError(f"no directory {cap}")
+        node_type, payload = json.loads(listings[cap])
+        return node_type, payload
+
+    return list_dir
+
+
+def lister_for_run(run: FakeRun, **by_cap: str):
+    """Serve the scripted root listing (the ``("ls", "<alias>:")`` response)
+    at the alias root capability, plus any listings given by capability."""
+    root = next(
+        v.stdout for k, v in run.responses.items() if isinstance(k, tuple) and k[1].endswith(":")
+    )
+    return lister_for({ROOT: root, **by_cap})
+
+
 class TestParseChkParams:
     def test_extracts_k_and_n(self):
         assert rebalance.parse_chk_params(chk(1, 2)) == (1, 2)
@@ -96,25 +120,20 @@ class TestParseConfig:
 
 class TestWalkFiles:
     def test_recurses_directories(self):
-        run = FakeRun(
+        list_dir = lister_for(
             {
-                ("ls", "home:"): completed(
-                    stdout=dirnode_json(
-                        {"a.txt": ("filenode", chk(1, 2)), "sub": ("dirnode", "URI:DIR2:x:y")}
-                    )
+                ROOT: dirnode_json(
+                    {"a.txt": ("filenode", chk(1, 2)), "sub": ("dirnode", "URI:DIR2:s:t")}
                 ),
-                ("ls", "home:sub"): completed(
-                    stdout=dirnode_json({"b.txt": ("filenode", chk(2, 4, "bb"))})
-                ),
+                "URI:DIR2:s:t": dirnode_json({"b.txt": ("filenode", chk(2, 4, "bb"))}),
             }
         )
-        files = rebalance.walk_files("home:", run=run)
+        files = rebalance.walk_files(ROOT, list_dir)
         assert ("a.txt", chk(1, 2)) in files
         assert ("sub/b.txt", chk(2, 4, "bb")) in files
 
     def test_listing_failure_is_skipped_not_fatal(self):
-        run = FakeRun({("ls", "home:"): completed(returncode=1, stderr="boom")})
-        assert rebalance.walk_files("home:", run=run) == []
+        assert rebalance.walk_files(ROOT, lister_for({})) == []
 
 
 def config(needed=2, total=4, budget=14400, pause=0) -> rebalance.RebalanceConfig:
@@ -134,7 +153,9 @@ class TestRunCycle:
 
     def test_mismatched_file_is_reencoded(self):
         run = FakeRun(self.responses(dirnode_json({"old.bin": ("filenode", chk(1, 2))})))
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        stats = rebalance.run_cycle(
+            config(), run=run, list_dir=lister_for_run(run), sleep=lambda _s: None
+        )
         assert stats["reencoded"] == 1 and stats["failed"] == 0
         # get by cap, then put relinking the same path
         assert ["get", chk(1, 2), str(rebalance.TMP_FILE)] in run.calls
@@ -151,7 +172,9 @@ class TestRunCycle:
                 )
             )
         )
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        stats = rebalance.run_cycle(
+            config(), run=run, list_dir=lister_for_run(run), sleep=lambda _s: None
+        )
         assert stats["scanned"] == 2
         assert stats["mismatched"] == 0
         assert not any(c[0] == "get" for c in run.calls)
@@ -163,7 +186,11 @@ class TestRunCycle:
         run = FakeRun(self.responses(listing))
         ticks = iter([0, 0, 99999])  # start, first check ok... second over budget
         stats = rebalance.run_cycle(
-            config(budget=100), run=run, sleep=lambda _s: None, clock=lambda: next(ticks)
+            config(budget=100),
+            run=run,
+            list_dir=lister_for_run(run),
+            sleep=lambda _s: None,
+            clock=lambda: next(ticks),
         )
         assert stats["reencoded"] == 1
         assert stats["budget_stop"] == 1
@@ -174,7 +201,9 @@ class TestRunCycle:
         )
         responses["get"] = completed(returncode=1, stderr="no shares")
         run = FakeRun(responses)
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        stats = rebalance.run_cycle(
+            config(), run=run, list_dir=lister_for_run(run), sleep=lambda _s: None
+        )
         assert stats["failed"] == 2
         assert stats["reencoded"] == 0
 
@@ -186,19 +215,22 @@ class TestImmutableSnapshots:
         # so the rebalancer must not even try (it would download and fail daily).
         run = FakeRun(
             {
-                "list-aliases": completed(stdout="backups: URI:DIR2:x:y\n"),
+                "list-aliases": completed(stdout=f"backups: {ROOT}\n"),
                 ("ls", "backups:"): completed(
                     stdout=dirnode_json({"Archives": ("dirnode", "URI:DIR2:arch")})
                 ),
-                ("ls", "backups:Archives"): completed(
-                    stdout=dirnode_json({"2026-09-05_01": ("dirnode", "URI:DIR2-CHK:snap:1")})
-                ),
-                ("ls", "backups:Archives/2026-09-05_01"): completed(
-                    stdout=dirnode_json({"old.bin": ("filenode", chk(1, 2))})
-                ),
             }
         )
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        list_dir = lister_for_run(
+            run,
+            **{
+                "URI:DIR2:arch": dirnode_json(
+                    {"2026-09-05_01": ("dirnode", "URI:DIR2-CHK:snap:1:2:4:9")}
+                ),
+                "URI:DIR2-CHK:snap:1:2:4:9": dirnode_json({"old.bin": ("filenode", chk(1, 2))}),
+            },
+        )
+        stats = rebalance.run_cycle(config(), run=run, list_dir=list_dir, sleep=lambda _s: None)
         assert stats["scanned"] == 0
         assert not any(c[0] == "get" for c in run.calls)
 
@@ -241,7 +273,9 @@ class TestNodeEncodingGuard:
                 "put": completed(stdout=chk(1, 2, "zzzz")),  # node still on 1-of-2
             }
         )
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        stats = rebalance.run_cycle(
+            config(), run=run, list_dir=lister_for_run(run), sleep=lambda _s: None
+        )
         assert stats["node_stale"] == 1
         assert stats["reencoded"] == 0
         assert len([c for c in run.calls if c[0] == "put"]) == 1  # stopped after the first
@@ -257,7 +291,9 @@ class TestNodeEncodingGuard:
                 "put": completed(stdout=""),
             }
         )
-        stats = rebalance.run_cycle(config(), run=run, sleep=lambda _s: None)
+        stats = rebalance.run_cycle(
+            config(), run=run, list_dir=lister_for_run(run), sleep=lambda _s: None
+        )
         assert stats["reencoded"] == 1 and stats["node_stale"] == 0
 
 

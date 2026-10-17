@@ -1,10 +1,11 @@
-"""Unit tests for the alias walker / grid footprint (storage/inventory.py) and
-the usage reports (monitor/usage.py)."""
+"""Unit tests for the alias walker / grid footprint (storage/inventory.py),
+the directory cache (storage/dircache.py) and the usage reports
+(monitor/usage.py)."""
 
 from __future__ import annotations
 
-import json
 import subprocess
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,13 +15,18 @@ from redundanet.monitor.usage import (
     usage_payload,
     write_usage_file,
 )
+from redundanet.storage.dircache import DirCache
 from redundanet.storage.inventory import (
     Footprint,
+    alias_caps,
     all_file_caps,
     grid_footprint,
+    list_aliases,
     parse_chk,
     parse_chk_params,
-    walk_files,
+    parse_encoding,
+    read_node_url,
+    walk_tree,
 )
 
 
@@ -32,21 +38,27 @@ def completed(rc: int = 0, stdout: str = "", stderr: str = ""):
     return subprocess.CompletedProcess(args=["tahoe"], returncode=rc, stdout=stdout, stderr=stderr)
 
 
-def dirnode_json(children: dict) -> str:
-    payload = {
-        name: [kind, {"ro_uri": cap} if cap else {}] for name, (kind, cap) in children.items()
-    }
-    return json.dumps(["dirnode", {"children": payload}])
+class FakeLister:
+    """The node's web API: directory capability -> {name: (kind, cap)}."""
 
+    def __init__(self, dirs: dict[str, dict], failing: tuple[str, ...] = ()):
+        self.dirs = dirs
+        self.failing = set(failing)
+        self.calls: list[str] = []
+        self._lock = threading.Lock()
 
-class FakeRun:
-    def __init__(self, responses: dict):
-        self.responses = responses
-        self.calls: list[list[str]] = []
-
-    def __call__(self, args, timeout=3600):
-        self.calls.append(list(args))
-        return self.responses.get((args[0], args[-1])) or self.responses.get(args[0]) or completed()
+    def __call__(self, cap: str):
+        with self._lock:
+            self.calls.append(cap)
+        if cap in self.failing:
+            raise TimeoutError(f"listing {cap} timed out")
+        if cap not in self.dirs:
+            raise OSError(f"no directory {cap}")
+        children = {
+            name: [kind, {"ro_uri": child} if child else {}]
+            for name, (kind, child) in self.dirs[cap].items()
+        }
+        return "dirnode", {"children": children}
 
 
 class TestParse:
@@ -71,34 +83,165 @@ class TestFootprint:
     def test_empty(self):
         assert grid_footprint([]) == Footprint(0, 0, 0)
 
+    def test_footprint_counts_each_capability_once(self):
+        footprint = grid_footprint([chk(1, 2, 100)] * 50 + [chk(1, 2, 100, "other")])
+        assert footprint == Footprint(used_bytes=400, data_bytes=200, files=2)
+
+
+class TestAliases:
+    def test_names_and_caps_from_list_aliases(self):
+        def run(args, timeout=60):
+            return completed(stdout="home: URI:DIR2:x:y\ndocs: URI:DIR2:d:e\nnoise\n")
+
+        assert alias_caps(run) == {"home": "URI:DIR2:x:y", "docs": "URI:DIR2:d:e"}
+        assert list_aliases(run) == ["home", "docs"]
+
+    def test_failure_means_no_aliases(self):
+        def failing(*_args, **_kwargs):
+            return completed(rc=1)
+
+        assert alias_caps(failing) == {}
+
+    def test_node_url(self, tmp_path: Path):
+        (tmp_path / "node.url").write_text("http://127.0.0.1:3456/\n")
+        assert read_node_url(tmp_path / "node.url") == "http://127.0.0.1:3456/"
+        assert read_node_url(tmp_path / "missing").startswith("http://127.0.0.1:")
+
 
 class TestWalk:
     def test_all_file_caps_walks_every_alias_recursively(self):
-        run = FakeRun(
+        lister = FakeLister(
             {
-                "list-aliases": completed(stdout="home: URI:DIR2:x\ndocs: URI:DIR2:y\n"),
-                ("ls", "home:"): completed(
-                    stdout=dirnode_json(
-                        {"a": ("filenode", chk(1, 2, 10)), "sub": ("dirnode", "URI:DIR2:s")}
-                    )
-                ),
-                ("ls", "home:sub"): completed(
-                    stdout=dirnode_json({"b": ("filenode", chk(1, 2, 20, "b"))})
-                ),
-                ("ls", "docs:"): completed(
-                    stdout=dirnode_json({"c": ("filenode", chk(1, 2, 30, "c"))})
-                ),
+                "URI:DIR2:x": {"a": ("filenode", chk(1, 2, 10)), "sub": ("dirnode", "URI:DIR2:s")},
+                "URI:DIR2:s": {"b": ("filenode", chk(1, 2, 20, "b"))},
+                "URI:DIR2:y": {"c": ("filenode", chk(1, 2, 30, "c"))},
             }
         )
-        assert sorted(all_file_caps(run)) == sorted(
-            [chk(1, 2, 10), chk(1, 2, 20, "b"), chk(1, 2, 30, "c")]
+        caps = all_file_caps({"home": "URI:DIR2:x", "docs": "URI:DIR2:y"}, lister)
+        assert sorted(caps) == sorted([chk(1, 2, 10), chk(1, 2, 20, "b"), chk(1, 2, 30, "c")])
+
+    def test_paths_are_relative_to_the_root(self):
+        lister = FakeLister(
+            {
+                "URI:DIR2:x": {
+                    "a.txt": ("filenode", chk(1, 2, 1)),
+                    "sub": ("dirnode", "URI:DIR2:s"),
+                },
+                "URI:DIR2:s": {"b.txt": ("filenode", chk(1, 2, 2, "b"))},
+            }
         )
+        assert sorted(walk_tree("URI:DIR2:x", lister)) == [
+            ("a.txt", chk(1, 2, 1)),
+            ("sub/b.txt", chk(1, 2, 2, "b")),
+        ]
 
     def test_failed_listing_is_skipped_and_logged(self):
         logged: list[str] = []
-        run = FakeRun({("ls", "x:"): completed(rc=1, stderr="boom")})
-        assert walk_files("x:", run, log=logged.append) == []
-        assert logged and "skipping" in logged[0]
+        skipped: list[str] = []
+        lister = FakeLister(
+            {"URI:DIR2:x": {"gone": ("dirnode", "URI:DIR2:gone"), "f": ("filenode", chk(1, 2, 1))}}
+        )
+        files = walk_tree("URI:DIR2:x", lister, label="x:", log=logged.append, skipped=skipped)
+        assert files == [("f", chk(1, 2, 1))]
+        assert skipped == ["x:gone"]
+        assert logged and "skipping" in logged[0] and "'x:gone'" in logged[0]
+
+    def test_listing_timeout_skips_the_subtree_and_marks_it(self):
+        """One directory that cannot be listed in time must not sink the walk."""
+        lister = FakeLister(
+            {
+                "URI:DIR2:x:y": {
+                    "big": ("dirnode", "URI:DIR2:big:x"),
+                    "ok": ("dirnode", "URI:DIR2:ok:x"),
+                    "top.bin": ("filenode", chk(2, 4, 10, "top")),
+                },
+                "URI:DIR2:ok:x": {"f.bin": ("filenode", chk(2, 4, 20, "f"))},
+            },
+            failing=("URI:DIR2:big:x",),
+        )
+        skipped: list[str] = []
+        caps = all_file_caps({"home": "URI:DIR2:x:y"}, lister, skipped=skipped)
+        assert sorted(caps) == sorted([chk(2, 4, 10, "top"), chk(2, 4, 20, "f")])
+        assert skipped == ["home:big"]
+
+    def test_parallel_listings_give_the_same_result(self):
+        dirs = {"URI:DIR2:root": {f"d{i}": ("dirnode", f"URI:DIR2:d{i}") for i in range(20)}}
+        for i in range(20):
+            dirs[f"URI:DIR2:d{i}"] = {f"f{i}": ("filenode", chk(1, 2, i + 1, f"k{i}"))}
+        sequential = sorted(walk_tree("URI:DIR2:root", FakeLister(dirs), workers=1))
+        parallel = FakeLister(dirs)
+        assert sorted(walk_tree("URI:DIR2:root", parallel, workers=4)) == sequential
+        assert len(parallel.calls) == 21  # every directory listed exactly once
+
+
+SNAPSHOT = "URI:DIR2-CHK:snap:1:2:4:100"
+
+
+def snapshots() -> FakeLister:
+    """tahoe backup links a new Archives/<timestamp> on every run; unchanged
+    runs point at the same immutable directory."""
+    return FakeLister(
+        {
+            "URI:DIR2:x": {
+                "Archives": ("dirnode", "URI:DIR2:arch"),
+                "Latest": ("dirnode", SNAPSHOT),
+            },
+            "URI:DIR2:arch": {
+                "2026-09-05_01": ("dirnode", SNAPSHOT),
+                "2026-09-05_02": ("dirnode", SNAPSHOT),
+                "2026-09-05_03": ("dirnode", SNAPSHOT),
+            },
+            SNAPSHOT: {"f": ("filenode", chk(1, 2, 100))},
+        }
+    )
+
+
+class TestSnapshots:
+    def test_identical_snapshot_directories_are_listed_once(self):
+        lister = snapshots()
+        files = walk_tree("URI:DIR2:x", lister)
+        assert len(files) == 1
+        assert lister.calls.count(SNAPSHOT) == 1
+
+    def test_rebalancer_view_skips_immutable_snapshots(self):
+        lister = snapshots()
+        assert walk_tree("URI:DIR2:x", lister, skip_immutable=True) == []
+        assert SNAPSHOT not in lister.calls
+
+
+class TestDirectoryCache:
+    def test_immutable_directories_come_from_the_cache_the_second_time(self):
+        cache = DirCache()
+        first = snapshots()
+        assert len(walk_tree("URI:DIR2:x", first, cache=cache)) == 1
+        assert cache.size() == 1  # the snapshot; the mutable root and Archives are not cached
+        second = snapshots()
+        assert len(walk_tree("URI:DIR2:x", second, cache=cache)) == 1
+        assert SNAPSHOT not in second.calls
+        assert "URI:DIR2:x" in second.calls and "URI:DIR2:arch" in second.calls
+
+    def test_cache_round_trip_and_reopen(self, tmp_path: Path):
+        path = tmp_path / "dircache.sqlite"
+        cache = DirCache(path)
+        assert cache.get("URI:DIR2-CHK:a:b:1:2:3") is None
+        children = [("b", "filenode", chk(1, 2, 1)), ("a", "dirnode", "URI:DIR2-CHK:c:d:1:2:3")]
+        cache.put("URI:DIR2-CHK:a:b:1:2:3", children, now=1.0)
+        cache.put("URI:DIR2-CHK:empty:x:1:2:3", [], now=1.0)
+        cache.close()
+        again = DirCache(path)
+        assert again.get("URI:DIR2-CHK:a:b:1:2:3") == sorted(children)
+        assert again.get("URI:DIR2-CHK:empty:x:1:2:3") == []
+        assert again.size() == 2
+
+    def test_a_cached_listing_is_walked_like_a_fresh_one(self):
+        cache = DirCache()
+        inner = "URI:DIR2-CHK:inner:x:1:2:3"
+        cache.put(SNAPSHOT, [("inner", "dirnode", inner), ("f", "filenode", chk(1, 2, 1))])
+        cache.put(inner, [("g", "filenode", chk(1, 2, 2, "g"))])
+        lister = FakeLister({"URI:DIR2:x": {"Latest": ("dirnode", SNAPSHOT)}})
+        files = walk_tree("URI:DIR2:x", lister, cache=cache)
+        assert sorted(files) == [("Latest/f", chk(1, 2, 1)), ("Latest/inner/g", chk(1, 2, 2, "g"))]
+        assert lister.calls == ["URI:DIR2:x"]
 
 
 def manifest() -> dict:
@@ -176,105 +319,14 @@ class TestOverAllocation:
         assert over_allocation({"enforce": True, "used_bytes": "x"}) is False
 
 
-class TestSnapshots:
-    """tahoe backup links a new Archives/<timestamp> on every run; unchanged runs
-    point at the same immutable directory."""
-
-    def snapshots(self) -> FakeRun:
-        snapshot = dirnode_json({"f": ("filenode", chk(1, 2, 100))})
-        return FakeRun(
-            {
-                "list-aliases": completed(stdout="backups: URI:DIR2:x\n"),
-                ("ls", "backups:"): completed(
-                    stdout=dirnode_json(
-                        {
-                            "Archives": ("dirnode", "URI:DIR2:arch"),
-                            "Latest": ("dirnode", "URI:DIR2-CHK:snap:1"),
-                        }
-                    )
-                ),
-                ("ls", "backups:Archives"): completed(
-                    stdout=dirnode_json(
-                        {
-                            "2026-09-05_01": ("dirnode", "URI:DIR2-CHK:snap:1"),
-                            "2026-09-05_02": ("dirnode", "URI:DIR2-CHK:snap:1"),
-                            "2026-09-05_03": ("dirnode", "URI:DIR2-CHK:snap:1"),
-                        }
-                    )
-                ),
-                ("ls", "backups:Latest"): completed(stdout=snapshot),
-                ("ls", "backups:Archives/2026-09-05_01"): completed(stdout=snapshot),
-                ("ls", "backups:Archives/2026-09-05_02"): completed(stdout=snapshot),
-                ("ls", "backups:Archives/2026-09-05_03"): completed(stdout=snapshot),
-            }
-        )
-
-    def test_identical_snapshot_directories_are_listed_once(self):
-        run = self.snapshots()
-        files = walk_files("backups:", run)
-        # One file, reached through the first link to that directory only.
-        assert len(files) == 1
-        listed = [c[-1] for c in run.calls if c[0] == "ls"]
-        assert listed.count("backups:Latest") + sum(1 for s in listed if "Archives/" in s) == 1
-
-    def test_rebalancer_view_skips_immutable_snapshots(self):
-        run = self.snapshots()
-        assert walk_files("backups:", run, skip_immutable=True) == []
-        assert not any("Archives/" in c[-1] or c[-1] == "backups:Latest" for c in run.calls)
-
-    def test_footprint_counts_each_capability_once(self):
-        footprint = grid_footprint([chk(1, 2, 100)] * 50 + [chk(1, 2, 100, "other")])
-        assert footprint == Footprint(used_bytes=400, data_bytes=200, files=2)
-
-
 class TestParseEncoding:
     def test_file_and_immutable_directory_caps(self):
-        from redundanet.storage.inventory import parse_encoding
-
         assert parse_encoding("URI:CHK:key:hash:2:4:1000") == (2, 4)
         assert parse_encoding("URI:DIR2-CHK:key:hash:1:2:500") == (1, 2)
 
     def test_caps_without_shares_are_none(self):
-        from redundanet.storage.inventory import parse_encoding
-
         assert parse_encoding("URI:LIT:abcd") is None
         assert parse_encoding("URI:DIR2:writekey:fingerprint") is None
         assert parse_encoding("URI:DIR2-LIT:abcd") is None
         assert parse_encoding("URI:CHK:key:hash:x:4:1000") is None
         assert parse_encoding("garbage") is None
-
-
-class TestSlowDirectory:
-    def test_listing_timeout_skips_the_subtree_and_marks_it(self):
-        """One directory that cannot be listed in time must not sink the walk."""
-        import subprocess
-
-        from redundanet.storage.inventory import all_file_caps
-
-        class SlowRun(FakeRun):
-            def __call__(self, args, timeout=3600):
-                if args[0] == "ls" and args[-1] == "home:big":
-                    raise subprocess.TimeoutExpired(args, timeout)
-                return super().__call__(args, timeout)
-
-        run = SlowRun(
-            {
-                "list-aliases": completed(stdout="home: URI:DIR2:x:y\n"),
-                ("ls", "home:"): completed(
-                    stdout=dirnode_json(
-                        {
-                            "big": ("dirnode", "URI:DIR2:big:x"),
-                            "ok": ("dirnode", "URI:DIR2:ok:x"),
-                            "top.bin": ("filenode", chk(2, 4, 10, "top")),
-                        }
-                    )
-                ),
-                ("ls", "home:ok"): completed(
-                    stdout=dirnode_json({"f.bin": ("filenode", chk(2, 4, 20, "f"))})
-                ),
-            }
-        )
-        skipped: list[str] = []
-        caps = all_file_caps(run, skipped=skipped)
-        assert sorted(caps) == sorted([chk(2, 4, 10, "top"), chk(2, 4, 20, "f")])
-        assert skipped == ["home:big"]

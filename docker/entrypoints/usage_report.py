@@ -14,17 +14,24 @@ the member's allocation from the manifest, and publishes the result:
 `--once` computes now, prints the JSON and exits (used by `redundanet storage
 quota`).
 
+Directories are listed through the node's web API, several at a time, and
+the listings of immutable snapshot directories are kept in
+/var/lib/tahoe-client/redundanet-dircache.sqlite between measurements, so a
+measurement lists only what the latest backup added.
+
 Environment:
   REDUNDANET_NODE_NAME, REDUNDANET_INTERNAL_VPN_IP
   REDUNDANET_USAGE_INTERVAL   seconds between measurements (default 3600);
                               a backup that made a snapshot triggers one at once
   REDUNDANET_QUOTA_ENFORCE    "true"/"false" overrides the manifest's setting
+  REDUNDANET_WALK_WORKERS     directory listings in flight at once (default 4)
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -42,11 +49,22 @@ from redundanet.monitor.usage import (
     write_usage_file,
 )
 from redundanet.storage.backupdb import BACKUPDB_FILE, recorded_caps
-from redundanet.storage.inventory import LISTING_TIMEOUT, all_file_caps, grid_footprint
+from redundanet.storage.dircache import DirCache
+from redundanet.storage.inventory import (
+    Lister,
+    alias_caps,
+    all_file_caps,
+    grid_footprint,
+    read_node_url,
+    web_lister,
+)
 
 BACKUP_DONE_FILE = Path("/var/lib/tahoe-client/redundanet-backup-done")
 
 NODE_DIR = "/var/lib/tahoe-client"
+NODE_URL_FILE = Path(NODE_DIR) / "node.url"
+DIRCACHE_FILE = Path(NODE_DIR) / "redundanet-dircache.sqlite"
+DEFAULT_WORKERS = 4
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 STARTUP_DELAY = 120
 
@@ -81,20 +99,58 @@ def enforce_override(environ: dict[str, str]) -> bool | None:
     return None
 
 
+def open_dircache(path: Path = DIRCACHE_FILE) -> DirCache:
+    """The directory cache on the node's volume; in memory when the file
+    cannot be opened (the measurement still works, just lists everything)."""
+    try:
+        return DirCache(path)
+    except sqlite3.Error as e:
+        log(f"cannot open the directory cache {path}: {e}; listing everything")
+        return DirCache()
+
+
+def walk_workers(environ: dict[str, str]) -> int:
+    try:
+        return max(1, int(environ.get("REDUNDANET_WALK_WORKERS", "") or DEFAULT_WORKERS))
+    except ValueError:
+        return DEFAULT_WORKERS
+
+
 def measure(
-    node_name: str, environ: dict[str, str], run=run_tahoe, backupdb: Path = BACKUPDB_FILE
+    node_name: str,
+    environ: dict[str, str],
+    run=run_tahoe,
+    backupdb: Path = BACKUPDB_FILE,
+    list_dir: Lister | None = None,
+    cache: DirCache | None = None,
 ) -> dict[str, Any]:
     """Everything this client put on the grid: the alias trees, plus what a
     running backup has uploaded but not linked yet (its backupdb rows)."""
     skipped: list[str] = []
-    linked = all_file_caps(run, log=log, skipped=skipped)
+    if list_dir is None:
+        list_dir = web_lister(read_node_url(NODE_URL_FILE))
+    if cache is None:
+        cache = open_dircache()
+    started = time.monotonic()
+    linked = all_file_caps(
+        alias_caps(run),
+        list_dir,
+        cache=cache,
+        log=log,
+        skipped=skipped,
+        workers=walk_workers(environ),
+    )
+    log(
+        f"walked the aliases in {time.monotonic() - started:.1f}s "
+        f"({cache.size()} immutable directories cached)"
+    )
     reachable = set(linked)
     pending = [cap for cap in recorded_caps(backupdb) if cap not in reachable]
     footprint = grid_footprint([*linked, *pending])
     if skipped:
         log(
-            f"partial measurement: {len(skipped)} directories could not be listed within "
-            f"{LISTING_TIMEOUT}s: {', '.join(skipped[:3])}"
+            f"partial measurement: {len(skipped)} directories could not be listed: "
+            f"{', '.join(skipped[:3])}"
         )
     payload = usage_payload(
         node_name,
