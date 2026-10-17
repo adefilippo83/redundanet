@@ -115,14 +115,21 @@ def _replication_value(status: NetworkStatus) -> str:
 
 
 def _availability_line(status: NetworkStatus) -> str:
-    """Placement vs right-now availability, shown only during an outage."""
+    """Placement vs right-now availability, shown only during an outage: a
+    census missing, or a storage server down while its census answers."""
     replication = status.replication
-    if replication is None or replication.complete:
+    if replication is None:
         return ""
     reduced = replication.objects_total - replication.available_full
+    if replication.complete and not reduced:
+        return ""
+    why = (
+        "* placement counts include the last known inventory of unreachable server(s)"
+        if not replication.complete
+        else "placement counts include the shares of server(s) whose Tahoe is down"
+    )
     parts = [
-        f"* placement counts include the last known inventory of unreachable "
-        f"server(s). Right now: {replication.available_full}/{replication.objects_total} "
+        f"{why}. Right now: {replication.available_full}/{replication.objects_total} "
         f"objects fully reachable"
     ]
     if replication.unreadable_now:
@@ -239,6 +246,8 @@ def render_html(status: NetworkStatus) -> str:
         elif node.reachable:
             rtt = f" · {node.rtt_ms:.0f} ms" if node.rtt_ms is not None else ""
             state = f'<span class="dot" style="background:var(--good)"></span>online{rtt}'
+            if node.storage_listening is False:
+                state += ' · <span style="color:var(--critical)">storage server down</span>'
         else:
             state = '<span class="dot" style="background:var(--critical)"></span>offline'
         stored = '<span style="color:var(--text-2)">—</span>'

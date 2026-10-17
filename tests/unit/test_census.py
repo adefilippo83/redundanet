@@ -605,3 +605,33 @@ class TestDeltaCollection:
         assert status.replication.per_server["n1"].fetch_seconds == 74.1
         assert "census fetch 74 s" in render_html(status)
         assert "walk" not in render_html(status).split("n1")[1].split("</tr>")[0]
+
+
+class TestStorageDown:
+    def test_a_node_whose_tahoe_is_down_keeps_its_inventory_but_serves_nothing(self):
+        """Its census answers (the sidecar is up), so placement counts its
+        shares; availability does not, and the page says why."""
+        status = collect_status(
+            manifest(),
+            "hub",
+            lambda _ip: 5.0,
+            storage_connected=2,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+            fetch_census=censuses(
+                {"10.100.0.10": payload(["si1", "si2"]), "10.100.0.11": payload(["si1", "si2"])}
+            ),
+            probe_storage=lambda ip: ip != "10.100.0.11",
+        )
+        replication = status.replication
+        assert replication is not None
+        assert replication.complete and replication.fully_replicated == 2
+        assert replication.available_full == 0  # only n1 serves right now
+        assert replication.unreadable_now == 0  # needed=1, n1 still has both
+        assert replication.per_server["n2"].source == "live"
+        assert replication.per_server["n2"].storage_listening is False
+        assert status.overall == "degraded"
+        html = render_html(status)
+        assert "2/2*" not in html  # the census is complete
+        assert "whose Tahoe is down" in html and "0/2 objects fully reachable" in html

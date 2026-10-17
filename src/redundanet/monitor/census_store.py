@@ -220,6 +220,17 @@ class CensusStore:
             self._dirty = True
         return max(now - float(row[0]), 0.0)
 
+    def set_live(self, name: str, live: bool) -> bool:
+        """Count, or stop counting, a node's rows as reachable copies.
+        Returns whether anything changed."""
+        row = self._conn.execute("SELECT live FROM nodes WHERE name = ?", (name,)).fetchone()
+        if row is None or bool(row[0]) == live:
+            return False
+        with self._conn:
+            self._conn.execute("UPDATE nodes SET live = ? WHERE name = ?", (int(live), name))
+        self._dirty = True
+        return True
+
     def prune(self, keep: Iterable[str]) -> int:
         """Forget nodes that are no longer storage nodes of the manifest."""
         names = set(keep)

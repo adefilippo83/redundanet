@@ -206,3 +206,17 @@ class TestThreads:
         thread.start()
         thread.join()
         assert outcome == [1]
+
+
+class TestSetLive:
+    def test_toggles_the_live_flag_and_the_summary(self):
+        store = CensusStore()
+        store.ingest("n1", "ip1", full(["a"]), 1.0)
+        store.ingest("n2", "ip2", full(["a"]), 1.0)
+        assert store.summary(2, 1).available_full == 1
+        assert store.set_live("n2", False) is True
+        assert store.set_live("n2", False) is False  # already so
+        assert store.summary(2, 1).available_full == 0
+        assert store.set_live("n2", True) is True
+        assert store.summary(2, 1).available_full == 1
+        assert store.set_live("ghost", False) is False

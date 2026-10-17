@@ -137,13 +137,20 @@ services manually, recreate them as a group, not individually.
   days kept); the 7-day and 30-day figures come from hourly rollups of those
   samples (`monitor/uptime-hourly.jsonl`, 90 days kept, a few hundred KB).
   Both survive deploys; the long windows fill up from the day they shipped.
-- **Storage servers tile**: counts distinct storage nicknames announced to
-  the introducer, read from the introducer's status page (its JSON view only
-  has totals). A node whose `tahoe-storage` volume was recreated announces a
-  new server id while the introducer keeps the old one forever; the page
-  notes such a node ("has announced N storage identities ... volumes were
-  recreated") and a nickname that is in no manifest node. Restarting the
-  introducer drops the stale identities.
+- **Storage servers tile**: the lower of two counts. The introducer's:
+  distinct storage nicknames announced to it, read from its status page
+  (its JSON view only has totals); a node whose `tahoe-storage` volume was
+  recreated announces a new server id while the introducer keeps the old
+  one forever, and the page notes such a node ("has announced N storage
+  identities ... volumes were recreated") and a nickname that is in no
+  manifest node (restarting the introducer drops the stale identities).
+  And the hub's own probe: every minute it opens a TCP connection to each
+  reachable storage node's Tahoe tub port (3457) over the VPN. The
+  introducer remembers a server that went down; the probe does not. A node
+  that answers pings and serves its census while Tahoe is down is marked
+  "storage server down" in the node table, noted, degrades the verdict,
+  and its shares are left out of the availability counts (not of placement:
+  they are still on its disk).
 - **Replication census**: every storage node keeps an inventory of its
   shares tree and serves it from memory at `/census` on its VPN address, so
   the answer is instant whatever the object count. The inventory is

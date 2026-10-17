@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import socket
 import subprocess
 import threading
 import time
@@ -45,6 +46,7 @@ from redundanet.monitor.status import (
 )
 from redundanet.monitor.usage import USAGE_PORT
 from redundanet.utils.logging import get_logger, setup_logging
+from redundanet.vpn.traffic import STORAGE_TUB_PORT
 
 MANIFEST_DIR = Path("/var/lib/redundanet/manifest")
 FURL_PATH = Path("/var/lib/tahoe-introducer/private/introducer.furl")
@@ -81,6 +83,19 @@ def ping(vpn_ip: str) -> float | None:
             except ValueError:
                 return None
     return 0.0
+
+
+def probe_storage(vpn_ip: str, port: int = STORAGE_TUB_PORT, timeout: float = 3.0) -> bool | None:
+    """Whether a storage node's Tahoe server accepts a connection on its tub
+    port over the VPN. Its census sidecar answering is no proof: Tahoe can
+    be down while the node and the sidecar are up."""
+    if not vpn_ip:
+        return None
+    try:
+        with socket.create_connection((vpn_ip, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 def storage_server_count() -> int | None:
@@ -221,6 +236,7 @@ def collect_once(node_name: str) -> None:
         fetch_usage=usage_fetcher,
         usage_cache_dir=USAGE_CACHE_DIR,
         announcements=introducer_announcements(),
+        probe_storage=probe_storage,
     )
     append_sample(HISTORY_PATH, status)
     uptimes = uptime_stats(HISTORY_PATH, timedelta(hours=24))

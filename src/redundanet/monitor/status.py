@@ -19,6 +19,7 @@ from typing import Any
 from redundanet.core.quota import MemberQuota, compute_quotas, format_size, report_age
 from redundanet.monitor.census_store import CensusStore
 from redundanet.monitor.introducer import Announcement, identity_notes, summarize_storage
+from redundanet.vpn.traffic import STORAGE_TUB_PORT
 
 # A pinger takes a VPN IP and returns the RTT in milliseconds, or None.
 Pinger = Callable[[str], "float | None"]
@@ -26,6 +27,9 @@ Pinger = Callable[[str], "float | None"]
 CensusFetcher = Callable[[str], "dict[str, Any] | None"]
 # A usage fetcher takes a VPN IP and returns a client node's /usage payload, or None.
 UsageFetcher = Callable[[str], "dict[str, Any] | None"]
+# A storage prober takes a VPN IP and says whether the node's Tahoe storage
+# server accepts connections on its tub port; None when it could not probe.
+StorageProber = Callable[[str], "bool | None"]
 # A usage report older than this gets a note: the node's meter is not reporting.
 STALE_USAGE_AFTER = 6 * 3600
 
@@ -82,6 +86,9 @@ class NodeStatus:
     is_self: bool = False
     reachable: bool = False
     rtt_ms: float | None = None
+    # Storage nodes only: whether Tahoe answers on its tub port (None: not
+    # probed, the node being unreachable or the hub not probing).
+    storage_listening: bool | None = None
     uptime_24h: float | None = None  # percent, from history samples
     uptime_7d: float | None = None  # percent, from hourly rollups
     uptime_30d: float | None = None
@@ -95,8 +102,13 @@ class GridStatus:
     shares_happy: int
     shares_total: int
     storage_expected: int  # manifest nodes with the storage role
-    storage_connected: int | None  # distinct servers announced to the introducer; None = unknown
+    storage_connected: (
+        int | None
+    )  # servers announced to the introducer and answering; None = unknown
     storage_identities: int | None = None  # announcements in total; > connected means churn
+    storage_listening: int | None = (
+        None  # storage nodes answering on their tub port; None = not probed
+    )
 
     @property
     def uploads_possible(self) -> bool | None:
@@ -132,6 +144,7 @@ class ServerCensus:
     fetch_seconds: float | None = None  # how long the last census fetch took
     walk_seconds: float | None = None  # how long the node's last refresh took
     walk_mode: str | None = None  # "full" or "incremental"
+    storage_listening: bool | None = None  # Tahoe answering on the tub port (None: not probed)
 
 
 @dataclass
@@ -233,6 +246,7 @@ def _collect_replication(
     notes: list[str],
     store: CensusStore,
     now: datetime | None = None,
+    storage_down: frozenset[str] = frozenset(),
 ) -> ReplicationStatus | None:
     """Aggregate the storage nodes' share censuses into replication counts.
 
@@ -254,6 +268,10 @@ def _collect_replication(
         payload = fetch_census(node.vpn_ip)
         if payload:
             store.ingest(node.name, node.vpn_ip, payload, now_ts)
+            # The census sidecar answering says nothing about Tahoe itself:
+            # a node whose storage server is down keeps its inventory (the
+            # shares are on its disk) but serves none of it right now.
+            store.set_live(node.name, node.name not in storage_down)
             continue
         missing.append(node.name)
         age = store.mark_unreachable(node.name, now_ts)
@@ -280,6 +298,7 @@ def _collect_replication(
             fetch_seconds=record.fetch_seconds,
             walk_seconds=record.walk_seconds,
             walk_mode=record.walk_mode,
+            storage_listening=node.storage_listening,
         )
 
     if (
@@ -348,6 +367,7 @@ def collect_status(
     fetch_usage: UsageFetcher | None = None,
     usage_cache_dir: Path | None = None,
     announcements: list[Announcement] | None = None,
+    probe_storage: StorageProber | None = None,
 ) -> NetworkStatus:
     """Build the status model from the raw inputs.
 
@@ -355,6 +375,9 @@ def collect_status(
     parsed ``announcements`` are given they take precedence, counting
     distinct servers (a node that recreated its volumes announces a new
     identity each time, and the introducer never forgets the old ones).
+    With ``probe_storage`` every reachable storage node is also asked on
+    its tub port, and the count of servers is the lower of the two: the
+    introducer remembers a server that went down, the probe does not.
     """
     now = now or datetime.now(UTC)
     network = manifest.get("network", {}) or {}
@@ -390,6 +413,21 @@ def collect_status(
             )
         )
 
+    storage_listening: int | None = None
+    storage_down: list[str] = []
+    if probe_storage is not None:
+        storage_listening = 0
+        for node in nodes:
+            if "tahoe_storage" not in node.roles or node.is_self or not node.reachable:
+                continue
+            node.storage_listening = probe_storage(node.vpn_ip)
+            if node.storage_listening:
+                storage_listening += 1
+            elif node.storage_listening is False:
+                storage_down.append(node.name)
+        if storage_connected is None or storage_listening < storage_connected:
+            storage_connected = storage_listening
+
     grid = GridStatus(
         shares_needed=int(tahoe.get("shares_needed", 3)),
         shares_happy=int(tahoe.get("shares_happy", 7)),
@@ -397,16 +435,29 @@ def collect_status(
         storage_expected=sum(1 for n in nodes if "tahoe_storage" in n.roles),
         storage_connected=storage_connected,
         storage_identities=storage_identities,
+        storage_listening=storage_listening,
     )
 
     # --- overall verdict -------------------------------------------------
     overall = "ok"
+    for name in storage_down:
+        notes.append(
+            f"{name}: storage server not answering on port {STORAGE_TUB_PORT} "
+            "(the node is up and its census answers; Tahoe is down or restarting)"
+        )
+        overall = "degraded"
 
     replication: ReplicationStatus | None = None
     if fetch_census is not None:
         # Without a store of its own the census lives for this call only.
         replication = _collect_replication(
-            nodes, grid, fetch_census, notes, census_store or CensusStore(), now=now
+            nodes,
+            grid,
+            fetch_census,
+            notes,
+            census_store or CensusStore(),
+            now=now,
+            storage_down=frozenset(storage_down),
         )
         if replication is not None and replication.complete and replication.under_replicated:
             notes.append(

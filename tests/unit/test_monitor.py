@@ -565,3 +565,56 @@ class TestRollups:
         assert "99.5%" in html
         assert "98.2%" in html
         assert status.to_dict()["nodes"][0]["uptime_30d"] == 98.2
+
+
+class TestStorageProbe:
+    """A storage node whose Tahoe server is down while the node and its
+    census sidecar answer: the introducer still lists it, the probe does not."""
+
+    def collect(self, probe, storage_connected=2):
+        return collect_status(
+            manifest(),
+            "hub",
+            all_up,
+            storage_connected=storage_connected,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+            probe_storage=probe,
+        )
+
+    def test_all_listening_changes_nothing(self):
+        status = self.collect(lambda _ip: True)
+        assert status.overall == "ok" and status.notes == []
+        assert status.grid.storage_listening == 2 and status.grid.storage_connected == 2
+        assert all(n.storage_listening for n in status.nodes if "tahoe_storage" in n.roles)
+
+    def test_a_server_down_is_flagged_and_counted_out(self):
+        status = self.collect(lambda ip: ip != "10.100.0.11")
+        assert status.overall == "degraded"
+        assert any("storage server not answering on port" in note for note in status.notes)
+        assert status.grid.storage_listening == 1
+        assert (
+            status.grid.storage_connected == 1
+        )  # the lower of the introducer's 2 and the probe's 1
+        flagged = [n for n in status.nodes if n.storage_listening is False]
+        assert [n.vpn_ip for n in flagged] == ["10.100.0.11"]
+        assert "storage server down" in render_html(status)
+
+    def test_unknown_introducer_count_takes_the_probe(self):
+        status = self.collect(lambda _ip: True, storage_connected=None)
+        assert status.grid.storage_connected == 2
+        assert not any("storage server count unknown" in note for note in status.notes)
+
+    def test_without_a_prober_nothing_is_probed(self):
+        status = collect_status(
+            manifest(),
+            "hub",
+            all_up,
+            storage_connected=2,
+            furl_present=True,
+            manifest_synced_at=NOW,
+            now=NOW,
+        )
+        assert status.grid.storage_listening is None
+        assert all(n.storage_listening is None for n in status.nodes)

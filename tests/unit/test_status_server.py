@@ -88,3 +88,19 @@ class TestOpenStore:
         assert store is status_server.STORE
         assert store.rows() == 1 and not (tmp_path / "n1.json").exists()
         assert status_server.fetch_census("") is None
+
+
+class TestProbeStorage:
+    def test_open_closed_and_unknown(self):
+        import socket
+
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            assert status_server.probe_storage("127.0.0.1", port=port, timeout=2) is True
+        finally:
+            listener.close()
+        assert status_server.probe_storage("127.0.0.1", port=port, timeout=2) is False
+        assert status_server.probe_storage("", port=port) is None
