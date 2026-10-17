@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from redundanet.storage.backupdb import Pruned, prune_stale, recorded_caps
+from redundanet.storage.backupdb import Marked, Pruned, mark_checked, prune_stale, recorded_caps
 
 # Tahoe-LAFS 1.20 backupdb schema, version 2 (allmydata/scripts/backupdb.py).
 SCHEMA_V2 = """
@@ -122,3 +122,50 @@ class TestRecordedCaps:
         assert recorded_caps(tmp_path / "absent.sqlite") == []
         (tmp_path / "bad.sqlite").write_bytes(b"not a database")
         assert recorded_caps(tmp_path / "bad.sqlite") == []
+
+
+# Schema version 1: no directories table.
+SCHEMA_V1 = """
+CREATE TABLE version (version INTEGER);
+CREATE TABLE local_files (
+  path VARCHAR(1024) PRIMARY KEY, size INTEGER, mtime NUMBER, ctime NUMBER, fileid INTEGER
+);
+CREATE TABLE caps (fileid INTEGER PRIMARY KEY AUTOINCREMENT, filecap VARCHAR(256) UNIQUE);
+CREATE TABLE last_upload (fileid INTEGER PRIMARY KEY, last_uploaded TIMESTAMP, last_checked TIMESTAMP);
+INSERT INTO version VALUES (1);
+"""
+
+
+def checked_at(path: Path) -> dict[bytes, float]:
+    conn = sqlite3.connect(path)
+    try:
+        return dict(
+            conn.execute("SELECT filecap, last_checked FROM caps JOIN last_upload USING (fileid)")
+        )
+    finally:
+        conn.close()
+
+
+class TestMarkChecked:
+    def test_marks_only_the_given_files_and_directories(self, tmp_path: Path):
+        db = tmp_path / "backupdb.sqlite"
+        make_db(
+            db,
+            {"a": chk(2, 4, "a"), "b": chk(2, 4, "b")},
+            {"d1": dircap(2, 4, "d1"), "d2": dircap(2, 4, "d2")},
+        )
+        marked = mark_checked(db, [chk(2, 4, "a").decode()], [dircap(2, 4, "d2").decode()], 777.0)
+        assert marked == Marked(files=1, directories=1)
+        assert checked_at(db) == {chk(2, 4, "a"): 777.0, chk(2, 4, "b"): 1.0}
+        conn = sqlite3.connect(db)
+        assert dict(conn.execute("SELECT dircap, last_checked FROM directories")) == {
+            dircap(2, 4, "d1"): 1.0,
+            dircap(2, 4, "d2"): 777.0,
+        }
+        conn.close()
+
+    def test_text_caps_schema_v1_and_missing_database(self, tmp_path: Path):
+        db = tmp_path / "backupdb.sqlite"
+        make_db(db, {"a": chk(2, 4, "a").decode()}, {}, schema=SCHEMA_V1)  # type: ignore[dict-item]
+        assert mark_checked(db, [chk(2, 4, "a").decode()], ["URI:DIR2-CHK:x"], 5.0) == Marked(1, 0)
+        assert mark_checked(tmp_path / "none", [], [], 5.0) is None

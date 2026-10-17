@@ -376,16 +376,23 @@ duration — that is how deleting data eventually frees disk space.
 
 **Keeping data alive and healthy:**
 
-- The client container sweeps **all aliases** automatically once a week (the
-  `lease-renew` job): every object gets its leases renewed, and any object
-  with missing shares is repaired from the surviving ones (Tahoe
-  `deep-check --add-lease --repair`). Repair covers the cases where a storage
-  node lost its disk or a member left the network; it needs at least k
-  surviving shares, below that an object is unrecoverable. The per-alias
-  summary (objects checked, healthy/unhealthy before and after, repairs
-  attempted/successful) is in the client's logs under `lease-repair:`.
-  Overrides in `.env`: `LEASE_RENEW_INTERVAL` (seconds, default 604800),
-  `REPAIR_ENABLED=false` to only renew.
+- The client container sweeps everything it keeps on the grid once a week
+  (the `lease-sweep` job): every file and directory reachable from its
+  aliases, each once however many snapshots link it, plus the files a
+  backup in progress has uploaded but not linked yet. Every object gets its
+  leases renewed, and any object with missing shares is repaired from the
+  surviving ones. Repair covers the cases where a storage node lost its disk
+  or a member left the network; it needs at least k surviving shares, below
+  that an object is unrecoverable. Objects are checked through the node's
+  web API, four at a time, and every result is recorded in the client
+  volume (`redundanet-sweep.sqlite`), so a sweep interrupted by a restart or
+  by its time budget (`LEASE_RENEW_TIMEOUT`, default 6 hours per run)
+  resumes where it stopped a minute later. Objects found healthy are also
+  marked as checked in the backup database, so `tahoe backup` does not
+  re-check them on its own runs. The summary (objects checked, healthy,
+  unhealthy, repaired, failed) is in the client's logs under
+  `lease-repair:`. Overrides in `.env`: `LEASE_RENEW_INTERVAL` (seconds,
+  default 604800), `REPAIR_ENABLED=false` to only renew.
 - Manual renewal: `redundanet storage renew` (all aliases) or
   `redundanet storage renew URI:CHK:...` / `redundanet storage renew home:`.
 - **Bare capabilities that are not linked into an alias are not renewed
@@ -394,7 +401,11 @@ duration — that is how deleting data eventually frees disk space.
   the lease duration.
 
 The 90-day default means a client can be offline for ~12 weekly renewal
-cycles before its data is at risk.
+cycles before its data is at risk. The storage side runs Tahoe's lease
+crawler, which walks every share on the disk at a tenth of a CPU and takes
+days per cycle on a large node; the base image patches a Tahoe 1.20 bug
+that stopped the crawler for good after any restart mid-cycle (see
+`docker/patches/`).
 
 ## Role Definitions
 

@@ -182,10 +182,13 @@ def walk_tree(
     skip_immutable: bool = False,
     skipped: list[str] | None = None,
     workers: int = 1,
+    directories: list[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
     """All (path, file cap) pairs reachable from a directory capability.
-    Directories are walked, not returned. ``label`` prefixes the paths in
-    log lines and in ``skipped`` (an alias spec like ``backups:``).
+    Directories are walked, not returned, unless ``directories`` is given:
+    then every directory visited is appended to it as (path, cap), the
+    root first with an empty path. ``label`` prefixes the paths in log
+    lines and in ``skipped`` (an alias spec like ``backups:``).
 
     A directory capability is visited once: ``tahoe backup`` links a new
     ``Archives/<timestamp>`` entry on every run, and unchanged runs point at
@@ -231,6 +234,8 @@ def walk_tree(
                     continue
                 if cache is not None and not from_cache and is_immutable_dir(cap):
                     cache.put(cap, listing)
+                if directories is not None:
+                    directories.append((path, cap))
                 for name, child_type, child_cap in listing:
                     child_path = f"{path}/{name}" if path else name
                     if child_type == "dirnode":

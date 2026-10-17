@@ -60,7 +60,7 @@ force_foolscap = true
 {storage_dir_line}# Garbage-collect shares whose lease has not been renewed within the lease
 # duration — without this, deleted files would occupy space forever. Clients
 # keep their data alive by renewing leases (see 'redundanet storage renew'
-# and the client container's periodic lease-renew job).
+# and the client container's weekly lease sweep).
 expire.enabled = {str(expire_enabled).lower()}
 expire.mode = age
 expire.override_lease_duration = {lease_duration}

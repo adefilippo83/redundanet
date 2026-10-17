@@ -223,7 +223,13 @@ t = time.monotonic(); body = urllib.request.urlopen('http://172.30.0.11:3459/cen
 print(f'{len(body)} {time.monotonic() - t:.2f}')")"
   record "census-fetch-storage-1" "${size#* }" "bytes=${size%% *}"
 
-  log "Step 8: Tahoe 1.20 lease expirer after a restart mid-cycle (state file as the JSON round trip leaves it)"
+  log "Step 8: lease sweep (lease_sweep.py --once, as the sidecar runs it), then a backup that must not re-check"
+  backupdb_sql "UPDATE last_upload SET last_checked = last_checked - 70*86400; UPDATE directories SET last_checked = last_checked - 70*86400" || true
+  timed_exec "lease-sweep-first" "$CLIENT" python /app/lease_sweep.py --once
+  timed_exec "backup-after-sweep" "$CLIENT" tahoe -d /var/lib/tahoe-client backup /data/sync backups:
+  timed_exec "lease-sweep-second" "$CLIENT" python /app/lease_sweep.py --once
+
+  log "Step 9: Tahoe lease crawler after a restart mid-cycle (the base image patches Tahoe 1.20's crash)"
   # Stop first: the crawler writes its own state on shutdown and would
   # overwrite a file copied into a running container.
   docker stop rn-grid-storage-1 >/dev/null
@@ -231,21 +237,11 @@ print(f'{len(body)} {time.monotonic() - t:.2f}')")"
   docker start rn-grid-storage-1 >/dev/null
   sleep 420   # the crawler's slow_start is 360 s; the first slice follows
   if docker logs --since 8m rn-grid-storage-1 2>&1 | grep -q "list indices must be integers or slices, not tuple"; then
-    record "expirer-crash-after-restart" 0 "reproduced=yes"
+    record "expirer-after-restart-mid-cycle" 0 "crawler=crashed"
+  elif docker exec rn-grid-storage-1 find /data/storage -name lease_checker.state.json -newer /data/storage/shares -mmin -7 | grep -q .; then
+    record "expirer-after-restart-mid-cycle" 0 "crawler=running"
   else
-    record "expirer-crash-after-restart" 0 "reproduced=no"
-  fi
-  log "Step 9: the remedy, a deleted state file (the crawler then starts a fresh cycle)"
-  docker stop rn-grid-storage-1 >/dev/null
-  docker run --rm --volumes-from rn-grid-storage-1 alpine:3.20 rm -f /data/storage/lease_checker.state.json
-  docker start rn-grid-storage-1 >/dev/null
-  sleep 420
-  if docker logs --since 8m rn-grid-storage-1 2>&1 | grep -q "list indices must be integers or slices, not tuple"; then
-    record "expirer-after-state-delete" 0 "crawler=crashed"
-  elif docker exec rn-grid-storage-1 test -f /data/storage/lease_checker.state.json; then
-    record "expirer-after-state-delete" 0 "crawler=running"
-  else
-    record "expirer-after-state-delete" 0 "crawler=no-state-written-yet"
+    record "expirer-after-restart-mid-cycle" 0 "crawler=no-state-written"
   fi
 
   log "Tier 2 done: $RESULTS"

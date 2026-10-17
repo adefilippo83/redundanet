@@ -54,7 +54,9 @@ that chain.
 - **Tahoe upstream is dormant** (1.20.0, Dec 2024). Its transitive deps are
   pinned in the Dockerfiles (`pyopenssl<25`, `service-identity<25`) — scars,
   not suggestions. The SFTP frontend never closes sessions (known, upstream,
-  routed around; do not chase it).
+  routed around; do not chase it). Its lease crawler crashes after a restart
+  mid-cycle; `docker/patches/tahoe_expirer_json_state.py` fixes that in the
+  base image and the build fails if Tahoe moves the patched code.
 - **Encoding parameters are per-file at upload time.** Changing k-of-n in the
   manifest affects only new uploads; old files need re-upload to re-encode.
 

@@ -14,7 +14,7 @@ LABEL org.opencontainers.image.description="Tahoe-LAFS client for RedundaNet"
 WORKDIR /app
 COPY src/ ./src/
 COPY docker/entrypoints/tahoe_client.py ./entrypoint.py
-COPY docker/entrypoints/lease_renew.sh ./lease_renew.sh
+COPY docker/entrypoints/lease_sweep.py ./lease_sweep.py
 COPY docker/entrypoints/backup_sync.py ./backup_sync.py
 COPY docker/entrypoints/rebalance.py ./rebalance.py
 COPY docker/entrypoints/usage_report.py ./usage_report.py

@@ -22,8 +22,12 @@ Tier 2 steps (see `scripts/scale-test.sh`): first `tahoe backup`, incremental
 backups after churn, one usage-meter measurement, the same walk via the web
 API, a lease sweep (`deep-check --add-lease --repair`), a backup after aging
 the backupdb by 70 days (Tahoe then re-checks every file on the grid), the
-census on each storage node warm and cold, and a storage restart during a
-lease-crawler cycle to reproduce the Tahoe 1.20 expirer crash.
+census on each storage node warm and cold, the lease sweep (`lease_sweep.py
+--once`) followed by a backup that must not re-check what the sweep verified,
+and a storage restart during a lease-crawler cycle (`fixtures/lease_checker.
+state.json` is a mid-cycle state as Tahoe 1.20 writes it): the unpatched
+crawler crashes on its first slice, the patched one in our base image keeps
+going.
 
 The Linux numbers are the ones that matter: run the tier 1 benchmarks inside
 the storage image when developing on macOS (APFS directory walks are three

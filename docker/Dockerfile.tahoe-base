@@ -64,4 +64,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
+# Tahoe 1.20's lease crawler crashes on the first share after a restart
+# mid-cycle (its JSON state turns a tuple-keyed histogram into a list and
+# nothing turns it back), which silently stops garbage collection on the
+# node for good. The patch restores the histogram on load; the build fails
+# if a Tahoe upgrade moves the code it patches. The workflow hashes this
+# file together with the Dockerfile, so a change to it rebuilds the base.
+COPY docker/patches/tahoe_expirer_json_state.py /tmp/tahoe_expirer_json_state.py
+RUN python /tmp/tahoe_expirer_json_state.py \
+        /usr/local/lib/python3.11/site-packages/allmydata/storage/expirer.py \
+    && rm /tmp/tahoe_expirer_json_state.py
+
 WORKDIR /app

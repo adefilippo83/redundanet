@@ -134,9 +134,10 @@ services:
       # Auto re-encoder: converges files to the current k-of-n (no-op at target).
       - REDUNDANET_REBALANCE_ENABLED=${REBALANCE_ENABLED:-true}
       - REDUNDANET_REBALANCE_INTERVAL=${REBALANCE_INTERVAL:-86400}
-      # Weekly sweep of all aliases: lease renewal + repair of objects with
-      # missing shares (tahoe deep-check --add-lease --repair).
+      # Weekly sweep of all aliases and pending uploads: lease renewal + repair
+      # of objects with missing shares (lease_sweep.py, through the web API).
       - REDUNDANET_LEASE_RENEW_INTERVAL=${LEASE_RENEW_INTERVAL:-604800}
+      - REDUNDANET_LEASE_RENEW_TIMEOUT=${LEASE_RENEW_TIMEOUT:-21600}
       - REDUNDANET_REPAIR_ENABLED=${REPAIR_ENABLED:-true}
       # Usage meter: member usage vs allocation (see docs/quotas.md). Enforcement
       # follows the manifest's network.quota.enforce unless overridden here.

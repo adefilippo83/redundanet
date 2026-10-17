@@ -218,6 +218,24 @@ class TestSnapshots:
         assert SNAPSHOT not in lister.calls
 
 
+class TestDirectories:
+    def test_every_directory_visited_is_reported_with_its_path(self):
+        lister = snapshots()
+        directories: list[tuple[str, str]] = []
+        walk_tree("URI:DIR2:x", lister, directories=directories)
+        assert directories[0] == ("", "URI:DIR2:x")
+        assert sorted(directories) == sorted(
+            [("", "URI:DIR2:x"), ("Archives", "URI:DIR2:arch"), ("Latest", SNAPSHOT)]
+        )
+
+    def test_cached_directories_are_reported_too(self):
+        cache = DirCache()
+        walk_tree("URI:DIR2:x", snapshots(), cache=cache)
+        directories: list[tuple[str, str]] = []
+        walk_tree("URI:DIR2:x", snapshots(), cache=cache, directories=directories)
+        assert ("Latest", SNAPSHOT) in directories
+
+
 class TestDirectoryCache:
     def test_immutable_directories_come_from_the_cache_the_second_time(self):
         cache = DirCache()

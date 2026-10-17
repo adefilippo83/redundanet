@@ -46,7 +46,7 @@ jobs:
       - name: Tag from the inputs' hash
         id: tag
         run: |
-          HASH=$(cat poetry.lock docker/Dockerfile.tahoe-base | sha256sum | cut -c1-12)
+          HASH=$(cat poetry.lock docker/Dockerfile.tahoe-base docker/patches/tahoe_expirer_json_state.py | sha256sum | cut -c1-12)
           echo "image=${IMAGE}:lock-${HASH}" >> "$GITHUB_OUTPUT"
           echo "tahoe-base tag: lock-${HASH}"
 

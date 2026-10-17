@@ -25,6 +25,7 @@ are pruned by file only.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -112,3 +113,63 @@ def prune_stale(db_path: Path, needed: int, total: int) -> Pruned | None:
     finally:
         conn.close()
     return Pruned(files=len(stale_files), directories=len(stale_dirs))
+
+
+@dataclass(frozen=True)
+class Marked:
+    files: int
+    directories: int
+
+
+def mark_checked(
+    db_path: Path, filecaps: Iterable[str], dircaps: Iterable[str], now: float
+) -> Marked | None:
+    """Record that these objects were just checked and found healthy, as
+    ``tahoe backup`` records its own checks (``last_checked``).
+
+    ``tahoe backup`` re-checks every file and directory it reused once the
+    row is a month old, and always after two months, one grid round trip
+    each, so a big archive spends hours per run re-checking what the sweep
+    verified days before. With the sweep's date in the rows it skips them.
+    None when there is no database; a database another process holds is
+    retried by the caller (sqlite3.OperationalError).
+    """
+    if not db_path.is_file():
+        return None
+    wanted_files = set(filecaps)
+    wanted_dirs = set(dircaps)
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        fileids = [
+            (fileid,)
+            for fileid, cap in conn.execute("SELECT fileid, filecap FROM caps")
+            if _text(cap) in wanted_files
+        ]
+        conn.executemany(
+            "UPDATE last_upload SET last_checked = ? WHERE fileid = ?",
+            ((now, fileid) for (fileid,) in fileids),
+        )
+        dirhashes: list[tuple[str, ...]] = []
+        try:
+            dirhashes = [
+                (dirhash,)
+                for dirhash, cap in conn.execute("SELECT dirhash, dircap FROM directories")
+                if _text(cap) in wanted_dirs
+            ]
+            conn.executemany(
+                "UPDATE directories SET last_checked = ? WHERE dirhash = ?",
+                ((now, dirhash) for (dirhash,) in dirhashes),
+            )
+        except sqlite3.OperationalError:  # schema v1: no directories table
+            dirhashes = []
+        conn.commit()
+    finally:
+        conn.close()
+    return Marked(files=len(fileids), directories=len(dirhashes))
+
+
+def _text(cap: str | bytes | None) -> str:
+    if cap is None:
+        return ""
+    return cap.decode("ascii", "replace") if isinstance(cap, bytes) else str(cap)
