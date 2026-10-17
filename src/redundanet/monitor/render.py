@@ -11,6 +11,9 @@ from __future__ import annotations
 from redundanet.core.quota import format_size
 from redundanet.monitor.status import NetworkStatus, _human_age
 
+# A census that takes this long to fetch or to refresh is shown next to the node.
+SLOW_CENSUS_SECONDS = 30
+
 STALE_REPORT_AFTER = 3 * 3600  # seconds; older reports are labelled with their age
 
 _OVERALL = {
@@ -246,6 +249,15 @@ def render_html(status: NetworkStatus) -> str:
                 stored += ' <span style="color:var(--text-2)">(cached)</span>'
             elif census.source == "assumed-empty":
                 stored += ' <span style="color:var(--text-2)">(no report yet)</span>'
+            slow = []
+            if census.fetch_seconds is not None and census.fetch_seconds >= SLOW_CENSUS_SECONDS:
+                slow.append(f"fetch {census.fetch_seconds:.0f} s")
+            if census.walk_seconds is not None and census.walk_seconds >= SLOW_CENSUS_SECONDS:
+                slow.append(f"walk {census.walk_seconds:.0f} s")
+            if slow:
+                stored += (
+                    f' <span style="color:var(--text-2)">(census {_esc(", ".join(slow))})</span>'
+                )
         rows.append(
             "<tr>"
             f"<td><code>{_esc(node.name)}</code></td>"

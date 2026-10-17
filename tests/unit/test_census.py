@@ -18,6 +18,7 @@ from redundanet.monitor.census import (
     list_storage_indexes,
     scan_shares,
 )
+from redundanet.monitor.census_store import CensusStore
 from redundanet.monitor.render import render_html
 from redundanet.monitor.status import ThrottledFetcher, collect_status, load_census, save_census
 
@@ -171,7 +172,7 @@ def payload(indexes: list[str], disk: int = 1000) -> dict:
     }
 
 
-def collect(fetch, storage_connected: int = 2, cache_dir: Path | None = None):
+def collect(fetch, storage_connected: int = 2, store: CensusStore | None = None):
     return collect_status(
         manifest(),
         "hub",
@@ -181,7 +182,7 @@ def collect(fetch, storage_connected: int = 2, cache_dir: Path | None = None):
         manifest_synced_at=NOW,
         now=NOW,
         fetch_census=fetch,
-        census_cache_dir=cache_dir,
+        census_store=store,
     )
 
 
@@ -307,17 +308,18 @@ class TestCensusCache:
         assert load_census(tmp_path, "ghost", NOW) is None
 
     def test_offline_node_uses_cached_inventory(self, tmp_path: Path):
+        store = CensusStore(tmp_path / "census.sqlite")
         both = censuses(
             {
                 "10.100.0.10": payload(["si1", "si2"]),
                 "10.100.0.11": payload(["si1", "si2"]),
             }
         )
-        collect(both, cache_dir=tmp_path)  # first cycle: caches both
+        collect(both, store=store)  # first cycle: the store holds both
 
         status = collect(
             censuses({"10.100.0.10": payload(["si1", "si2"]), "10.100.0.11": None}),
-            cache_dir=tmp_path,
+            store=store,
         )
         replication = status.replication
         assert replication is not None
@@ -333,6 +335,7 @@ class TestCensusCache:
         assert "2/2*" in render_html(status)
 
     def test_object_only_on_offline_node_is_unreadable_and_degrades(self, tmp_path: Path):
+        store = CensusStore(tmp_path / "census.sqlite")
         collect(
             censuses(
                 {
@@ -340,11 +343,11 @@ class TestCensusCache:
                     "10.100.0.11": payload(["si1", "si2"]),  # si2 lives only here
                 }
             ),
-            cache_dir=tmp_path,
+            store=store,
         )
         status = collect(
             censuses({"10.100.0.10": payload(["si1"]), "10.100.0.11": None}),
-            cache_dir=tmp_path,
+            store=store,
         )
         replication = status.replication
         assert replication is not None
@@ -564,3 +567,41 @@ class TestPayloads:
         assert (delta["added"], delta["removed"]) == (["bbindex2"], [])
         assert "storage_indexes" not in delta
         assert delta_payload("n1", inventory, 7, shares, now=NOW) is None
+
+
+class TestDeltaCollection:
+    def test_deltas_are_applied_between_full_lists(self, tmp_path: Path):
+        """A node that serves generations: the first answer is the full
+        list, later ones only the changes; the counts follow."""
+        store = CensusStore(tmp_path / "census.sqlite")
+        first = {**payload(["si1", "si2"]), "generation": 1, "computed_at": "t1"}
+        collect(
+            censuses({"10.100.0.10": first, "10.100.0.11": payload(["si1", "si2"])}), store=store
+        )
+        assert store.generation_for_address("10.100.0.10") == 1
+        change = {
+            "base": 1,
+            "generation": 2,
+            "added": ["si3"],
+            "removed": ["si2"],
+            "object_count": 2,
+            "disk_used_bytes": 1000,
+            "computed_at": "t2",
+        }
+        status = collect(
+            censuses({"10.100.0.10": change, "10.100.0.11": payload(["si1", "si2"])}), store=store
+        )
+        replication = status.replication
+        assert replication is not None
+        assert replication.objects_total == 3  # si1, si2 (n2 only now), si3 (n1 only)
+        assert replication.fully_replicated == 1
+        assert replication.per_server["n1"].objects == 2
+        assert store.generation_for_address("10.100.0.10") == 2
+
+    def test_slow_census_is_shown_on_the_page(self):
+        slow = {**payload(["si1"]), "fetch_seconds": 74.1, "walk": {"seconds": 2.0, "mode": "full"}}
+        status = collect(censuses({"10.100.0.10": slow, "10.100.0.11": payload(["si1"])}))
+        assert status.replication is not None
+        assert status.replication.per_server["n1"].fetch_seconds == 74.1
+        assert "census fetch 74 s" in render_html(status)
+        assert "walk" not in render_html(status).split("n1")[1].split("</tr>")[0]

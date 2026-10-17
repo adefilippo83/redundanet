@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from redundanet.core.quota import MemberQuota, compute_quotas, format_size, report_age
+from redundanet.monitor.census_store import CensusStore
 from redundanet.monitor.introducer import Announcement, identity_notes, summarize_storage
 
 # A pinger takes a VPN IP and returns the RTT in milliseconds, or None.
@@ -45,10 +46,15 @@ class ThrottledFetcher:
         fetch: CensusFetcher,
         ttl: float,
         clock: Callable[[], float] | None = None,
+        remember: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> None:
         self._fetch = fetch
         self._ttl = ttl
         self._clock = clock or time.monotonic
+        # What a hit returns: the payload itself, or what ``remember`` makes
+        # of it (a census is megabytes and lives in the store once applied;
+        # a marker is enough to say the node is still there).
+        self._remember = remember
         self._last: dict[str, tuple[float, dict[str, Any]]] = {}
 
     def __call__(self, address: str) -> dict[str, Any] | None:
@@ -58,7 +64,7 @@ class ThrottledFetcher:
             return hit[1]
         payload = self._fetch(address)
         if payload:
-            self._last[address] = (now, payload)
+            self._last[address] = (now, self._remember(payload) if self._remember else payload)
         return payload
 
 
@@ -123,6 +129,9 @@ class ServerCensus:
     source: str = "live"  # "live" | "cached" | "assumed-empty"
     age_seconds: float | None = None
     disk_total_bytes: int | None = None  # size of the storage disk, to verify contributions
+    fetch_seconds: float | None = None  # how long the last census fetch took
+    walk_seconds: float | None = None  # how long the node's last refresh took
+    walk_mode: str | None = None  # "full" or "incremental"
 
 
 @dataclass
@@ -222,82 +231,75 @@ def _collect_replication(
     grid: GridStatus,
     fetch_census: CensusFetcher,
     notes: list[str],
-    census_cache_dir: Path | None = None,
+    store: CensusStore,
     now: datetime | None = None,
 ) -> ReplicationStatus | None:
     """Aggregate the storage nodes' share censuses into replication counts.
 
-    Inventory precedence per node: live answer > cached last answer (shares
-    are immutable, so a stale inventory stays accurate) > assumed empty for a
-    node that has never reported (a brand-new node genuinely holds nothing).
-    This keeps the census computable through outages; availability counts
-    (live copies only) carry the actual risk signal.
+    Inventory precedence per node: live answer > the store's last answer
+    (shares are immutable, so a stale inventory stays accurate) > assumed
+    empty for a node that has never reported (a brand-new node genuinely
+    holds nothing). This keeps the census computable through outages;
+    availability counts (live copies only) carry the actual risk signal.
     """
     now = now or datetime.now(UTC)
+    now_ts = now.timestamp()
     storage_nodes = [n for n in nodes if "tahoe_storage" in n.roles]
     if not storage_nodes:
         return None
 
-    placed: dict[str, int] = {}
-    live_copies: dict[str, int] = {}
-    per_server: dict[str, ServerCensus] = {}
     missing: list[str] = []
+    ages: dict[str, float | None] = {}
     for node in storage_nodes:
         payload = fetch_census(node.vpn_ip)
-        source, age = "live", None
         if payload:
-            if census_cache_dir is not None:
-                save_census(census_cache_dir, node.name, payload, now)
+            store.ingest(node.name, node.vpn_ip, payload, now_ts)
+            continue
+        missing.append(node.name)
+        age = store.mark_unreachable(node.name, now_ts)
+        ages[node.name] = age
+        if age is None:
+            notes.append(f"{node.name} has never reported a census; assuming empty")
         else:
-            missing.append(node.name)
-            cached = (
-                load_census(census_cache_dir, node.name, now)
-                if census_cache_dir is not None
-                else None
-            )
-            if cached is not None:
-                payload, age = cached
-                source = "cached"
-                notes.append(
-                    f"{node.name} unreachable; using its census from {_human_age(age)} ago"
-                )
-            else:
-                payload, source = {}, "assumed-empty"
-                notes.append(f"{node.name} has never reported a census; assuming empty")
+            notes.append(f"{node.name} unreachable; using its census from {_human_age(age)} ago")
+    store.prune(n.name for n in storage_nodes)
 
-        indexes = payload.get("storage_indexes") or []
-        raw_total = payload.get("disk_total_bytes")
+    records = store.records()
+    per_server: dict[str, ServerCensus] = {}
+    for node in storage_nodes:
+        record = records.get(node.name)
+        if record is None:
+            per_server[node.name] = ServerCensus(0, 0, source="assumed-empty")
+            continue
         per_server[node.name] = ServerCensus(
-            objects=int(payload.get("object_count", len(indexes))),
-            disk_used_bytes=int(payload.get("disk_used_bytes", 0)),
-            source=source,
-            age_seconds=age,
-            disk_total_bytes=int(raw_total) if raw_total is not None else None,
+            objects=record.object_count,
+            disk_used_bytes=record.disk_used_bytes,
+            source="live" if node.name not in missing else "cached",
+            age_seconds=ages.get(node.name),
+            disk_total_bytes=record.disk_total_bytes,
+            fetch_seconds=record.fetch_seconds,
+            walk_seconds=record.walk_seconds,
+            walk_mode=record.walk_mode,
         )
-        for raw_index in indexes:
-            storage_index = str(raw_index)
-            placed[storage_index] = placed.get(storage_index, 0) + 1
-            if source == "live":
-                live_copies[storage_index] = live_copies.get(storage_index, 0) + 1
 
     if (
-        not placed
-        and missing
+        missing
         and all(census.source == "assumed-empty" for census in per_server.values())
+        and store.rows() == 0
     ):
         # Nothing has ever reported: there is genuinely nothing to count yet.
         return None
 
     target = min(grid.shares_total, len(storage_nodes))
-    fully = sum(1 for count in placed.values() if count >= target)
+    summary = store.summary(target, grid.shares_needed)
     return ReplicationStatus(
-        objects_total=len(placed),
+        objects_total=summary.objects_total,
         target_copies=target,
-        fully_replicated=fully,
-        under_replicated=len(placed) - fully,
+        fully_replicated=summary.fully_replicated,
+        under_replicated=summary.objects_total - summary.fully_replicated,
         complete=not missing,
-        available_full=sum(1 for si in placed if live_copies.get(si, 0) >= target),
-        unreadable_now=sum(1 for si in placed if live_copies.get(si, 0) < grid.shares_needed),
+        available_full=summary.available_full,
+        unreadable_now=summary.unreadable_now,
         per_server=per_server,
     )
 
@@ -342,7 +344,7 @@ def collect_status(
     manifest_synced_at: datetime | None,
     now: datetime | None = None,
     fetch_census: CensusFetcher | None = None,
-    census_cache_dir: Path | None = None,
+    census_store: CensusStore | None = None,
     fetch_usage: UsageFetcher | None = None,
     usage_cache_dir: Path | None = None,
     announcements: list[Announcement] | None = None,
@@ -402,8 +404,9 @@ def collect_status(
 
     replication: ReplicationStatus | None = None
     if fetch_census is not None:
+        # Without a store of its own the census lives for this call only.
         replication = _collect_replication(
-            nodes, grid, fetch_census, notes, census_cache_dir=census_cache_dir, now=now
+            nodes, grid, fetch_census, notes, census_store or CensusStore(), now=now
         )
         if replication is not None and replication.complete and replication.under_replicated:
             notes.append(

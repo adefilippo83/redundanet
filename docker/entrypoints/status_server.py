@@ -15,6 +15,7 @@ last snapshot and shows how stale it is.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -22,6 +23,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +32,7 @@ import yaml
 
 from redundanet.core.manifest import locate_manifest
 from redundanet.monitor.census import CENSUS_PORT
+from redundanet.monitor.census_store import CensusStore, unchanged_marker
 from redundanet.monitor.introducer import Announcement, parse_announcements
 from redundanet.monitor.render import render_html
 from redundanet.monitor.status import (
@@ -48,6 +51,7 @@ FURL_PATH = Path("/var/lib/tahoe-introducer/private/introducer.furl")
 HISTORY_PATH = Path("/var/lib/tahoe-introducer/monitor/history.jsonl")
 ROLLUP_PATH = Path("/var/lib/tahoe-introducer/monitor/uptime-hourly.jsonl")
 CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
+CENSUS_STORE_PATH = CENSUS_CACHE_DIR / "census.sqlite"
 USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
 INTRODUCER_PAGE = "http://127.0.0.1:4458/"
@@ -100,40 +104,55 @@ def introducer_announcements() -> list[Announcement] | None:
     return parse_announcements(page)
 
 
-class ConditionalCensusFetcher:
-    """Fetch a node's /census with If-None-Match: a node whose inventory has
-    not changed answers 304 and the last payload is returned, so an idle
-    node costs a few hundred bytes per refresh instead of megabytes."""
+class DeltaCensusFetcher:
+    """Fetch a node's census as a delta when the store holds a generation
+    for it (``/census?since=<generation>``: a few hundred bytes), as the
+    full list otherwise, conditionally (``If-None-Match``) for nodes that
+    still serve only the full list. The payload is returned for the store
+    to apply, never kept here: a census is megabytes per node."""
 
-    def __init__(self) -> None:
-        self._known: dict[str, tuple[str, dict]] = {}  # vpn_ip -> (etag, payload)
+    def __init__(self, generation_of: Callable[[str], int | None]) -> None:
+        self._generation_of = generation_of
+        self._etags: dict[str, str] = {}  # vpn_ip -> ETag of the full list
 
     def __call__(self, vpn_ip: str) -> dict | None:
         if not vpn_ip:
             return None
-        known = self._known.get(vpn_ip)
-        request = urllib.request.Request(f"http://{vpn_ip}:{CENSUS_PORT}/census")
-        if known:
-            request.add_header("If-None-Match", known[0])
+        since = self._generation_of(vpn_ip)
+        url = f"http://{vpn_ip}:{CENSUS_PORT}/census"
+        if since is not None:
+            url += f"?since={since}"
+        request = urllib.request.Request(url)  # noqa: S310 - http:// to a VPN address
+        etag = self._etags.get(vpn_ip)
+        if since is None and etag:
+            request.add_header("If-None-Match", etag)
+        started = time.monotonic()
         try:
             with urllib.request.urlopen(  # noqa: S310 - http:// to a VPN address built above
                 request, timeout=CENSUS_TIMEOUT
             ) as response:
                 payload = json.load(response)
-                etag = response.headers.get("ETag", "")
+                new_etag = response.headers.get("ETag", "")
         except urllib.error.HTTPError as e:
-            if e.code == 304 and known:
-                return known[1]
+            if e.code == 304 and etag:
+                return {
+                    "node_unchanged": True,
+                    "fetch_seconds": round(time.monotonic() - started, 2),
+                }
             return None
         except Exception:
             return None
-        if etag:
-            self._known[vpn_ip] = (etag, payload)
-        return payload
+        if new_etag:
+            self._etags[vpn_ip] = new_etag
+        if isinstance(payload, dict):
+            payload["fetch_seconds"] = round(time.monotonic() - started, 2)
+            return payload
+        return None
 
 
-fetch_census = ConditionalCensusFetcher()
-census_fetcher = ThrottledFetcher(fetch_census, ttl=CENSUS_REFRESH)
+STORE = CensusStore(":memory:")  # main() opens the one on the volume
+fetch_census = DeltaCensusFetcher(lambda vpn_ip: STORE.generation_for_address(vpn_ip))
+census_fetcher = ThrottledFetcher(fetch_census, ttl=CENSUS_REFRESH, remember=unchanged_marker)
 
 
 def fetch_usage(vpn_ip: str) -> dict | None:
@@ -198,7 +217,7 @@ def collect_once(node_name: str) -> None:
         furl_present=FURL_PATH.exists() and FURL_PATH.stat().st_size > 0,
         manifest_synced_at=manifest_synced_at(),
         fetch_census=census_fetcher,
-        census_cache_dir=CENSUS_CACHE_DIR,
+        census_store=STORE,
         fetch_usage=usage_fetcher,
         usage_cache_dir=USAGE_CACHE_DIR,
         announcements=introducer_announcements(),
@@ -259,11 +278,31 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def open_store(path: Path = CENSUS_STORE_PATH, legacy_dir: Path = CENSUS_CACHE_DIR) -> CensusStore:
+    """The census store on the volume. The first time, the per-node JSON
+    files an older hub cached are imported as cached inventories and
+    removed: the store is the cache now."""
+    global STORE
+    logger = get_logger()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    store = CensusStore(path)
+    if not store.records():
+        imported = store.import_legacy(legacy_dir, time.time())
+        for file in imported:
+            with contextlib.suppress(OSError):
+                file.unlink()
+        if imported:
+            logger.info("Census cache files imported into the store", files=len(imported))
+    STORE = store
+    return store
+
+
 def main() -> None:
     setup_logging(level=os.environ.get("REDUNDANET_LOG_LEVEL", "INFO"))
     logger = get_logger()
     node_name = os.environ.get("REDUNDANET_NODE_NAME", "hub")
     port = int(os.environ.get("REDUNDANET_STATUS_PORT", "8080"))
+    open_store()
 
     threading.Thread(target=collector_loop, args=(node_name,), daemon=True).start()
     logger.info("Status server listening", port=port)

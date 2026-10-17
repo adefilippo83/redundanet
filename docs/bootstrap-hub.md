@@ -159,16 +159,21 @@ services manually, recreate them as a group, not individually.
   generation, and `/census?since=<generation>` answers with just what was
   added and removed since; a generation the node cannot account for (a
   change too big to keep, or an inventory older than its memory) gets the
-  full list. The hub asks each node again only every 5 minutes (20s
-  timeout) and reuses the last answer in between, so the replication tile
-  lags an encoding change or a large upload by up to 10 minutes. The full
-  fetch is conditional: the node tags its inventory with an `ETag`, the hub
-  sends it back, and an unchanged inventory answers `304` with no body, so
-  an idle node costs a few hundred bytes per refresh instead of megabytes
-  (a node with 200k objects has a 6 MB census). Usage reports are fetched
-  on the same 5 minute cadence; pings, and the uptime they feed, stay at
-  one minute. A node whose census cannot be fetched keeps its last
-  inventory on the page, marked with its age.
+  full list. The hub keeps every node's inventory in a SQLite file on its
+  volume (`monitor/census/census.sqlite`), asks each node again only every
+  5 minutes (20s timeout) with the generation it holds, applies the delta
+  as inserts and deletes, and recomputes the replication counts with one
+  query only when something changed; the hub's memory no longer grows with
+  the grid. A node that still serves only the full list is fetched
+  conditionally: it tags its inventory with an `ETag`, the hub sends it
+  back, and an unchanged inventory answers `304` with no body. The
+  replication tile lags an encoding change or a large upload by up to 10
+  minutes. A census that took 30 s or more to fetch or to refresh is shown
+  next to the node. Usage reports are fetched on the same 5 minute cadence;
+  pings, and the uptime they feed, stay at one minute. A node whose census
+  cannot be fetched keeps its last inventory in the store and on the page,
+  marked with its age. The per-node JSON files an older hub cached are
+  imported into the store on its first start and removed.
 - **Not a rendezvous**: the fly hub is `is_publicly_accessible: false` in the
   manifest on purpose. Fly's edge proxy terminates every TCP connection, so
   tincd on the hub sees the proxy's internal address (172.16.x.x) as the
