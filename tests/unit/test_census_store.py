@@ -146,6 +146,28 @@ class TestAvailability:
     def test_mark_unreachable_without_a_record(self):
         assert CensusStore().mark_unreachable("ghost", 1.0) is None
 
+    def test_a_node_back_with_nothing_new_counts_as_live_again(self):
+        """Seen on the live hub: a node that missed one fetch answered again
+        with an empty delta, the same full list or the 304 marker, and the
+        page kept its copies out of the availability counts until some other
+        node changed."""
+        store = CensusStore()
+        store.ingest("n1", "ip1", full(["a", "b"], generation=3), 1.0)
+        store.ingest("n2", "ip2", full(["a"], generation=7), 1.0)
+        for back in (
+            delta(base=7, generation=7, count=1),
+            full(["a"], generation=7),
+            unchanged_marker({}),
+        ):
+            store.mark_unreachable("n2", 2.0)
+            assert store.summary(2, 1).available_full == 0
+            assert store.ingest("n2", "ip2", back, 3.0) in ("delta", "unchanged")
+            assert store.summary(2, 1).available_full == 1
+        store.set_live("n2", False)  # its Tahoe was down while its census answered
+        assert store.summary(2, 1).available_full == 0
+        store.ingest("n2", "ip2", unchanged_marker({}), 4.0)
+        assert store.summary(2, 1).available_full == 1
+
 
 class TestPrune:
     def test_forgets_nodes_that_left_the_manifest(self):

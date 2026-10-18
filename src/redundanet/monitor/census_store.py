@@ -160,6 +160,13 @@ class CensusStore:
         ``unchanged`` (nothing new) or ``ignored`` (a delta against a
         generation this store does not hold; the next fetch asks for the
         full list)."""
+        # Every path below records the node as live. When it was not (it
+        # missed a fetch, or its Tahoe was down), its rows count as reachable
+        # copies again, so the cached summary is stale even if the payload
+        # itself brings nothing new.
+        was = self._conn.execute("SELECT live FROM nodes WHERE name = ?", (name,)).fetchone()
+        if was is not None and not was[0]:
+            self._dirty = True
         if payload.get("node_unchanged"):
             self._touch(name, vpn_ip, payload, now)
             return "unchanged"
