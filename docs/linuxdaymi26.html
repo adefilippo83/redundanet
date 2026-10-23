@@ -235,7 +235,7 @@
   <p class="muted" style="margin-top:22px;font-size:20px;max-width:1100px">Storage distribuito, cifrato sul tuo dispositivo, <em>molto</em> ridondante. Lo gestisce una comunità di volontari, non un'azienda.</p>
   <p class="muted" style="margin-top:26px;font-size:18px">Tahoe-LAFS · mesh VPN Tinc · identità GPG · un repo Git come source of truth · Docker Compose · Raspberry Pi, vecchi PC, un VPS da 4 €</p>
   <p class="muted" style="margin-top:30px;font-size:16px">redundanet.com · github.com/adefilippo83/redundanet</p>
-  <div class="notes"><strong>⏱ 0:20 · a fine slide 0:20.</strong> Slot dalle 13:45 alle 14:30, 45 minuti. Parlato pianificato a 39:00, sei minuti per le domande. Premo T alla prima parola. Se vado lungo taglio «Un anno in numeri» (24) e sulla roadmap (23) leggo solo la colonna di mezzo; se vado corto allungo le due demo.<br><br>Una frase sola e via: una rete di storage in cui si entra con una pull request, dove i file sopravvivono a qualunque macchina che muore e chi li ospita non li può leggere. Non mi presento qui, c'è la slide dopo.</div>
+  <div class="notes"><strong>⏱ 0:20 · a fine slide 0:20.</strong> Slot dalle 13:45 alle 14:30, 45 minuti. Parlato pianificato a 35:20, tetto a 38:00: il resto sono domande. Premo T alla prima parola. Se vado lungo taglio «Un anno in numeri» (26) e sulla roadmap (25) leggo solo la colonna di mezzo; se vado corto allungo le due demo.<br><br>Una frase sola e via: una rete di storage in cui si entra con una pull request, dove i file sopravvivono a qualunque macchina che muore e chi li ospita non li può leggere. Non mi presento qui, c'è la slide dopo.</div>
 </section>
 
 <!-- 2 · Chi sono -->
@@ -257,7 +257,7 @@
       </dl>
     </div>
   </div>
-  <div class="notes"><strong>⏱ 0:40 · a fine slide 1:00.</strong> Due frasi su di me e basta. Faccio il software engineer, e la parte del lavoro che mi interessa di più è l'affidabilità: cosa succede quando le cose si rompono e come farle rompere di meno. RedundaNet è dove faccio le stesse cose con dei Raspberry Pi e con persone che conosco, dentro il ptlug. I contatti stanno anche nell'ultima slide, nessuno deve copiarli adesso.</div>
+  <div class="notes"><strong>⏱ 0:30 · a fine slide 0:50.</strong> Due frasi su di me e basta. Faccio il software engineer, e la parte del lavoro che mi interessa di più è l'affidabilità: cosa succede quando le cose si rompono e come farle rompere di meno. RedundaNet è dove faccio le stesse cose con dei Raspberry Pi e con persone che conosco, dentro il ptlug. I contatti stanno anche nell'ultima slide, nessuno deve copiarli adesso.</div>
 </section>
 
 <!-- 3 · Le condizioni -->
@@ -270,10 +270,22 @@
   </div>
   <p class="caption" style="margin-top:18px">Lo SLA di Amazon S3 copre la <strong>disponibilità</strong>: crediti del 10, 25 o 100% della fattura del mese sotto il 99,9%, il 99,0% e il 95,0% di uptime, da richiedere con un ticket entro due cicli di fatturazione. Le parole <em>durability</em> e <em>data loss</em> non compaiono. Perdere i tuoi dati non viola lo SLA.</p>
   <p class="quote" style="margin-top:22px;font-size:26px">Se perdono i tuoi dati, il massimo che ottieni è un credito, per il downtime, da spendere sul servizio che li ha appena persi. E devi chiederlo tu.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 2:30.</strong> Parto con la domanda, prima di far vedere i contratti: «Alzi la mano chi ha un backup.» Pausa. «Ora tenga la mano alzata solo chi l'ha mai provato a ripristinare.» Guardo le mani che scendono e vado avanti senza commentare.<br><br>Non è una slide contro Amazon: è la slide sul perché esiste questo progetto. Lo SLA di S3 parla solo di disponibilità; se perdono i tuoi dati non è nemmeno una violazione dello SLA. Il contratto dice "as is", dice che il backup lo fai tu, e limita la responsabilità a quello che hai pagato. Dropbox e iCloud lo scrivono ancora più chiaro. Le citazioni sono letterali, verificate a settembre 2026; nell'originale sono in maiuscolo.<br><br>Battuta, dopo la frase in evidenza: «Se perdono i vostri dati vi danno un credito. Potete usarlo per ricaricarli. Quelli che non avete più.»<br><br>Il punto, e lo dico lento: nessuno vende la durabilità come promessa. Gli undici nove di S3 sono un obiettivo di progetto, non stanno nel contratto. L'unica durabilità che possiedi davvero è quella che misuri tu, ed è quello che faccio vedere col censimento più avanti.</div>
+  <div class="notes"><strong>⏱ 1:30 · a fine slide 2:20.</strong> Parto con la domanda, prima di far vedere i contratti: «Alzi la mano chi ha un backup.» Pausa. «Ora tenga la mano alzata solo chi l'ha mai provato a ripristinare.» Guardo le mani che scendono e vado avanti senza commentare.<br><br>Non è una slide contro Amazon: è la slide sul perché esiste questo progetto. Lo SLA di S3 parla solo di disponibilità; se perdono i tuoi dati non è nemmeno una violazione dello SLA. Il contratto dice "as is", dice che il backup lo fai tu, e limita la responsabilità a quello che hai pagato. Dropbox e iCloud lo scrivono ancora più chiaro. Le citazioni sono letterali, verificate a settembre 2026; nell'originale sono in maiuscolo.<br><br>Battuta, dopo la frase in evidenza: «Se perdono i vostri dati vi danno un credito. Potete usarlo per ricaricarli. Quelli che non avete più.»<br><br>Il punto, e lo dico lento: nessuno vende la durabilità come promessa. Gli undici nove di S3 sono un obiettivo di progetto, non stanno nel contratto. L'unica durabilità che possiedi davvero è quella che misuri tu, ed è quello che faccio vedere col censimento più avanti.</div>
 </section>
 
-<!-- 4 · Origine -->
+<!-- 4 · Tre modelli -->
+<section class="slide">
+  <h2>Il cloud sono i computer degli altri. <span class="k">Il self-hosting è il tuo scantinato.</span></h2>
+  <div class="cols-3">
+    <div class="card bad"><h3>Il cloud</h3><p class="muted">Paghi un affitto per sempre. Le condizioni le scrivono loro, le chiavi le tengono loro, e il contratto dice «as is». Un giorno cambiano prezzo, o modello di business, o chiudono.</p></div>
+    <div class="card"><h3>Il self-hosting da soli</h3><p class="muted">Le chiavi sono tue, e le condizioni pure. Ma c'è una casa sola, un disco solo, una persona sola che deve ricordarsi di tutto. Il punto singolo di guasto non è sparito: ha cambiato indirizzo.</p></div>
+    <div class="card accent"><h3>La comunità</h3><p class="muted">Le chiavi sono tue, le case sono tante, e dall'altra parte ci sono persone che rispondono in chat. L'unico modello che toglie il punto singolo di guasto senza mettere un'azienda in mezzo.</p></div>
+  </div>
+  <p class="quote" style="margin-top:26px;font-size:26px">Non «fidati di noi» e non «arrangiati»: fidati di persone che conosci, e fai in modo che nessuna di loro, da sola, possa perdere i tuoi file.</p>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 3:35.</strong> È la slide del perché, e la faccio prima della storia di Cubbit perché le dà un posto. Tre modelli, una riga a testa. Il cloud: affitto, condizioni loro, chiavi loro, l'abbiamo appena letto. Il self-hosting da soli: il NAS in cantina è la risposta che danno tutti in una sala come questa, e io la rispetto, ma sposta il punto singolo di guasto da Dublino alla cantina. Battuta: «Il NAS in cantina ha un vantaggio sul cloud: quando muore, almeno sai dov'è.» La comunità è il terzo modello, e la frase in fondo è la tesi di tutto il talk: non «fidati di noi», non «arrangiati», ma fidati di persone che conosci, con la matematica che impedisce a ciascuna di perdere i file degli altri. La matematica arriva alla slide sull'erasure coding.</div>
+</section>
+
+<!-- 5 · Origine -->
 <section class="slide">
   <h2>Da dove viene: <span class="k">un'idea rimasta orfana</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 300" role="img" aria-label="Linea del tempo da Cubbit a RedundaNet">
@@ -307,10 +319,10 @@
     </g>
   </svg></div>
   <p class="caption"><strong>Molto distribuita</strong> (hardware qualunque, dietro i NAT di casa) · <strong>molto ridondante</strong> (erasure coding) · <strong>si entra con un processo sociale</strong>, non con una carta di credito.</p>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 3:45.</strong> Ho finanziato Cubbit su Kickstarter nel 2019 e la scatola ce l'ho ancora. Battuta: «Oggi è un fermaporte molto ben progettato.» Quando sono passati all'object storage per le aziende non gliene ho fatto una colpa, per loro era la scelta giusta. Però l'idea a cui tenevo è rimasta senza nessuno che la portasse avanti. Una rete che i membri gestiscono da soli non può voltargli le spalle: il motivo per cui esiste tutto questo è qui. L'ultima riga della caption la leggo per intero: si entra con un processo sociale, non con una carta di credito.</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 4:35.</strong> Ho finanziato Cubbit su Kickstarter nel 2019 e la scatola ce l'ho ancora. Battuta: «Oggi è un fermaporte molto ben progettato.» Quando sono passati all'object storage per le aziende non gliene ho fatto una colpa, per loro era la scelta giusta. Però l'idea a cui tenevo è rimasta senza nessuno che la portasse avanti. Una rete che i membri gestiscono da soli non può voltargli le spalle: il motivo per cui esiste tutto questo è qui. L'ultima riga della caption la leggo per intero: si entra con un processo sociale, non con una carta di credito.</div>
 </section>
 
-<!-- 5 · Sei principi -->
+<!-- 6 · Sei principi -->
 <section class="slide">
   <h2>Sei principi</h2>
   <div class="cols-3">
@@ -321,10 +333,31 @@
     <div class="tile"><div class="ic">🤝</div><h3>Membri verificati, non anonimi</h3><p>Persone approvate da persone. Alcune regole sono sulla fiducia, e lo diciamo.</p></div>
     <div class="tile"><div class="ic">🧘</div><h3>Operatività noiosa</h3><p>Una CLI, uno stack compose, aggiornamento automatico con rollback, una status page.</p></div>
   </div>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 5:00.</strong> Mi fermo su «verificati, non anonimi». È il modello di fiducia su cui si appoggia tutto il resto: i membri sono persone approvate da persone, quindi certe cose, le quote per esempio, possono stare sulla fiducia. È una scelta, non ingenuità. Sull'ultimo riquadro, battuta: «Noioso è un complimento. In produzione l'eccitazione si chiama incidente.» Gli altri quattro li leggo veloci: tornano tutti nelle slide dopo.</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 5:35.</strong> Mi fermo su «verificati, non anonimi»: è il modello di fiducia su cui si appoggia tutto il resto, e la slide dopo dice cosa chiede e cosa dà. Sull'ultimo riquadro, battuta: «Noioso è un complimento. In produzione l'eccitazione si chiama incidente.» Gli altri quattro li leggo veloci: tornano tutti nelle slide dopo.</div>
 </section>
 
-<!-- 6 · Architettura -->
+<!-- 7 · Contratto sociale -->
+<section class="slide">
+  <h2>Un contratto sociale, <span class="k">non un abbonamento</span></h2>
+  <div class="cols">
+    <div class="card"><h3>Cosa porti</h3><ul>
+      <li><strong>Un disco</strong> e una macchina accesa quasi sempre: un Pi, un vecchio PC, il NAS che hai già.</li>
+      <li><strong>Una chiave GPG</strong> con il tuo nome sopra: è la tua identità nella rete, e qualcuno deve garantire per te.</li>
+      <li><strong>Una pull request</strong> per entrare, e una per uscire.</li>
+      <li><strong>Una risposta in chat</strong> quando il tuo nodo fa i capricci. È il vero protocollo.</li>
+    </ul></div>
+    <div class="card accent"><h3>Cosa ricevi</h3><ul>
+      <li><strong>Spazio sui dischi di tutti gli altri</strong>, in proporzione a quello che porti: contributo × k/n, meno una riserva.</li>
+      <li><strong>Nessuno che possa leggere</strong> i tuoi file, me compreso.</li>
+      <li><strong>Nessuna bolletta</strong>, e nessuno che possa cambiare modello di business.</li>
+      <li><strong>Una rete che non si può portare via</strong>: il codice è GPL-3, la membership è un file in Git, i nodi sono a casa dei membri.</li>
+    </ul></div>
+  </div>
+  <p class="caption" style="margin-top:18px">Alcune regole stanno sulla fiducia, le quote per esempio: tra persone che si sono approvate a vicenda è una scelta, non un buco.</p>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 6:50.</strong> Qui sta la filosofia che poi l'architettura implementa. A sinistra quello che chiedo: non sono requisiti tecnici, sono impegni, e l'ultimo è quello vero. Battuta: «Il protocollo più importante di RedundaNet è la chat del gruppo. Non ha un RFC, ma ha un uptime migliore della VPN.» A destra quello che torna indietro: la formula della quota la dico una volta sola, contributo per k su n meno la riserva, ed è la stessa per tutti, me compreso. L'ultima riga a destra è quella che collega a Cubbit: una rete che vive a casa dei membri non si può vendere, chiudere o pivotare. La frase in fondo è l'onestà: le quote stanno sulla fiducia perché il server non sa di chi sono le share, e lo dico prima che lo chieda qualcuno.</div>
+</section>
+
+<!-- 8 · Architettura -->
 <section class="slide">
   <h2>Architettura</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1240 520" role="img" aria-label="Architettura di RedundaNet">
@@ -381,10 +414,10 @@
     <path class="warn-line" style="stroke-dasharray:3 4" d="M300 148 C 320 230, 320 300, 350 290"/>
     <path class="warn-line" style="stroke-dasharray:3 4" d="M330 215 L365 290"/>
   </svg></div>
-  <div class="notes"><strong>⏱ 2:30 · a fine slide 7:30.</strong> La leggo da sinistra a destra: il repo è la source of truth e i nodi lo sincronizzano ogni cinque minuti; i keyserver sono la PKI; due hub. Il rendezvous è un VPS normale perché deve vedere gli indirizzi veri dei client; fly sta dietro un proxy e non poteva, ed è l'incidente che racconto dopo. Battuta sul VPS: «Il nodo più importante della rete costa 4 euro al mese. A Milano non ci prendete nemmeno uno spritz.» Due introducer, ne può cadere uno. Ogni nodo esegue lo stesso stack su qualunque ferro: Pi, portatile vecchio, home server. Dire che il container tinc possiede il network namespace e i container Tahoe ci entrano dentro: mi serve per la trappola di dopo. Con due minuti e mezzo indico ogni freccia, non leggo ogni riga.</div>
+  <div class="notes"><strong>⏱ 2:00 · a fine slide 8:50.</strong> La leggo da sinistra a destra: il repo è la source of truth e i nodi lo sincronizzano ogni cinque minuti; i keyserver sono la PKI; due hub. Il rendezvous è un VPS normale perché deve vedere gli indirizzi veri dei client; fly sta dietro un proxy e non poteva, ed è l'incidente che racconto dopo. Battuta sul VPS: «Il nodo più importante della rete costa 4 euro al mese. A Milano non ci prendete nemmeno uno spritz.» Due introducer, ne può cadere uno. Ogni nodo esegue lo stesso stack su qualunque ferro: Pi, portatile vecchio, home server. Dire che il container tinc possiede il network namespace e i container Tahoe ci entrano dentro: mi serve per la trappola di dopo. Con due minuti e mezzo indico ogni freccia, non leggo ogni riga.</div>
 </section>
 
-<!-- 7 · Perché Tahoe: il trust boundary -->
+<!-- 9 · Perché Tahoe: il trust boundary -->
 <section class="slide">
   <h2>Perché <span class="k">Tahoe-LAFS</span>: il trust boundary</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Cifratura ed erasure coding lato client prima di superare il confine di fiducia">
@@ -422,10 +455,10 @@
     <div class="card"><h3>Ceph / MinIO</h3><p class="muted">ottimi per un cluster fidato che gestisci tu</p></div>
     <div class="card"><h3>Storj / Sia</h3><p class="muted">un mercato di token, non un contratto sociale</p></div>
   </div>
-  <div class="notes"><strong>⏱ 1:45 · a fine slide 9:15.</strong> Il criterio è stato il threat model, non la lista delle feature. Host non fidati vuol dire che la cifratura deve avvenire nel client, ed è esattamente la tesi di Tahoe: il server è un deposito di ciphertext che non sa nemmeno di chi è. Dirlo subito: upstream si muove piano, l'ho scelto sapendolo. Se qualcuno chiede se io posso leggere i dati degli altri: no, e lo dico anche se non me lo chiedono, perché è la domanda che tutti hanno in testa. Sulle alternative una riga a testa: non è un confronto, è un threat model diverso.</div>
+  <div class="notes"><strong>⏱ 1:30 · a fine slide 10:20.</strong> Il criterio è stato il threat model, non la lista delle feature. Host non fidati vuol dire che la cifratura deve avvenire nel client, ed è esattamente la tesi di Tahoe: il server è un deposito di ciphertext che non sa nemmeno di chi è. Dirlo subito: upstream si muove piano, l'ho scelto sapendolo. Se qualcuno chiede se io posso leggere i dati degli altri: no, e lo dico anche se non me lo chiedono, perché è la domanda che tutti hanno in testa. Sulle alternative una riga a testa: non è un confronto, è un threat model diverso.</div>
 </section>
 
-<!-- 8 · Anatomia di una capability -->
+<!-- 10 · Anatomia di una capability -->
 <section class="slide">
   <h2>Anatomia di una <span class="k">capability</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Le parti di una capability CHK di Tahoe-LAFS: tipo, chiave, hash, k-of-n, dimensione">
@@ -454,10 +487,10 @@
     <text x="20" y="312" class="l">il server di storage vede solo lo storage index (un altro hash): non sa cosa contiene una share né di chi è.</text>
   </svg></div>
   <p class="caption">Cambiare k-of-n nel manifest non tocca i file già caricati: l'encoding è dentro la stringa, non nel server. Ci torno alla slide sulla ridondanza.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 10:45.</strong> Lo faccio con calma, è la cosa più Tahoe di tutta la presentazione. CHK vuol dire content hash key: la chiave deriva dall'hash del contenuto più un segreto del client, quindi lo stesso file caricato due volte dallo stesso client dà la stessa capability, dedup gratis. La chiave sta dentro l'URI: chi ha l'URI legge il file, chi non ce l'ha vede ciphertext. Per questo non esistono account né ACL lato server: condividere un file è dare la stringa. Battuta: «Questa stringa è la chiave di casa. Non mettetela nelle slide. Infatti l'ho censurata.» I due numeri in mezzo sono k e n, fissati al momento dell'upload: me li segno perché tornano alla slide sulla ridondanza.</div>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 11:35.</strong> Lo faccio con calma, è la cosa più Tahoe di tutta la presentazione. CHK vuol dire content hash key: la chiave deriva dall'hash del contenuto più un segreto del client, quindi lo stesso file caricato due volte dallo stesso client dà la stessa capability, dedup gratis. La chiave sta dentro l'URI: chi ha l'URI legge il file, chi non ce l'ha vede ciphertext. Per questo non esistono account né ACL lato server: condividere un file è dare la stringa. Battuta: «Questa stringa è la chiave di casa. Non mettetela nelle slide. Infatti l'ho censurata.» I due numeri in mezzo sono k e n, fissati al momento dell'upload: me li segno perché tornano alla slide sulla ridondanza.</div>
 </section>
 
-<!-- 9 · Tinc + GPG -->
+<!-- 11 · Tinc + GPG -->
 <section class="slide">
   <h2>Connettività e identità: <span class="k">Tinc + GPG</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 400" role="img" aria-label="Relay attraverso l'hub e percorso di ingresso nella rete">
@@ -492,10 +525,10 @@
       <rect class="box good" x="1025" y="300" width="155" height="70"/><text x="1102" y="330" text-anchor="middle">sei dentro</text><text x="1102" y="352" text-anchor="middle" class="l">pochi minuti dopo</text>
     </g>
   </svg></div>
-  <div class="notes"><strong>⏱ 2:00 · a fine slide 12:45.</strong> Perché i fingerprint completi: un key id corto sono le ultime 8 o 16 cifre esadecimali dell'hash, ed Evil32 ha dimostrato che se ne forgia uno in pochi secondi. Le prime versioni accettavano gli id corti e confrontavano per suffisso: bastava caricare una chiave in collisione per diventare un nodo. Ora è rifiutato ovunque, e il join fallisce chiuso: se il bot non trova esattamente quel fingerprint sul keyserver, niente PR.<br><br>Perché tinc e non WireGuard: WireGuard è un tunnel, a me serviva una mesh con relay e un'identità sola; tinc dà entrambe le cose, pago in throughput che non mi serve. Una cosa che tinc mi ha insegnato a caro prezzo: si tiene il primo indirizzo che impara di un peer, quindi un rendezvous dietro un proxy avvelena la tabella di tutti. Il rendezvous deve vedere gli IP veri. Con due minuti seguo la pipeline del join riquadro per riquadro.</div>
+  <div class="notes"><strong>⏱ 1:45 · a fine slide 13:20.</strong> Perché i fingerprint completi: un key id corto sono le ultime 8 o 16 cifre esadecimali dell'hash, ed Evil32 ha dimostrato che se ne forgia uno in pochi secondi. Le prime versioni accettavano gli id corti e confrontavano per suffisso: bastava caricare una chiave in collisione per diventare un nodo. Ora è rifiutato ovunque, e il join fallisce chiuso: se il bot non trova esattamente quel fingerprint sul keyserver, niente PR.<br><br>Perché tinc e non WireGuard: WireGuard è un tunnel, a me serviva una mesh con relay e un'identità sola; tinc dà entrambe le cose, pago in throughput che non mi serve. Una cosa che tinc mi ha insegnato a caro prezzo: si tiene il primo indirizzo che impara di un peer, quindi un rendezvous dietro un proxy avvelena la tabella di tutti. Il rendezvous deve vedere gli IP veri. Con due minuti seguo la pipeline del join riquadro per riquadro.</div>
 </section>
 
-<!-- 10 · Dentro un nodo -->
+<!-- 12 · Dentro un nodo -->
 <section class="slide">
   <h2>Dentro un nodo: <span class="k">uno stack compose</span>, i ruoli sono profili</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 360" role="img" aria-label="I container di un nodo condividono il network namespace di tinc">
@@ -528,10 +561,10 @@
     <text x="870" y="212" text-anchor="middle" class="l" fill="#fde68a">bind</text>
   </svg></div>
   <p class="caption"><code>docker compose -p redundanet --profile storage --profile client up -d</code> · i container Tahoe <strong>entrano</strong> nel namespace di tinc: niente port mapping da fare, e una trappola che vi faccio vedere tra poco.</p>
-  <div class="notes"><strong>⏱ 1:00 · a fine slide 13:45.</strong> Battuta, ed è anche il seme per la trappola di dopo: «Il container tinc ha il contratto d'affitto del namespace, gli altri ci vivono dentro da coinquilini. E come con i coinquilini: se quello col contratto se ne va, restano tutti senza internet.» Non spiego di più, vado avanti. Il disco esterno lo indico: fstab per UUID, bind mount nell'override, ci torno con l'incidente di ottobre.</div>
+  <div class="notes"><strong>⏱ 0:45 · a fine slide 14:05.</strong> Battuta, ed è anche il seme per la trappola di dopo: «Il container tinc ha il contratto d'affitto del namespace, gli altri ci vivono dentro da coinquilini. E come con i coinquilini: se quello col contratto se ne va, restano tutti senza internet.» Non spiego di più, vado avanti. Il disco esterno lo indico: fstab per UUID, bind mount nell'override, ci torno con l'incidente di ottobre.</div>
 </section>
 
-<!-- 11 · Demo 1 -->
+<!-- 13 · Demo 1 -->
 <section class="slide">
   <div class="tag demo">Live demo 1</div>
   <h2>La rete, adesso</h2>
@@ -556,10 +589,10 @@ curl -s https://redundanet-hub.fly.dev/status.json \
   "unreadable_now": 0
 }</pre>
   </div>
-  <div class="notes"><strong>⏱ 3:00 · a fine slide 16:45.</strong> Apro la status page. Indico il censimento: lo costruisce ogni nodo di storage dalla propria lista di storage index opachi, niente nomi di file, niente contenuti, e viene servito solo sulla VPN. L'hub interseca le liste e si tiene l'ultimo inventario, così un nodo spento non acceca il conteggio. I numeri li leggo dal vivo, non dalla slide. Se il censimento mostra oggetti sotto-replicati dico perché: dopo un cambio di encoding ogni file vecchio conta contro il nuovo target finché il rebalancer non lo converte, e la pagina è la progress bar. Se la pagina mostra una nota (un nodo irraggiungibile, un report vecchio) la leggo ad alta voce: la pagina è fatta per dire la verità, non per fare bella figura. Con tre minuti faccio vedere anche la tabella dei membri: contributo, allocazione, usato.<br><br>Piano B se la rete della sala non va: racconto la pagina dalla slide e passo avanti, senza perderci più di un minuto. Battuta per il piano B: «È comunque un'ottima dimostrazione del perché serve ridondanza.»</div>
+  <div class="notes"><strong>⏱ 2:45 · a fine slide 16:50.</strong> Apro la status page. Indico il censimento: lo costruisce ogni nodo di storage dalla propria lista di storage index opachi, niente nomi di file, niente contenuti, e viene servito solo sulla VPN. L'hub interseca le liste e si tiene l'ultimo inventario, così un nodo spento non acceca il conteggio. I numeri li leggo dal vivo, non dalla slide. Se il censimento mostra oggetti sotto-replicati dico perché: dopo un cambio di encoding ogni file vecchio conta contro il nuovo target finché il rebalancer non lo converte, e la pagina è la progress bar. Se la pagina mostra una nota (un nodo irraggiungibile, un report vecchio) la leggo ad alta voce: la pagina è fatta per dire la verità, non per fare bella figura. Con tre minuti faccio vedere anche la tabella dei membri: contributo, allocazione, usato.<br><br>Piano B se la rete della sala non va: racconto la pagina dalla slide e passo avanti, senza perderci più di un minuto. Battuta per il piano B: «È comunque un'ottima dimostrazione del perché serve ridondanza.»</div>
 </section>
 
-<!-- 12 · Erasure coding in 60 secondi -->
+<!-- 14 · Erasure coding in 60 secondi -->
 <section class="slide">
   <h2>Erasure coding in 60 secondi: <span class="k">è una retta</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 342" role="img" aria-label="Una retta per due punti: quattro share sono quattro punti, ne bastano due qualsiasi">
@@ -586,10 +619,10 @@ curl -s https://redundanet-hub.fly.dev/status.json \
     <text x="660" y="300" class="l">decodificare è risolvere un sistema lineare k×k: costa CPU, non spazio</text>
   </svg></div>
   <p class="caption">Due numeri, pendenza e intercetta, definiscono una retta: con due punti qualsiasi dei quattro la ridisegno. Tahoe fa questo su ogni file, a blocchi, al momento dell'upload.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 18:15.</strong> Il disegno: la retta è il file, i quattro punti sono le quattro share, ne cancello due a caso e la retta c'è ancora. Battuta: «Due punti definiscono una retta. È la volta in cui la geometria del liceo serve davvero a qualcosa.» Chi ha fatto analisi lo sa già, chi no lo capisce dal disegno. Non vado oltre: campo finito, blocchi, zfec, una parola ciascuno e basta. Il punto che mi serve dopo è il costo: n/k, quindi 2-of-4 costa 2× come un mirror ma sopravvive a due nodi.</div>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 18:05.</strong> Il disegno: la retta è il file, i quattro punti sono le quattro share, ne cancello due a caso e la retta c'è ancora. Battuta: «Due punti definiscono una retta. È la volta in cui la geometria del liceo serve davvero a qualcosa.» Chi ha fatto analisi lo sa già, chi no lo capisce dal disegno. Non vado oltre: campo finito, blocchi, zfec, una parola ciascuno e basta. Il punto che mi serve dopo è il costo: n/k, quindi 2-of-4 costa 2× come un mirror ma sopravvive a due nodi.</div>
 </section>
 
-<!-- 13 · Ridondanza misurata -->
+<!-- 15 · Ridondanza misurata -->
 <section class="slide">
   <h2>Ridondanza <span class="k">misurata, non presunta</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Erasure coding 2-of-4 che sopravvive alla perdita di due server">
@@ -616,10 +649,10 @@ curl -s https://redundanet-hub.fly.dev/status.json \
     <rect class="pill" x="1000" y="170" width="190" height="26"/><text x="1095" y="188" text-anchor="middle" class="pill-text">re-encoding automatico</text>
   </svg></div>
   <p class="caption">La rete è partita come mirror <strong>1-of-2</strong> ed è passata a <strong>2-of-4</strong>: stesso costo 2×, sopravvive a due nodi. Il cambio è una riga nel manifest; ogni nodo la legge, i nuovi upload la usano subito e il rebalancer converte da solo i file vecchi.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 19:45.</strong> Il punto di onestà per primo: la documentazione diceva 3-of-10, la produzione faceva 1-of-2. Battuta: «Cioè un mirror. Cioè RAID 1, ma con più passaggi.» Ho corretto la documentazione perché dica quello che gira davvero. Dichiara solo quello che gira. L'encoding è dentro la capability, l'abbiamo visto: cambiare il manifest ha richiesto un loop di re-encoding che legge k e n dalla stringa e ricarica prendendo i dati dal grid stesso. Uno sweep settimanale ripara anche gli oggetti che hanno perso una share, partendo da quelle rimaste. Una ridondanza che non ripari mai è una speranza, non una proprietà.</div>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 19:20.</strong> Il punto di onestà per primo: la documentazione diceva 3-of-10, la produzione faceva 1-of-2. Battuta: «Cioè un mirror. Cioè RAID 1, ma con più passaggi.» Ho corretto la documentazione perché dica quello che gira davvero. Dichiara solo quello che gira. L'encoding è dentro la capability, l'abbiamo visto: cambiare il manifest ha richiesto un loop di re-encoding che legge k e n dalla stringa e ricarica prendendo i dati dal grid stesso. Uno sweep settimanale ripara anche gli oggetti che hanno perso una share, partendo da quelle rimaste. Una ridondanza che non ripari mai è una speranza, non una proprietà.</div>
 </section>
 
-<!-- 14 · Demo 2 -->
+<!-- 16 · Demo 2 -->
 <section class="slide">
   <div class="tag demo">Live demo 2</div>
   <h2>Spengo un nodo, il file resta</h2>
@@ -636,10 +669,10 @@ redundanet storage download home:talk.pdf /tmp/back.pdf
 sha256sum /tmp/back.pdf     <span class="g"># identico</span>
 
 docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a replica completa</span></pre>
-  <div class="notes"><strong>⏱ 3:30 · a fine slide 23:15.</strong> Avere talk.pdf pronto e l'hash già segnato; i due nodi della demo sono il Pi (storage) e il portatile (client), entrambi già collegati prima di salire. Battuta prima di premere invio: «Il momento in cui spengo un nodo in diretta è anche il momento in cui scopro se ho ragione.» Fermo il container storage del Pi, faccio vedere la status page con un server in meno, scarico dall'altro nodo, confronto gli hash. Il client si riconnette in pochi secondi. Riavvio il container prima di andare avanti, sennò me lo dimentico, e faccio vedere il censimento che torna a replica completa.<br><br>Se la demo non parte entro un minuto: mostro i comandi, dico cosa succederebbe e vado avanti. La ridondanza l'ho già fatta vedere con il censimento.</div>
+  <div class="notes"><strong>⏱ 3:15 · a fine slide 22:35.</strong> Avere talk.pdf pronto e l'hash già segnato; i due nodi della demo sono il Pi (storage) e il portatile (client), entrambi già collegati prima di salire. Battuta prima di premere invio: «Il momento in cui spengo un nodo in diretta è anche il momento in cui scopro se ho ragione.» Fermo il container storage del Pi, faccio vedere la status page con un server in meno, scarico dall'altro nodo, confronto gli hash. Il client si riconnette in pochi secondi. Riavvio il container prima di andare avanti, sennò me lo dimentico, e faccio vedere il censimento che torna a replica completa.<br><br>Se la demo non parte entro un minuto: mostro i comandi, dico cosa succederebbe e vado avanti. La ridondanza l'ho già fatta vedere con il censimento.</div>
 </section>
 
-<!-- 15 · Incidenti 1: la trappola del network namespace -->
+<!-- 17 · Incidenti 1: la trappola del network namespace -->
 <section class="slide">
   <div class="tag pain">Difficoltà · incidenti in produzione, 1</div>
   <h2>La trappola del <span class="k">network namespace</span></h2>
@@ -673,10 +706,10 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
   </svg></div>
   <p class="caption" style="margin-top:14px">Tutto in esecuzione, tutto <strong>healthy</strong>, e nessuno parlava con nessuno. Il fix non è «riavviare nell'ordine giusto»: è una CLI in cui il caso non esiste. <code>redundanet update</code> ricrea sempre tinc per primo, e un test lo pretende.</p>
   <p class="quote" style="margin-top:16px;font-size:26px">Correggi la classe di problema, non il caso singolo.</p>
-  <div class="notes"><strong>⏱ 2:00 · a fine slide 25:15.</strong> I coinquilini della slide 10. Ho ricreato il container tinc da solo; i due container Tahoe sono rimasti nel namespace vecchio, che non esisteva più. In esecuzione, healthy, e «0 shares connected». La rete era sana, i nodi erano sani, nessuno parlava con nessuno. Il fix non è una procedura da ricordare: la CLI nomina sempre tinc per primo nel force-recreate e un test lo pretende, così il caso non può più succedere. La frase in fondo è la tesi di tutte le slide sugli incidenti: correggi la classe, non il caso singolo.</div>
+  <div class="notes"><strong>⏱ 1:30 · a fine slide 24:05.</strong> I coinquilini della slide 12. Ho ricreato il container tinc da solo; i due container Tahoe sono rimasti nel namespace vecchio, che non esisteva più. In esecuzione, healthy, e «0 shares connected». La rete era sana, i nodi erano sani, nessuno parlava con nessuno. Il fix non è una procedura da ricordare: la CLI nomina sempre tinc per primo nel force-recreate e un test lo pretende, così il caso non può più succedere. La frase in fondo è la tesi di tutte le slide sugli incidenti: correggi la classe, non il caso singolo.</div>
 </section>
 
-<!-- 16 · Incidenti 2: tre storie brevi -->
+<!-- 18 · Incidenti 2: tre storie brevi -->
 <section class="slide">
   <div class="tag pain">Difficoltà · incidenti in produzione, 2</div>
   <h2>Tre storie brevi, <span class="k">tre lezioni</span></h2>
@@ -685,10 +718,10 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <div class="card bad"><h3>Il nodo nuovo che non parte</h3><p class="muted">L'immagine per il Pi aveva Compose v1; un refuso nel manifest ha rotto un join per 11 minuti. Ora: Compose v2 pinnato e verificato in build, errori che dicono cosa fare al posto dei traceback.</p><p style="margin-top:12px"><strong>Lezione:</strong> un errore deve dire cosa lanciare dopo.</p></div>
     <div class="card bad"><h3>Il rendezvous che mentiva</h3><p class="muted">Un packet capture: ogni byte tra nodi passava dall'hub, in TCP. Il proxy di fly nascondeva gli indirizzi veri, e tinc si tiene il primo indirizzo che impara. Fix: un VPS da 4 € come rendezvous, una riga nel manifest.</p><p style="margin-top:12px"><strong>Lezione:</strong> la topologia può mentire, misura i pacchetti.</p></div>
   </div>
-  <div class="notes"><strong>⏱ 2:30 · a fine slide 27:45.</strong> Tre storie da cinquanta secondi. Il disco: il comando sembrava giusto, ma un -f esplicito disattiva l'auto-load dell'override, così un update ha staccato in silenzio un disco da 1 TB. Battuta: «I dati stavano benissimo, era il nodo che non li vedeva più. Come gli occhiali quando sono sulla testa.»<br><br>Il nodo nuovo: l'immagine per il Pi aveva Compose v1 e un refuso nel manifest ha rotto un join per 11 minuti. Battuta: «La cosa più veloce che questo progetto abbia mai fatto.»<br><br>Il rendezvous: davo per scontato che la mesh fosse una mesh. Un tcpdump su un nodo: zero pacchetti verso l'indirizzo vero di qualunque peer, tutto verso fly, in TCP, perché il proxy di fly mostrava all'hub il proprio indirizzo come sorgente di ogni peer e tinc si ricorda il primo indirizzo che impara. Battuta: «Credevo di avere una mesh, avevo una stella. Il diagramma non aveva torto, era solo ottimista.» La lezione torna nella slide 25: la topologia può mentire, misura i pacchetti.</div>
+  <div class="notes"><strong>⏱ 2:00 · a fine slide 26:05.</strong> Tre storie da cinquanta secondi. Il disco: il comando sembrava giusto, ma un -f esplicito disattiva l'auto-load dell'override, così un update ha staccato in silenzio un disco da 1 TB. Battuta: «I dati stavano benissimo, era il nodo che non li vedeva più. Come gli occhiali quando sono sulla testa.»<br><br>Il nodo nuovo: l'immagine per il Pi aveva Compose v1 e un refuso nel manifest ha rotto un join per 11 minuti. Battuta: «La cosa più veloce che questo progetto abbia mai fatto.»<br><br>Il rendezvous: davo per scontato che la mesh fosse una mesh. Un tcpdump su un nodo: zero pacchetti verso l'indirizzo vero di qualunque peer, tutto verso fly, in TCP, perché il proxy di fly mostrava all'hub il proprio indirizzo come sorgente di ogni peer e tinc si ricorda il primo indirizzo che impara. Battuta: «Credevo di avere una mesh, avevo una stella. Il diagramma non aveva torto, era solo ottimista.» La lezione torna nella slide 27: la topologia può mentire, misura i pacchetti.</div>
 </section>
 
-<!-- 17 · Il disco che non c'era -->
+<!-- 19 · Il disco che non c'era -->
 <section class="slide">
   <div class="tag pain">Difficoltà · ottobre 2026</div>
   <h2>Il disco che <span class="k">non c'era</span></h2>
@@ -711,14 +744,14 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="20" y="335" class="l">recupero: disco montato, share unite a quelle vere (quasi tutte copie di oggetti già presenti), zero file persi: le altre copie stavano altrove</text>
   </svg></div>
   <p class="quote" style="margin-top:14px;font-size:26px">Rendere il guasto impossibile, non solo visibile.</p>
-  <div class="notes"><strong>⏱ 2:00 · a fine slide 29:45.</strong> È di tre settimane fa, lo racconto a memoria. Il NAS si è acceso dopo il server. nofail in fstab vuol dire «se il disco non c'è, fai finta di niente»: era lì per non bloccare il boot e ha fatto esattamente quello che diceva. Docker ha fatto il bind mount della directory sotto il mountpoint, vuota, sul disco di sistema, e Tahoe ci ha scritto due giorni di share. Battuta: «Tutto verde sulla dashboard. La dashboard non mente mai, al massimo non sa.» L'unico indizio era una nota in fondo alla pagina sul disco più piccolo del dichiarato, e l'ho letta dopo due giorni.<br><br>Il recupero: montare il disco, unire le share scritte nel posto sbagliato a quelle vere (erano quasi tutte copie di oggetti già presenti: i client avevano ricaricato quello che il nodo diceva di non avere), zero file persi perché le altre copie stavano altrove. È la slide sulla ridondanza che paga.<br><br>Poi i tre strati, ognuno basta da solo. Battuta sul terzo: «Un container che fa i capricci è molto meglio di un container che fa finta di niente.»</div>
+  <div class="notes"><strong>⏱ 1:45 · a fine slide 27:50.</strong> È di tre settimane fa, lo racconto a memoria. Il NAS si è acceso dopo il server. nofail in fstab vuol dire «se il disco non c'è, fai finta di niente»: era lì per non bloccare il boot e ha fatto esattamente quello che diceva. Docker ha fatto il bind mount della directory sotto il mountpoint, vuota, sul disco di sistema, e Tahoe ci ha scritto due giorni di share. Battuta: «Tutto verde sulla dashboard. La dashboard non mente mai, al massimo non sa.» L'unico indizio era una nota in fondo alla pagina sul disco più piccolo del dichiarato, e l'ho letta dopo due giorni.<br><br>Il recupero: montare il disco, unire le share scritte nel posto sbagliato a quelle vere (erano quasi tutte copie di oggetti già presenti: i client avevano ricaricato quello che il nodo diceva di non avere), zero file persi perché le altre copie stavano altrove. È la slide sulla ridondanza che paga.<br><br>Poi i tre strati, ognuno basta da solo. Battuta sul terzo: «Un container che fa i capricci è molto meglio di un container che fa finta di niente.»</div>
 </section>
 
-<!-- 18 · Upstream dormiente -->
+<!-- 20 · Upstream dormiente -->
 <section class="slide">
   <div class="tag pain">Difficoltà · i limiti di Tahoe</div>
   <h2>Convivere con un <span class="k">upstream dormiente</span></h2>
-  <div class="diagram"><svg class="dg" viewBox="0 0 1200 240" role="img" aria-label="Linea del tempo delle release di Tahoe-LAFS">
+  <div class="diagram"><svg class="dg" viewBox="0 0 1200 290" role="img" aria-label="Linea del tempo delle release di Tahoe-LAFS">
     <line x1="60" y1="100" x2="1140" y2="100"/>
     <g><circle cx="120" cy="100" r="10" fill="#6366f1"/><text x="120" y="70" text-anchor="middle" class="t">1.17</text><text x="120" y="135" text-anchor="middle" class="l">dic 2021</text></g>
     <g><circle cx="330" cy="100" r="10" fill="#6366f1"/><text x="330" y="70" text-anchor="middle" class="t">1.18</text><text x="330" y="135" text-anchor="middle" class="l">ott 2022</text></g>
@@ -729,49 +762,17 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="990" y="135" text-anchor="middle" class="l">SFTP: ultima modifica nel 2023</text>
     <text x="60" y="195" class="l">SFTP non chiude mai le sessioni (bisect fatto: non è il client, non la rete, non Twisted) · niente accounting, quindi le quote stanno lato client</text>
     <text x="60" y="220" class="l">dipendenze transitive pinnate dopo che una release di pyOpenSSL 25 ha buttato giù tutti i container</text>
+    <text x="60" y="245" class="l">ott 2026: il lease crawler crasha a ogni restart a metà ciclo, e da settembre nessun nodo faceva garbage collection, in silenzio</text>
+    <text x="60" y="270" class="l">patch di poche righe nella nostra immagine base, con un test che fa fallire la build se upstream sposta quel codice</text>
   </svg></div>
   <div class="cols">
     <div class="card accent"><h3>La risposta</h3><p class="muted">Piccoli workaround testati nelle nostre immagini · pinniamo le dipendenze che upstream non pinna · aggiriamo i frontend morti (web gateway, il pattern NAS) · documentiamo le stranezze dove l'utente le incontra.</p></div>
     <div class="card"><h3>L'assicurazione</h3><p class="muted">Identità, membership e mesh non sanno che lo storage engine è Tahoe. L'engine si può sostituire; la rete no.</p></div>
   </div>
-  <div class="notes"><strong>⏱ 1:00 · a fine slide 30:45.</strong> Ho scelto Tahoe sapendo che si muove piano. La mitigazione è architetturale, non una speranza: identità, membership e mesh non sanno che sotto c'è Tahoe, l'engine si può sostituire, la rete no. Battuta: «Il lato positivo di un upstream dormiente: nessuno vi chiude le issue come won't fix. Non le legge proprio nessuno.» Il bisect dell'SFTP lo cito solo se c'è tempo.</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 28:50.</strong> Ho scelto Tahoe sapendo che si muove piano. L'esempio fresco, due settimane fa: il lease crawler, quello che cancella le share scadute, crasha dopo qualunque restart a metà ciclo, bug upstream aperto; da settembre nessun nodo faceva garbage collection e nessuno se n'era accorto, perché tutto il resto funzionava. Patch di poche righe nella nostra immagine base, con un test che fa fallire la build se upstream sposta quel codice. La mitigazione vera è architetturale: identità, membership e mesh non sanno che sotto c'è Tahoe, l'engine si può sostituire, la rete no. Battuta: «Il lato positivo di un upstream dormiente: nessuno vi chiude le issue come won't fix. Non le legge proprio nessuno.»</div>
 </section>
 
-<!-- 19 · Sicurezza -->
-<section class="slide">
-  <h2>Hardening da un <span class="k">audit con 50 finding</span></h2>
-  <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Cancelli tra le fonti di verità e la flotta, e la macchina a stati dell'aggiornamento automatico">
-    <text x="20" y="28" class="t">Gate davanti alla source of truth</text>
-    <rect class="box warn" x="20" y="50" width="170" height="60"/><text x="105" y="86" text-anchor="middle">manifest Git</text>
-    <rect class="box" x="20" y="130" width="170" height="60"/><text x="105" y="166" text-anchor="middle">keyserver</text>
-    <g>
-      <rect class="box good" x="250" y="40" width="200" height="50"/><text x="350" y="70" text-anchor="middle" class="l">solo fingerprint completi</text>
-      <rect class="box good" x="250" y="100" width="200" height="50"/><text x="350" y="130" text-anchor="middle" class="l">join fail-closed</text>
-      <rect class="box good" x="250" y="160" width="200" height="50"/><text x="350" y="190" text-anchor="middle" class="l">si pubblica solo da CI verde</text>
-      <rect class="box good" x="250" y="220" width="200" height="50"/><text x="350" y="250" text-anchor="middle" class="l">validate esce non-zero</text>
-    </g>
-    <path d="M190 80 L250 65" marker-end="url(#arr)"/><path d="M190 160 L250 125" marker-end="url(#arr)"/>
-    <path d="M450 155 L520 155" marker-end="url(#arr-g)" class="good-line"/>
-    <rect class="box accent" x="520" y="120" width="130" height="70"/><text x="585" y="150" text-anchor="middle">la flotta</text><text x="585" y="172" text-anchor="middle" class="l">pull di :latest</text>
-    <text x="700" y="28" class="t">redundanet update</text>
-    <g>
-      <rect class="box" x="700" y="50" width="120" height="50"/><text x="760" y="80" text-anchor="middle">pull</text>
-      <path d="M820 75 L860 75" marker-end="url(#arr)"/>
-      <rect class="box" x="860" y="50" width="150" height="50"/><text x="935" y="80" text-anchor="middle">ricrea, prima tinc</text>
-      <path d="M1010 75 L1050 75" marker-end="url(#arr)"/>
-      <rect class="box accent" x="1050" y="50" width="130" height="50"/><text x="1115" y="80" text-anchor="middle">health check</text>
-      <path class="good-line" d="M1115 100 L1115 150" marker-end="url(#arr-g)"/>
-      <rect class="box good" x="1050" y="150" width="130" height="50"/><text x="1115" y="180" text-anchor="middle">healthy ✓</text>
-      <path class="bad-line" d="M1050 75 C 980 120, 980 200, 1010 225" marker-end="url(#arr-r)"/>
-      <rect class="box bad" x="860" y="200" width="150" height="50"/><text x="935" y="230" text-anchor="middle">rollback immagini</text>
-      <text x="700" y="300" class="l">un :latest rotto non può lasciare un nodo a terra</text>
-    </g>
-  </svg></div>
-  <p class="caption">Metodo: sei revisori per dimensione → verifica in contraddittorio di ogni finding → sei batch ordinati per blast radius, rilasciati in piccole release. Poi un secondo giro dall'interno: cosa può fare un <em>membro</em> malintenzionato? DoS sul relay, hijack degli indirizzi, storage server rogue. Classificati, in parte corretti, il resto in roadmap.</p>
-  <div class="notes"><strong>⏱ 1:30 · a fine slide 32:15.</strong> Il metodo prima dei risultati: sei revisori per dimensione, verifica in contraddittorio di ogni finding, sei batch ordinati per blast radius. Battuta: «Il finding più grosso era: il manifest non è firmato. L'ho rimandato apposta, e ve lo dico prima che me lo chiediate, così non sembra che l'abbiate scoperto voi.» Oggi il confine è l'autenticazione di GitHub, la branch protection e la review; la firma proteggerebbe da un account GitHub compromesso. Buco noto, in lista.<br><br>Il giro dall'interno vale una frase: un membro non può leggere i dati degli altri né falsificare un'identità, perché la cifratura è lato client e ogni connessione Tahoe fa il pinning della chiave del server. Quello che può fare è buttare giù la rete o indebolirla in silenzio, e le correzioni sono righe singole in tinc e nel censimento, più i certificati grid-manager di Tahoe per il caso del server rogue.</div>
-</section>
-
-<!-- 20 · Test -->
+<!-- 21 · Test -->
 <section class="slide">
   <h2>Testare un <span class="k">sistema distribuito</span> su un portatile</h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 330" role="img" aria-label="Piramide dei test">
@@ -786,10 +787,10 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="600" y="282" text-anchor="middle" class="l">entrypoint scritti come funzioni pure con runner iniettati: la logica dei container ha unit test</text>
   </svg></div>
   <p class="caption">Quello che i test <strong>non</strong> potevano intercettare: la trappola del netns, l'override perso, Compose v1 su un OS nuovo. Semantica dell'ambiente. Ognuno è diventato un unit test sulla costruzione dei comandi della CLI, perché il bug stava lì. E anche la build era un bug: la dipendenza Rust di Tahoe non ha wheel per ARM, quindi ogni release la compilava per un'ora sotto QEMU. Ora un'immagine base si ricostruisce solo quando cambia il lock, nativa per architettura, e una release ci mette minuti.</p>
-  <div class="notes"><strong>⏱ 1:00 · a fine slide 33:15.</strong> Essere onesto su cosa la piramide non copre: l'immagine dell'hub non è ancora costruita in CI. In roadmap, non nascosto. Quello che i test non potevano prendere è semantica dell'ambiente, e ogni caso è diventato un unit test sulla costruzione dei comandi della CLI, perché il bug stava lì. La storia della build: la dipendenza Rust di Tahoe non ha wheel per ARM, ogni release la compilava per un'ora sotto QEMU. Battuta: «Un'ora. Abbastanza per pentirsi del tag.» Ora l'immagine base si ricostruisce solo quando cambia il lock, nativa per architettura, e una release ci mette minuti.</div>
+  <div class="notes"><strong>⏱ 0:45 · a fine slide 29:35.</strong> Essere onesto su cosa la piramide non copre: l'immagine dell'hub non è ancora costruita in CI. In roadmap, non nascosto. Quello che i test non potevano prendere è semantica dell'ambiente, e ogni caso è diventato un unit test sulla costruzione dei comandi della CLI, perché il bug stava lì. La storia della build: la dipendenza Rust di Tahoe non ha wheel per ARM, ogni release la compilava per un'ora sotto QEMU. Battuta: «Un'ora. Abbastanza per pentirsi del tag.» Ora l'immagine base si ricostruisce solo quando cambia il lock, nativa per architettura, e una release ci mette minuti.</div>
 </section>
 
-<!-- 21 · NAS -->
+<!-- 22 · NAS -->
 <section class="slide">
   <h2>Usarla: un NAS di casa con una <span class="k">macchina del tempo erasure-coded</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 295" role="img" aria-label="Share Samba sincronizzata a senso unico nel grid">
@@ -804,10 +805,37 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
     <text x="20" y="250" class="l">l'ha proposto un membro; ha battuto l'idea iniziale con FUSE perché lavora con i file immutabili invece che contro</text>
     <text x="20" y="275" class="l">l'usage meter conta un file invariato una volta sola tra tutti gli snapshot; il backup si ferma se un membro supera l'allocazione</text>
   </svg></div>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 34:30.</strong> Questo design l'ha proposto un membro; io avevo proposto la strada FUSE. La sua era migliore perché lavora con il modello immutabile di Tahoe invece che contro: una share Samba normale sul disco vero, e ogni quindici minuti un tahoe backup incrementale che salta i file invariati. Gli snapshot si accumulano, quindi un ransomware sulla share non tocca quello che è già nel grid. Dirlo chiaramente, è il punto della slide sulle lezioni. Demo facoltativa solo se sono in anticipo: butto un file sulla share e lo vedo comparire in backups:Latest/.</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 30:35.</strong> Questo design l'ha proposto un membro; io avevo proposto la strada FUSE. La sua era migliore perché lavora con il modello immutabile di Tahoe invece che contro: una share Samba normale sul disco vero, e ogni quindici minuti un tahoe backup incrementale che salta i file invariati. Gli snapshot si accumulano, quindi un ransomware sulla share non tocca quello che è già nel grid. Dirlo chiaramente, è il punto della slide sulle lezioni. Demo facoltativa solo se sono in anticipo: butto un file sulla share e lo vedo comparire in backups:Latest/.</div>
 </section>
 
-<!-- 22 · Provarlo a casa -->
+<!-- 23 · Forkalo -->
+<section class="slide">
+  <h2>Forkalo: <span class="k">una rete per ogni comunità</span></h2>
+  <div class="cols">
+    <div>
+      <p>Il codice è un bene comune, GPL-3. La rete è un oggetto sociale: la vostra non ha motivo di essere la mia.</p>
+      <ul style="margin-top:14px">
+        <li><strong>Fork del repo</strong>: nel codice non c'è niente che punti alla mia rete, a parte un link a piè di pagina.</li>
+        <li><strong>Un manifest</strong>: i vostri nodi, le vostre chiavi, il vostro k-of-n. È un file YAML, e la CI lo valida.</li>
+        <li><strong>Un hub</strong> su un VPS qualunque da 4 €: rendezvous e introducer. La guida è nel repo.</li>
+        <li><strong>Le vostre persone</strong>: un LUG, una cooperativa, un ufficio con i PC fermi la notte, una famiglia allargata.</li>
+      </ul>
+      <p class="caption" style="margin-top:16px">Pistoia è stata la prima. Milano potrebbe essere la seconda.</p>
+    </div>
+    <pre><span class="c"># la vostra rete, non la mia</span>
+git clone https://github.com/&lt;voi&gt;/redundanet.git
+$EDITOR manifests/manifest.yaml       <span class="c"># nodi, fingerprint, k-of-n</span>
+redundanet validate manifests/manifest.yaml
+
+<span class="c"># ogni nodo si aggancia al vostro repo</span>
+redundanet network join \
+  --repo https://github.com/&lt;voi&gt;/redundanet.git \
+  --name node-XXXXXXXX</pre>
+  </div>
+  <div class="notes"><strong>⏱ 1:15 · a fine slide 31:50.</strong> È la slide che mi interessa di più, e la faccio prima dell'invito a entrare perché le due cose sono alternative vere: potete entrare nella mia rete, o farne una vostra, e il secondo caso mi fa più piacere. Il codice è un bene comune, la rete è un oggetto sociale: la vostra non ha motivo di essere la mia, perché la fiducia non si federa, si costruisce in un gruppo. Nel codice non c'è niente che punti alla mia rete: l'ho controllato prima di dirlo, l'unico riferimento è il link a piè di pagina della status page. Il manifest è il contratto sociale scritto in YAML, e la CI lo valida a ogni PR. Battuta: «L'unica cosa che non potete forkare è la fiducia. Quella ve la dovete costruire da soli, ed è esattamente il motivo per cui la rete sarà vostra.» Se c'è un LUG in sala, la frase finale la dico guardando loro.</div>
+</section>
+
+<!-- 24 · Provarlo a casa -->
 <section class="slide">
   <h2>Provarlo a casa: <span class="k">un Pi, un disco USB, tre comandi</span></h2>
   <div class="cols">
@@ -818,7 +846,7 @@ docker start redundanet-tahoe-storage   <span class="c"># il censimento torna a 
         <li><strong>Una chiave GPG</strong> pubblicata su un keyserver: è l'identità del nodo, e serve il fingerprint completo.</li>
         <li><strong>Il form</strong> su redundanet.com/join.html: diventa una issue, il bot apre la PR, un umano fa il merge.</li>
       </ul>
-      <p class="caption" style="margin-top:16px">Cosa ci guadagni: spazio sugli altri nodi in proporzione a quello che porti, e una rete vera su cui fare esperienza. Cosa non ci guadagni: soldi.</p>
+      <p class="caption" style="margin-top:16px">Cosa ci guadagni l'abbiamo visto al contratto sociale: spazio in proporzione e una rete vera su cui fare esperienza. Cosa non ci guadagni: soldi.</p>
     </div>
     <pre><span class="c"># 1 · la CLI</span>
 pipx install redundanet
@@ -832,56 +860,54 @@ redundanet network join \
 cd /opt/redundanet/docker &amp;&amp; docker compose -p redundanet \
   --env-file /opt/redundanet/.env --profile storage up -d</pre>
   </div>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 35:45.</strong> Non è una vendita, è un invito. Un nodo porta spazio e una storia; soldi no, e lo dico prima che lo chiedano. I tre comandi li leggo, non li spiego: la guida è nel repo. Battuta: «Il quarto comando è il messaggio nel gruppo quando qualcosa non va. È quello che fa funzionare davvero la rete.» Se c'è un LUG in sala lo dico: il modo più facile per entrare è passare da un gruppo che già conosce qualcuno dentro, perché l'ammissione è un processo sociale.</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 32:50.</strong> Non è una vendita, è un invito, e l'alternativa l'ho appena data: la vostra rete. I tre comandi li leggo, non li spiego: la guida è nel repo. Battuta: «Il quarto comando è il messaggio nel gruppo quando qualcosa non va. È quello che fa funzionare davvero la rete.» Se c'è un LUG in sala lo dico: il modo più facile per entrare è passare da un gruppo che già conosce qualcuno dentro, perché l'ammissione è un processo sociale.</div>
 </section>
 
-<!-- 23 · Roadmap -->
+<!-- 25 · Roadmap -->
 <section class="slide">
   <h2>Cosa viene dopo <span class="muted" style="font-size:22px">(in ordine di rischio, non di divertimento)</span></h2>
   <div class="diagram"><svg class="dg" viewBox="0 0 1200 300" role="img" aria-label="Tabellone della roadmap">
     <rect class="box good" x="20" y="20" width="370" height="260"/><text x="40" y="52" class="t">Fatto: le promesse di ridondanza</text>
     <text x="40" y="90" class="l">• 2-of-4, convertito dal rebalancer</text>
     <text x="40" y="118" class="l">• due introducer, ne può cadere uno</text>
-    <text x="40" y="146" class="l">• sweep settimanale di repair, rinnovo dei lease</text>
-    <text x="40" y="174" class="l">• quote: allocazione per contributo, per membro</text>
-    <text x="40" y="202" class="l">• un rendezvous che vede gli indirizzi veri</text>
-    <text x="40" y="230" class="l">• release in minuti, non in un'ora</text>
-    <rect class="box warn" x="415" y="20" width="370" height="260"/><text x="435" y="52" class="t">Adesso: hardening e pulizia</text>
-    <text x="435" y="90" class="l">• hardening della mesh: subnet strette,</text>
-    <text x="435" y="118" class="l">  cache del censimento, meno privilegi ai container</text>
-    <text x="435" y="146" class="l">• contributo pesato per uptime e spazio libero</text>
-    <text x="435" y="174" class="l">• pruning degli snapshot e policy di GC</text>
-    <text x="435" y="202" class="l">• immagine dell'hub in CI, e2e notturni, alerting</text>
-    <text x="435" y="230" class="l">• tooling per il disco del Pi</text>
-    <rect class="box" x="810" y="20" width="370" height="260"/><text x="830" y="52" class="t">Poi: fiducia e la storia del fork</text>
+    <text x="40" y="146" class="l">• quote: allocazione per contributo, per membro</text>
+    <text x="40" y="174" class="l">• un rendezvous che vede gli indirizzi veri</text>
+    <text x="40" y="202" class="l">• release in minuti, non in un'ora</text>
+    <text x="40" y="230" class="l">• ott 2026: censimento a delta, lease GC, repair</text>
+    <rect class="box warn" x="415" y="20" width="370" height="260"/><text x="435" y="52" class="t">Adesso: pulizia e osservabilità</text>
+    <text x="435" y="90" class="l">• immagine dell'hub in CI, e2e notturni, alerting</text>
+    <text x="435" y="118" class="l">• contributo pesato per uptime e spazio libero</text>
+    <text x="435" y="146" class="l">• pruning degli snapshot</text>
+    <text x="435" y="174" class="l">• status page: due ping prima di dire «offline»</text>
+    <text x="435" y="202" class="l">• tooling per il disco del Pi</text>
+    <rect class="box" x="810" y="20" width="370" height="260"/><text x="830" y="52" class="t">Poi: fiducia oltre le persone che conosco</text>
     <text x="830" y="90" class="l">• certificati grid-manager: solo server verificati</text>
     <text x="830" y="118" class="l">• accounting lato server (spending pass)</text>
     <text x="830" y="146" class="l">• accesso da browser via web gateway di Tahoe</text>
-    <text x="830" y="174" class="l">• il repo come template: fork, cambi un file,</text>
-    <text x="830" y="202" class="l">  la tua rete, per esempio sui PC fermi in ufficio</text>
-    <text x="830" y="230" class="l">• firma del manifest (rimandata apposta)</text>
+    <text x="830" y="174" class="l">• firma del manifest (rimandata apposta)</text>
+    <text x="830" y="202" class="l">• una seconda comunità sullo stesso codice</text>
   </svg></div>
-  <div class="notes"><strong>⏱ 0:45 · a fine slide 36:30.</strong> La colonna a sinistra è quello che quest'anno ha portato. Quella in mezzo è in ordine di rischio: le voci sull'hardening della mesh sono one-liner che chiudono quello che un membro malintenzionato potrebbe fare. La colonna a destra cambia il modello di fiducia più che il codice, e la comincerei solo se la rete cresce oltre le persone che conosco. Se sono lungo leggo solo la colonna di mezzo.</div>
+  <div class="notes"><strong>⏱ 0:30 · a fine slide 33:20.</strong> La colonna a sinistra è quello che quest'anno ha portato, ottobre compreso: censimento a delta, garbage collection dei lease, sweep settimanale di repair. Quella in mezzo è pulizia e osservabilità, in ordine di rischio. La colonna a destra cambia il modello di fiducia più che il codice, e la comincerei solo se la rete cresce oltre le persone che conosco; l'ultima voce è la slide del fork. Se sono lungo leggo solo la colonna di mezzo.</div>
 </section>
 
-<!-- 24 · Un anno in numeri -->
+<!-- 26 · Un anno in numeri -->
 <section class="slide">
-  <h2>Un anno in numeri <span class="muted" style="font-size:22px">(status page, 14 ottobre 2026)</span></h2>
+  <h2>Un anno in numeri <span class="muted" style="font-size:22px">(status page, 23 ottobre 2026)</span></h2>
   <div class="stats">
     <div class="stat"><div class="big">10</div><div class="lbl">nodi, di cui 2 hub</div></div>
     <div class="stat"><div class="big">6</div><div class="lbl">membri: persone approvate, non account</div></div>
-    <div class="stat"><div class="big">8,8 TB</div><div class="lbl">di disco nei nodi</div></div>
-    <div class="stat"><div class="big">252k</div><div class="lbl">oggetti, target 4 share su 4 nodi</div></div>
-    <div class="stat"><div class="big">57</div><div class="lbl">release in 19 mesi</div></div>
-    <div class="stat"><div class="big">467</div><div class="lbl">unit test, più 3 suite end-to-end</div></div>
+    <div class="stat"><div class="big">11 TB</div><div class="lbl">di disco nei nodi</div></div>
+    <div class="stat"><div class="big">263k</div><div class="lbl">oggetti, target 4 share su 4 nodi</div></div>
+    <div class="stat"><div class="big">66</div><div class="lbl">release in 19 mesi</div></div>
+    <div class="stat"><div class="big">556</div><div class="lbl">unit test, più 3 suite end-to-end</div></div>
     <div class="stat"><div class="big">5</div><div class="lbl">incidenti raccontati oggi</div></div>
     <div class="stat"><div class="big">0</div><div class="lbl">file persi · persone pagate</div></div>
   </div>
   <p class="caption" style="margin-top:30px">I numeri vivi sono su <strong class="mono">redundanet-hub.fly.dev</strong>: se oggi sono diversi, hanno ragione loro.</p>
-  <div class="notes"><strong>⏱ 0:45 · a fine slide 37:15.</strong> Numeri presi dalla status page il 14 ottobre: ricontrollarli la mattina del talk (nodi, membri, TB, oggetti) e aggiornare la slide. Li leggo in fila senza fermarmi, tranne l'ultimo. Battuta: «Zero file persi, zero persone pagate. Il management è una chat.» Se sono lungo questa slide la salto: i numeri stanno comunque sulla status page.</div>
+  <div class="notes"><strong>⏱ 0:30 · a fine slide 33:50.</strong> Numeri presi dalla status page il 23 ottobre: ricontrollarli la mattina del talk (nodi, membri, TB, oggetti) e aggiornare la slide. Li leggo in fila senza fermarmi, tranne l'ultimo. Battuta: «Zero file persi, zero persone pagate. Il management è una chat.» Se sono lungo questa slide la salto: i numeri stanno comunque sulla status page.</div>
 </section>
 
-<!-- 25 · Lezioni -->
+<!-- 27 · Lezioni -->
 <section class="slide">
   <h2>Cosa direi a me stesso all'inizio</h2>
   <ul style="max-width:1050px;font-size:22px">
@@ -893,10 +919,10 @@ cd /opt/redundanet/docker &amp;&amp; docker compose -p redundanet \
     <li><strong>La topologia può mentire: misura i pacchetti.</strong></li>
     <li><strong>Una comunità progetta meglio di te.</strong></li>
   </ul>
-  <div class="notes"><strong>⏱ 1:15 · a fine slide 38:30.</strong> Le leggo tutte, ma ne commento tre. Validazione: una validate() bellissima che nessuno chiamava non proteggeva niente; un refuso nel manifest è arrivato su un nodo in 11 minuti. Pacchetti: per mesi ho creduto che la mesh fosse una mesh; un tcpdump su un nodo ha dimostrato che ogni byte passava dall'hub. Chiudo sull'ultima: il motivo per costruire una rete gestita da una comunità è che la comunità la migliora, ed è il filo che riporta a Cubbit. Battuta: «Le comunità progettano meglio di voi. Lo so perché l'idea migliore del progetto non è mia.»</div>
+  <div class="notes"><strong>⏱ 1:00 · a fine slide 34:50.</strong> Le leggo tutte, ma ne commento tre. Validazione: una validate() bellissima che nessuno chiamava non proteggeva niente; un refuso nel manifest è arrivato su un nodo in 11 minuti. Pacchetti: per mesi ho creduto che la mesh fosse una mesh; un tcpdump su un nodo ha dimostrato che ogni byte passava dall'hub. Chiudo sull'ultima: il motivo per costruire una rete gestita da una comunità è che la comunità la migliora, ed è il filo che riporta a Cubbit. Battuta: «Le comunità progettano meglio di voi. Lo so perché l'idea migliore del progetto non è mia.»</div>
 </section>
 
-<!-- 26 · Chiusura -->
+<!-- 28 · Chiusura -->
 <section class="slide">
   <h1 style="font-size:52px">Uno storage in cui si entra con una pull request.</h1>
   <p class="quote" style="margin-top:30px">Molto distribuito. Molto ridondante. Nessuno in mezzo.</p>
@@ -908,9 +934,9 @@ cd /opt/redundanet/docker &amp;&amp; docker compose -p redundanet \
       <dt>Contatti</dt><dd class="mono">alessandro@defilippo.me · defilippo.me · ptlug</dd>
       <dt>Stack</dt><dd>Python · Tahoe-LAFS · Tinc · GPG · Docker · GitHub Actions · fly.io</dd>
     </dl>
-    <div class="card accent"><h3>Domande benvenute</h3><p class="muted">Threat model e capability · perché non IPFS o Ceph · tinc vs WireGuard · perché un proxy non può fare da rendezvous · come funziona il censimento · cosa succede se muore un hub · quote senza accounting · cosa può fare un membro malintenzionato</p></div>
+    <div class="card accent"><h3>Domande benvenute</h3><p class="muted">Threat model e capability · perché non IPFS o Ceph · tinc vs WireGuard · perché un proxy non può fare da rendezvous · come funziona il censimento · cosa succede se muore un hub · quote senza accounting</p></div>
   </div>
-  <div class="notes"><strong>⏱ 0:30 · a fine slide 39:00.</strong> Sei minuti per le domande. Battuta di chiusura, prima di dire grazie: «Si entra con una pull request. Si esce anche con una pull request, ma finora nessuno l'ha aperta.» Riproporre la demo per le domande: volete vedermi spegnere un nodo? Se sono in anticipo uso il tempo per la demo del NAS. Ringraziare gli organizzatori e le persone che tengono su i nodi.</div>
+  <div class="notes"><strong>⏱ 0:30 · a fine slide 35:20.</strong> Nove minuti per le domande, se ho tenuto il ritmo. Battuta di chiusura, prima di dire grazie: «Si entra con una pull request. Si esce anche con una pull request, ma finora nessuno l'ha aperta.» Riproporre la demo per le domande: volete vedermi spegnere un nodo? Se sono in anticipo uso il tempo per la demo del NAS. Ringraziare gli organizzatori e le persone che tengono su i nodi.</div>
 </section>
 
 </div>
