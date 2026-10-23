@@ -1,8 +1,8 @@
 # RFCs
 
 Design documents for changes too large for a pull request description. Each
-one is numbered, proposed as a pull request, discussed there, and merged with
-one of three statuses:
+one is numbered, added by a pull request, discussed in a GitHub Discussions
+thread linked from the document, and carries one of three statuses:
 
 - **Draft**: under discussion; nothing in the code depends on it.
 - **Accepted**: the plan the maintainers intend to follow; milestones may

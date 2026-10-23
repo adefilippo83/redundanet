@@ -5,7 +5,7 @@ One binary on Windows, macOS and Linux, with a native storage engine.
 - Status: Draft
 - Date: 2026-10-23
 - Author: Alessandro De Filippo
-- Discussion: the pull request that adds this file
+- Discussion: https://github.com/adefilippo83/redundanet/discussions/132
 
 ---
 
