@@ -221,6 +221,7 @@ graph TD
 - [Configuration Reference](docs/configuration.md)
 - [Quotas and allocation](docs/quotas.md)
 - [Architecture Overview](docs/architecture.md)
+- [Design RFCs](rfcs/) (plans under discussion; `docs/` describes what runs today)
 
 ## Development
 
