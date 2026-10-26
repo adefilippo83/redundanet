@@ -3,44 +3,10 @@
 One binary on Windows, macOS and Linux, with a native storage engine.
 
 - Status: Draft
-- Date: 2026-10-23, revised 2026-10-26
+- Version: 3
+- Date: 2026-10-26
 - Author: Alessandro De Filippo
 - Discussion: https://github.com/adefilippo83/redundanet/discussions/132
-- Review: [0001-review-2026-10-25.md](0001-review-2026-10-25.md)
-
----
-
-## Changes in revision 2
-
-Revision 2 answers the hostile review of 2026-10-25, which confirmed 80
-findings: 5 blockers, 47 major, 28 minor. Finding ids below are the review's.
-Where the review offered alternatives, the choice taken is named so it can be
-overturned in the discussion.
-
-| Area | Findings | What changed | Choices taken |
-| --- | --- | --- | --- |
-| Keys and deletion | F01, F02, F09, F43 | The member key is never stored on a device; devices sign roots, descriptors and delete tokens; revocation records and their path to servers; one deletion invariant with server clocks and pending sets; two-phase deletion with a 30-day tombstone | Certifying and revoking need the phrase in hand; servers keep 10 previous root versions |
-| Root quorum | F03 | PutRoot confirmed by a majority of storage servers; cleanup refused below a guaranteed overlap; restore reports how many servers answered | |
-| Manifest absence | F04, F13 | Servers never delete on absence; grace measured on each server's clock; `leaving_since`, one state table, immutable member keys | |
-| Legacy backups | F05 | Step 3 imports the Tahoe client's aliases as legacy roots before the compose stack goes | |
-| Trust roots | F06, F07 | One offline operator key signs the manifest from phase 1; the hub mirror serves only signed objects; the release key rotates only through its own chain; a stolen-operator-key row | Signing in phase 1 rather than dropping the mirror; 90-day signature age |
-| Object identity | F17, F18, F19, G09, G14 | Encoding in the convergent key; canonical descriptor; partial and complete shares; one read per upload; cache rows carry engine and encoding; census carries k and n | Files uploaded before an encoding change no longer dedup against new uploads |
-| Quotas | F16, F20, G20, G21, G23 | Servers bound an owner at `quota_headroom` times a size-proportional share and the client holds the exact budget, said plainly; accounted size and an object ceiling; reserve sized to the largest server; declared contribution as the input | 4 KiB minimum per share; 1,000 objects per GB; validate warns rather than refuses on the reserve |
-| Repair | F15, F21, G19, G22, G24, G26, G27 | Non-owner writes only with a hub-signed repair task; down versus dead; a quiescence window; one scheduler; surplus released only after the holder checks; tombstones outlive purge; small networks; two bandwidth classes; encoding transitions accounted at zero | 72 hours to dead; 24 hours of quiescence; a quarter of the cap for service traffic |
-| Membership | F11, F12, F14, F40, G05 | Signed invites in a link that carries the network descriptor; the hub opens issues only and the repository's workflow makes the pull request; storage devices are manifest entries; sponsor and `legacy_pgp` records; what a fork needs | Invites expire in 7 days and serve one request |
-| Restore from the phrase | F22, F23, F24, G03 | The agent keeps the root registry from phase 1; migrated devices keep their Tahoe convergence secret; F16 split into an unattended restore test and a member-started phrase check; the phrase only on the device or through SSH | Agent registry rather than deterministic Tahoe keys |
-| Backup job | F33, F44, F56, G10, G11, G12, G13, G15, G16, G17 | Change time and file ids; per-file failures; a file-kinds table; names as bytes; a clocks paragraph; partial snapshots every run; safe restore writes; `Has` in the engine interface | Cloud placeholders skipped by default; hardlinks restored as copies; 1% rolling re-hash |
-| Migration | F08, F25, F26, F27, F28, F29, F38, F39, F52, F53 | Step 0 for hubs, a transitional manifest and identities; the sidecar's update path and healthcheck; `redundanet migrate-node` with rollback; G1 split into G1a and G1b; a straggler rule; targets with their hours-per-week basis; a pinned Tahoe requirements file | 120 days to retire Tahoe after G2, one 60-day extension; about 15 hours a week |
-| Transport and platforms | F10, F30, F31, F32, F34, F35, F36, F37, F58, G01, G02 | Path switching priced as owned code and the requirement relaxed to a resume within seconds; a TCP 443 relay fallback and IPv6; wire identity; the cipher chosen at G0; storage availability; the Tahoe bundle; two-stage self-update; one administrator step for unattended storage on macOS and Windows; no LAN binding and browser guards on the local page | Relaxed switching requirement; LAN binding dropped |
-| Community rules | F42 | A `COMMUNITY.md` template states the rules that rest on trust | 90 days of silence before a member is marked leaving |
-
-Not addressed in this revision, all minor: F41 (risk table and packaging
-disagree on signing), F48 (STUN candidates only), F50 (bridge port model),
-F51 (phase 1 introducer plumbing), F54 (two grids on one disk), F55 (logs only
-in memory), F57 (iroh's maturity is out of date), F59 (the MinIO row), F60
-(the restic credit), G04 (the public page's projection), G06 (the diagnostics
-bundle) and G25 (which k shares a restore uses). The roadmap image still shows
-a single G1.
 
 ---
 
@@ -272,8 +238,8 @@ or 2 scope; "later" is after the native engine ships.
 **Backup and restore**
 
 - F13. A member picks folders; the app backs them up on a schedule,
-  incrementally, deduplicated within the member's own data, with snapshots.
-  Must.
+  incrementally, deduplicated within the member's own data by whole file and
+  fixed 64 MiB chunk, with snapshots. Must.
 - F14. Snapshots are retained by a policy the member sets (for example daily
   for 30 days, monthly for a year); pruned objects are deleted from the grid.
   Must.
@@ -291,8 +257,8 @@ or 2 scope; "later" is after the native engine ships.
 **Health and operations**
 
 - F18. Each node reports liveness, free space, and a census of what it holds;
-  the hub aggregates them into a public status page with per-object placement
-  counts. Must.
+  the hub aggregates them into a public status page that shows counts of
+  objects per number of copies, never individual objects. Must.
 - F19. The network repairs under-placed objects without human action, and
   rebalances after a k-of-n change on the owners' own devices, without anyone
   else's action; the status page shows progress. Phase 2 for repair without
@@ -325,16 +291,16 @@ and a million as the design point.
 | Platforms | Windows 10+ x64; macOS 12+ on arm64 and x64; Linux glibc x64 and arm64 (Raspberry Pi 4 and 5, 64-bit OS). One static binary per target, no runtime to install |
 | Privileges | Install, run and update as an ordinary user. No kernel driver, no TUN device. A per-user service that starts at login, and at boot on Linux with lingering; on macOS and Windows a storage node that must run with nobody logged in takes one administrator step (see Service integration) |
 | Footprint | Agent idle under 100 MB RSS and under 1% CPU on a Pi 4; a storage node with 1M shares indexes them in SQLite and answers a census query in under 2 s without walking the disk |
-| Throughput | Upload and download bounded by the member's uplink, not by the app: erasure coding and encryption above 300 MB/s on a laptop, above 80 MB/s on a Pi 4 using its four cores; a relayed path above 50 Mbit/s on the hub's side |
+| Throughput | Upload bounded by the member's uplink and download by the k fastest holders' uplinks, not by the app: erasure coding and encryption above 300 MB/s on a laptop, above 80 MB/s on a Pi 4 using its four cores; a relayed path above 50 Mbit/s on the hub's side |
 | Transfers | Every upload and download resumable at segment granularity across restarts and network changes; backoff on a dead peer; a switch between relay and direct path resumes the transfer within seconds |
 | Durability | With k-of-n = 2-of-4 and placement on distinct members, any two servers lost at once lose nothing; repair starts within one hour of a server being declared dead and completes at the speed of the slowest surviving uplink, provided the reserve covers the lost server; when it does not, the page shows the shortfall |
 | Consistency | A member's root advances only by its own signed versions; two devices of one member never overwrite each other's snapshots (one root per device) |
 | Availability | Reads need k servers up; writes need n distinct servers up, or the write is marked under-placed and repaired later; the hub down means no new connections for peers without a cached direct path, nothing else |
 | Security | Ed25519 identities, authenticated encrypted transport, per-object keys, authenticated encryption on every segment, signed share ownership, signed releases verified before install |
-| Privacy | Servers learn storage indices, sizes, owner identities and timing; never file names, counts of files per folder, or content. The hub learns liveness and census summaries |
+| Privacy | Servers learn storage indices, sizes, owner identities and timing; never file names, counts of files per folder, or content. The hub learns the census, which names storage indices and owners, and per-device liveness; it publishes only the projection listed under Health |
 | Compatibility | The manifest schema is versioned; an agent refuses a manifest newer than it understands and updates itself; the share format on disk is versioned from day one |
-| Observability | Structured logs with a ring buffer visible in the local page; a status endpoint per node; the hub's status page and its join endpoint are the only public surfaces |
-| Supportability | One command (or button) produces a diagnostic bundle: versions, manifest revision, peers reachable, last errors, disk check. No secrets in it |
+| Observability | Structured logs in rotating files in the data directory, ten files of 10 MB, shown in the local page; a crash handler that writes the panic to its own file; start failures also sent to the platform's log (launchd's log file, the Windows event log, journald); a status endpoint per node; the hub's status page and its join endpoint are the only public surfaces |
+| Supportability | `redundanet diagnostics`, or a button, writes a bundle file the member sends by hand; nothing is uploaded. It works from the log files when the agent is down. Its contents are an allowlist: versions, manifest revision, peers reachable, error kinds and counts, disk check. File and folder names count as secrets, as keys do: paths appear as the backup set's label plus a hash |
 
 ### User journeys
 
@@ -461,11 +427,12 @@ milestones. Nothing in phase 2 is on the critical path of phase 1.
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | The rewrite takes two years and the live network gets nothing meanwhile | High if the engine comes first | Community loses interest | Phase order: the binary ships on Tahoe first; the engine is behind an interface and never on the critical path |
-| The transport library churns or dies (iroh is young; libp2p is heavy) | Medium | Rework of one layer | Transport behind an interface with a loopback-bridge fallback; the spike picks with numbers, not opinions |
+| The transport library churns or dies, or our own path-selection layer is harder than priced | Medium | Rework of one layer | Transport behind an interface with a loopback-bridge fallback; the spike measures an iroh endpoint beside quic-go plus pion and picks with numbers; iroh has had stable 1.x releases since mid-2026, and its Go binding is rejected because it needs cgo, which the static binary excludes |
 | A bug in the native engine loses data | Low with care, catastrophic | Trust gone | Tahoe keeps the old grid until phase 3; integrity trees on every segment; a restore test is a product feature; the maintainer's own backups go first |
 | A deletion path removes live data: a race between a member's devices, a stale root view, a manifest slip, a migration step | Medium without the rules under Deletion, catastrophic | Trust gone | One invariant for deletion; server-side clocks and pending sets; root quorums; two-phase deletion with a 30-day tombstone; never delete on manifest absence; legacy roots imported before a compose stack goes |
 | Server-side quotas are gamed by a member with many devices | Low (vetted members) | Unfairness | Quotas are per member, devices are certified by the member key; servers refuse past `quota_headroom` times the budget; the status page shows per-member usage from servers |
-| Windows: antivirus flags the binary, service install needs admin, paths and locks differ | Medium | Support load | Signed releases (Authenticode) from the start; scheduled task at logon instead of a service; CI runs the test suite on Windows |
+| Windows: antivirus flags the binary or the Tahoe bundle, service install needs admin, paths and locks differ | Medium | Support load | Authenticode and Developer ID signing decided at G0 and in place before G1a, through a cloud or hardware-held key; scheduled task at logon instead of a service; CI runs the test suite on Windows |
+| Signing costs recur and depend on two vendors' policies | Certain | A yearly bill; a policy change can block releases | A budget line decided at G0; the release key, not the vendor signature, is what agents trust, so a lapsed vendor certificate costs a warning, not an update path |
 | A backup looks complete when it is not: macOS privacy grants missing, Desktop and Documents held as cloud placeholders by OneDrive or iCloud | High on default Mac and Windows installs | Members lose files they believed backed up | Per-folder access probe in the wizard; permission skips mark the run incomplete; placeholders skipped and counted with a per-set opt-in; a stable Developer ID so macOS grants survive updates |
 | Relay cost grows with members behind symmetric NAT | Medium | Hub bandwidth bill | Direct paths preferred; relay metered on the status page; a community can add relays as it adds hubs today |
 | Loss of the recovery phrase loses everything | Certain for some members | Their data | The phrase is shown once and verified by typing it back; the app nags until a restore test passes; no escrow, by principle |
@@ -481,16 +448,10 @@ answer in the Design part.
 - [ ] Transport: iroh, libp2p, or tsnet with a self-hosted Headscale
       (recommends iroh if Rust, pion plus a self-hosted relay if Go; the spike
       decides).
-- [x] PGP keys: kept only as an optional `legacy_pgp` record for continuity
-      with RedundaNet 2; the vouch is the signed invite. Revision 2 decided.
 - [ ] Grace period before a removed member's shares are deleted (recommends
       30 days).
 - [ ] Default k-of-n for new networks (recommends 2-of-4 until a network has
       8 storage nodes, then 3-of-6).
-- [x] Join path: the hub verifies the invite and opens an issue with an
-      issues-only token; the repository's workflow makes the pull request, so
-      the app never needs a GitHub token and the hub cannot push. Revision 2
-      decided.
 - [ ] Manifest signing threshold: one operator key from phase 1 is decided;
       when to require two of three (recommends as soon as a network has three
       operators, since a single stolen operator key has no clean recovery).
@@ -661,6 +622,8 @@ hubs:
     status: https://status.example.org
     join: https://hub.example.org/join
     key: <device public key>
+    introducer_furl: pb://...@tcp:127.0.0.1:40001/introducer   # phase 1 only
+    introducer_port: 40001                                      # phase 1 only
 members:
   - name: alessandro
     key: <member signing public key>
@@ -683,9 +646,10 @@ A client-only member carries `contribution_gb: 0`, `allocation_gb`, and
 it.
 
 What is deliberately not in it: client devices (certified by member keys,
-never listed), VPN addresses (there is no VPN), introducer furls (phase 1 keeps
-them in a side file; the native engine has no introducer), and PGP fingerprints
-(optional vouch records only).
+never listed), VPN addresses (there is no VPN), and PGP fingerprints (an
+optional `legacy_pgp` record only). The introducer's FURL and bridge port sit in
+the hub entry for phase 1 only and leave with the adapter, since the native
+engine has no introducer.
 
 **Signature.** A manifest takes effect when an operator signs it, not when it
 is merged. After a merge the operator runs `redundanet manifest sign`, which
@@ -791,8 +755,12 @@ tinc, the VPN addresses in the manifest and the two-hub arrangement that
 existed because a proxied host could not see real addresses.
 
 **Connecting to a peer.** Each device keeps one long-lived connection to a hub
-relay and publishes there the address candidates it learns from STUN-style
-reflection. To reach a peer, a device asks the relay for the peer's candidates,
+relay and publishes there its address candidates, gathered four ways: host
+addresses on its own interfaces, so two devices on one LAN connect directly
+instead of hairpinning through the relay; the public address and port the hub
+reflects back, STUN-style; a mapping requested from the router with UPnP,
+NAT-PMP or PCP where the router allows it; and global IPv6 addresses. Port
+mapping and IPv6 are best effort. To reach a peer, a device asks the relay for the peer's candidates,
 starts sending through the relay immediately, and attempts a direct path at the
 same time (simultaneous open through both NATs). When the direct path answers,
 traffic moves to it; when it dies, traffic falls back to the relay. This is the
@@ -859,7 +827,20 @@ given. The manifest assigns each storage device a loopback port; the agent
 listens on `127.0.0.1:<port>` for every peer and tunnels each accepted TCP
 connection to that peer's Tahoe over a mesh stream. Each Tahoe server
 advertises `tub.location = tcp:127.0.0.1:<its own port>`, and the introducer
-is reached the same way through the hub's port. Tahoe keeps its own tub keys,
+is reached the same way through the hub's port.
+
+The agent writes Tahoe's listening side as explicitly as the hint:
+`tub.port = tcp:<port>:interface=127.0.0.1` and a loopback-only `web.port`, so
+a laptop never exposes its tub or its web API to the LAN, as today's writer
+would by binding every interface; and `force_foolscap = true`, so Tahoe's newer
+HTTP storage protocol does not open a second path the bridge does not carry.
+Ports come from a reserved range and `redundanet validate` keeps them unique
+across the manifest; an agent that finds another program on one of them
+reports the conflict on the local page instead of guessing. From step 1 every
+server advertises both its VPN hint and its bridge hint, and Tahoe uses
+whichever connects first, so some old clients reach some servers through the
+bridge before step 2; both paths reach the same tub, so the race is harmless
+and is stated so it surprises nobody. Tahoe keeps its own tub keys,
 so the storage trust is unchanged, and Tahoe needs no modification. The bridge
 is deleted in phase 3.
 
@@ -1271,9 +1252,14 @@ issue time and no validity window, so a Pi that boots without a real-time
 clock cannot fail them. Snapshot times are the device's own clock and are shown
 as such.
 
-**Chunking.** Files above 64 MiB are split into 64 MiB chunk objects, and the
-directory entry holds the list of capabilities. This bounds the cost of a lost
-connection: on a 0.5 Mbit/s uplink a 32 MiB share takes about nine minutes, and
+**Chunking.** Files above 64 MiB are split into 64 MiB chunk objects at fixed
+offsets, and the directory entry holds the list of capabilities. Dedup is
+therefore per whole file and per fixed chunk, not content-defined: an edit in
+place re-uploads only the chunks it touched, but an insertion shifts every
+later chunk, so a 2 GB file that grows at its start each day is uploaded again
+each day. That is a deliberate first-version choice for simplicity, and the
+entry format reserves a content-defined chunk kind for a later version. The
+chunks bound the cost of a lost connection: on a 0.5 Mbit/s uplink a 32 MiB share takes about nine minutes, and
 `PutShare` resumes by offset for a share the server already holds partially,
 so no transfer restarts from zero.
 
@@ -1311,7 +1297,10 @@ removed by another device of the same member running cleanup.
 
 **Restore.** From any device of the member: list roots, pick a device and a
 snapshot, pick folders or files. Directory objects are fetched down the chosen
-path only; each file is rebuilt from any k shares, verified block by block and
+path only. Each segment is requested from the k holders with the best recent
+throughput plus one spare; the first k blocks that verify are kept and the
+rest cancelled, so one slow home uplink cannot pace a restore. Each file is
+rebuilt from those k shares, verified block by block and
 against the ciphertext hash, decrypted, checked against the key in its
 capability by recomputing the convergent key from the plaintext, and only then
 written with its mtime; a mismatch is reported and never written as the file.
@@ -1478,6 +1467,15 @@ running. Per server: shares, bytes, free space, last integrity pass, relay
 traffic. Overall: the same verdict logic as today, with one fewer excuse for a
 stale number.
 
+**The public projection.** The page and `status.json` are public, so what they
+carry is a list, not whatever the collector holds. Public: per member, usage
+against allocation, as today, and the dates of the last backup and the last
+verified restore at day granularity, which a member can hide; per server,
+the figures above; overall, counts of objects per number of copies. Kept on
+the hub: storage indices, owners per object, per-device liveness and address
+candidates. Kept on the member's own device: file names, folders and anything
+inside a snapshot. A fork inherits the same list.
+
 ### Hub
 
 `redundanet hub` is the same binary on a Linux server, listed in the manifest
@@ -1504,6 +1502,10 @@ in the manifest.
 
 **Phase 1 extra.** The hub also supervises the Tahoe introducer as a child
 process, reachable through the loopback bridge; it is removed with the adapter.
+Its FURL is published in the hub's manifest entry in the two-hint form, the
+VPN address and the bridge port, which step 1 introduces, so a native agent
+can write `introducer.furl` from the signed manifest alone. The fly.io
+introducer leaves at G1b, as the migration plan says.
 
 **State.** SQLite for the placement table, history and roll-ups, as today; the
 issues-only GitHub token and the hub's device key are the only secrets. Nothing on the hub is
@@ -1532,7 +1534,8 @@ another local user as adversaries.
 start, progress), `/settings` (bandwidth and schedule, retention, storage
 directory, roles, hubs), `/devices` (list, certify, revoke), `/join` (build and
 submit the request, poll approval), `/update` (available, apply, history),
-`/logs` (ring buffer), `/diagnostics` (the bundle, with no secrets).
+`/logs` (from the log files), `/diagnostics` (the bundle described under
+Supportability).
 
 **Web page.** Server-rendered HTML with little script, in the visual language
 of the status page. First-run wizard: name,
@@ -1562,12 +1565,19 @@ can make a single agent run a binary. If the release key is lost rather than
 stolen, there is no automatic recovery: members install the next binary by
 hand, announced out of band, which is the price of that separation. The key
 lives offline and CI never holds it; CI builds and checksums, and the
-maintainer signs the checksums. Code signing
-for the operating systems is a separate decision with a cost: Apple
-notarization needs a developer account, Windows needs an Authenticode
-certificate; without them users click through a warning once. The
-recommendation is to pay for both before inviting non-technical members,
-because the warning is the first thing they see.
+maintainer signs the checksums.
+
+**Operating system signing** is decided at G0, with a budget line, because it
+recurs and shapes CI. Apple notarization needs a Developer ID from the Apple
+Developer Program, a yearly fee; an Authenticode certificate now requires its
+key on hardware or in a cloud signing service, so CI signs through that service
+rather than holding a key file. Without them the first run is worse than one
+warning: macOS 15 no longer lets a user open an unsigned app from the Finder
+menu, and the member has to find "Open Anyway" in System Settings, Privacy and
+Security; Windows SmartScreen blocks it until the member chooses "Run anyway".
+The recommendation is to pay for both before G1a, because the first member on
+another platform is also the first to see that screen. The spike checks the
+PyInstaller Tahoe bundle on Windows and on macOS arm64, signed and unsigned.
 
 **The Tahoe bundle (phase 1).** The Tahoe child process ships as a second
 asset per target, built with PyInstaller on the matching CI runner from the
@@ -1758,7 +1768,11 @@ members', because they run on members' machines.
    device when the member chooses; old Tahoe snapshots stay readable through
    the adapter. The status page shows both grids. Members re-upload from their
    sources at their own pace, within their quota, which they can meet because
-   the Tahoe shares still count only against the old grid. A member who needs
+   the Tahoe shares still count only against the old grid. Separate accounting
+   creates no physical room, though: both grids share one disk, so the native
+   server's free-space floor sits above Tahoe's reserved space, and the status
+   page flags a server whose free space is below the native contribution it
+   backs, which is where migration would stall. A member who needs
    room during the overlap draws on the reserve or on a sponsor, recorded in
    the manifest until the old grid is gone.
 5. **Retire Tahoe (phase 3).** At G2 the operator announces a date, 120 days
@@ -1794,7 +1808,7 @@ languages themselves.
 | Static binary size | 15 to 25 MB | 5 to 10 MB |
 | Concurrency mistakes in storage code | Caught by tests and the race detector | Caught by the compiler |
 | Learning cost for the maintainer | Weeks | Months |
-| Prior art to borrow from | Syncthing (relays, discovery, device IDs, self-update), restic (chunking, repository index), rclone (backends, bandwidth limits) | iroh itself; fewer end-user tools of this shape |
+| Prior art to borrow from | Syncthing (relays, discovery, device IDs, self-update), restic (repository index, snapshots), rclone (backends, bandwidth limits) | iroh itself; fewer end-user tools of this shape |
 
 What does not carry over from Python in any case: the code. The monitor's
 logic and its tests are the best guide for the collector; the census delta
@@ -1819,6 +1833,10 @@ node. Measured against tinc on the same machines:
   transfer in flight, and a switch between relay and direct path mid-transfer.
 - A network that blocks UDP, reached through the TCP 443 relay, and an
   IPv6-only network.
+- Two devices on the same LAN, which must connect directly, and a pair with
+  only IPv6 between them.
+- An iroh endpoint measured beside quic-go plus pion on the same pairs, so the
+  fallback is judged on numbers.
 - AES-256-GCM, ChaCha20-Poly1305 and BLAKE3 throughput on the Pi 4 on one core
   and on four, which picks the cipher.
 
@@ -1834,20 +1852,21 @@ why the spike comes first.
 pace; they are the plan, not a promise, and each gate is a test the live
 network passes.
 
-![The binary ships in February 2027; Tahoe is gone by October 2027](images/0001-roadmap.png)
+![The binary ships in February 2027; Tahoe is gone by the end of 2027](images/0001-roadmap.png)
 
-The accent marks G1, the first date members on other platforms can install;
-everything after it improves the network without blocking anyone. Revision 2
-splits G1 in two, which the image predates: G1a is the date in the image, and
-G1b follows at the pace of members' node migrations without blocking phase 2.
+The accent marks G1a, the first date members on other platforms can install;
+everything after it improves the network without blocking anyone. G1b follows
+at the pace of members' node migrations and runs beside phase 2 rather than
+before it. The image is generated by `images/0001-roadmap.py`, so a change of
+dates is an edit to that script.
 
 | Gate | Passes when | Target |
 | --- | --- | --- |
-| G0 | The spike's decision page exists with the numbers above | December 2026 |
+| G0 | The spike's decision page exists with the numbers above | End of November 2026 |
 | G1a | A macOS or Windows member is in the live network, backs up through the bridge and passes a restore test | February 2027 |
 | G1b | Tinc is gone from every node and the v2 half of the manifest is dropped | May 2027, at one node migration a week |
-| G2 | The maintainer's own backups have run on the native engine for a month with weekly restore tests passing | Summer 2027 |
-| G3 | No Tahoe process runs on the network and the adapter is deleted from the code | 120 days after G2, 180 at most |
+| G2 | The maintainer's own backups have run on the native engine for a month with weekly restore tests passing | August 2027 |
+| G3 | No Tahoe process runs on the network and the adapter is deleted from the code | End of 2027: 120 days after G2, 180 at most |
 
 The targets assume one maintainer at about 15 hours a week. Full-time work
 shortens the engineering steps by roughly a factor of three; it does not
@@ -1863,7 +1882,7 @@ the 120 days before G3.
 | Keep Tahoe forever behind the agent (stop after phase 1) | No ownership, so quotas stay on trust; no repair without the owner; a dormant upstream carried indefinitely | It is the fallback if phase 2 stalls, and the network would still be cross-platform |
 | Tailscale with a self-hosted Headscale as the mesh | Mature NAT traversal, but the control server decides who is in the network, which contradicts the no-central-authority principle | The design of rendezvous plus relay with direct-path upgrade |
 | Syncthing-style full replication | Every copy costs 1x; four copies cost 4x against 2x for 2-of-4 | Relays, discovery, device identities, self-update, the local web UI |
-| restic or similar over the mesh | Excellent encryption, dedup and snapshots, but a repository lives on one backend; cross-peer redundancy would be whole copies again, and there is no ownership accounting | The chunking and repository-index ideas behind the backup job |
+| restic or similar over the mesh | Excellent encryption, dedup and snapshots, but a repository lives on one backend; cross-peer redundancy would be whole copies again, and there is no ownership accounting | The repository index and the snapshot model behind the backup job; content-defined chunking is reserved for a later format version |
 | libp2p | A complete transport, but heavy for one protocol, and it brings nothing for storage | Candidate transport if quic-go plus pion disappoints |
-| Garage, SeaweedFS, MinIO | Object stores for trusted clusters; no client-side encryption, replication rather than erasure coding across homes | Garage's experience with geo-distributed home nodes is worth reading |
+| Garage, SeaweedFS, MinIO | Designed for one trusted cluster with keys held by the servers. Garage replicates; MinIO and SeaweedFS erasure-code within a cluster, MinIO with the same Reed-Solomon library this design picks. None accounts storage per owner across untrusted homes | Garage's experience with geo-distributed home nodes is worth reading |
 | Tahoe's newer HTTP storage protocol | Replaces Foolscap but keeps the introducer, leases and mutable files; the parts that cost the most stay | Its CBOR message design |
