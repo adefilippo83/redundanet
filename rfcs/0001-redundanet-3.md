@@ -94,7 +94,7 @@ failures live, and the glue is what forbids other platforms.
    submit a request, wait for a human to approve. No GPG, no CLI, no Git
    knowledge.
 3. Back up folders from any device, restore them on any device with the
-   recovery phrase and nothing else.
+   recovery phrase and the network's public descriptor, and no other secret.
 4. Contribute a disk and receive an allocation in proportion, measured and
    bounded by the storage servers, not by trust.
 5. Durability that is measured and repaired by the network itself, including
@@ -196,8 +196,8 @@ or 2 scope; "later" is after the native engine ships.
 **Identity and membership**
 
 - F1. The app generates the member's key on first run and shows a recovery
-  phrase once; the phrase alone restores identity and data on another device.
-  Must.
+  phrase once; the phrase and the network's public descriptor restore identity
+  and data on another device, with no other secret. Must.
 - F2. A member can authorize additional client devices without a change to
   the manifest. A storage device is a manifest entry, so adding or replacing
   one is a one-line request the app submits. Must.
@@ -226,12 +226,14 @@ or 2 scope; "later" is after the native engine ships.
   while running is reported, never replaced by the system disk (the October
   2026 incident must be impossible). Must.
 - F10. Allocation per member = contribution × k/n minus the community reserve,
-  computed from the manifest; the client stops at it, servers refuse writes
-  past `quota_headroom` times it, and the status page shows usage as servers
+  computed from the manifest; the client stops at it, servers refuse share
+  bytes past `quota_headroom` times the matching budget, and the status page
+  shows usage as servers
   count it. Must (bounded by servers in phase 2, computed and client-enforced
   in phase 1).
-- F11. Placement puts the n shares of an object on n distinct servers, and on
-  distinct members where possible. Must.
+- F11. Placement puts the n shares of an object on n distinct servers where
+  the network has them, never on fewer than k, and on distinct members where
+  possible. Must.
 - F12. Every object is checkable and repairable from k shares by any node,
   without the owner's keys. Phase 2.
 
@@ -244,7 +246,8 @@ or 2 scope; "later" is after the native engine ships.
   for 30 days, monthly for a year); pruned objects are deleted from the grid.
   Must.
 - F15. Restore any snapshot, whole or by folder, on any device of the member,
-  from the recovery phrase alone. Must.
+  from the recovery phrase and the network's public descriptor, with no other
+  secret. Must.
 - F16. Two checks, kept apart on purpose. F16a: a sample restore the app runs
   on its own every month from the device's stored keys, on any device that
   backs up, headless ones included, reported to the status page. F16b: "check
@@ -295,7 +298,7 @@ and a million as the design point.
 | Transfers | Every upload and download resumable at segment granularity across restarts and network changes; backoff on a dead peer; a switch between relay and direct path resumes the transfer within seconds |
 | Durability | With k-of-n = 2-of-4 and placement on distinct members, any two servers lost at once lose nothing; repair starts within one hour of a server being declared dead and completes at the speed of the slowest surviving uplink, provided the reserve covers the lost server; when it does not, the page shows the shortfall |
 | Consistency | A member's root advances only by its own signed versions; two devices of one member never overwrite each other's snapshots (one root per device) |
-| Availability | Reads need k servers up; writes need n distinct servers up, or the write is marked under-placed and repaired later; the hub down means no new connections for peers without a cached direct path, nothing else |
+| Availability | Reads need k servers up; writes need n distinct servers up, or the write is marked under-placed and repaired later; every hub down means no new connections for peers without a cached direct path, no repair scheduling and no status page until one returns; stored data and existing transfers are untouched |
 | Security | Ed25519 identities, authenticated encrypted transport, per-object keys, authenticated encryption on every segment, signed share ownership, signed releases verified before install |
 | Privacy | Servers learn storage indices, sizes, owner identities and timing; never file names, counts of files per folder, or content. The hub learns the census, which names storage indices and owners, and per-device liveness; it publishes only the projection listed under Health |
 | Compatibility | The manifest schema is versioned; an agent refuses a manifest newer than it understands and updates itself; the share format on disk is versioned from day one |
@@ -326,8 +329,9 @@ days on my uplink at the limit I set; the page shows progress, what is waiting,
 and that each file is on four servers. From then on it runs every 15 minutes
 and uploads what changed.
 
-**Restore on a new laptop.** The old laptop is gone. I install the app, choose
-"I already have a recovery phrase", type the twelve words. It finds my roots on
+**Restore on a new laptop.** The old laptop is gone. I install the app, open
+the network link again, choose "I already have a recovery phrase", type the
+twelve words. It finds my roots on
 the network and lists my devices and snapshots. I pick last Tuesday and a
 folder, and get it back, with the hashes verified.
 
@@ -409,7 +413,7 @@ owner, deletion without leases, census from the server index. Runs as a second
 grid on the same agents while Tahoe keeps serving the old one. Exit: the
 maintainer's own backups run on it for a month with weekly restore tests.
 
-**Phase 3, migration (1 to 2 months).** Members re-upload into the new grid at
+**Phase 3, migration (4 months, 6 at most).** Members re-upload into the new grid at
 their own pace; the status page shows both; Tahoe is switched off per node when
 its member has moved, then removed from the binary. Exit: no Tahoe process on
 the network.
@@ -430,12 +434,12 @@ milestones. Nothing in phase 2 is on the critical path of phase 1.
 | The transport library churns or dies, or our own path-selection layer is harder than priced | Medium | Rework of one layer | Transport behind an interface with a loopback-bridge fallback; the spike measures an iroh endpoint beside quic-go plus pion and picks with numbers; iroh has had stable 1.x releases since mid-2026, and its Go binding is rejected because it needs cgo, which the static binary excludes |
 | A bug in the native engine loses data | Low with care, catastrophic | Trust gone | Tahoe keeps the old grid until phase 3; integrity trees on every segment; a restore test is a product feature; the maintainer's own backups go first |
 | A deletion path removes live data: a race between a member's devices, a stale root view, a manifest slip, a migration step | Medium without the rules under Deletion, catastrophic | Trust gone | One invariant for deletion; server-side clocks and pending sets; root quorums; two-phase deletion with a 30-day tombstone; never delete on manifest absence; legacy roots imported before a compose stack goes |
-| Server-side quotas are gamed by a member with many devices | Low (vetted members) | Unfairness | Quotas are per member, devices are certified by the member key; servers refuse past `quota_headroom` times the budget; the status page shows per-member usage from servers |
+| Server-side quotas are gamed by a member with many devices | Low, since members are vetted | Unfairness | Quotas are per member, devices are certified by the member key; servers refuse past `quota_headroom` times the budget; the status page shows per-member usage from servers |
 | Windows: antivirus flags the binary or the Tahoe bundle, service install needs admin, paths and locks differ | Medium | Support load | Authenticode and Developer ID signing decided at G0 and in place before G1a, through a cloud or hardware-held key; scheduled task at logon instead of a service; CI runs the test suite on Windows |
 | Signing costs recur and depend on two vendors' policies | Certain | A yearly bill; a policy change can block releases | A budget line decided at G0; the release key, not the vendor signature, is what agents trust, so a lapsed vendor certificate costs a warning, not an update path |
 | A backup looks complete when it is not: macOS privacy grants missing, Desktop and Documents held as cloud placeholders by OneDrive or iCloud | High on default Mac and Windows installs | Members lose files they believed backed up | Per-folder access probe in the wizard; permission skips mark the run incomplete; placeholders skipped and counted with a per-set opt-in; a stable Developer ID so macOS grants survive updates |
 | Relay cost grows with members behind symmetric NAT | Medium | Hub bandwidth bill | Direct paths preferred; relay metered on the status page; a community can add relays as it adds hubs today |
-| Loss of the recovery phrase loses everything | Certain for some members | Their data | The phrase is shown once and verified by typing it back; the app nags until a restore test passes; no escrow, by principle |
+| Loss of the recovery phrase loses everything | Certain for some members | Their data | The phrase is shown once and verified by typing it back; the page shows the date of the last verified restore and suggests the phrase check at most once a quarter; no escrow, by principle |
 | One maintainer | Certain | Bus factor | Written design (this document), CI that gates releases, the fork kit so a community can carry on with the code |
 | Tahoe dormant until phase 3 | Certain | Known bugs stay | Already lived with; the base-image patch and pins stay until Tahoe is removed |
 
@@ -471,7 +475,9 @@ One binary, `redundanet`, runs in three modes: **agent** on every member
 device (client role, storage role, or both), **hub** on a server (relay,
 manifest mirror, status page, join endpoint), and **CLI**, which only talks to
 the local agent's API. Everything a node does happens inside the one agent
-process; there are no containers, no sidecars and no external daemons.
+process, with the phase 1 Tahoe child as the one temporary exception; there are
+no containers and no external daemons, and the sidecar container of migration
+step 1 packages that same agent.
 
 ![One binary, three modes: the hub introduces and relays, never stores or decides](images/0001-architecture.png)
 
@@ -516,13 +522,14 @@ never see a key, a name or a plaintext byte.
 ### Identity and keys
 
 A member is a 128-bit seed, shown once as a 12-word recovery phrase.
-Everything else is derived from it or certified by it, so the phrase alone
-restores a member on a new device, and nothing but the phrase can.
+Everything else is derived from it or certified by it, so the phrase and the
+public network descriptor restore a member on a new device, and no other
+secret is needed.
 
 | Key | Derived how | Used for | Lives where |
 | --- | --- | --- | --- |
 | Member signing key (Ed25519) | HKDF(seed, "sign") | Member-level acts only: signs the join request, certifies devices, revokes devices | Nowhere at rest: derived from the phrase when one of those acts needs it, then erased from memory |
-| Member secret (32 bytes) | HKDF(seed, "secret") | Derives the convergence secret (dedup only within the member's own data) and the key that encrypts root records. In phase 1, a device migrated from a compose stack keeps its Tahoe client's own convergence secret for its backups (see the Tahoe adapter) | Every device of the member, encrypted at rest |
+| Member secret (32 bytes) | HKDF(seed, "secret") | Derives the convergence secret, which dedups only within the member's own data, and the key that encrypts root records. In phase 1, a device migrated from a compose stack keeps its Tahoe client's own convergence secret for its backups (see the Tahoe adapter) | Every device of the member, encrypted at rest |
 | Device key (Ed25519) | Random per device | Transport identity on the mesh; signs every storage request, the device's own root record, the descriptors it uploads and the delete tokens it issues | That device only |
 | Device certificate | Signed by the member signing key over (network name, device public key, member public key, roles, issued at, serial) | Proves to servers and peers that a device acts for a listed member | Presented on connect; stored by servers beside every descriptor and root it vouches for |
 
@@ -587,7 +594,7 @@ passphrase, as today, which means whoever owns the Pi's disk can read the
 member's data; the member signing key is never on it, so they still cannot
 certify, revoke or reach other devices' roots.
 
-**Display.** A member's identity is shown as a 10-group code of the signing
+**Display.** A member's identity is shown as a ten-group code of the signing
 public key; operators compare it against the join request. PGP keys are no
 longer required; a member who has one may add a PGP signature of their member
 key to the join request for continuity with RedundaNet 2, and the manifest
@@ -610,7 +617,7 @@ network:
   grace_days: 30          # before a removed member's shares are deleted
   min_version: 3.0.0      # agents older than this update before connecting
   signature_max_age_days: 90
-  quota_headroom: 2       # servers refuse an owner past this multiple of their share
+  quota_headroom: 2       # servers refuse an owner past this multiple of their budget on that server
   objects_per_gb: 1000    # object ceiling per allocated GB
   repair_after_hours: 72  # a server silent this long is dead and its shares are re-placed
 operators:                # keys whose signature makes a manifest take effect
@@ -618,18 +625,18 @@ operators:                # keys whose signature makes a manifest take effect
     key: <operator public key>
 hubs:
   - name: hub-hetzner
-    relay: 2.29.46.249:4433
+    relay: hub.example.org:4433
     status: https://status.example.org
     join: https://hub.example.org/join
     key: <device public key>
-    introducer_furl: pb://...@tcp:127.0.0.1:40001/introducer   # phase 1 only
+    introducer_furl: pb://...@tcp:10.100.0.2:3458,tcp:127.0.0.1:40001/introducer   # phase 1 only; the VPN hint leaves at G1b
     introducer_port: 40001                                      # phase 1 only
 members:
   - name: alessandro
     key: <member signing public key>
     contribution_gb: 1800
     vouched_by:           # the invite and confirmation, verifiable by anyone
-      - {member: ptlug, invite_sig: <signature>, confirm_sig: <signature>}
+      - {member: ptlug, device_cert: <the inviter's device certificate>, invite_sig: <signature>, confirm_sig: <signature>}
     legacy_pgp: {fingerprint: <40 hex>, signature: <over the member key>}   # optional
     joined: 2025-03-01
     status: active        # active | leaving
@@ -646,8 +653,8 @@ A client-only member carries `contribution_gb: 0`, `allocation_gb`, and
 it.
 
 What is deliberately not in it: client devices (certified by member keys,
-never listed), VPN addresses (there is no VPN), and PGP fingerprints (an
-optional `legacy_pgp` record only). The introducer's FURL and bridge port sit in
+never listed), VPN addresses, since there is no VPN, and PGP fingerprints,
+which survive only as an optional `legacy_pgp` record. The introducer's FURL and bridge port sit in
 the hub entry for phase 1 only and leave with the adapter, since the native
 engine has no introducer.
 
@@ -707,8 +714,10 @@ Only then does the hub open a GitHub issue carrying the request, the invite
 and the confirmation, with a token that can open issues and nothing else. The
 repository's own workflow, as today, turns the issue into the pull request; CI
 verifies every signature and the schema; a human merges and the operator
-signs. `vouched_by` records the invite and the confirmation, so the vouch graph
-is signatures, not typed names. The issue form stays as a fallback for an
+signs. `vouched_by` records the invite and the confirmation together with the
+inviter's device certificate, so anyone with the manifest can verify both
+without knowing the device in advance, and the vouch graph is signatures, not
+typed names. The issue form stays as a fallback for an
 applicant who prefers it.
 
 **Storage devices.** Client devices are certified locally and never listed. A
@@ -728,7 +737,7 @@ is still there. One state table governs every component:
 | State | Connect | Read own data | Write, repair on their behalf | Shares on servers |
 | --- | --- | --- | --- | --- |
 | `active` | yes | yes | yes | kept |
-| `leaving` | yes | yes, to take their data out | refused | kept until the grace has run on the server's own clock |
+| `leaving` | yes | yes, to take their data out | writes refused; repair on their behalf continues, so their data is still there if they return | kept until the grace has run on the server's own clock |
 | absent from the manifest | refused at the handshake | no | refused | kept until the grace has run on the server's own clock (see Health) |
 
 **Member keys are immutable.** `redundanet validate` refuses a change to the
@@ -801,8 +810,9 @@ device that no longer qualifies is closed.
 
 **Streams and messages.** ALPN `redundanet/1`. One bidirectional stream per
 request, framed as length-prefixed CBOR messages; large payloads (shares,
-segments) stream after the header. QUIC gives flow control, multiplexing and
-connection migration, so a laptop that changes network keeps its transfers.
+segments) stream after the header. QUIC gives flow control and multiplexing;
+a laptop that changes network resumes its transfers within seconds through the
+path layer described under Connecting to a peer.
 
 **Relay.** The hub's relay forwards packets between two authenticated devices
 and sees only QUIC ciphertext, because the QUIC session is end to end between
@@ -896,7 +906,8 @@ the process, and implements the interface over Tahoe's local web API:
   list a member's directories and a device holding only the seed could not
   find them. The agent keeps the registry itself from phase 1: the root record
   is the one described under Mutable state, signed by the device and encrypted
-  under the member secret, and its ciphertext carries the capability of the
+  under the root key derived from the member secret, and its ciphertext carries
+  the capability of the
   device's Tahoe snapshot list. Root records go to the agents that run beside
   every storage node, with the same quorum rules, so a new laptop with the
   phrase finds every root of the member in phase 1, and phase 2 changes only
@@ -1042,9 +1053,11 @@ from a meter each member runs.
 **Who may store what.** A `PutShare` arrives on a stream authenticated by a
 device certificate. The server checks, in order: the device chains to an
 active member; the descriptor's signature is valid and its owner is an active
-member; the share root matches the descriptor; the owner is under the
-per-server cap on this server; the server holds no share with that number for that storage
-index, or holds it partial and this request resumes it. A share whose
+or leaving member; the share root matches
+the descriptor; the owner is under the per-server cap on this server; the
+server holds no share with that number for that storage index, holds it
+partial and this request resumes it, or holds it complete and answers success
+without moving a byte. A share whose
 descriptor hash differs from the one the server already holds for that storage
 index is refused. A server holds at most one share number of an object, except
 in a network that lists fewer than n storage servers (see Small networks under
@@ -1083,8 +1096,9 @@ client's. Each server allows an owner up to budget × (this server's
 contribution / total contribution) × `quota_headroom`: shares go to servers in
 proportion to their size, and the headroom, 2 by default, absorbs uneven
 placement. A write beyond that is refused with a clear error, and the backup
-pauses with the reason on the local page. The client sums `Usage(owner)` from
-every server before each run and stops at the budget.
+pauses with the reason on the local page. The client asks every server for
+the bytes it accounts to the owner before each run, sums them and stops at the
+budget.
 
 What that means, stated plainly: a member who removes the client check from
 their build can store up to `quota_headroom` times their budget before servers
@@ -1123,8 +1137,8 @@ objects.
 
 **The root record.** One per device: `{member, device, version, written_at,
 index_cap}`, where `index_cap` is the read capability of the device's index
-object, encrypted as a whole under the member root key so servers never see
-capabilities. The envelope `{network, member, device, version, ciphertext}` is
+object, encrypted as a whole under the root key derived from the member secret
+so servers never see capabilities. The envelope `{network, member, device, version, ciphertext}` is
 signed by the device key and carries the device certificate. A server accepts
 it only from that same device, keeps the highest version per (member, device)
 plus the previous 10 versions, and refuses a lower one.
@@ -1136,7 +1150,9 @@ complete until then, and the agent keeps retrying the rest. `GetRoots` queries
 every server, takes the highest version per device, and reports how many
 answered. Any S minus W plus 1 answers are guaranteed to include one that holds
 every confirmed root, so cleanup refuses to run with fewer answers, and restore
-runs but shows "roots for X of Y devices from Z of S servers" and warns. Each
+runs but shows "roots for X devices from Z of S servers" and warns, since
+client devices are never listed and a new device cannot know how many there
+were. Each
 device also remembers the last version it confirmed and refuses to treat a
 lower one as its own. A root that never reached W belongs to a backup that
 never completed; the objects it alone references are protected by the 7-day
@@ -1160,9 +1176,11 @@ not need.
 **Single writer, many devices.** Each device owns its root and never writes
 another device's. A member's data is the union of their device roots; restore
 on a new device lists every root of the member and picks from any of them.
-Retiring a device is a manifest-free act: the new device records in its own
-index which old snapshots it keeps, and the old root is deleted by the member
-when they no longer want it.
+Retiring a device is revoking it, which needs the phrase and no manifest
+change: the new device records in its own index which old snapshots it keeps,
+and the revocation record tombstones the old device's root on every server, so
+after the tombstone window the objects only that root referenced become garbage
+for the cleanup job. That is also how the root of a lost device goes.
 
 **What this buys.** No write collisions, no version negotiation, no mutable
 share format, no server-side lease to keep a root alive. A root's liveness is
@@ -1176,7 +1194,8 @@ phase 1. It scans, deduplicates, uploads, and publishes a root, with every step
 resumable.
 
 **Scan.** For each configured folder, walk the tree honouring excludes. For
-each file, look up (path, size, mtime, file id) in the device's local database;
+each file, look up the scan key defined under Change detection in the device's
+local database;
 a hit reuses the recorded capability without reading the file. A miss hashes
 the file with BLAKE3 and looks the hash up in the local database first, so a
 moved or renamed file costs a read and no upload on either engine (F17). If the
@@ -1291,9 +1310,10 @@ complete snapshot of the same day exists, which replaces it.
 **Retention.** A policy per device, with defaults: everything for 7 days, one
 per day for 30 days, one per week for 12 weeks, one per month for 12 months.
 Pruning drops snapshots from the index; deletion of what they alone referenced
-is the cleanup job's work, with the rule that objects younger than 7 days are
-never deleted, so a device that is mid-backup cannot have its fresh objects
-removed by another device of the same member running cleanup.
+is the cleanup job's work, with the rule that an object touched in the last 7
+days on the server's own clock is never deleted, so a device that is mid-backup
+cannot have the objects it is uploading or reusing removed by another device of
+the same member running cleanup.
 
 **Restore.** From any device of the member: list roots, pick a device and a
 snapshot, pick folders or files. Directory objects are fetched down the chosen
@@ -1337,8 +1357,10 @@ server knows what it holds and the network repairs itself.
 
 **Census.** Each storage node streams `(storage index, share number, owner,
 size, k, n, descriptor hash)` deltas of its complete shares since a generation
-out of its SQLite index; this is today's delta protocol with the walk replaced
-by a query. The hub keeps the grid-wide placement table and computes per-object
+out of its SQLite index, plus its tombstone records, its revocation list, and a
+heartbeat with version, free space, storage state and whether it runs only
+while its member is logged in; this is today's delta protocol with the walk
+replaced by a query. The hub keeps the grid-wide placement table and computes per-object
 copies against each object's own n, under-placed objects, the objects whose
 encoding differs from the manifest's, usage per member and per server. The status page keeps its shape and its honesty rules;
 its usage column now comes from servers.
@@ -1359,10 +1381,11 @@ server that comes back from the dead counts again, and the surplus that repair
 created is released as described below.
 
 **Repair without the owner.** The collector on the scheduling hub turns
-objects that need repair into tasks, and only after a quiescence window: an
-object becomes a task when it has been short of its target for 24 hours, so a
+objects that need repair into tasks. An object that never reached its target
+becomes a task only after a quiescence window of 24 hours short of it, so a
 slow first backup that is still sending its shares is never repaired under the
-client's feet. Each task names the storage index, the missing share numbers and
+client's feet; shares lost to a dead server or to a failed integrity check
+become tasks at once. Each task names the storage index, the missing share numbers and
 the target servers, carries an expiry, and is signed by the hub's device key;
 the hub hands it to a storage node that volunteers as a repair worker. The
 worker fetches the descriptor and k shares from holders, regenerates the
@@ -1424,8 +1447,9 @@ Three mechanisms carry it:
   the 7-day immunity is measured from that, not from the first upload. An
   object a device is reusing through dedup is therefore never old.
 - A device with a backup in progress publishes a pending set, the storage
-  indices it has uploaded or reused since its last confirmed root, to the same
-  W servers every few minutes. Cleanup treats every pending set it can read as
+  indices it has uploaded or reused since its last confirmed root, to every
+  live server every few minutes, and the set counts as published once W hold
+  it. Cleanup treats every pending set it can read as
   reachable, and a pending set younger than 7 days blocks deletion of what it
   names.
 - Before `PutRoot`, a device checks with `HasShares` every capability that was
@@ -1448,7 +1472,10 @@ deleted object. The record goes when no server reports a share of that storage
 index any more. Objects touched in the last 7 days refuse a token outright.
 A holder that was offline during cleanup still holds its share; the cleanup job
 asks the hub for the grid-wide list of the member's storage indices and sends
-tokens for every one it does not reach, wherever the census places it.
+tokens for every one it does not reach, wherever the census places it. Tokens
+for a holder that is offline wait in the job's local queue and are delivered
+when that holder next connects; a late token is safe, because a server refuses
+one issued before its own `last_touched_at`.
 
 Membership-driven deletion never acts on absence. A server that finds a
 member `leaving`, or no longer listed, records `first_seen_missing` for that
@@ -1545,11 +1572,13 @@ table. It is the product's interface until a tray application earns its place.
 
 **CLI.** `redundanet` with `agent` (runs the daemon), `service` (install,
 uninstall, status), `hub`, and client commands that only call the API:
-`status`, `backup add|run|list`, `restore`, `join`, `device add|revoke`,
-`update`, `diagnostics`, `open` (prints a one-time link that logs the browser
-into the local page). The command structure of RedundaNet 2 is dropped with its
-compose plumbing; the network and storage commands that members used map one
-to one.
+`status`, `backup add|run|list`, `restore`, `join`,
+`device add [--storage]|replace|revoke`, `update`, `diagnostics`, `open`
+(prints a one-time link that logs the browser into the local page). Operator
+and migration commands that do not go through the API: `manifest sign`,
+`validate`, `identity init` and, in phase 1, `migrate-node`. The command
+structure of RedundaNet 2 is dropped with its compose plumbing; the network and
+storage commands that members used map one to one.
 
 ### Service integration, packaging and self-update
 
@@ -1624,7 +1653,9 @@ the embedded release key or by a key that key's rotation chain reaches, and
 only with a revision at least as high as the last one it saw. A release is
 applied when its version is above the running one and not marked withdrawn, and
 when the manifest's `min_version` or the member's channel asks for it;
-`min_version` selects among signed releases and never names a binary. An index
+`min_version` selects among signed releases and never names a binary. A member
+may pick the `stable` or `early` channel in settings; both are entries in the
+same signed index. An index
 that lacks a release the signed manifest requires is stale, and the agent tries
 the other source.
 
@@ -1654,8 +1685,8 @@ learns who talks to whom and how much.
 | Adversary | Can | Cannot | Why |
 | --- | --- | --- | --- |
 | A storage host, curious or malicious | See ciphertext, sizes, owners and timing; delete or corrupt the shares it holds | Read a byte of content, alter a share undetected, forge a share's owner, inflate another member's usage | Per-object keys never leave the owner's devices; hash trees are verified on read; the descriptor is signed by a device certified for the owner |
-| A malicious member | Fill their own quota with garbage, hammer servers with requests, invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the next integrity check catches | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
-| A compromised hub | See the metadata the collector sees, drop or delay relayed traffic, publish a false status page, hand out wrong address candidates (connections then fail, they are not misdirected), serve a stale manifest within its maximum age to agents that reach only the hub, issue repair tasks that place surplus copies of real objects, at most one share per server and charged to their owners, which the census shows and the surplus rule removes. In phase 1 only: as a listed device that hosts the introducer, write shares through the bridge as any device can until the native engine verifies ownership | Admit a member or forge a manifest, revocation or release; read a share; impersonate a device; delete anything, including through a surplus release, which each holder confirms itself; withhold a revocation from an agent that talks to any peer | Manifests, revocations and releases carry signatures by keys the hub does not hold; revision numbers stop rollback; devices authenticate each other end to end; agents fetch revocations from peers too. The hub's GitHub token is the exception to "no key but its own"; it can only open issues, which become pull requests through the repository's workflow and take effect when an operator signs |
+| A malicious member | Fill their own quota with garbage, hammer servers with requests, invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the receiving server catches before it marks the share complete | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
+| A compromised hub | See the metadata the collector sees, drop or delay relayed traffic, publish a false status page, hand out wrong address candidates, after which connections fail rather than being misdirected, serve a stale manifest within its maximum age to agents that reach only the hub, issue repair tasks that place surplus copies of real objects, at most one share per server and charged to their owners, which the census shows and the surplus rule removes. In phase 1 only: as a listed device that hosts the introducer, write shares through the bridge as any device can until the native engine verifies ownership | Admit a member or forge a manifest, revocation or release; read a share; impersonate a device; delete anything, including through a surplus release, which each holder confirms itself; withhold a revocation from an agent that talks to any peer | Manifests, revocations and releases carry signatures by keys the hub does not hold; revision numbers stop rollback; devices authenticate each other end to end; agents fetch revocations from peers too. The hub's GitHub token is the exception to "no key but its own"; it can only open issues, which become pull requests through the repository's workflow and take effect when an operator signs |
 | An anonymous poster | Send requests to the join endpoint until the per-address limit stops them | Open an issue, spend the hub's token or reach a human without a valid, unused invite from an active member | The hub verifies the invite against the signed manifest before it does anything else |
 | A compromised repository account | Change the files on main; stop signed manifests from being published, which only delays changes | Change what any node runs: admit a member, change k-of-n, mark a member leaving; install a binary; read data; impersonate a device | Agents apply only manifests signed by an operator key pinned at join; release keys rotate only through their own chain; branch protection, review and 2FA stay as the first line |
 | A stolen operator key | Sign a manifest: admit a member or a device, change k-of-n or allocations, mark members leaving, replace the operator keys | Install a binary; read data; delete anything inside the grace period, which servers measure on their own clocks | Release keys are separate; deletion waits for the grace on every server, time enough to notice a signed manifest nobody merged; until a threshold of operator keys exists, recovery is a new network descriptor sent out of band, which is why the threshold is an open question |
