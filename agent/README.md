@@ -12,11 +12,41 @@ Phase 1, the control plane, is under construction. What exists:
 | --- | --- | --- |
 | `internal/identity` | Seed and twelve-word phrase, member signing key and member secret, device keys, device certificates and revocations, the identity file at rest, and the TLS wire identity with its one verification function | Done, with tests |
 | `internal/manifest` | The v3 manifest: strict parser that sets aside the RedundaNet 2 keys of a transitional file, the validation rules of the RFC's Membership section, allocations, the operator key and `manifest.sig`, invite and confirmation signatures behind `vouched_by`, and the connection policy (`Allow`, `MayWrite`) from the manifest and the revocation list | Done, with tests |
+| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
+| `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
+| `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
+| `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `agent`, `hub`, `version` | Growing |
 
-Next, in order: the transport, hub mode, the service and self-update, the
-local page.
+Next, in order: membership at runtime (fetch the manifest from the
+repository and the hub mirror, pin operators from the network descriptor,
+revocations), the service and self-update, the local page, the census and
+status collector.
+
+## Running it today
+
+```
+redundanet hub   --network NAME --manifest manifests/manifest.yaml [--udp :4433] [--tcp :4443]
+redundanet agent --network NAME --manifest manifests/manifest.yaml [--connect DEVICEKEY,...] [--portmap] [--tcp-only]
+```
+
+Both need this device's identity file and a signed manifest on disk; the hub
+must be listed in the manifest by its device key, and every connecting
+device must chain to an active or leaving member. Until the network
+descriptor exists, the operators trusted are the ones the manifest lists,
+which the commands say out loud. The agent answers every stream with its
+own bytes, since nothing speaks over the mesh yet, and logs a status
+snapshot every minute.
+
+How a session comes up: the agent asks a hub for the peer's candidates; the
+device the hub names dials through the relay at once, both punch the
+candidates, and the dialer opens a second, direct connection on the first
+address that answers, ranked LAN, global IPv6, public IPv4. New streams take
+the direct connection while it lives and the relay otherwise; a connection
+that dies takes its streams with it, and the request layer retries. There
+is no QUIC path migration: quic-go cannot migrate off a dead path (see the
+G0 record), and the RFC only asks for a resume within seconds.
 
 ## Build and test
 
