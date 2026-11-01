@@ -118,3 +118,7 @@ config.local.yaml
 # Claude Code local/runtime state
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+
+# RedundaNet 3 agent (Go)
+agent/dist/
+agent/build/
