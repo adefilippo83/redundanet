@@ -182,6 +182,35 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (*quic.Str
 	}
 }
 
+// Recheck runs the allow policy over every session's peer again and closes
+// the connections of those it no longer admits: what happens when a newly
+// signed manifest or a revocation arrives.
+func (e *Endpoint) Recheck() {
+	e.mu.Lock()
+	list := make([]*session, 0, len(e.sessions))
+	for _, s := range e.sessions {
+		list = append(list, s)
+	}
+	e.mu.Unlock()
+	for _, s := range list {
+		s.mu.Lock()
+		peer := s.peerInfo
+		conns := []*quic.Conn{s.relayConn, s.directConn}
+		s.mu.Unlock()
+		if peer.Certificate == nil {
+			continue
+		}
+		if err := e.cfg.Allow(peer); err != nil {
+			s.event("no longer admitted: %v", err)
+			for _, c := range conns {
+				if c != nil {
+					_ = c.CloseWithError(4, "no longer admitted")
+				}
+			}
+		}
+	}
+}
+
 // Status is a snapshot for the local page.
 type Status struct {
 	Device   string          `json:"device"`

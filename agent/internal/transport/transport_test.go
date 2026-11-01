@@ -235,3 +235,16 @@ func TestTCPCarrier(t *testing.T) {
 		t.Fatalf("hub clients: %d", len(hs.Clients))
 	}
 }
+
+func TestRecheckClosesTheNoLongerAdmitted(t *testing.T) {
+	n := newTestNet(t, false)
+	a, _ := n.endpoint(seed(1), true, nil)
+	_, bID := n.endpoint(seed(2), true, nil)
+	s := a.Connect(bID)
+	eventually(t, 10*time.Second, "the direct path", func() bool { return s.Best() == PathDirect })
+	n.mu.Lock()
+	delete(n.allowed, bID)
+	n.mu.Unlock()
+	a.Recheck()
+	eventually(t, 5*time.Second, "both connections to close", func() bool { return s.Best() == "" })
+}
