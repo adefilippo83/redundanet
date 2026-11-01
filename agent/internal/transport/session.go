@@ -57,6 +57,7 @@ type session struct {
 
 	mu         sync.Mutex
 	member     identity.Key
+	peerInfo   identity.Peer // the verified peer, once a handshake has completed
 	wanted     bool
 	roleKnown  bool
 	dialer     bool
@@ -107,6 +108,7 @@ func (s *session) status() SessionStatus {
 func (s *session) setPeer(p identity.Peer) {
 	s.mu.Lock()
 	s.member = p.Member
+	s.peerInfo = p
 	s.mu.Unlock()
 }
 

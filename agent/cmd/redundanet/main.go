@@ -18,6 +18,7 @@ var commands = []command{
 	{"operator", "the offline operator key: init", runOperator},
 	{"manifest", "sign a merged manifest, or verify a signature: sign, verify", runManifest},
 	{"validate", "check a manifest and print the allocations", runValidate},
+	{"network", "the network descriptor: descriptor, join, status", runNetwork},
 	{"agent", "run the agent: join the mesh through the hubs of a signed manifest", runAgent},
 	{"hub", "run the hub mode: rendezvous and relay for a signed manifest", runHub},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},

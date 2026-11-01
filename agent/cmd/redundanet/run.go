@@ -19,6 +19,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
+	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 )
 
@@ -28,15 +29,21 @@ import (
 // then these commands are for the first tests on real machines.
 
 type runtimeConfig struct {
-	state    *identity.State
-	tlsID    *identity.TLSIdentity
-	device   identity.Key
-	manifest *manifest.Manifest
-	policy   *manifest.Policy
-	log      *slog.Logger
+	state   *identity.State
+	tlsID   *identity.TLSIdentity
+	device  identity.Key
+	member  *membership.Membership // nil when running from a manifest file
+	allow   identity.Allow
+	current func() *manifest.Manifest
+	log     *slog.Logger
 }
 
-func loadRuntime(dir, network, mPath, sigPath string, verbose bool) (*runtimeConfig, error) {
+// loadRuntime builds what agent and hub share. With a descriptor in the
+// data directory (after `network join`) the manifest comes from the network
+// and refreshes itself; with --manifest it comes from a file, trusting the
+// operators that file lists, which is for tests and for a hub that serves
+// the repository it is listed in.
+func loadRuntime(ctx context.Context, dir, network, mPath, sigPath string, verbose bool, onApply func(*manifest.Manifest)) (*runtimeConfig, error) {
 	if network == "" {
 		return nil, errors.New("--network is required")
 	}
@@ -56,6 +63,25 @@ func loadRuntime(dir, network, mPath, sigPath string, verbose bool) (*runtimeCon
 	if err != nil {
 		return nil, err
 	}
+	level := slog.LevelInfo
+	if verbose {
+		level = slog.LevelDebug
+	}
+	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	rc := &runtimeConfig{state: st, tlsID: tlsID, device: dev.ID(), log: lg}
+
+	if mPath == "" {
+		m, err := openMembership(ctx, d, onApply)
+		if err != nil {
+			return nil, err
+		}
+		if m.Descriptor().Network != network {
+			return nil, fmt.Errorf("this device joined network %q", m.Descriptor().Network)
+		}
+		rc.member, rc.allow, rc.current = m, m.Allow, m.Manifest
+		return rc, nil
+	}
+
 	data, err := os.ReadFile(mPath)
 	if err != nil {
 		return nil, err
@@ -71,9 +97,6 @@ func loadRuntime(dir, network, mPath, sigPath string, verbose bool) (*runtimeCon
 	if err != nil {
 		return nil, err
 	}
-	// Until the network descriptor is implemented, the operators listed in
-	// the manifest are the trusted ones: this proves consistency, not
-	// authenticity, and the agent says so.
 	pre, err := manifest.Parse(data)
 	if err != nil {
 		return nil, err
@@ -89,19 +112,16 @@ func loadRuntime(dir, network, mPath, sigPath string, verbose bool) (*runtimeCon
 	if m.Network.Name != network {
 		return nil, fmt.Errorf("the manifest is for network %q", m.Network.Name)
 	}
-	level := slog.LevelInfo
-	if verbose {
-		level = slog.LevelDebug
-	}
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-	lg.Warn("trusting the operator keys listed in the manifest itself; pinning from the network descriptor is not implemented yet")
-	return &runtimeConfig{state: st, tlsID: tlsID, device: dev.ID(), manifest: m, policy: manifest.NewPolicy(m, nil), log: lg}, nil
+	lg.Warn("running from a manifest file: trusting the operator keys it lists itself, and it will not refresh")
+	pol := manifest.NewPolicy(m, nil)
+	rc.allow, rc.current = pol.Allow, func() *manifest.Manifest { return m }
+	return rc, nil
 }
 
 func runHub(args []string) error {
 	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
-	mPath := fs.String("manifest", "manifests/manifest.yaml", "signed manifest file")
+	mPath := fs.String("manifest", "", "run from this signed manifest file instead of the joined network")
 	sigPath := fs.String("sig", "", "signature file (default: manifest.sig beside the manifest)")
 	udp := fs.String("udp", ":4433", "QUIC listener")
 	tcp := fs.String("tcp", ":4443", "TLS listener for UDP-blocked devices; empty disables")
@@ -110,28 +130,34 @@ func runHub(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	rc, err := loadRuntime(*dir, *network, *mPath, *sigPath, *verbose)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rc, err := loadRuntime(ctx, *dir, *network, *mPath, *sigPath, *verbose, nil)
 	if err != nil {
 		return err
 	}
-	if rc.manifest.HubByKey(rc.device) == nil {
+	if rc.current().HubByKey(rc.device) == nil {
 		return fmt.Errorf("device %s is not listed as a hub in the manifest", rc.device.Short())
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	h, err := hub.Start(ctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.policy.Allow, UDP: *udp, TCP: *tcp, Log: rc.log})
+	h, err := hub.Start(ctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, Log: rc.log})
 	if err != nil {
 		return err
 	}
 	defer h.Close()
-	logEvery(ctx, *every, func() any { return h.Status() }, rc.log)
+	logEvery(ctx, *every, func() any {
+		st := map[string]any{"hub": h.Status()}
+		if rc.member != nil {
+			st["membership"] = rc.member.Status()
+		}
+		return st
+	}, rc.log)
 	return nil
 }
 
 func runAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
-	mPath := fs.String("manifest", "manifests/manifest.yaml", "signed manifest file")
+	mPath := fs.String("manifest", "", "run from this signed manifest file instead of the joined network")
 	sigPath := fs.String("sig", "", "signature file (default: manifest.sig beside the manifest)")
 	listen := fs.String("listen", ":0", "UDP address to bind")
 	connect := fs.String("connect", "", "comma-separated device keys to keep sessions with")
@@ -143,24 +169,30 @@ func runAgent(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	rc, err := loadRuntime(*dir, *network, *mPath, *sigPath, *verbose)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var ep *transport.Endpoint
+	rc, err := loadRuntime(ctx, *dir, *network, *mPath, *sigPath, *verbose, func(*manifest.Manifest) {
+		if ep != nil {
+			ep.Recheck()
+		}
+	})
 	if err != nil {
 		return err
 	}
+	man := rc.current()
 	var hubs []transport.HubAddr
-	for _, h := range rc.manifest.Hubs {
+	for _, h := range man.Hubs {
 		hubs = append(hubs, transport.HubAddr{Key: h.Key, UDP: h.Relay, TCP: tcpFor(h.Relay)})
 	}
 	udpPort := 0
-	for _, s := range rc.manifest.Storage {
+	for _, s := range man.Storage {
 		if s.Device == rc.device {
 			udpPort = s.UDPPort
 		}
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	ep, err := transport.Start(ctx, transport.Config{
-		Identity: rc.tlsID, Device: rc.device, Allow: rc.policy.Allow, Hubs: hubs, Listen: *listen,
+	ep, err = transport.Start(ctx, transport.Config{
+		Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 		UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
 		OnStream: func(peer identity.Peer, path string, s *quic.Stream) {
 			// Nothing speaks over the mesh yet; a stream is answered with
@@ -194,7 +226,13 @@ func runAgent(args []string) error {
 			ep.Connect(k)
 		}
 	}
-	logEvery(ctx, *every, func() any { return ep.Status() }, rc.log)
+	logEvery(ctx, *every, func() any {
+		st := map[string]any{"transport": ep.Status()}
+		if rc.member != nil {
+			st["membership"] = rc.member.Status()
+		}
+		return st
+	}, rc.log)
 	return nil
 }
 

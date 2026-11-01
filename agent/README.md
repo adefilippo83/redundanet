@@ -12,32 +12,51 @@ Phase 1, the control plane, is under construction. What exists:
 | --- | --- | --- |
 | `internal/identity` | Seed and twelve-word phrase, member signing key and member secret, device keys, device certificates and revocations, the identity file at rest, and the TLS wire identity with its one verification function | Done, with tests |
 | `internal/manifest` | The v3 manifest: strict parser that sets aside the RedundaNet 2 keys of a transitional file, the validation rules of the RFC's Membership section, allocations, the operator key and `manifest.sig`, invite and confirmation signatures behind `vouched_by`, and the connection policy (`Allow`, `MayWrite`) from the manifest and the revocation list | Done, with tests |
+| `internal/membership` | The device's live view of the network: the network descriptor (the invite link's payload and the trust anchor), the fetch loop for `manifest.yaml` and `manifest.sig` from the repository, verification against the pinned operators, the last good copy on disk for offline starts, operator rotation only through a manifest the current keys signed, expiry (known devices stay, new ones wait for a re-sign), persisted revocations, and one `Allow` the transport keeps for good | Done, with tests |
 | `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `agent`, `hub`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `version` | Growing |
 
-Next, in order: membership at runtime (fetch the manifest from the
-repository and the hub mirror, pin operators from the network descriptor,
-revocations), the service and self-update, the local page, the census and
-status collector.
+Next, in order: the service integration and self-update, the local page,
+the census and status collector, the hub's manifest mirror and the join
+endpoint.
 
 ## Running it today
 
 ```
-redundanet hub   --network NAME --manifest manifests/manifest.yaml [--udp :4433] [--tcp :4443]
-redundanet agent --network NAME --manifest manifests/manifest.yaml [--connect DEVICEKEY,...] [--portmap] [--tcp-only]
+redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/OWNER/REPO/main
+    An operator prints the network descriptor: name, hubs, operator keys,
+    where the signed manifest is served. It goes into invite links.
+
+redundanet network join <descriptor>
+    A device pins the descriptor's operator keys, fetches the manifest and
+    its signature, verifies them and keeps the pair on disk.
+
+redundanet network status [--refresh]
+
+redundanet hub   --network NAME [--udp :4433] [--tcp :4443]
+redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only]
 ```
 
-Both need this device's identity file and a signed manifest on disk; the hub
-must be listed in the manifest by its device key, and every connecting
-device must chain to an active or leaving member. Until the network
-descriptor exists, the operators trusted are the ones the manifest lists,
-which the commands say out loud. The agent answers every stream with its
-own bytes, since nothing speaks over the mesh yet, and logs a status
-snapshot every minute.
+Both long-lived commands need this device's identity file and a joined
+network; they refresh the manifest every five minutes, apply a newer
+signed revision on the spot, and close connections to devices the new
+policy no longer admits. `--manifest FILE` runs them from a signed file
+instead, trusting the operators that file lists, for tests and for the hub
+that serves the repository it is listed in. The agent answers every stream
+with its own bytes, since nothing speaks over the mesh yet, and logs a
+status snapshot every minute.
+
+What the membership rules do, in the words of the RFC: a manifest takes
+effect only with a valid operator signature and a revision above the last
+applied; the operators list changes only through a manifest the current
+keys signed; a signature older than `signature_max_age_days` keeps the
+node working for devices it has already admitted and refuses new ones
+until an operator re-signs; a revocation is applied at once, persisted, and
+survives every later manifest.
 
 How a session comes up: the agent asks a hub for the peer's candidates; the
 device the hub names dials through the relay at once, both punch the
