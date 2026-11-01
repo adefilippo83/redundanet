@@ -132,6 +132,9 @@ func (s *session) wantsRendezvous() bool {
 // setConn files a connection, direct or relayed, replacing one of the same
 // kind, and serves its streams until it ends.
 func (s *session) setConn(conn *quic.Conn, path string) {
+	if p, err := identity.PeerFromConnectionState(conn.ConnectionState().TLS); err == nil {
+		s.setPeer(*p)
+	}
 	s.mu.Lock()
 	var old *quic.Conn
 	if path == PathDirect {
@@ -198,7 +201,10 @@ func (s *session) loop() {
 		}
 		wait := rendezvousEvery
 		if s.wantsRendezvous() {
-			if err := s.ep.rendezvous(s.peer); err != nil {
+			s.mu.Lock()
+			online := s.online
+			s.mu.Unlock()
+			if err := s.ep.rendezvous(s.peer); err != nil || !online {
 				wait = 2 * time.Second
 			}
 		}
@@ -219,6 +225,7 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 	changed := !s.roleKnown || s.dialer != cand.Dialer
 	s.roleKnown, s.dialer = true, cand.Dialer
 	dialer, relayUp := s.dialer, s.relayConn != nil
+	direct, directUp, dialing := s.direct, s.directConn != nil, s.dialing[PathDirect]
 	s.mu.Unlock()
 	if !cand.Online {
 		return
@@ -232,6 +239,11 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 	}
 	if dialer && !relayUp {
 		go s.dialRelay(c)
+	}
+	// A punch from the peer may have confirmed an address before the hub
+	// said who dials; now that it is known, act on it.
+	if dialer && direct != nil && !directUp && !dialing {
+		go s.dialDirect(direct)
 	}
 	go s.punch(cand.Addrs)
 }
@@ -260,24 +272,25 @@ func (s *session) punch(addrs []string) {
 	}
 }
 
-// confirmed records a direct address a punch or its answer came from, and
-// has the dialer dial it when it is the best one so far.
+// confirmed records a direct address a punch or its answer came from. The
+// dialer dials the best confirmed address whenever it has no direct
+// connection, so a dial that failed is retried at the next punch round.
 func (s *session) confirmed(addr *net.UDPAddr) {
 	s.mu.Lock()
 	key := addr.String()
 	fresh := !s.seen[key]
 	s.seen[key] = true
-	better := s.direct == nil || rank(addr) < rank(s.direct)
-	if better {
+	if s.direct == nil || rank(addr) < rank(s.direct) {
 		s.direct = addr
 	}
+	best := s.direct
 	dialer, hasDirect, dialing := s.dialer, s.directConn != nil, s.dialing[PathDirect]
 	s.mu.Unlock()
 	if fresh {
 		s.event("direct candidate confirmed: %s (%s)", addr, rankName(addr))
 	}
-	if dialer && !hasDirect && !dialing && better {
-		go s.dialDirect(addr)
+	if dialer && !hasDirect && !dialing {
+		go s.dialDirect(best)
 	}
 }
 
