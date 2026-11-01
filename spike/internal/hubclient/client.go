@@ -33,7 +33,10 @@ type Config struct {
 	Locals    func() []string
 	// OnCandidates is called for every rendezvous answer the hub sends.
 	OnCandidates func(wire.Candidates)
-	Log          *log.Logger
+	// OnUp is called each time the channel comes up, so pending rendezvous
+	// requests can be repeated.
+	OnUp func()
+	Log  *log.Logger
 }
 
 // Status is what the local page shows about the channel.
@@ -50,10 +53,18 @@ type Status struct {
 type Client struct {
 	cfg Config
 
-	mu     sync.Mutex
-	w      *wire.Writer
-	status Status
+	mu      sync.Mutex
+	w       *wire.Writer
+	conn    *quic.Conn // set when the channel runs over QUIC: relay packets go as datagrams
+	out     chan []byte
+	status  Status
+	dropped uint64 // relay packets dropped because the outbound queue was full
 }
+
+// relayQueue bounds the packets waiting for the hub: a congested hub leg
+// turns into loss the end-to-end connection can react to, not into seconds of
+// buffering it cannot see.
+const relayQueue = 256
 
 // New builds a client; Run connects it.
 func New(cfg Config) *Client { return &Client{cfg: cfg} }
@@ -76,14 +87,60 @@ func (c *Client) Connect(peer identity.ID) error {
 	return w.JSON(wire.FrameConnect, wire.Connect{Peer: peer.String()})
 }
 
+// sendRelay queues one end-to-end packet for the hub and never blocks: the
+// packet is copied (quic-go reuses its buffers) and dropped when the queue
+// is full.
 func (c *Client) sendRelay(peer identity.ID, pkt []byte) error {
 	c.mu.Lock()
-	w := c.w
+	out := c.out
 	c.mu.Unlock()
-	if w == nil {
+	if out == nil {
 		return errors.New("hub channel is down")
 	}
-	return w.Relay(peer, pkt)
+	b := make([]byte, len(peer)+len(pkt))
+	copy(b, peer[:])
+	copy(b[len(peer):], pkt)
+	select {
+	case out <- b:
+		return nil
+	default:
+		c.mu.Lock()
+		c.dropped++
+		c.mu.Unlock()
+		return nil
+	}
+}
+
+// Dropped counts relay packets dropped for a full queue.
+func (c *Client) Dropped() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.dropped
+}
+
+// writeRelay drains the queue: QUIC datagrams when the channel is QUIC,
+// relay frames on the stream otherwise or when a packet does not fit.
+func (c *Client) writeRelay(conn *quic.Conn, w *wire.Writer, out chan []byte, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			return
+		case b := <-out:
+			if conn != nil {
+				err := conn.SendDatagram(b)
+				if err == nil {
+					continue
+				}
+				// Too large, or the peer has no datagram support: the
+				// stream carries this packet instead.
+			}
+			var id identity.ID
+			copy(id[:], b)
+			if err := w.Relay(id, b[len(id):]); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // Run keeps the channel up until ctx ends.
@@ -116,6 +173,7 @@ func (c *Client) Run(ctx context.Context) {
 type carrier struct {
 	name string
 	rw   io.ReadWriter
+	conn *quic.Conn // nil over TCP
 	stop func()
 }
 
@@ -140,16 +198,42 @@ func (c *Client) session(ctx context.Context) error {
 	if err := decode(payload, &welcome); err != nil {
 		return err
 	}
+	out := make(chan []byte, relayQueue)
+	done := make(chan struct{})
+	defer close(done)
 	c.mu.Lock()
 	c.w = w
+	c.conn = car.conn
+	c.out = out
 	c.status = Status{Up: true, Carrier: car.name, Observed: welcome.Observed, Since: time.Now(), Reconnects: c.status.Reconnects}
 	c.mu.Unlock()
+	go c.writeRelay(car.conn, w, out, done)
+	if car.conn != nil {
+		go func() {
+			for {
+				b, err := car.conn.ReceiveDatagram(ctx)
+				if err != nil {
+					return
+				}
+				from, pkt, err := wire.SplitRelay(b)
+				if err != nil {
+					continue
+				}
+				c.cfg.Mux.DeliverRelayed(from, pkt)
+			}
+		}()
+	}
 	c.cfg.Mux.SetRelay(c.sendRelay)
 	c.cfg.Log.Printf("hub: channel up over %s, hub sees me as %s", car.name, welcome.Observed)
+	if c.cfg.OnUp != nil {
+		go c.cfg.OnUp()
+	}
 	defer func() {
 		c.cfg.Mux.SetRelay(nil)
 		c.mu.Lock()
 		c.w = nil
+		c.conn = nil
+		c.out = nil
 		c.mu.Unlock()
 	}()
 
@@ -231,6 +315,7 @@ func (c *Client) dial(ctx context.Context) (*carrier, error) {
 var hubQUICConfig = &quic.Config{
 	MaxIdleTimeout:                 30 * time.Second,
 	KeepAlivePeriod:                10 * time.Second,
+	EnableDatagrams:                true,
 	InitialStreamReceiveWindow:     4 << 20,
 	MaxStreamReceiveWindow:         32 << 20,
 	InitialConnectionReceiveWindow: 8 << 20,
@@ -253,7 +338,11 @@ func (c *Client) dialQUIC(ctx context.Context) (*carrier, error) {
 		_ = conn.CloseWithError(0, "no stream")
 		return nil, err
 	}
-	return &carrier{name: "udp", rw: st, stop: func() { _ = conn.CloseWithError(0, "bye") }}, nil
+	var dg *quic.Conn // datagrams only when the hub supports them
+	if conn.ConnectionState().SupportsDatagrams.Remote {
+		dg = conn
+	}
+	return &carrier{name: "udp", rw: st, conn: dg, stop: func() { _ = conn.CloseWithError(0, "bye") }}, nil
 }
 
 func (c *Client) dialTCP(ctx context.Context) (*carrier, error) {

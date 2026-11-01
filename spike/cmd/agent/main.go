@@ -64,6 +64,8 @@ func main() {
 	benchWait := flag.Duration("bench-wait", 8*time.Second, "time to let the direct path come up before an auto bench")
 	noDirect := flag.Bool("no-direct", false, "never punch or migrate: relay only")
 	loopbackCand := flag.Bool("loopback-candidates", false, "advertise 127.0.0.1 too, for tests on one machine")
+	onlyReflexive := flag.Bool("only-reflexive", false, "advertise no interface addresses: tests the public IPv4 punch alone")
+	includeOverlay := flag.Bool("include-overlay", false, "advertise overlay addresses too (Tailscale, carrier-grade ranges); off, so an overlay's own relay never counts as a direct path")
 	httpAddr := flag.String("http", "127.0.0.1:4481", "local status page; empty disables")
 	flag.Parse()
 
@@ -106,12 +108,23 @@ func main() {
 	}
 	srv := &bridge.Server{Expose: exposed, Log: lg}
 
+	// A relay bench must stay on the relay: otherwise a punch that lands
+	// mid-run migrates the connection and the number is a direct one.
+	if *benchPeer != "" && *benchPath == session.PathRelay {
+		*noDirect = true
+	}
 	mgr := &session.Manager{Key: key, Mux: mx, Tr: tr, Allow: identity.Any, NoDirect: *noDirect, OnStream: srv.Handle, Log: lg}
 	hub := hubclient.New(hubclient.Config{
 		Key: key, HubID: hubID, UDPAddr: hubAddr, TCPAddr: *hubTCP, TCPOnly: *tcpOnly,
 		Transport: tr, Mux: mx,
-		Locals:       func() []string { return localCandidates(mx.LocalPort(), *loopbackCand) },
+		Locals: func() []string {
+			if *onlyReflexive {
+				return nil
+			}
+			return localCandidates(mx.LocalPort(), *loopbackCand, *includeOverlay)
+		},
 		OnCandidates: func(c wire.Candidates) { mgr.OnCandidates(c) },
+		OnUp:         func() { mgr.HubUp() },
 		Log:          lg,
 	})
 	mgr.Hub = hub
@@ -154,6 +167,7 @@ func main() {
 				"bridged":         accepted,
 				"bridge_refused":  refused,
 				"dropped_packets": mx.Dropped(),
+				"relay_drops":     hub.Dropped(),
 			})
 		})
 		h.HandleFunc("/switch", func(w http.ResponseWriter, r *http.Request) {
@@ -166,6 +180,22 @@ func main() {
 				return
 			}
 			fmt.Fprintf(w, "now on %s\n", mgr.Active(id))
+		})
+		h.HandleFunc("/blackhole", func(w http.ResponseWriter, r *http.Request) {
+			id, err := identity.ParseID(r.URL.Query().Get("peer"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			addr := mgr.DirectAddr(id)
+			if addr == "" {
+				http.Error(w, "no direct address to cut", http.StatusBadRequest)
+				return
+			}
+			on := r.URL.Query().Get("on") != "0"
+			mx.Blackhole(addr, on)
+			lg.Printf("blackhole %s: %v", addr, on)
+			fmt.Fprintf(w, "blackhole %s %v\n", addr, on)
 		})
 		h.HandleFunc("/connect", func(w http.ResponseWriter, r *http.Request) {
 			id, err := identity.ParseID(r.URL.Query().Get("peer"))
@@ -271,9 +301,29 @@ func parseBridge(s string) (string, identity.ID, int, error) {
 	return local, id, port, err
 }
 
+// Overlay networks whose addresses are reachable only through someone else's
+// relay: Tailscale's IPv4 and IPv6 ranges, and carrier-grade NAT space.
+var overlayNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range []string{"100.64.0.0/10", "fd7a:115c:a1e0::/48"} {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}()
+
+func isOverlay(ip net.IP) bool {
+	for _, n := range overlayNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // localCandidates lists this host's addresses with the socket's port: LAN
 // peers connect to these without hairpinning through the relay.
-func localCandidates(port int, loopback bool) []string {
+func localCandidates(port int, loopback, overlay bool) []string {
 	var out []string
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -297,6 +347,9 @@ func localCandidates(port int, loopback bool) []string {
 				continue
 			}
 			if ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
+				continue
+			}
+			if isOverlay(ip) && !overlay {
 				continue
 			}
 			out = append(out, net.JoinHostPort(ip.String(), strconv.Itoa(port)))

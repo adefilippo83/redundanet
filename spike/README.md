@@ -50,8 +50,9 @@ relay frames tagged with the peer ID. Relaying over a stream means head-of-line
 blocking across every relayed peer, which the product would avoid with one
 stream per peer; the throughput numbers below are per pair and unaffected.
 
-**Finding a peer.** The smaller ID dials. Both sides learn the other's
-candidates from the hub: the address the hub observed, every interface
+**Finding a peer.** The device that asks the hub dials; when both have asked
+for each other, the smaller ID dials. Both sides learn the other's candidates
+from the hub: the address the hub observed, every interface
 address with the socket's port, and with `-loopback-candidates` the loopback
 too. Both punch every candidate five times, 300 ms apart, with a small
 unauthenticated packet the multiplexer intercepts; an answer confirms a direct
@@ -80,7 +81,9 @@ on the peer, which must list TARGET in `-expose`. Half-closes propagate.
 
 **Status.** `http://127.0.0.1:4481/status` on each agent (hub channel,
 sessions with timestamped events, bridged connections, dropped packets),
-`/switch?peer=ID&path=relay|direct` to force a path, `/connect?peer=ID`.
+`/switch?peer=ID&path=relay|direct` to force a path, `/connect?peer=ID`,
+`/blackhole?peer=ID&on=1|0` to make the current direct address unreachable
+(the path-loss test). `SPIKE_TRACE=1` logs every relayed packet.
 The hub serves `http://127.0.0.1:4480/status` with relayed bytes per device.
 
 ## Running it
@@ -211,15 +214,103 @@ on each pair.
 
 | Criterion | Bar | Result |
 | --- | --- | --- |
-| Direct path for the live NAT types | every pair of non-symmetric sites | |
-| Relayed throughput | at least tinc's | |
-| Pi CPU at 20 Mbit/s | under 20 % | |
-| Resume after a path switch | within seconds | |
-| TCP 443 fallback | works, number recorded | |
-| Cipher | chosen from the Pi table | |
+| Direct path for the live NAT types | every pair of non-symmetric sites | IPv6 yes; public IPv4 punch between two Fritz!Box sites failed, cause open |
+| Relayed throughput | at least tinc's | not comparable on the measured pair: the x86 site's uplink to Helsinki caps at about 10 Mbit/s over UDP and TCP alike, and tinc (16 to 24) evidently does not go through the hub there; Pi to x86 the relay wins, 23 to 29 against 14 to 22 |
+| Pi CPU at 20 Mbit/s | under 20 % | Pi 5: about 15 % of one core receiving, 7 % sending (scaled from 40 Mbit/s) |
+| Resume after a path switch | within seconds | yes with a 30-line quic-go patch: direct path cut mid-transfer, 6 s detection, 112 ms switch to the relay, the stream survived; without the patch quic-go never probes the new path |
+| TCP 443 fallback | works, number recorded | works: 17 to 18 Mbit/s Mac to Pi (UDP relay 10 to 34 in the same hour) |
+| Cipher | chosen from the Pi table | AES-256-GCM (1.7 GB/s per core on the Pi 5) |
 | Wire identity | as built here, or the change recorded | self-signed Ed25519 leaf, 52-char base32 ID, ALPN `redundanet-spike/0` |
 
-The decision page goes in `rfcs/` as the G0 record.
+## Results, 2026-11-01
+
+Hub on hub-hetzner (Helsinki), agents on a MacBook (Fritz!Box, Germany), the
+Pi 5 node falcon-1 and the x86 node falcon. 64 or 128 MiB per run.
+
+**NAT survey.** Mac: endpoint-independent mapping, address-and-port-dependent
+filtering, global IPv6. falcon-1 (Pi 5): the same, global IPv6. falcon (x86):
+address-and-port-dependent mapping and filtering (symmetric), no IPv6: it can
+only ever relay.
+
+**Connection times.** Hub channel about 120 ms; relay handshake 105 to 150 ms;
+first byte possible about 280 ms after the agent starts; direct path (IPv6)
+about 0.5 s after start, probe and switch 25 to 140 ms.
+
+| Pair, direction | Path | Mbit/s |
+| --- | --- | --- |
+| Mac to Pi | direct (IPv6) | 50.4 |
+| Pi to Mac | direct (IPv6) | 41.2, 40.8, 41.2 |
+| Mac to Pi | relay | 10.3, 12.0, 33.9, 20.8, 6.3 |
+| Pi to Mac | relay | 29.3, 27.4, 29.2, 32.6 |
+| Mac to Pi | relay over TLS/TCP (`-tcp-only`) | 18.1, 17.0 |
+| Mac to x86 | relay (symmetric NAT) | 27.5 |
+| x86 to Mac | relay | 9.4, 8.4 |
+| x86 to Pi | relay (stream, then datagrams) | 8.2, 11.4, 7.1 / 11.5, 9.6, 10.0 |
+| x86 to Pi | relay over TLS/TCP | 7.6, 10.1 |
+| x86 to Pi | tinc, interleaved with the line above | 19.6, 15.1, 22.5 / 24.0, 21.0, 16.2 |
+| Pi to x86 | relay | 21.7, 22.2, 20.6, 29.0, 29.1, 23.0, 25.6 |
+| Pi to x86 | tinc | 15.3, 14.4, 14.3, 21.7 |
+
+The first "relay" numbers published this afternoon (Mac to Pi 34.4, Pi to
+Mac 37.6, TCP 34.8) were wrong: a relay bench could still be migrated to the
+direct path by a punch landing mid-run. `-bench-path relay` now disables
+direct paths for the bench, and the rows above are relay only. The tinc
+baseline sends random bytes: the live network runs tinc with
+`Compression = 9`, and zeros would have measured zlib.
+
+Every number moves by a factor of two to three within minutes on these home
+links (Mac to Pi relay: 6.3 to 33.9). Compare only interleaved runs.
+
+**CPU on the Pi 5** (top, percent of one core, at about 40 Mbit/s over the
+direct path): 27 to 30 % receiving, 13 % sending. The mux wraps the socket,
+so quic-go cannot use GSO, recvmmsg or set buffer sizes ("connection doesn't
+allow setting of receive buffer size"); the product should give quic-go the
+raw socket or reimplement those.
+
+**cryptobench, Pi 5** (MB/s, one core / four): AES-256-GCM 1717 / 6641,
+ChaCha20-Poly1305 396 / 1556, BLAKE3 333 / 1321 (pure Go), SHA-256 1488 /
+5963, Reed-Solomon 2-of-4 encode 4279 / 5196, reconstruct 2056 / 2803.
+
+**Findings to carry into G0.**
+
+1. quic-go cannot leave a dead path while data is in flight. Path probes are
+   only sent from `sendPackets`, which runs only when the current path may
+   send (`SendAny`); a path that died with a full congestion window never gets
+   there, so the PATH_CHALLENGE for the new path is never sent. Reproduced on
+   a laptop through the Hetzner hub (direct path blackholed mid-transfer with
+   `/blackhole`), fixed by sending pending probes before the send-mode check:
+   `patches/quic-go-v0.64.1-probe-when-congestion-limited.patch`, about 30
+   lines. With it, 700 MiB arrived intact across the loss: 6 s to notice,
+   112 ms to switch, then about half the fresh relay rate while congestion
+   control recovers. Worth an upstream issue and pull request.
+2. A forced switch from a busy fast path to a slower one fails for another
+   reason: the receiver drops the probes as "potentially duplicate", because
+   thousands of newer packets arrived on the fast path while they crossed the
+   relay. RFC 9000 allows that drop. In practice the agent leaves a path only
+   when it is dead, which is case 1; a deliberate switch should pause sending
+   for one RTT of the slower path.
+3. The accepting side keeps the connection ID of every path it switched to,
+   so after two migrations the pool of four is empty and the third probe is
+   never answered. The agent reconnects after two migrations; upstream issue
+   material too.
+4. Relay throughput is set by the slower uplink, not by the relay design here.
+   The x86 site manages about 10 Mbit/s to Helsinki whether the relay runs
+   over QUIC streams, QUIC datagrams or TLS over TCP. Tinc does 16 to 24
+   between the same two nodes, so for that pair it must not be going through
+   the hub: likely a port forward for UDP 655 on falcon-1's router, which the
+   spike cannot use because its socket port is random. Port mapping (PCP,
+   NAT-PMP, UPnP) or a configured public port is the next experiment.
+5. Relayed packets now travel as QUIC datagrams, with a bounded queue at the
+   hub and in each agent that drops instead of buffering. No throughput gain
+   measured (the links are the limit), but a congested leg now shows up as
+   loss to the end-to-end connection instead of seconds of hidden queue.
+   Inner packets are capped at 1200 bytes so one fits a datagram.
+6. Public IPv4 punching between the Mac and the Pi failed with only the
+   reflexive candidate, although both NATs classify as punchable; IPv6
+   punched at once. Cause open.
+7. Overlay addresses (Tailscale) are left out of the candidates by default
+   (`-include-overlay` brings them back), otherwise an overlay's relay passes
+   for a direct path.
 
 ## What the code already tells us
 

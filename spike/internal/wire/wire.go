@@ -58,7 +58,7 @@ type Connect struct {
 type Candidates struct {
 	Peer   string   `json:"peer"`
 	Addrs  []string `json:"addrs"`  // UDP candidates: observed first, then locals
-	Dialer bool     `json:"dialer"` // whether the receiver opens the QUIC connection
+	Dialer bool     `json:"dialer"` // whether the receiver opens the QUIC connection: the requester, or the smaller ID when both asked
 	Online bool     `json:"online"` // false when the peer has no hub channel right now
 }
 

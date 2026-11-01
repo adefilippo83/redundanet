@@ -5,6 +5,7 @@ package bridge
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -189,7 +190,12 @@ func Bench(ctx context.Context, mgr *session.Manager, peer identity.ID, size int
 	if err := writeHeader(st, Header{Bench: size}); err != nil {
 		return Result{}, err
 	}
-	buf := make([]byte, 64<<10)
+	// Random bytes, like the tinc baseline: nothing on the path compresses
+	// QUIC, but the two benches should send the same thing.
+	buf := make([]byte, 1<<20)
+	if _, err := rand.Read(buf); err != nil {
+		return Result{}, err
+	}
 	started := time.Now()
 	var sent int64
 	for sent < size {

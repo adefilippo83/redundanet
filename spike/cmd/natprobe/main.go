@@ -189,7 +189,11 @@ func rfc5780(srv string, timeout time.Duration) (mapping, filtering string, err 
 // request sends one binding request, with an optional CHANGE-REQUEST, and
 // waits for the matching answer, retrying once.
 func request(conn *net.UDPConn, server string, change []byte, timeout time.Duration) (*stun.Message, error) {
-	addr, err := net.ResolveUDPAddr(conn.LocalAddr().Network(), server)
+	network := "udp4"
+	if conn.LocalAddr().(*net.UDPAddr).IP.To4() == nil {
+		network = "udp6"
+	}
+	addr, err := net.ResolveUDPAddr(network, server)
 	if err != nil {
 		return nil, err
 	}

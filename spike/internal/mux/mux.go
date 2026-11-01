@@ -27,6 +27,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -75,7 +76,29 @@ type Mux struct {
 	closed chan struct{}
 	once   sync.Once
 
-	dropped uint64 // packets dropped for a full inbox or a missing relay
+	dropped uint64          // packets dropped for a full inbox or a missing relay
+	black   map[string]bool // addresses treated as unreachable, for path-loss tests
+}
+
+// Blackhole makes addr unreachable both ways, or reachable again: the test
+// for a direct path that dies mid-transfer.
+func (m *Mux) Blackhole(addr string, on bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.black == nil {
+		m.black = map[string]bool{}
+	}
+	if on {
+		m.black[addr] = true
+	} else {
+		delete(m.black, addr)
+	}
+}
+
+func (m *Mux) isBlack(addr net.Addr) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.black[addr.String()]
 }
 
 // New starts reading from the socket.
@@ -130,6 +153,9 @@ func (m *Mux) Close() error {
 
 // SendPunch writes a punch packet of the given kind straight to the socket.
 func (m *Mux) SendPunch(to *net.UDPAddr, kind byte, seq uint32) error {
+	if m.isBlack(to) {
+		return nil
+	}
 	b := make([]byte, punchLen)
 	copy(b, punchMagic)
 	b[len(punchMagic)] = kind
@@ -138,6 +164,9 @@ func (m *Mux) SendPunch(to *net.UDPAddr, kind byte, seq uint32) error {
 	_, err := m.udp.WriteTo(b, to)
 	return err
 }
+
+// trace logs every relayed packet when SPIKE_TRACE is set.
+var trace = os.Getenv("SPIKE_TRACE") != ""
 
 // DeliverRelayed hands a packet that arrived through the hub channel to the
 // view that claims the sending peer, or to the default view.
@@ -150,6 +179,9 @@ func (m *Mux) DeliverRelayed(from identity.ID, pkt []byte) {
 	if v == nil {
 		v = m.def
 	}
+	if trace {
+		m.lg.Printf("TRACE relay in  from %s %d bytes to view %d, inbox %d", from.Short(), len(pkt), v.kind, len(v.inbox))
+	}
 	v.push(packet{b: pkt, addr: wire.RelayAddr(from)})
 }
 
@@ -157,6 +189,9 @@ func (m *Mux) sendRelay(peer identity.ID, pkt []byte) (int, error) {
 	m.mu.RLock()
 	f := m.relay
 	m.mu.RUnlock()
+	if trace {
+		m.lg.Printf("TRACE relay out to %s %d bytes (relay up: %v)", peer.Short(), len(pkt), f != nil)
+	}
 	if f == nil {
 		m.drop()
 		return len(pkt), nil
@@ -186,6 +221,9 @@ func (m *Mux) readLoop() {
 				}
 			}
 			return
+		}
+		if m.isBlack(addr) {
+			continue
 		}
 		if n >= punchLen && string(buf[:len(punchMagic)]) == punchMagic {
 			m.handlePunch(buf[:n], addr)
@@ -314,7 +352,7 @@ func (v *View) WriteTo(b []byte, addr net.Addr) (int, error) {
 	switch v.kind {
 	case viewDirect:
 		t := v.Target()
-		if t == nil {
+		if t == nil || v.m.isBlack(t) {
 			v.m.drop()
 			return len(b), nil
 		}
@@ -331,6 +369,9 @@ func (v *View) WriteTo(b []byte, addr net.Addr) (int, error) {
 				return len(b), nil
 			}
 			return v.m.sendRelay(id, b)
+		}
+		if v.m.isBlack(addr) {
+			return len(b), nil
 		}
 		return v.m.udp.WriteTo(b, addr)
 	}

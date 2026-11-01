@@ -1,5 +1,6 @@
 // Package session keeps one QUIC connection per peer and moves it between the
-// relay and a direct path. The smaller device ID dials; the other side only
+// relay and a direct path. The hub names the dialer: the device that asked for
+// the rendezvous, or the smaller ID when both asked; the other side only
 // accepts. Direct paths are found by punching the candidates the hub hands
 // out; the dialer migrates the live connection onto a confirmed one with
 // quic-go's path API and migrates back when the keepalives stop.
@@ -39,6 +40,10 @@ const (
 	dialTimeout     = 10 * time.Second
 	maxEvents       = 100
 
+	// A session nobody here asked for (the hub announced the peer) is dropped
+	// after this long without a connection, so it stops asking the hub.
+	idleSession = 60 * time.Second
+
 	// quic-go 0.64 reserves one of the peer's connection IDs for every path
 	// the accepting side validates and never frees the one it switches to,
 	// so with the default budget of four a connection migrates twice and
@@ -48,7 +53,12 @@ const (
 
 // peerQUICConfig: notice a dead peer in 20 s, keep NAT mappings warm, and give
 // a single stream enough window for a fast link.
+//
+// Inner packets stay at 1200 bytes so that one fits, with the 32-byte peer
+// ID, in a single datagram on the hub connection.
 var peerQUICConfig = &quic.Config{
+	InitialPacketSize:              1200,
+	DisablePathMTUDiscovery:        true,
 	MaxIdleTimeout:                 20 * time.Second,
 	KeepAlivePeriod:                5 * time.Second,
 	MaxIncomingStreams:             1024,
@@ -125,9 +135,6 @@ func (m *Manager) acceptLoop() {
 			continue
 		}
 		s := m.session(id, true)
-		if s.dialer {
-			s.event("peer %s dialed me although I am the dialer; accepting anyway", id.Short())
-		}
 		s.setConn(conn, kindOf(conn.RemoteAddr()))
 		go s.serveConn(conn)
 		go s.watchRemote(conn)
@@ -148,19 +155,59 @@ func (m *Manager) session(peer identity.ID, create bool) *Session {
 	s := m.sessions[peer]
 	if s == nil && create {
 		ctx, cancel := context.WithCancel(m.ctx)
-		s = &Session{mgr: m, peer: peer, dialer: m.Key.ID.Less(peer), ctx: ctx, cancel: cancel, createdAt: time.Now()}
+		s = &Session{mgr: m, peer: peer, ctx: ctx, cancel: cancel, createdAt: time.Now()}
 		m.sessions[peer] = s
-		s.event("session created, dialer=%v", s.dialer)
+		s.event("session created")
 		go s.rendezvousLoop()
-		if s.dialer {
-			go s.dialRelay()
-		}
 	}
 	return s
 }
 
-// Connect starts (or returns) the session with peer.
-func (m *Manager) Connect(peer identity.ID) *Session { return m.session(peer, true) }
+// Connect starts (or returns) the session with peer and marks it wanted.
+func (m *Manager) Connect(peer identity.ID) *Session {
+	s := m.session(peer, true)
+	s.mu.Lock()
+	s.wanted = true
+	s.mu.Unlock()
+	return s
+}
+
+func (m *Manager) drop(s *Session) {
+	m.mu.Lock()
+	if m.sessions[s.peer] == s {
+		delete(m.sessions, s.peer)
+	}
+	m.mu.Unlock()
+	s.cancel()
+	s.mu.Lock()
+	if s.relayView != nil {
+		_ = s.relayView.Close()
+	}
+	if s.directView != nil {
+		_ = s.directView.Close()
+	}
+	s.mu.Unlock()
+	s.event("session dropped: idle")
+}
+
+// HubUp repeats the rendezvous for every session that still needs one; the
+// hub client calls it whenever the channel comes up.
+func (m *Manager) HubUp() {
+	m.mu.Lock()
+	list := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		list = append(list, s)
+	}
+	m.mu.Unlock()
+	for _, s := range list {
+		s.mu.Lock()
+		need := s.conn == nil || (s.active != PathDirect && !m.NoDirect)
+		s.mu.Unlock()
+		if need {
+			_ = m.Hub.Connect(s.peer)
+		}
+	}
+}
 
 // OnCandidates is the hub client's callback.
 func (m *Manager) OnCandidates(c wire.Candidates) {
@@ -172,13 +219,33 @@ func (m *Manager) OnCandidates(c wire.Candidates) {
 	s := m.session(peer, true)
 	s.mu.Lock()
 	s.candidates = c.Addrs
+	first := !s.roleKnown || s.dialer != c.Dialer
+	s.roleKnown = true
+	s.dialer = c.Dialer
+	s.online = c.Online
+	conn, dialing := s.conn, s.dialing
+	// A listener must not hold views: they would claim the dialer's packets
+	// and keep them from the listener on the default view.
+	if !c.Dialer && conn == nil && !dialing {
+		if s.relayView != nil {
+			_ = s.relayView.Close()
+			s.relayView, s.relayTr = nil, nil
+		}
+		if s.directView != nil {
+			_ = s.directView.Close()
+			s.directView, s.directTr = nil, nil
+		}
+	}
 	s.mu.Unlock()
 	if !c.Online {
 		s.event("hub: peer is offline")
 		return
 	}
-	if c.Dialer != s.dialer {
-		s.event("hub says dialer=%v but my id order says %v", c.Dialer, s.dialer)
+	if first {
+		s.event("hub: I am the %s", map[bool]string{true: "dialer", false: "listener"}[c.Dialer])
+	}
+	if c.Dialer && conn == nil && !dialing {
+		go s.dialRelay()
 	}
 	if !m.NoDirect {
 		go s.punch(c.Addrs)
@@ -190,22 +257,33 @@ func (m *Manager) onPunch(from identity.ID, addr *net.UDPAddr, kind byte, _ uint
 	if s == nil {
 		return
 	}
+	fresh := kind == mux.PunchOpen || kind == mux.PunchAck
 	s.mu.Lock()
 	s.lastAck = time.Now()
-	changed := s.directAddr == nil || s.directAddr.String() != addr.String()
-	if changed && (kind == mux.PunchOpen || kind == mux.PunchAck) {
+	key := addr.String()
+	newAddr := fresh && !s.confirmed[key]
+	if newAddr {
+		if s.confirmed == nil {
+			s.confirmed = map[string]bool{}
+		}
+		s.confirmed[key] = true
+	}
+	// Keep the best confirmed address: a LAN neighbour beats global IPv6,
+	// which beats the public IPv4 mapping; overlay networks come last.
+	better := fresh && (s.directAddr == nil || rank(addr) < rank(s.directAddr))
+	if better {
 		s.directAddr = addr
 	}
-	dialer, conn, active, migrating := s.dialer, s.conn, s.active, s.migrating
+	dialer, conn, active, migrating, best := s.dialer, s.conn, s.active, s.migrating, s.directAddr
 	s.mu.Unlock()
-	if changed && (kind == mux.PunchOpen || kind == mux.PunchAck) {
-		s.event("punch kind %d from %s: direct candidate confirmed", kind, addr)
+	if newAddr {
+		s.event("direct candidate confirmed: %s (%s)", addr, rankName(addr))
 	}
-	// Only a fresh punch round moves the connection: a late keepalive answer
-	// after a fallback must not bounce it straight back.
-	fresh := kind == mux.PunchOpen || kind == mux.PunchAck
+	// Only a fresh punch round moves the connection, onto the best address
+	// confirmed so far: a late keepalive answer after a fallback must not
+	// bounce it straight back.
 	if fresh && dialer && conn != nil && active == PathRelay && !migrating && !m.NoDirect {
-		go s.toDirect(addr)
+		go s.toDirect(best)
 	}
 }
 
@@ -262,6 +340,20 @@ func (m *Manager) Switch(peer identity.ID, path string) error {
 	return fmt.Errorf("unknown path %q", path)
 }
 
+// DirectAddr is the confirmed direct address of peer, if any.
+func (m *Manager) DirectAddr(peer identity.ID) string {
+	s := m.session(peer, false)
+	if s == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.directAddr == nil {
+		return ""
+	}
+	return s.directAddr.String()
+}
+
 // Active reports the path in use with peer.
 func (m *Manager) Active(peer identity.ID) string {
 	s := m.session(peer, false)
@@ -297,6 +389,11 @@ type Session struct {
 	cancel context.CancelFunc
 
 	mu          sync.Mutex
+	wanted      bool // asked for locally, never dropped
+	lastConn    time.Time
+	roleKnown   bool // the hub has said who dials
+	online      bool // the hub's last word on whether the peer has a channel
+	confirmed   map[string]bool
 	conn        *quic.Conn
 	active      string
 	directAddr  *net.UDPAddr
@@ -367,20 +464,32 @@ func (s *Session) setConn(conn *quic.Conn, kind string) {
 func (s *Session) rendezvousLoop() {
 	for {
 		s.mu.Lock()
-		conn, active, dialing := s.conn, s.active, s.dialing
+		conn, active, dialing, online := s.conn, s.active, s.dialing, s.online
 		s.mu.Unlock()
+		wait := rendezvousEvery
+		s.mu.Lock()
+		if conn != nil {
+			s.lastConn = time.Now()
+		}
+		idle := !s.wanted && conn == nil && time.Since(s.lastConn) > idleSession && time.Since(s.createdAt) > idleSession
+		s.mu.Unlock()
+		if idle {
+			s.mgr.drop(s)
+			return
+		}
 		if conn == nil || (active != PathDirect && !s.mgr.NoDirect) {
 			if err := s.mgr.Hub.Connect(s.peer); err != nil {
 				s.event("rendezvous: %v", err)
+				wait = 2 * time.Second
 			}
 		}
-		if s.dialer && conn == nil && !dialing {
+		if s.dialer && online && conn == nil && !dialing {
 			go s.dialRelay()
 		}
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-time.After(rendezvousEvery):
+		case <-time.After(wait):
 		}
 	}
 }
@@ -684,4 +793,32 @@ func (s *Session) redial(kind string, tr *quic.Transport, addr *net.UDPAddr) err
 		go s.keepalive(conn, addr)
 	}
 	return nil
+}
+
+// rank orders confirmed addresses, lower is better.
+func rank(a *net.UDPAddr) int {
+	ip := a.IP
+	switch {
+	case ip.IsLoopback():
+		return 0
+	case ip.To4() != nil && isCGNAT(ip):
+		return 5 // Tailscale and carrier-grade ranges: an overlay or a shared NAT
+	case ip.To4() != nil && ip.IsPrivate():
+		return 1 // same LAN
+	case ip.To4() == nil && ip.IsGlobalUnicast() && !ip.IsPrivate():
+		return 2 // global IPv6, end to end
+	case ip.To4() != nil:
+		return 3 // public IPv4, the punched mapping
+	default:
+		return 4 // IPv6 ULA, usually an overlay
+	}
+}
+
+func rankName(a *net.UDPAddr) string {
+	return [...]string{"loopback", "lan", "ipv6", "ipv4", "ula", "overlay"}[rank(a)]
+}
+
+func isCGNAT(ip net.IP) bool {
+	_, n, _ := net.ParseCIDR("100.64.0.0/10")
+	return n.Contains(ip)
 }
