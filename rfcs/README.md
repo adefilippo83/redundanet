@@ -13,6 +13,10 @@ thread linked from the document, and carries one of three statuses:
 `docs/` describes what the code does today; `rfcs/` describes what it should
 do next. When the two disagree, `docs/` wins until the RFC is implemented.
 
+A gate an RFC defines produces a record when it passes, kept beside the RFC
+as `NNNN-<gate>-decision.md` with the measurements and the decisions taken;
+the RFC's next version carries the consequences and links the record.
+
 | Number | Title | Status |
 | --- | --- | --- |
-| [0001](0001-redundanet-3.md) | RedundaNet 3: one binary on Windows, macOS and Linux, with a native storage engine | Draft |
+| [0001](0001-redundanet-3.md) | RedundaNet 3: one binary on Windows, macOS and Linux, with a native storage engine | Draft, version 4; [G0 passed](0001-g0-decision.md) |

@@ -19,17 +19,16 @@ def mx(d):
     return X0+MW*(m+(d.day-1)/days)
 D=dt.date
 rows=[ # (label, kind, start, end, text, style)
- ("Phase 0: spike","bar",D(2026,11,16),D(2026,11,30),"Nov 16 to Nov 30",""),
- ("G0: transport and cipher decided","gate",D(2026,11,30),None,"Nov 30",""),
- ("Phase 1: agent on Tahoe","bar",D(2026,12,1),D(2027,2,28),"Dec 1 to Feb 28",""),
- ("G1a: first macOS or Windows member","gate",D(2027,2,28),None,"Feb 28","accent"),
- ("Step 3: nodes leave Docker","bar",D(2027,3,1),D(2027,5,31),"Mar 1 to May 31, members' pace",""),
- ("G1b: tinc gone everywhere","gate",D(2027,5,31),None,"May 31",""),
- ("Phase 2: native engine","bar",D(2027,3,1),D(2027,7,31),"Mar 1 to Jul 31",""),
- ("G2: native backups, 30 days","gate",D(2027,8,31),None,"Aug 31",""),
- ("Phase 3: migration, 120 days","bar",D(2027,9,1),D(2027,12,29),"Sep 1 to Dec 29",""),
- ("G3: no Tahoe left","gate",D(2027,12,29),None,"Dec 29",""),
- ("Phase 4: polish, ongoing","bar",D(2028,1,1),D(2028,3,31),"From Jan 2028",""),
+ ("Phase 0: spike","bar",D(2026,11,1),D(2026,11,1),"Nov 1, done",""),
+ ("G0: transport, cipher, engine first","gate",D(2026,11,1),None,"Nov 1, passed",""),
+ ("Phase 1: control plane","bar",D(2026,11,15),D(2027,2,28),"Nov 15 to Feb 28",""),
+ ("G1: agent on every live node","gate",D(2027,2,28),None,"Feb 28",""),
+ ("Phase 2: native engine","bar",D(2027,3,1),D(2027,6,30),"Mar 1 to Jun 30",""),
+ ("Restore tests, 30 days","bar",D(2027,7,1),D(2027,7,31),"July",""),
+ ("G2: native backups, 30 days","gate",D(2027,7,31),None,"Jul 31, first cross-platform member","accent"),
+ ("Phase 3: members move, 120 days","bar",D(2027,8,1),D(2027,11,28),"Aug 1 to Nov 28, members' pace",""),
+ ("G3: no Tahoe, no tinc, no Docker","gate",D(2027,11,28),None,"Nov 28",""),
+ ("Phase 4: polish, ongoing","bar",D(2027,12,1),D(2028,3,31),"From Dec 2027",""),
 ]
 W,TOP,RH=1360,175,50
 H=TOP+RH*len(rows)+40
@@ -38,7 +37,7 @@ s=[]
 a=s.append
 a(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" font-family="-apple-system, Helvetica, Arial, sans-serif">')
 a(f'<rect width="{W}" height="{H}" fill="#ffffff"/>')
-a('<text x="42" y="50" font-size="26" font-weight="600" fill="#141413">The binary ships in February 2027; Tahoe is gone by the end of 2027</text>')
+a('<text x="42" y="50" font-size="26" font-weight="600" fill="#141413">The engine ships in July 2027; Tahoe, tinc and Docker are gone by the end of November</text>')
 a('<text x="42" y="84" font-size="19" fill="#5e5d59">Plan at about 15 hours a week from November 2026; gates are tests the live network passes</text>')
 for i,mn in enumerate(months):
     x=X0+MW*i
@@ -47,8 +46,8 @@ for i,mn in enumerate(months):
 for yr,i in (("2026",0),("2027",2),("2028",14)):
     a(f'<text x="{X0+MW*i}" y="112" font-size="19" font-weight="700" fill="#141413" text-anchor="middle">{yr}</text>')
 a(f'<line x1="{X0}" y1="155" x2="{X0+MW*(len(months)-1)}" y2="155" stroke="#c9c7bd" stroke-width="2"/>')
-gx=mx(D(2027,2,28))
-a(f'<line x1="{gx}" y1="{TOP+RH*3-12}" x2="{gx}" y2="{TOP+RH*len(rows)-10}" stroke="#2c7be5" stroke-width="2" stroke-dasharray="5 4"/>')
+gx=mx(D(2027,7,31))
+a(f'<line x1="{gx}" y1="{TOP+RH*6-12}" x2="{gx}" y2="{TOP+RH*len(rows)-10}" stroke="#2c7be5" stroke-width="2" stroke-dasharray="5 4"/>')
 right_edge=X0+MW*(len(months)-1)
 for i,(lab,kind,st,en,txt,style) in enumerate(rows):
     y=TOP+RH*i+12
