@@ -170,11 +170,11 @@ func TestRelayThenDirect(t *testing.T) {
 	if p := roundTrip(t, a, bID, "hello over the direct path"); p != PathDirect {
 		t.Fatalf("stream went over %s", p)
 	}
-	st := a.Status()
-	if len(st.Sessions) != 1 || !st.Sessions[0].Relay || st.Sessions[0].Direct == "" {
-		t.Fatalf("session status: %+v", st.Sessions)
-	}
-	if st.Hubs[0].Carrier != "udp" || st.Hubs[0].Observed == "" {
+	eventually(t, 10*time.Second, "both paths", func() bool {
+		st := a.Status()
+		return len(st.Sessions) == 1 && st.Sessions[0].Relay && st.Sessions[0].Direct != ""
+	})
+	if st := a.Status(); st.Hubs[0].Carrier != "udp" || st.Hubs[0].Observed == "" {
 		t.Fatalf("hub status: %+v", st.Hubs[0])
 	}
 	t.Logf("first stream over %s, then direct", first)

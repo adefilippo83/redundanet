@@ -164,16 +164,25 @@ func (c *hubClient) session(ctx context.Context) error {
 	if err := w.Message(wire.FrameHello, wire.Hello{Locals: c.ep.localCandidates()}); err != nil {
 		return fmt.Errorf("hello: %w", err)
 	}
-	typ, payload, err := wire.ReadFrame(car.rw)
-	if err != nil {
-		return fmt.Errorf("welcome: %w", err)
-	}
-	if typ != wire.FrameWelcome {
-		return fmt.Errorf("welcome: got frame type %d", typ)
-	}
+	// The Welcome is the first frame from a hub of this version; anything
+	// else before it is kept for after the channel is up.
 	var welcome wire.Welcome
-	if err := identity.Unmarshal(payload, &welcome); err != nil {
-		return err
+	var early [][2][]byte
+	for {
+		typ, payload, err := wire.ReadFrame(car.rw)
+		if err != nil {
+			return fmt.Errorf("welcome: %w", err)
+		}
+		if typ == wire.FrameWelcome {
+			if err := identity.Unmarshal(payload, &welcome); err != nil {
+				return err
+			}
+			break
+		}
+		if len(early) > 64 {
+			return errors.New("welcome: too many frames before it")
+		}
+		early = append(early, [2][]byte{{typ}, payload})
 	}
 	out := make(chan []byte, relayQueue)
 	done := make(chan struct{})
@@ -203,6 +212,9 @@ func (c *hubClient) session(ctx context.Context) error {
 	}
 	c.ep.log.Info("hub channel up", "hub", c.hub.Key.Short(), "carrier", car.name, "observed", welcome.Observed)
 	c.ep.onHubUp(c)
+	for _, f := range early {
+		c.handleFrame(w, f[0][0], f[1])
+	}
 
 	pingCtx, cancelPing := context.WithCancel(ctx)
 	defer cancelPing()
@@ -226,25 +238,30 @@ func (c *hubClient) session(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		switch typ {
-		case wire.FrameCandidates:
-			var cand wire.Candidates
-			if err := identity.Unmarshal(payload, &cand); err != nil {
-				return err
-			}
-			c.ep.onCandidates(c, cand)
-		case wire.FrameRelay:
-			if from, pkt, err := wire.SplitRelay(payload); err == nil {
-				c.relay.deliver(from, pkt)
-			}
-		case wire.FrameError:
-			var e wire.Error
-			_ = identity.Unmarshal(payload, &e)
-			c.ep.log.Warn("hub error", "hub", c.hub.Key.Short(), "msg", e.Msg)
-		case wire.FramePing:
-			_ = w.Frame(wire.FramePong, nil)
-		case wire.FramePong:
+		c.handleFrame(w, typ, payload)
+	}
+}
+
+func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
+	switch typ {
+	case wire.FrameCandidates:
+		var cand wire.Candidates
+		if err := identity.Unmarshal(payload, &cand); err != nil {
+			c.ep.log.Warn("hub sent bad candidates", "err", err)
+			return
 		}
+		c.ep.onCandidates(c, cand)
+	case wire.FrameRelay:
+		if from, pkt, err := wire.SplitRelay(payload); err == nil {
+			c.relay.deliver(from, pkt)
+		}
+	case wire.FrameError:
+		var e wire.Error
+		_ = identity.Unmarshal(payload, &e)
+		c.ep.log.Warn("hub error", "hub", c.hub.Key.Short(), "msg", e.Msg)
+	case wire.FramePing:
+		_ = w.Frame(wire.FramePong, nil)
+	case wire.FramePong:
 	}
 }
 

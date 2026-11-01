@@ -213,6 +213,24 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	defer close(done)
 	go c.writeRelay(done)
 
+	// Hello and Welcome come first, before the device is registered: once
+	// it is, a peer's rendezvous may write to it at any moment, and the
+	// first frame a device reads must be its Welcome.
+	typ, payload, err := wire.ReadFrame(r)
+	if err != nil || typ != wire.FrameHello {
+		return
+	}
+	var hello wire.Hello
+	if err := identity.Unmarshal(payload, &hello); err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.locals = hello.Locals
+	c.mu.Unlock()
+	if err := c.w.Message(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
+		return
+	}
+
 	id := c.peer.Device
 	s.mu.Lock()
 	if old := s.clients[id]; old != nil {
@@ -242,6 +260,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		}
 		switch typ {
 		case wire.FrameHello:
+			// A second Hello refreshes the candidates.
 			var hello wire.Hello
 			if err := identity.Unmarshal(payload, &hello); err != nil {
 				return
@@ -249,9 +268,6 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			c.mu.Lock()
 			c.locals = hello.Locals
 			c.mu.Unlock()
-			if err := c.w.Message(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
-				return
-			}
 		case wire.FrameConnect:
 			var req wire.Connect
 			if err := identity.Unmarshal(payload, &req); err != nil {
