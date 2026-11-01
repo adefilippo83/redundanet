@@ -216,7 +216,7 @@ on each pair.
 
 | Criterion | Bar | Result |
 | --- | --- | --- |
-| Direct path for the live NAT types | every pair of non-symmetric sites | IPv6 yes; public IPv4 punch between two Fritz!Box sites failed, cause open |
+| Direct path for the live NAT types | every pair of non-symmetric sites | IPv6 yes, every pair, first attempt; public IPv4 none, and there is no non-symmetric pair: the Pi site maps per destination port and the x86 site is symmetric |
 | Relayed throughput | at least tinc's | not comparable on the measured pair: the x86 site's uplink to Helsinki caps at about 10 Mbit/s over UDP and TCP alike, and tinc (16 to 24) evidently does not go through the hub there; Pi to x86 the relay wins, 23 to 29 against 14 to 22 |
 | Pi CPU at 20 Mbit/s | under 20 % | Pi 5: about 15 % of one core receiving, 7 % sending (scaled from 40 Mbit/s) |
 | Resume after a path switch | within seconds | yes with a 30-line quic-go patch: direct path cut mid-transfer, 6 s detection, 112 ms switch to the relay, the stream survived; without the patch quic-go never probes the new path |
@@ -230,7 +230,11 @@ Hub on hub-hetzner (Helsinki), agents on a MacBook (Fritz!Box, Germany), the
 Pi 5 node falcon-1 and the x86 node falcon. 64 or 128 MiB per run.
 
 **NAT survey.** Mac: endpoint-independent mapping, address-and-port-dependent
-filtering, global IPv6. falcon-1 (Pi 5): the same, global IPv6. falcon (x86):
+filtering, global IPv6. falcon-1 (Pi 5): a mapping that depends on the
+destination port (two STUN servers on different ports saw two different
+public ports; the RFC 5780 test, which keeps the port, called it endpoint
+independent and `natprobe` now reports the simple test's verdict instead),
+address-and-port-dependent filtering, global IPv6. falcon (x86):
 address-and-port-dependent mapping and filtering (symmetric), no IPv6: it can
 only ever relay.
 
@@ -317,8 +321,10 @@ ChaCha20-Poly1305 396 / 1556, BLAKE3 333 / 1321 (pure Go), SHA-256 1488 /
    loss to the end-to-end connection instead of seconds of hidden queue.
    Inner packets are capped at 1200 bytes so one fits a datagram.
 6. Public IPv4 punching between the Mac and the Pi failed with only the
-   reflexive candidate, although both NATs classify as punchable; IPv6
-   punched at once. Cause open.
+   reflexive candidate. The survey explains it: the Pi site's mapping depends
+   on the destination port, so the port the hub sees is not the port the Mac
+   must hit; `natprobe` had called it punchable because the RFC 5780 tests
+   keep the destination port. IPv6 punched at once.
 7. Overlay addresses (Tailscale) are left out of the candidates by default
    (`-include-overlay` brings them back), otherwise an overlay's relay passes
    for a direct path.

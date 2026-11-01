@@ -65,6 +65,7 @@ func main() {
 			r.Observed = append(r.Observed, xa.String())
 		}
 	}
+	simpleDependent := false
 	switch {
 	case len(r.Observed) == 0:
 		r.Notes = append(r.Notes, "no STUN server answered over IPv4")
@@ -73,11 +74,15 @@ func main() {
 	case allEqual(r.Observed):
 		r.Mapping = "endpoint independent"
 	default:
-		r.Mapping = "address dependent or worse"
+		r.Mapping = "address or port dependent"
+		simpleDependent = true
 	}
 	_ = conn.Close()
 
-	// RFC 5780 tests refine mapping and add filtering.
+	// RFC 5780 tests refine mapping and add filtering. Their mapping tests
+	// keep the destination port, so a NAT that maps per destination port
+	// passes them; the simple test above, with two servers on different
+	// ports, catches that, and its verdict wins.
 	for _, srv := range split(*full) {
 		m, f, err := rfc5780(srv, *timeout)
 		if err != nil {
@@ -85,8 +90,10 @@ func main() {
 			continue
 		}
 		r.Server = srv
-		if m != "" {
+		if m != "" && !simpleDependent {
 			r.Mapping = m
+		} else if m == "endpoint independent" && simpleDependent {
+			r.Notes = append(r.Notes, "RFC 5780 saw an endpoint-independent mapping toward one port, but two servers on different ports got different public ports: the mapping depends on the destination port, which hole punching cannot use")
 		}
 		r.Filtering = f
 		break
