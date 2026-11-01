@@ -156,6 +156,7 @@ func TestTransitionalManifestKeepsV2Keys(t *testing.T) {
 	if err != nil {
 		t.Skip("live manifest not beside the module")
 	}
+	live = []byte(strings.ReplaceAll(string(live), "\r\n", "\n")) // a Windows checkout has CRLF
 	f := newFixture(t)
 	v3 := f.yaml(t)
 	// Merge: the v3 fixture's network section lines go under the live one.
