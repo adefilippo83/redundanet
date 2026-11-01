@@ -1,0 +1,51 @@
+# Release of the RedundaNet 3 binary: a tag agent/vX.Y.Z builds the five
+# targets, writes checksums and opens a draft GitHub release. Signing (the
+# release key over the checksums; Developer ID and Authenticode) is added
+# before the first release reaches a member; until then the draft is for
+# testing the pipeline.
+name: agent release
+
+on:
+  push:
+    tags: ["agent/v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - run: go test -race -count=1 ./...
+      - name: build every target
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -e
+          version="${GITHUB_REF_NAME#agent/v}"
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
+            name="redundanet-$version-$os-$arch"
+            GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags="-s -w -X github.com/adefilippo83/redundanet/agent/internal/version.Version=$version" \
+              -o "dist/$name/redundanet$ext" ./cmd/redundanet
+            if [ "$os" = windows ]; then (cd dist && zip -qr "$name.zip" "$name"); else (cd dist && tar -czf "$name.tar.gz" "$name"); fi
+            rm -r "dist/$name"
+          done
+          (cd dist && sha256sum * > sha256sums.txt && cat sha256sums.txt)
+      - name: draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: "agent ${{ github.ref_name }}"
+          files: agent/dist/*

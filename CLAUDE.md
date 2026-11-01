@@ -28,6 +28,18 @@ bash scripts/scale-test.sh tier1|tier2 # object-count scaling benchmarks (tests/
 CI gates publishing: images/PyPI only build from green commits. Never weaken
 that chain.
 
+RedundaNet 3 (RFC 0001) is being built in `agent/`, a separate Go module;
+`spike/` is the measured prototype that preceded it and is not edited:
+
+```bash
+cd agent && go test -race ./...     # the agent's own gate; CI runs it on Linux, macOS and Windows
+cd agent && go build ./cmd/redundanet
+```
+
+The Go module has no cgo and must stay that way (one static binary per
+target). Its version is set at release time by `agent-release.yml` from a tag
+`agent/vX.Y.Z`; it does not touch `pyproject.toml`.
+
 ## Hard rules (learned in production)
 
 - **Never restart the tinc container alone.** The Tahoe containers live in its

@@ -1,0 +1,70 @@
+# RedundaNet 3 agent (agent/, Go). Runs on every change under agent/ on the
+# three platforms the binary ships for, and cross-compiles every target.
+name: agent
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "agent/**"
+      - ".github/workflows/agent.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: gofmt
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go vet ./...
+      - run: go test -race -count=1 -cover ./...
+      - run: go build ./...
+
+  cross-compile:
+    name: cross-compile
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: build every target
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -e
+          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/redundanet-$os-$arch$ext" ./cmd/redundanet
+          done
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: redundanet-binaries
+          path: agent/dist/
+          retention-days: 7
