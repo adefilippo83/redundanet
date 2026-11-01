@@ -1,8 +1,9 @@
 # Release of the RedundaNet 3 binary: a tag agent/vX.Y.Z builds the five
-# targets, writes checksums and opens a draft GitHub release. Signing (the
-# release key over the checksums; Developer ID and Authenticode) is added
-# before the first release reaches a member; until then the draft is for
-# testing the pipeline.
+# targets, writes checksums, prints the fragment to paste into
+# releases/index.yaml (which the maintainer then signs offline with
+# `redundanet release sign`) and opens a draft GitHub release. Developer ID
+# and Authenticode signing are added before the first release reaches a
+# member on macOS or Windows.
 name: agent release
 
 on:
@@ -29,20 +30,40 @@ jobs:
       - name: build every target
         env:
           CGO_ENABLED: "0"
+          # The release key's public half, a repository variable (it is not
+          # a secret); without it the binary cannot self-update and says so.
+          RELEASE_KEY: ${{ vars.REDUNDANET_RELEASE_KEY }}
+          INDEX_URL: ${{ vars.REDUNDANET_RELEASE_INDEX_URL }}
         run: |
           set -e
           version="${GITHUB_REF_NAME#agent/v}"
+          pkg=github.com/adefilippo83/redundanet/agent/internal/version
+          flags="-s -w -X $pkg.Version=$version"
+          [ -n "$RELEASE_KEY" ] && flags="$flags -X $pkg.ReleaseKey=$RELEASE_KEY"
+          [ -n "$INDEX_URL" ] && flags="$flags -X $pkg.ReleaseIndexURL=$INDEX_URL"
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
             os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
             name="redundanet-$version-$os-$arch"
-            GOOS=$os GOARCH=$arch go build -trimpath \
-              -ldflags="-s -w -X github.com/adefilippo83/redundanet/agent/internal/version.Version=$version" \
-              -o "dist/$name/redundanet$ext" ./cmd/redundanet
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "dist/$name/redundanet$ext" ./cmd/redundanet
             if [ "$os" = windows ]; then (cd dist && zip -qr "$name.zip" "$name"); else (cd dist && tar -czf "$name.tar.gz" "$name"); fi
             rm -r "dist/$name"
           done
           (cd dist && sha256sum * > sha256sums.txt && cat sha256sums.txt)
+      - name: index fragment for releases/index.yaml
+        run: |
+          version="${GITHUB_REF_NAME#agent/v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME//\//%2F}"
+          {
+            echo "  - version: $version"
+            echo "    channel: early"
+            echo "    notes: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME//\//%2F}"
+            echo "    assets:"
+            for f in dist/*.tar.gz dist/*.zip; do
+              n=$(basename "$f"); t=${n#redundanet-$version-}; t=${t%.tar.gz}; t=${t%.zip}
+              echo "      ${t%-*}/${t##*-}: {url: $base/$n, sha256: $(sha256sum "$f" | cut -d' ' -f1), size: $(stat -c %s "$f")}"
+            done
+          } | tee dist/index-fragment.yaml
       - name: draft release
         uses: softprops/action-gh-release@v2
         with:

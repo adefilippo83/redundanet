@@ -21,6 +21,9 @@ var commands = []command{
 	{"network", "the network descriptor: descriptor, join, status", runNetwork},
 	{"agent", "run the agent: join the mesh through the hubs of a signed manifest", runAgent},
 	{"hub", "run the hub mode: rendezvous and relay for a signed manifest", runHub},
+	{"service", "install the agent as a user service: install, uninstall, status", runService},
+	{"update", "self-update from the signed release index: check, apply, status", runUpdate},
+	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 
