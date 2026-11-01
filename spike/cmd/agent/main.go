@@ -27,6 +27,7 @@ import (
 	"github.com/adefilippo83/redundanet/spike/internal/hubclient"
 	"github.com/adefilippo83/redundanet/spike/internal/identity"
 	"github.com/adefilippo83/redundanet/spike/internal/mux"
+	"github.com/adefilippo83/redundanet/spike/internal/portmap"
 	"github.com/adefilippo83/redundanet/spike/internal/session"
 	"github.com/adefilippo83/redundanet/spike/internal/wire"
 )
@@ -65,6 +66,7 @@ func main() {
 	noDirect := flag.Bool("no-direct", false, "never punch or migrate: relay only")
 	loopbackCand := flag.Bool("loopback-candidates", false, "advertise 127.0.0.1 too, for tests on one machine")
 	onlyReflexive := flag.Bool("only-reflexive", false, "advertise no interface addresses: tests the public IPv4 punch alone")
+	portMap := flag.Bool("portmap", false, "ask the router for a UDP port mapping (PCP, NAT-PMP, UPnP) and advertise it: reachable even from a symmetric NAT")
 	includeOverlay := flag.Bool("include-overlay", false, "advertise overlay addresses too (Tailscale, carrier-grade ranges); off, so an overlay's own relay never counts as a direct path")
 	httpAddr := flag.String("http", "127.0.0.1:4481", "local status page; empty disables")
 	flag.Parse()
@@ -96,6 +98,41 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// A router mapping is a candidate any peer can reach. It is asked for
+	// before the hub channel comes up, so the first Hello carries it.
+	var mapped []string
+	if *portMap {
+		mctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		m, notes := portmap.Map(mctx, mx.LocalPort(), time.Hour)
+		cancel()
+		for _, n := range notes {
+			lg.Printf("portmap: %s", n)
+		}
+		if m != nil {
+			lg.Printf("portmap: %s", m)
+			mapped = append(mapped, m.External.String())
+			defer func() { _ = m.Release() }()
+			go func() {
+				t := time.NewTicker(m.Lifetime / 2)
+				defer t.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-t.C:
+						rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+						if r, err := portmap.MapWith(rctx, m.Proto, mx.LocalPort(), time.Hour); err != nil {
+							lg.Printf("portmap: refresh failed: %v", err)
+						} else {
+							m = r
+						}
+						cancel()
+					}
+				}
+			}()
+		}
+	}
+
 	exposed := map[int]bool{}
 	for _, p := range strings.Split(*expose, ",") {
 		if p = strings.TrimSpace(p); p != "" {
@@ -119,9 +156,9 @@ func main() {
 		Transport: tr, Mux: mx,
 		Locals: func() []string {
 			if *onlyReflexive {
-				return nil
+				return mapped
 			}
-			return localCandidates(mx.LocalPort(), *loopbackCand, *includeOverlay)
+			return append(append([]string(nil), mapped...), localCandidates(mx.LocalPort(), *loopbackCand, *includeOverlay)...)
 		},
 		OnCandidates: func(c wire.Candidates) { mgr.OnCandidates(c) },
 		OnUp:         func() { mgr.HubUp() },

@@ -14,6 +14,8 @@ What it contains:
 | `agent` | The device side. One UDP socket, a channel to the hub, one QUIC connection per peer that moves between the relay and a direct path, and the phase 1 loopback bridge for Tahoe. |
 | `natprobe` | Classifies a host's NAT (mapping and filtering behaviour, RFC 5780) and whether IPv6 works. |
 | `cryptobench` | AES-256-GCM, ChaCha20-Poly1305, BLAKE3, SHA-256 and Reed-Solomon 2-of-4 throughput on one core and on four. |
+| `tcpbench` | Plain TCP sink and source with random data, for the tinc baseline inside the tinc namespace. |
+| `portmap` | Asks the router for a two-minute UDP mapping with PCP, NAT-PMP and UPnP in turn, reports each, releases it. |
 
 Everything is Go 1.27 with quic-go 0.64, pion/stun, klauspost/reedsolomon and
 zeebo/blake3. `./build.sh` cross-compiles all four binaries for Linux
@@ -280,9 +282,11 @@ ChaCha20-Poly1305 396 / 1556, BLAKE3 333 / 1321 (pure Go), SHA-256 1488 /
    a laptop through the Hetzner hub (direct path blackholed mid-transfer with
    `/blackhole`), fixed by sending pending probes before the send-mode check:
    `patches/quic-go-v0.64.1-probe-when-congestion-limited.patch`, about 30
-   lines. With it, 700 MiB arrived intact across the loss: 6 s to notice,
-   112 ms to switch, then about half the fresh relay rate while congestion
-   control recovers. Worth an upstream issue and pull request.
+   lines plus an integration test that fails without it (3 of 3) and passes
+   with it (5 of 5); quic-go's own suites still pass. With it, 700 MiB
+   arrived intact across the loss: 6 s to notice, 112 ms to switch, then
+   about half the fresh relay rate while congestion control recovers. Issue
+   and pull request drafts are in `patches/README.md`, not filed.
 2. A forced switch from a busy fast path to a slower one fails for another
    reason: the receiver drops the probes as "potentially duplicate", because
    thousands of newer packets arrived on the fast path while they crossed the
@@ -298,8 +302,15 @@ ChaCha20-Poly1305 396 / 1556, BLAKE3 333 / 1321 (pure Go), SHA-256 1488 /
    over QUIC streams, QUIC datagrams or TLS over TCP. Tinc does 16 to 24
    between the same two nodes, so for that pair it must not be going through
    the hub: likely a port forward for UDP 655 on falcon-1's router, which the
-   spike cannot use because its socket port is random. Port mapping (PCP,
-   NAT-PMP, UPnP) or a configured public port is the next experiment.
+   spike cannot use because its socket port is random. RedundaNet 2's
+   install docs ask operators to open 655/udp, so its direct paths come from
+   hand-made forwards. Automatic port mapping is unavailable at all three
+   sites today: both Fritz!Boxes refuse PCP ("not authorized") and UPnP until
+   "allow independent port sharing" is enabled for the device, and the x86
+   site is double-NATed (PCP maps on the inner router, onto 192.168.1.2).
+   The agent has `-portmap`; enabling port sharing for falcon-1 on its
+   Fritz!Box is the one router change that would let the x86 node reach the
+   Pi directly and settle the comparison with tinc.
 5. Relayed packets now travel as QUIC datagrams, with a bounded queue at the
    hub and in each agent that drops instead of buffering. No throughput gain
    measured (the links are the limit), but a congested leg now shows up as
