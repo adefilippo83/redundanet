@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -158,8 +159,8 @@ func TestDownloadAndExtract(t *testing.T) {
 	if !bytes.Equal(got, payload) {
 		t.Fatal("extracted the wrong bytes")
 	}
-	if info, _ := os.Stat(exe); info.Mode().Perm()&0o100 == 0 {
-		t.Fatal("extracted executable is not executable")
+	if info, _ := os.Stat(exe); runtime.GOOS != "windows" && info.Mode().Perm()&0o100 == 0 {
+		t.Fatal("extracted executable is not executable") // Windows has no execute bit
 	}
 	if _, err := os.Stat(filepath.Join(dir, "asset")); err == nil {
 		t.Fatal("archive left behind")
