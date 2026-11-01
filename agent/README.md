@@ -13,16 +13,19 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/identity` | Seed and twelve-word phrase, member signing key and member secret, device keys, device certificates and revocations, the identity file at rest, and the TLS wire identity with its one verification function | Done, with tests |
 | `internal/manifest` | The v3 manifest: strict parser that sets aside the RedundaNet 2 keys of a transitional file, the validation rules of the RFC's Membership section, allocations, the operator key and `manifest.sig`, invite and confirmation signatures behind `vouched_by`, and the connection policy (`Allow`, `MayWrite`) from the manifest and the revocation list | Done, with tests |
 | `internal/membership` | The device's live view of the network: the network descriptor (the invite link's payload and the trust anchor), the fetch loop for `manifest.yaml` and `manifest.sig` from the repository, verification against the pinned operators, the last good copy on disk for offline starts, operator rotation only through a manifest the current keys signed, expiry (known devices stay, new ones wait for a re-sign), persisted revocations, and one `Allow` the transport keeps for good | Done, with tests |
+| `internal/release` | The signed release index: versions, channels, withdrawn flags, per-target assets with hashes, and the release key's rotation chain; download with hash and size checks and extraction of the executable from tar.gz or zip | Done, with tests |
+| `internal/update` | The two-stage self-update: fetch and verify the index, pick a release (channel, `min_version`, failed ones never retried), download, run the candidate on probation, rename it into place keeping the old binary, ask to be restarted | Done, with tests |
+| `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
 | `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `version` | Growing |
 
-Next, in order: the service integration and self-update, the local page,
-the census and status collector, the hub's manifest mirror and the join
-endpoint.
+Next, in order: the local page and API, the census heartbeat and the
+hub's status collector, the hub's manifest mirror and the join endpoint,
+the container build for today's nodes.
 
 ## Running it today
 
@@ -49,6 +52,30 @@ instead, trusting the operators that file lists, for tests and for the hub
 that serves the repository it is listed in. The agent answers every stream
 with its own bytes, since nothing speaks over the mesh yet, and logs a
 status snapshot every minute.
+
+```
+redundanet service install --network NAME     # this binary, as a user service that starts at login
+redundanet service status | uninstall
+
+redundanet update check | apply | status [--channel early]
+redundanet release keygen --key release.key                 # maintainer, once, offline
+redundanet release sign --key release.key --index releases/index.yaml
+```
+
+Self-update needs a release key embedded at build time (`-X
+.../version.ReleaseKey=`); a plain build has none and says so. The running
+agent checks the signed index hourly and on start. When a newer release
+fits its channel, or the manifest's `min_version` requires one, it
+downloads the asset, checks its hash and size, closes its own endpoint,
+starts the candidate as `agent --probation` on the same identity, and waits
+up to two minutes for the candidate to report that every hub answered and
+every peer the agent had came back. Only then is the new binary renamed
+into place, the old one kept beside it as `redundanet.old`, and the agent
+exits so the service starts the new version. A candidate that fails is
+recorded and never retried; the agent restarts its endpoint and carries on.
+The release key rotates only through records in the index signed by the
+key being retired, so a binary that embeds an old key still verifies a
+newer index; nothing in the manifest can name a release.
 
 What the membership rules do, in the words of the RFC: a manifest takes
 effect only with a valid operator signature and a revision above the last
