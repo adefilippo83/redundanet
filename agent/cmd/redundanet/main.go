@@ -15,6 +15,9 @@ type command struct {
 
 var commands = []command{
 	{"identity", "member and device identity: init, show, device-key, certify, accept-certificate", runIdentity},
+	{"operator", "the offline operator key: init", runOperator},
+	{"manifest", "sign a merged manifest, or verify a signature: sign, verify", runManifest},
+	{"validate", "check a manifest and print the allocations", runValidate},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 
