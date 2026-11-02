@@ -17,11 +17,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/quic-go/quic-go"
+
 	"github.com/adefilippo83/redundanet/agent/internal/api"
 	"github.com/adefilippo83/redundanet/agent/internal/collector"
 	"github.com/adefilippo83/redundanet/agent/internal/diskfree"
+	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/jobs"
+	"github.com/adefilippo83/redundanet/agent/internal/localdb"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
@@ -457,6 +462,38 @@ func runAgent(args []string) error {
 		onStream = shareproto.NewServer(st, &manifestPolicy{rc: rc}, rc.log).Handle
 	}
 
+	// The engine and the jobs: over whatever endpoint is current, so a
+	// self-update's handover does not strand them.
+	ldb, err := localdb.Open(rc.dataDir, nil)
+	if err != nil {
+		return err
+	}
+	defer ldb.Close()
+	devKey, err := rc.state.Device()
+	if err != nil {
+		return err
+	}
+	spoolDir := filepath.Join(rc.dataDir, "spool")
+	_ = os.MkdirAll(spoolDir, 0o700)
+	var runner *jobs.Runner
+	if !*probation {
+		eng, err := engine.New(engine.Config{Network: rc.state.Network, Member: rc.state.Member, Secret: rc.state.MemberSecret, Device: devKey, Cert: &rc.state.Certificate,
+			Manifest: rc.current, Client: shareproto.NewClient(func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
+				e := current()
+				if e == nil {
+					return nil, "", errors.New("the endpoint is handing over")
+				}
+				return e.OpenStream(ctx, peer)
+			}), DB: ldb, SpoolDir: spoolDir, Store: st, Log: rc.log})
+		if err != nil {
+			return err
+		}
+		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Log: rc.log})
+		if err != nil {
+			return err
+		}
+	}
+
 	// census is the heartbeat each hub gets: no address and no path in it.
 	census := func() wire.Census {
 		cs := wire.Census{Version: version.Version, Uptime: uint64(time.Since(rc.started).Seconds()), OS: runtime.GOOS + "/" + runtime.GOARCH, Roles: rc.state.Certificate.Certificate.Roles}
@@ -482,6 +519,16 @@ func runAgent(args []string) error {
 				if shares, bytes, err := st.Totals(); err == nil {
 					cs.Storage.Shares, cs.Storage.Bytes = uint64(shares), uint64(bytes)
 				}
+			}
+		}
+		if runner != nil {
+			at, partial := runner.LastBackup()
+			cb := &wire.CensusBackup{LastBackup: at, Partial: partial}
+			if v := runner.LastVerify(); v != nil {
+				cb.LastVerify, cb.VerifyOK = v.At, len(v.Failed) == 0 && v.Verified > 0
+			}
+			if !at.IsZero() || !cb.LastVerify.IsZero() {
+				cs.Backup = cb
 			}
 		}
 		if u := getU(); u != nil {
@@ -546,9 +593,15 @@ func runAgent(args []string) error {
 		return runProbation(ctx, ep, wanted)
 	}
 
+	go runner.Run(ctx)
 	apiSrv, err := api.Start(ctx, api.Config{
-		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log,
-		Snapshot: func() api.Snapshot { return rc.snapshot(current(), getU()) },
+		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log, Jobs: runner,
+		Snapshot: func() api.Snapshot {
+			s := rc.snapshot(current(), getU())
+			js := runner.Status()
+			s.Jobs = &js
+			return s
+		},
 		Actions: api.Actions{
 			CheckUpdate: func(ctx context.Context) (string, error) {
 				u := getU()

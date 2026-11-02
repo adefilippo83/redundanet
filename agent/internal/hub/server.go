@@ -240,7 +240,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		return
 	}
 	var hello wire.Hello
-	if err := identity.Unmarshal(payload, &hello); err != nil {
+	if err := identity.UnmarshalLenient(payload, &hello); err != nil {
 		return
 	}
 	c.mu.Lock()
@@ -281,7 +281,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		case wire.FrameHello:
 			// A second Hello refreshes the candidates.
 			var hello wire.Hello
-			if err := identity.Unmarshal(payload, &hello); err != nil {
+			if err := identity.UnmarshalLenient(payload, &hello); err != nil {
 				return
 			}
 			c.mu.Lock()
@@ -289,7 +289,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			c.mu.Unlock()
 		case wire.FrameConnect:
 			var req wire.Connect
-			if err := identity.Unmarshal(payload, &req); err != nil {
+			if err := identity.UnmarshalLenient(payload, &req); err != nil {
 				return
 			}
 			s.rendezvous(c, req.Peer)
@@ -299,7 +299,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 		case wire.FrameCensus:
 			var cs wire.Census
-			if err := identity.Unmarshal(payload, &cs); err != nil {
+			if err := identity.UnmarshalLenient(payload, &cs); err != nil {
 				return
 			}
 			if s.cfg.OnCensus != nil {
@@ -307,7 +307,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 		case wire.FrameShares:
 			var sc wire.ShareCensus
-			if err := identity.Unmarshal(payload, &sc); err != nil {
+			if err := identity.UnmarshalLenient(payload, &sc); err != nil {
 				return
 			}
 			if s.cfg.OnShares != nil {

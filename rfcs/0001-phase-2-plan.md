@@ -171,6 +171,25 @@ restore" and "Roots and snapshots".
   nodes, a restore to a temporary folder verifies against the sources, and
   the status page shows the last backup and the last verified restore. This
   starts the month that G2 measures.
+- Done 2026-11-02: `internal/snapshot` (directory and index objects,
+  retention), `internal/backup` (scan keys per platform, the 1% re-hash,
+  excludes, inline and chunked files, dedup against the local database and
+  the grid, a partial snapshot when a run is cut short), `internal/restore`
+  (list, browse, restore under temporary names with `.restored` for what
+  exists, the sampled restore test), `internal/jobs` (`backup.yaml`, the
+  nightly run, the monthly test, the restore in the background), the API,
+  the page card and `redundanet backup|restore`; the census carries the
+  two dates and the hub page shows them per member. On the grid from the
+  Mac: a 6 MB set of three files backed up to both nodes in 12 s with the
+  duplicate file sent once, a restore to a temporary folder came back
+  identical, the restore test verified 3 of 3. The grid test also found
+  that the alpha.7 hub closed the channel on the first heartbeat with the
+  new field (strict CBOR on protocol messages); channel frames and share
+  messages now skip unknown fields, so a new field no longer needs the
+  whole fleet on one version. Left for M5 and M6: the bandwidth cap, the
+  pending-set root publish during a long run, pausing a set while it is
+  being restored, and a settings page for schedule and retention (today
+  they are edited in `backup.yaml`).
 
 ### M5. Health: census table, repair, deletion, rebalance
 

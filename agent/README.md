@@ -29,9 +29,13 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
 | `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers) and a fake with the same contract for the jobs' tests | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
+| `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
+| `internal/backup` | The backup job against the engine interface: scan with the per-platform change key and the rolling re-hash, default excludes, per-file failures counted and listed, dedup through the local database and the engine, chunking, directory and index objects bottom-up, the root published even after an interruption as a partial snapshot | Done, with tests on the fake engine |
+| `internal/restore` | List a member's device roots and indexes, browse a snapshot without fetching what is not asked for, restore with temporary names and renames, mtime and mode after the data, name mapping and a report that is complete with exceptions, and the unattended restore test | Done, with tests |
+| `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `backup` (add, remove, list, run, verify), `restore` (list, browse, start, status), `status`, `open`, `logs`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -54,6 +58,8 @@ redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
 redundanet object put|get|has|check|repair --network NAME FILE|CAP
+redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify
+redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
 
 Both long-lived commands need this device's identity file and a joined
@@ -68,6 +74,12 @@ A storage device also opens its store in the `redundanet3` directory of
 at a rate that covers them monthly, and sends each hub its share census as
 deltas since the generation that hub last received, so the status page can
 show usage per member as the servers account it.
+The agent runs the backup sets in `backup.yaml` of its data directory
+(daily by default, two minutes after start first, and on `backup run`),
+the restore test monthly, and restores in the background; `backup` and
+`restore` are thin clients of its API. The heartbeat carries the day of
+the last backup and of the last passing restore test, which the hub page
+shows per member.
 No address and no path travel in it. The hub's collector keeps the
 heartbeats in `census.json`, serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
@@ -208,6 +220,9 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
 - Keys and device IDs: 32 bytes as 52 lowercase base32 characters.
 - Signed records: deterministic CBOR (RFC 8949 core), signature by Ed25519
   over `"redundanet/3/<domain>\0" || record`, one domain per record kind.
+- Protocol messages (channel frames, share messages): the same CBOR, but
+  a receiver skips fields it does not know, so devices and hubs may run
+  different versions; signed records stay strict.
 - Key derivation: HKDF-SHA256 from the seed with the labels in
   `internal/identity/member.go`; the test `TestKnownAnswers` pins them.
 - Display code: ten groups of four base32 characters of a hash of the key.

@@ -69,8 +69,9 @@ func (k *Key) UnmarshalText(b []byte) error {
 // Deterministic CBOR: every signed record is encoded the same way by every
 // implementation, so a signature made on one device verifies on another.
 var (
-	encMode cbor.EncMode
-	decMode cbor.DecMode
+	encMode    cbor.EncMode
+	decMode    cbor.DecMode
+	decLenient cbor.DecMode
 )
 
 func init() {
@@ -79,13 +80,19 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	decMode, err = cbor.DecOptions{
+	opts := cbor.DecOptions{
 		DupMapKey:         cbor.DupMapKeyEnforcedAPF,
 		IndefLength:       cbor.IndefLengthForbidden,
 		ExtraReturnErrors: cbor.ExtraDecErrorUnknownField,
 		MaxArrayElements:  1 << 16,
 		MaxMapPairs:       1 << 16,
-	}.DecMode()
+	}
+	decMode, err = opts.DecMode()
+	if err != nil {
+		panic(err)
+	}
+	opts.ExtraReturnErrors = cbor.ExtraDecErrorNone
+	decLenient, err = opts.DecMode()
 	if err != nil {
 		panic(err)
 	}
@@ -95,8 +102,16 @@ func init() {
 func Marshal(v any) ([]byte, error) { return encMode.Marshal(v) }
 
 // Unmarshal decodes a record strictly: no unknown fields, no duplicate keys,
-// no indefinite lengths.
+// no indefinite lengths. Signed records are decoded this way, so a field a
+// verifier does not know cannot ride along under a valid signature.
 func Unmarshal(b []byte, v any) error { return decMode.Unmarshal(b, v) }
+
+// UnmarshalLenient decodes a protocol message: as strict as Unmarshal about
+// duplicate keys and indefinite lengths, but a field the receiver does not
+// know is skipped. Channel frames and share messages are decoded this way,
+// so a device and a hub, or two devices, may run different versions: a
+// newer sender's fields do not break an older receiver.
+func UnmarshalLenient(b []byte, v any) error { return decLenient.Unmarshal(b, v) }
 
 // Signatures are over a domain-separated message, so a signature made for
 // one kind of record can never verify as another kind.

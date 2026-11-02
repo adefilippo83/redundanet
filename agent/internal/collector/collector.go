@@ -408,8 +408,10 @@ type Member struct {
 	AllocationGB   int    `json:"allocation_gb"`
 	Devices        int    `json:"devices"`
 	Online         int    `json:"online"`
-	StoredBytes    int64  `json:"stored_bytes"` // bytes of shares servers account to the member
-	Objects        int    `json:"objects"`      // distinct objects with at least one complete share
+	StoredBytes    int64  `json:"stored_bytes"`                    // bytes of shares servers account to the member
+	Objects        int    `json:"objects"`                         // distinct objects with at least one complete share
+	LastBackup     string `json:"last_backup,omitempty"`           // day of the newest backup of any device, "" when none
+	LastVerified   string `json:"last_verified_restore,omitempty"` // day of the newest passing restore test
 }
 
 // Status computes the projection now.
@@ -464,6 +466,7 @@ func (c *Collector) Status() Status {
 		known[k] = true
 	}
 	perMember := map[string]*Member{}
+	lastBackup, lastVerify := map[string]time.Time{}, map[string]time.Time{}
 	for k := range known {
 		d := Device{Device: k.String(), State: "never"}
 		var memberKey identity.Key
@@ -518,6 +521,15 @@ func (c *Collector) Status() Status {
 			d.Roles = []string{}
 		}
 		st.Devices = append(st.Devices, d)
+		if e, ok := entries[k]; ok && e.Census.Backup != nil {
+			b := e.Census.Backup
+			if !b.Partial && b.LastBackup.After(lastBackup[d.Member]) {
+				lastBackup[d.Member] = b.LastBackup
+			}
+			if b.VerifyOK && b.LastVerify.After(lastVerify[d.Member]) {
+				lastVerify[d.Member] = b.LastVerify
+			}
+		}
 		if pm := perMember[d.Member]; pm != nil {
 			pm.Devices++
 			if d.State == "online" {
@@ -545,6 +557,12 @@ func (c *Collector) Status() Status {
 		for _, mem := range m.Members {
 			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name),
 				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key]}
+			if t := lastBackup[mem.Name]; !t.IsZero() {
+				mm.LastBackup = t.UTC().Format("2006-01-02")
+			}
+			if t := lastVerify[mem.Name]; !t.IsZero() {
+				mm.LastVerified = t.UTC().Format("2006-01-02")
+			}
 			if pm := perMember[mem.Name]; pm != nil {
 				mm.Devices, mm.Online = pm.Devices, pm.Online
 			}
