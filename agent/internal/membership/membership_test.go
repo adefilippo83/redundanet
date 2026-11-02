@@ -14,6 +14,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 func seed(b byte) identity.Seed {
@@ -384,7 +385,7 @@ func TestMinVersion(t *testing.T) {
 	if m.Status().NeedsUpdate != "3.2.0" {
 		t.Fatalf("%+v", m.Status())
 	}
-	if versionLess("3.10.0", "3.9.0") || !versionLess("3.9.0", "3.10.0") {
+	if semver.Less("3.10.0", "3.9.0") || !semver.Less("3.9.0", "3.10.0") || !semver.Less("3.2.0-alpha.1", "3.2.0") {
 		t.Fatal("version compare is lexical")
 	}
 }

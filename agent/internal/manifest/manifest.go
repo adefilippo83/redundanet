@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 // Schema is the manifest schema this package reads.
@@ -332,9 +333,8 @@ func (ps *Problems) warnf(format string, args ...any) {
 }
 
 var (
-	nameRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
-	versionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	dateRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
 // Validate applies the rules of the RFC's Membership section. Errors make
@@ -368,8 +368,8 @@ func (m *Manifest) Validate() Problems {
 	if n.GraceDays < 1 {
 		ps.errorf("network.grace_days must be at least 1")
 	}
-	if n.MinVersion != "" && !versionRe.MatchString(n.MinVersion) {
-		ps.errorf("network.min_version %q is not MAJOR.MINOR.PATCH", n.MinVersion)
+	if n.MinVersion != "" && !semver.Valid(n.MinVersion) {
+		ps.errorf("network.min_version %q is not MAJOR.MINOR.PATCH with an optional pre-release suffix", n.MinVersion)
 	}
 	if n.SignatureMaxAgeDays < 1 {
 		ps.errorf("network.signature_max_age_days must be at least 1")

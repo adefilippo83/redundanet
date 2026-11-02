@@ -22,6 +22,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
+| `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
 | `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `status`, `open`, `logs`, `version` | Growing |
 
@@ -119,8 +120,9 @@ go build ./cmd/redundanet
 ```
 
 Go 1.27 or later, no cgo. `.github/workflows/agent.yml` runs the tests on
-Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`
-builds a draft release with checksums (`agent-release.yml`).
+Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`,
+or `agent/vX.Y.Z-alpha.N` for a pre-release, builds a draft release with
+checksums (`agent-release.yml`).
 
 ## Identity commands
 
