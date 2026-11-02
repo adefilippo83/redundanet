@@ -531,6 +531,13 @@ func runAgent(args []string) error {
 				}
 				return rel.Version, nil
 			},
+			RetryUpdate: func(ctx context.Context, v string) error {
+				u := getU()
+				if u == nil {
+					return errors.New("updates are off")
+				}
+				return u.Retry(v)
+			},
 			ApplyUpdate: func(ctx context.Context) error {
 				u := getU()
 				if u == nil {

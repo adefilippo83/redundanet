@@ -235,3 +235,24 @@ func TestRetryForgetsAFailure(t *testing.T) {
 		t.Fatalf("the retry was not persisted: %v", st.Failed)
 	}
 }
+
+func TestCheckSeesARetryFromAnotherProcess(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	service, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("candidate crashed") })
+	rel, _ := service.Check(context.Background())
+	if err := service.Apply(context.Background(), rel); err == nil {
+		t.Fatal("a failed probation must fail the apply")
+	}
+	if rel, _ := service.Check(context.Background()); rel != nil {
+		t.Fatal("a failed version must not be offered again")
+	}
+	// The CLI, another process over the same state, forgets the failure.
+	cli, _ := newUpdater(t, r, dir, nil)
+	if err := cli.Retry("3.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if rel, err := service.Check(context.Background()); err != nil || rel == nil || rel.Version != "3.0.1" {
+		t.Fatalf("the service did not see the retry without a restart: %v %v", rel, err)
+	}
+}

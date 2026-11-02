@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -81,4 +82,9 @@ func (c *Client) UpdateCheck(ctx context.Context) (string, error) {
 // UpdateApply asks the agent to install the available release.
 func (c *Client) UpdateApply(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/update/apply", nil)
+}
+
+// UpdateRetry forgets a failed probation so the version may be installed again.
+func (c *Client) UpdateRetry(ctx context.Context, version string) error {
+	return c.do(ctx, http.MethodPost, "/api/update/retry?version="+url.QueryEscape(version), nil)
 }

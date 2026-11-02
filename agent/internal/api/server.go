@@ -47,6 +47,7 @@ type Snapshot struct {
 type Actions struct {
 	CheckUpdate func(ctx context.Context) (string, error) // returns the available version, "" for none
 	ApplyUpdate func(ctx context.Context) error
+	RetryUpdate func(ctx context.Context, version string) error // forgets a failed probation
 }
 
 // Config wires the server.
@@ -114,6 +115,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/login-link", s.apiLoginLink)
 	mux.HandleFunc("POST /api/update/check", s.apiUpdateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.apiUpdateApply)
+	mux.HandleFunc("POST /api/update/retry", s.apiUpdateRetry)
 	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -244,6 +246,26 @@ func (s *Server) apiUpdateApply(w http.ResponseWriter, r *http.Request) {
 }
 
 // login redeems a one-time link for a session cookie and shows the page.
+func (s *Server) apiUpdateRetry(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAPI(w, r) {
+		return
+	}
+	if s.cfg.Actions.RetryUpdate == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	v := r.FormValue("version")
+	if v == "" {
+		http.Error(w, "version is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Actions.RetryUpdate(r.Context(), v); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]string{"result": v + " may be installed again at the next check"})
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.auth.redeem(r.URL.Query().Get("t"))
 	if !ok {
@@ -324,6 +346,17 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 			msg = "update failed: " + err.Error()
 		} else {
 			msg = "update started: the agent restarts when the new version passes probation"
+		}
+	case "update-retry":
+		if s.cfg.Actions.RetryUpdate == nil {
+			msg = "updates are not configured in this build"
+			break
+		}
+		v := r.FormValue("version")
+		if err := s.cfg.Actions.RetryUpdate(r.Context(), v); err != nil {
+			msg = "retry failed: " + err.Error()
+		} else {
+			msg = v + " may be installed again at the next check"
 		}
 	default:
 		http.NotFound(w, r)

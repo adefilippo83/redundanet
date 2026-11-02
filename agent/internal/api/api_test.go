@@ -25,6 +25,7 @@ type harness struct {
 	token   string
 	checks  int
 	applies int
+	retries int
 }
 
 func newHarness(t *testing.T) *harness {
@@ -40,12 +41,19 @@ func newHarness(t *testing.T) *harness {
 		Snapshot: func() Snapshot {
 			return Snapshot{Version: "3.0.0-test", Network: "testnet", Device: "dev", Member: "mem", Roles: []string{"client"},
 				Transport: &transport.Status{Sessions: []transport.SessionStatus{{Peer: "peerpeerpeer", Relay: true, Events: []transport.Event{{Time: time.Now(), What: "relay connection up"}}}}},
-				Update:    &update.Status{Enabled: true, Running: "3.0.0-test", Channel: "stable", Available: "3.0.1"},
+				Update:    &update.Status{Enabled: true, Running: "3.0.0-test", Channel: "stable", Available: "3.0.1", Failed: []string{"3.0.1"}},
 				Generated: time.Now()}
 		},
 		Actions: Actions{
 			CheckUpdate: func(context.Context) (string, error) { h.checks++; return "3.0.1", nil },
 			ApplyUpdate: func(context.Context) error { h.applies++; return errors.New("probation failed (test)") },
+			RetryUpdate: func(_ context.Context, v string) error {
+				if v != "3.0.1" {
+					return errors.New(v + " is not marked as failed")
+				}
+				h.retries++
+				return nil
+			},
 		},
 	})
 	if err != nil {
@@ -177,6 +185,12 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 	if r, _ := browser.Do(req); r.StatusCode != http.StatusBadGateway || h.applies != 1 {
 		t.Fatalf("api post with csrf header: %d applies=%d", r.StatusCode, h.applies)
 	}
+	// The page's retry form carries the version and the CSRF token.
+	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/update-retry", url.Values{"csrf": {csrf}, "version": {"3.0.1"}})
+	body, _ = io.ReadAll(r.Body)
+	if r.StatusCode != http.StatusOK || h.retries != 1 || !strings.Contains(string(body), "may be installed again") {
+		t.Fatalf("retry form: %d retries=%d", r.StatusCode, h.retries)
+	}
 	// GET never changes anything.
 	before := h.checks
 	browser.Get("http://" + h.srv.Addr() + "/action/update-check")
@@ -195,6 +209,12 @@ func TestClient(t *testing.T) {
 	v, err := c.UpdateCheck(context.Background())
 	if err != nil || v != "3.0.1" {
 		t.Fatalf("check: %v %q", err, v)
+	}
+	if err := c.UpdateRetry(context.Background(), "3.0.2"); err == nil || !strings.Contains(err.Error(), "not marked as failed") {
+		t.Fatalf("retry of a version that did not fail: %v", err)
+	}
+	if err := c.UpdateRetry(context.Background(), "3.0.1"); err != nil || h.retries != 1 {
+		t.Fatalf("retry: %v retries=%d", err, h.retries)
 	}
 	if err := c.UpdateApply(context.Background()); err == nil || !strings.Contains(err.Error(), "probation failed") {
 		t.Fatalf("apply: %v", err)
