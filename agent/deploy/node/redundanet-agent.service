@@ -1,0 +1,42 @@
+# RedundaNet 3 agent on a storage node: one static binary under a system
+# unit, self-updating with probation and rollback. Installed by install.sh;
+# see README.md. The binary lives under the service user's directory so the
+# updater can rename a new version into place; systemd restarts it after.
+[Unit]
+Description=RedundaNet 3 agent
+Documentation=https://github.com/adefilippo83/redundanet/tree/main/agent/deploy/node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=redundanet3
+Group=redundanet3
+EnvironmentFile=/etc/redundanet3/agent.env
+ExecStart=/var/lib/redundanet3/bin/redundanet agent \
+  --network ${NETWORK} \
+  --data-dir /var/lib/redundanet3 \
+  --channel ${CHANNEL} \
+  --storage-path ${STORAGE_PATH} \
+  --api 127.0.0.1:4470
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/redundanet3
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
