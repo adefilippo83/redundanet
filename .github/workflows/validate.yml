@@ -45,6 +45,7 @@ jobs:
             echo "== Validating $m =="
             poetry run redundanet validate "$m"
             poetry run python .github/scripts/validate_pr.py "$m"
+            poetry run python .github/scripts/validate_v3_members.py "$m"
           done
 
       # The RedundaNet 3 half: the agent's strict parser and the RFC's rules,

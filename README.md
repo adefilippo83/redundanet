@@ -220,6 +220,7 @@ graph TD
 - [Quick Start Guide](docs/quickstart.md)
 - [Configuration Reference](docs/configuration.md)
 - [Quotas and allocation](docs/quotas.md)
+- [Joining RedundaNet 3 as an existing member](docs/redundanet3-join.md)
 - [Architecture Overview](docs/architecture.md)
 - [Design RFCs](rfcs/) (plans under discussion; `docs/` describes what runs today)
 
