@@ -404,10 +404,11 @@ this section reflects: no phase on Tahoe.
 identity, signed manifest sync, the mesh with its path layer, hub mode (relay,
 directory, status collector, join endpoint), the user service, self-update
 with rollback, and a local page with status and settings. It runs beside the
-Docker stack on every live node, packaged as a container there because that
-is what today's update path installs, and never touches Tahoe or tinc; new
-devices, including the first macOS or Windows ones, join the mesh as client
-devices through the app's join flow and store nothing yet. Exit: G1, every
+Docker stack on every live node as one static binary under a system unit,
+installed once by the member and updating itself from then on, and never
+touches Tahoe or tinc; new devices, including the first macOS or Windows
+ones, join the mesh as client devices through the app's join flow and store
+nothing yet. Exit: G1, every
 live node runs the agent under the signed manifest, a signed update with
 rollback has rolled across the fleet, and a macOS or Windows device is on
 the status page.
