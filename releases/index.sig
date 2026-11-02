@@ -1,5 +1,5 @@
-revision: 1
-issued_at: 2026-11-02T10:23:16Z
-sha256: a7d19ab5020161ab9c39fae5374e1214a25e7cfc093daa070f64cf288bd40883
+revision: 2
+issued_at: 2026-11-02T11:49:19Z
+sha256: e19165e87071360f8fd1fa48c0c6a27ad20ca47eaf15d3576d0bce205aebdcd5
 signer: ullhlnovqlnxchcvfsdcdb6lrohxsucw5na6oevl7cedin227l4a
-signature: jiHQpF/I90r8yFTB7+FbNzxuVEXYubfI4Ui7PKdfcrdQbmjM2cE9hMXNyoSU8Zx0IoZwRExYbKGDm0zazeobAg==
+signature: g8uZnD4mHsB2EwZ522jf/7Wp6MWHvLz9PGY3BF92wLb/Rzp4gBtpotjLtDds8CMhnCNPM71mQRpJjgzdI22nBg==
