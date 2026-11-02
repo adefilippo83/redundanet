@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 1
+revision: 2
 network:
   name: redundanet
   encoding: {k: 2, n: 4}
@@ -28,17 +28,21 @@ hubs:
     tcp: 2.29.46.249:8443
     status: https://redundanet-hub.fly.dev/v3/
     key: bm4ld4ezgwnvup4654wd6su7h3id2p4nvhfq6a7krn3qfgfsfkna
-# Phase 1 (RFC 0001, G1): the agent beside the stack stores nothing yet, so
-# every member is a client with no allocation. Contributions and storage
-# devices follow once the nodes run the agent.
+# Phase 1 (RFC 0001, G1): the agent beside the stack stores nothing yet.
+# Contributions name the disks the native grid will use from phase 2.
 members:
   - name: adefilippo83
     key: wekrreaqlio4j3m4vzxo6hn5be2sa2gxxv7gx3mq54m4xffztv2a
-    contribution_gb: 0
-    allocation_gb: 0
-    sponsor: {member: reserve, gb: 0}
+    contribution_gb: 1800
     joined: 2026-11-02
     status: active
+storage:
+  - member: adefilippo83
+    device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
+    name: falcon
+  - member: adefilippo83
+    device: f3tvhbkoldiobpjza7uocjt62a5onkcuthrpjbatoryuibcbue5a
+    name: falcon-1
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
 - name: hub-fly
