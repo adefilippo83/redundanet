@@ -106,6 +106,15 @@ half of "Share on disk".
 - Exit: in tests, two endpoints on loopback store, resume, verify and serve
   shares under every refusal rule. On the grid, falcon and falcon-1 accept
   shares from the Mac, and the hub's collector receives their share census.
+- Done 2026-11-02, alpha.7: the first object on the native grid, 3 MB put
+  from the Mac with two shares on each node (about 2 s per share to falcon
+  over the relay, 130 ms to falcon-1 over a direct IPv6 path), read back
+  byte for byte from both nodes and from falcon-1 alone through parity
+  reconstruction; the page shows the shares per node and the owner's usage
+  as the servers account it. Two lessons, both fixed in alpha.8: the
+  confined service needs the store directory granted (the installer's
+  `storage` step), and an update candidate must inherit the service's own
+  flags, or it opens its store in the wrong place during probation.
 
 ### M3. The client engine, roots, placement
 
