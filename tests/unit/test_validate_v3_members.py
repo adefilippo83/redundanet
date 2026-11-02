@@ -96,7 +96,7 @@ class TestAttestation:
     def test_good_signature_passes(self, gpg_key):
         errors, notes = v3.validate(
             manifest(gpg_key["fingerprint"], gpg_key["signature"]),
-            fetch=lambda _f: gpg_key["armored"],
+            fetch=lambda _f: [gpg_key["armored"]],
         )
         assert errors == [] and any("attested" in n for n in notes)
 
@@ -104,7 +104,7 @@ class TestAttestation:
         spaced = " ".join(gpg_key["fingerprint"].lower()[i : i + 4] for i in range(0, 40, 4))
         m = manifest(gpg_key["fingerprint"], gpg_key["signature"])
         m["members"][0]["legacy_pgp"]["fingerprint"] = spaced
-        errors, _ = v3.validate(m, fetch=lambda _f: gpg_key["armored"])
+        errors, _ = v3.validate(m, fetch=lambda _f: [gpg_key["armored"]])
         assert errors == []
 
     def test_tampered_signature_fails(self, gpg_key):
@@ -116,25 +116,26 @@ class TestAttestation:
         ][1]
         lines[body] = ("A" if lines[body][0] != "A" else "B") + lines[body][1:]
         errors, _ = v3.validate(
-            manifest(gpg_key["fingerprint"], "\n".join(lines)), fetch=lambda _f: gpg_key["armored"]
+            manifest(gpg_key["fingerprint"], "\n".join(lines)),
+            fetch=lambda _f: [gpg_key["armored"]],
         )
         assert errors and "does not verify" in errors[0]
 
     def test_signature_over_another_key_fails(self, gpg_key):
         m = manifest(gpg_key["fingerprint"], gpg_key["signature"])
         m["members"][0]["key"] = MEMBER_KEY[:-1] + "b"
-        errors, _ = v3.validate(m, fetch=lambda _f: gpg_key["armored"])
+        errors, _ = v3.validate(m, fetch=lambda _f: [gpg_key["armored"]])
         assert errors and "does not verify" in errors[0]
 
     def test_key_of_another_members_node_is_refused(self, gpg_key):
         errors, _ = v3.validate(
             manifest(gpg_key["fingerprint"], gpg_key["signature"], node_member="bob"),
-            fetch=lambda _f: gpg_key["armored"],
+            fetch=lambda _f: [gpg_key["armored"]],
         )
         assert errors and "not a GPG key of alice" in errors[0]
 
     def test_missing_key_on_keyservers(self, gpg_key):
-        def nowhere(_f: str) -> str:
+        def nowhere(_f: str) -> list[str]:
             raise LookupError("keys.openpgp.org: 404")
 
         errors, _ = v3.validate(
@@ -144,7 +145,7 @@ class TestAttestation:
 
     def test_member_without_record_is_a_note(self, gpg_key):
         errors, notes = v3.validate(
-            manifest(gpg_key["fingerprint"], None), fetch=lambda _f: gpg_key["armored"]
+            manifest(gpg_key["fingerprint"], None), fetch=lambda _f: [gpg_key["armored"]]
         )
         assert errors == [] and any("still to come" in n for n in notes)
 
@@ -155,7 +156,20 @@ class TestAttestation:
             "alice: legacy_pgp needs fingerprint and signature"
         ]
         m["members"][0]["legacy_pgp"] = {"fingerprint": "ABCD", "signature": "x"}
-        assert "40-character" in v3.validate(m, fetch=lambda _f: "")[0][0]
+        assert "40-character" in v3.validate(m, fetch=lambda _f: [])[0][0]
+
+    def test_unimportable_copies_are_an_error(self, gpg_key):
+        stripped = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nbm90IGEga2V5\n-----END PGP PUBLIC KEY BLOCK-----\n"
+        errors, _ = v3.validate(
+            manifest(gpg_key["fingerprint"], gpg_key["signature"]), fetch=lambda _f: [stripped]
+        )
+        assert errors and "importable" in errors[0]
+        # A stripped copy beside a full one is fine: the full one is imported.
+        errors, _ = v3.validate(
+            manifest(gpg_key["fingerprint"], gpg_key["signature"]),
+            fetch=lambda _f: [stripped, gpg_key["armored"]],
+        )
+        assert errors == []
 
     def test_v2_only_manifest_passes(self):
         errors, notes = v3.validate({"network": {"name": "redundanet"}, "nodes": []})

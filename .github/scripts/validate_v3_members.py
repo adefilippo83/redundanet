@@ -38,9 +38,15 @@ def normalize(fingerprint: str) -> str:
     return fingerprint.replace(" ", "").upper().removeprefix("0X")
 
 
-def fetch_key(fingerprint: str) -> str:
-    """The armored public key for a fingerprint, from the first keyserver that has it."""
-    last = "no keyserver answered"
+def fetch_keys(fingerprint: str) -> list[str]:
+    """The armored public key for a fingerprint from every keyserver that has it.
+
+    keys.openpgp.org strips the user IDs of a key whose e-mail is not
+    verified, and GnuPG refuses to import a key without any, so every
+    answer is kept and the importable one wins.
+    """
+    found: list[str] = []
+    failures: list[str] = []
     for server in KEYSERVERS:
         query = urllib.parse.urlencode({"op": "get", "search": "0x" + fingerprint, "options": "mr"})
         url = f"https://{server}/pks/lookup?{query}"
@@ -48,15 +54,18 @@ def fetch_key(fingerprint: str) -> str:
             with urllib.request.urlopen(url, timeout=20) as response:
                 body = response.read().decode("utf-8", "replace")
         except OSError as err:
-            last = f"{server}: {err}"
+            failures.append(f"{server}: {err}")
             continue
         if "BEGIN PGP PUBLIC KEY BLOCK" in body:
-            return body
-        last = f"{server}: no key block in the answer"
-    raise LookupError(last)
+            found.append(body)
+        else:
+            failures.append(f"{server}: no key block in the answer")
+    if not found:
+        raise LookupError("; ".join(failures) or "no keyserver answered")
+    return found
 
 
-def verify(member_key: str, armored_key: str, signature: str, fingerprint: str) -> bool:
+def verify(member_key: str, armored_keys: list[str], signature: str, fingerprint: str) -> bool:
     """Whether signature is a good detached PGP signature over member_key by the key with fingerprint."""
     gpg = shutil.which("gpg") or shutil.which("gpg2")
     if gpg is None:
@@ -65,13 +74,23 @@ def verify(member_key: str, armored_key: str, signature: str, fingerprint: str) 
         Path(home).chmod(0o700)
         env = {**os.environ, "GNUPGHOME": home}
         base = [gpg, "--batch", "--no-tty", "--quiet"]
-        subprocess.run(
-            [*base, "--import"],
-            input=armored_key.encode(),
-            env=env,
-            check=True,
-            capture_output=True,
-        )
+        imported = 0
+        for armored in armored_keys:
+            if (
+                subprocess.run(
+                    [*base, "--import"],
+                    input=armored.encode(),
+                    env=env,
+                    capture_output=True,
+                    check=False,
+                ).returncode
+                == 0
+            ):
+                imported += 1
+        if imported == 0:
+            raise RuntimeError(
+                "no keyserver served an importable copy of the key (one with user IDs)"
+            )
         message = Path(home) / "member.key"
         message.write_bytes(member_key.encode())
         sig = Path(home) / "member.sig"
@@ -103,8 +122,8 @@ def verify(member_key: str, armored_key: str, signature: str, fingerprint: str) 
 
 def validate(
     manifest: object,
-    fetch: Callable[[str], str] = fetch_key,
-    verify_signature: Callable[[str, str, str, str], bool] = verify,
+    fetch: Callable[[str], list[str]] = fetch_keys,
+    verify_signature: Callable[[str, list[str], str, str], bool] = verify,
 ) -> tuple[list[str], list[str]]:
     """Check every legacy_pgp record; returns (errors, notes)."""
     errors: list[str] = []

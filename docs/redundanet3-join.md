@@ -36,7 +36,9 @@ printf '%s' <your member key> | gpg --armor --detach-sign -u <fingerprint of one
 
 If that key lives on the node, run the command there over SSH. CI verifies
 the signature against the fingerprint the manifest lists for your nodes, so
-it has to be one of those keys, published on keys.openpgp.org.
+it has to be one of those keys, published on a keyserver with its user IDs
+(keyserver.ubuntu.com keeps them; keys.openpgp.org strips them unless the
+e-mail is verified, and a key without them cannot be imported).
 
 ## 3. The pull request
 
