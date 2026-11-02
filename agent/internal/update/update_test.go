@@ -193,3 +193,19 @@ func TestSigURL(t *testing.T) {
 		t.Fatal(sigURL("https://x/releases/index.yaml"))
 	}
 }
+
+func TestStatusReportsTheServiceChannel(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	u, _ := newUpdater(t, r, dir, nil)
+	u.cfg.Channel = release.ChannelEarly
+	if _, err := u.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Another process, such as the CLI's `update status`, opens the same
+	// state with the default channel and must see the one the service uses.
+	other, _ := newUpdater(t, r, dir, nil)
+	if got := other.Status().Channel; got != release.ChannelEarly {
+		t.Fatalf("channel reported: %q", got)
+	}
+}

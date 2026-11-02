@@ -1697,22 +1697,23 @@ of steps 0, 1 and 3 is the members', because they run on members' machines.
      the v2 manifest lists, and CI checks that signature against the listed
      fingerprint, which is what attests that the new key belongs to the same
      person. One pull request adds every member's and node's v3 entries.
-1. **The agent beside the stack (G1).** The agent ships as a fourth container
-   in the existing compose stack, as a 2.x image release that nodes take
-   through `redundanet update`, on the host's network so its UDP socket is
-   the host's, with no privileges and no access to the Tahoe containers or
-   the tinc namespace. It brings the mesh, the hub channel and the census
-   heartbeat (version, liveness, free space, relay traffic); the share census
-   stays with the Python monitor until the native engine replaces it. The
-   container build has self-update disabled, because the image is the update
-   path there, and a compose healthcheck, hub reached, so `redundanet update`
-   rolls a broken agent back like any other container. Rollback: the
-   previous image. New devices install the binary: a macOS or Windows laptop
-   joins the mesh through the app's join flow as a client device and shows
-   on the status page, storing nothing yet. G1 passes when every live node
-   runs the agent under the signed manifest, a signed release has rolled
-   across the fleet with the rollback path exercised on at least one node,
-   and a device on another platform is on the page.
+1. **The agent beside the stack (G1).** The agent runs on each node as one
+   static binary under a system unit, beside the compose stack and on the
+   host's network so its UDP socket is the host's, with no privileges and no
+   access to the Tahoe containers or the tinc namespace. A member installs
+   it once with the node installer and certifies the node's device key on
+   their laptop; from then on the agent updates itself from the signed
+   release index with probation and rollback, the path that G1 must prove.
+   It brings the mesh, the hub channel and the census heartbeat (version,
+   liveness, free space, relay traffic); the share census stays with the
+   Python monitor until the native engine replaces it. Rollback: the
+   previous binary, kept beside the new one. New devices install the same
+   binary: a macOS or Windows laptop joins the mesh through the app's join
+   flow as a client device and shows on the status page, storing nothing
+   yet. G1 passes when every live node runs the agent under the signed
+   manifest, a signed release has rolled across the fleet with the rollback
+   path exercised on at least one node, and a device on another platform is
+   on the page.
 2. **Native grid beside Tahoe (phase 2, to G2).** Agents start the native
    server in a second directory on the same disk. Members point the backup
    job at their folders when they choose; the status page shows both grids.

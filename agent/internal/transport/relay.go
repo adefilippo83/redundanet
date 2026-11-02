@@ -95,3 +95,9 @@ func (r *relayConn) LocalAddr() net.Addr              { return r.local }
 func (r *relayConn) SetDeadline(time.Time) error      { return nil }
 func (r *relayConn) SetReadDeadline(time.Time) error  { return nil }
 func (r *relayConn) SetWriteDeadline(time.Time) error { return nil }
+
+// SetReadBuffer and SetWriteBuffer satisfy quic-go's socket buffer sizing,
+// which otherwise logs once that the relay is not a UDP socket. There is no
+// kernel buffer behind the relay, so there is nothing to size.
+func (r *relayConn) SetReadBuffer(int) error  { return nil }
+func (r *relayConn) SetWriteBuffer(int) error { return nil }
