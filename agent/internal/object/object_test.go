@@ -489,3 +489,19 @@ func benchOwner(b *testing.B) *owner {
 }
 
 var _ = fmt.Sprintf
+
+func TestDecodeRange(t *testing.T) {
+	o := newOwner(t, 1, 11)
+	data := pattern(3*DefaultSegmentSize+500, 12)
+	e := encodeAll(t, o, data, DefaultParams(2, 4))
+	var out bytes.Buffer
+	if err := DecodeRange(context.Background(), &out, e.cap, &e.Descriptor, e.sources(1, 3), 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out.Bytes(), data[DefaultSegmentSize:3*DefaultSegmentSize]) {
+		t.Fatal("range differs")
+	}
+	if err := DecodeRange(context.Background(), &out, e.cap, &e.Descriptor, e.sources(1, 3), 2, 9); err == nil {
+		t.Fatal("a range past the end was accepted")
+	}
+}
