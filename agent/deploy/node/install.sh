@@ -57,6 +57,11 @@ prepare() {
   fi
   install -m 0644 "$here/redundanet-agent.service" "$UNIT"
   systemctl daemon-reload
+  # quic-go asks for 7 MiB socket buffers; an unprivileged process only gets them if the kernel allows
+  if [ ! -f /etc/sysctl.d/90-redundanet-agent.conf ]; then
+    printf '# RedundaNet 3 agent: let quic-go size its UDP socket buffers (7 MiB)\nnet.core.rmem_max = 7500000\nnet.core.wmem_max = 7500000\n' > /etc/sysctl.d/90-redundanet-agent.conf
+    sysctl -q -p /etc/sysctl.d/90-redundanet-agent.conf || true
+  fi
 
   if [ -f "$DATA/identity" ]; then
     echo "this node already has an identity; nothing more to prepare"
