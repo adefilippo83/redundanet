@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,7 +101,8 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	if err != nil || docs.Find("report.bin") == nil || docs.Find(".DS_Store") != nil || docs.Find("same.bin").Cap != docs.Find("report.bin").Cap {
 		t.Fatalf("browse docs: %v %+v", err, docs)
 	}
-	if _, root, _ := restore.Browse(ctx, w.fake, snap, []string{w.src}); root.Find("Library") == nil || root.Find("Library").Entries != 0 || root.Find("link").Target != "docs/report.bin" || root.Find("notes.txt").Inline == nil || root.Find("docs").Mtime == 0 {
+	linkTarget := filepath.FromSlash("docs/report.bin") // os.Symlink stores the platform's separator
+	if _, root, _ := restore.Browse(ctx, w.fake, snap, []string{w.src}); root.Find("Library") == nil || root.Find("Library").Entries != 0 || root.Find("link").Target != linkTarget || root.Find("notes.txt").Inline == nil || root.Find("docs").Mtime == 0 {
 		t.Fatalf("root entries: %+v", root)
 	}
 	if _, lib, _ := restore.Browse(ctx, w.fake, snap, []string{w.src, "Library"}); lib.Find("Caches") != nil {
@@ -107,6 +110,14 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	}
 	if _, _, err := restore.Browse(ctx, w.fake, snap, []string{w.src, "nope"}); err != snapshot.ErrNotFound {
 		t.Fatalf("missing path: %v", err)
+	}
+	// A typed path resolves to elements with either separator, and the
+	// top element is the entry's own name.
+	for _, typed := range []string{filepath.Join(w.src, "docs"), strings.ReplaceAll(w.src, "/", `\`) + `\docs`, strings.ReplaceAll(w.src, `\`, "/") + "/docs/"} {
+		elems, err := restore.Resolve(ctx, w.fake, snap, typed)
+		if err != nil || len(elems) != 2 || elems[0] != w.src || elems[1] != "docs" {
+			t.Fatalf("resolve %q: %v %q", typed, err, elems)
+		}
 	}
 	// Restore the whole folder and compare.
 	target := filepath.Join(t.TempDir(), "restored")
@@ -126,7 +137,7 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 			t.Fatalf("%s: mtime or mode not restored", rel)
 		}
 	}
-	if l, err := os.Readlink(filepath.Join(target, "link")); err != nil || l != "docs/report.bin" {
+	if l, err := os.Readlink(filepath.Join(target, "link")); err != nil || l != linkTarget {
 		t.Fatalf("symlink: %v", err)
 	}
 	// Restore a single file onto an existing one: kept with a suffix.
@@ -209,6 +220,9 @@ func TestInterruptedRunPublishesAPartialSnapshot(t *testing.T) {
 func TestUnreadableFileIsSkippedAndCounted(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root reads everything")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("a file mode does not make a file unreadable on Windows")
 	}
 	w := newWorld(t)
 	p := filepath.Join(w.src, "docs", "secret.bin")

@@ -127,7 +127,7 @@ func Browse(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, elems
 // first element and the rest is split on slashes. An empty path is the
 // top.
 func Resolve(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, p string) ([]string, error) {
-	p = filepath.ToSlash(p)
+	p = slashes(p)
 	if p == "" || p == "/" {
 		return nil, nil
 	}
@@ -135,17 +135,20 @@ func Resolve(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, p st
 	if err != nil {
 		return nil, err
 	}
-	best := ""
+	// The top entry is matched on a slash-normalised form, since the path
+	// may be typed on another platform than the one that backed it up, but
+	// the element handed on is the entry's own name.
+	best, bestName := "", ""
 	for _, en := range top.Entries {
-		name := filepath.ToSlash(en.NameString())
+		name := slashes(en.NameString())
 		if (p == name || strings.HasPrefix(p, strings.TrimSuffix(name, "/")+"/")) && len(name) > len(best) {
-			best = name
+			best, bestName = name, en.NameString()
 		}
 	}
 	if best == "" {
 		return nil, snapshot.ErrNotFound
 	}
-	elems := []string{best}
+	elems := []string{bestName}
 	for _, part := range strings.Split(strings.TrimPrefix(strings.TrimPrefix(p, best), "/"), "/") {
 		if part != "" {
 			elems = append(elems, part)
@@ -153,6 +156,12 @@ func Resolve(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, p st
 	}
 	return elems, nil
 }
+
+// slashes turns both separators into "/", whatever the platform: a backup
+// made on Windows is browsed from a Mac with the names it has, and the
+// other way round. A Unix name containing a backslash is split like a
+// path here, so browse it by elements instead.
+func slashes(p string) string { return strings.ReplaceAll(filepath.ToSlash(p), `\`, "/") }
 
 // Options steer a restore.
 type Options struct {
