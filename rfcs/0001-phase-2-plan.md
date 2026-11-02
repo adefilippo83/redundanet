@@ -137,6 +137,15 @@ The RFC's `Engine` interface, implemented over the share protocol.
 - Exit: an object put from the Mac is read back with one of the two nodes
   stopped; the per-server cap and the free-space floor refuse as specified;
   the hub's status shows the object's placement.
+- Done 2026-11-02: `internal/engine` and `internal/localdb`. The suite runs
+  one contract against the fake and the native engine over a loopback grid
+  of two members' servers, plus placement across members, a server that
+  refuses (every share lands on the other), a server down (read through
+  parity, check under-placed, the owner's repair onto the survivor, a root
+  refused for lack of quorum). On the grid, `object put` placed a 5 MB
+  file from the Mac in 8 s with two shares on each node, `check` and `has`
+  found it, `get` read it back verified in 9 s, and a second put moved
+  nothing. Still owner-side: repair and deletion by hub tasks come in M5.
 
 ### M4. Backup and restore
 

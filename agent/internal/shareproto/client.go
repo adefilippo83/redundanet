@@ -90,6 +90,88 @@ func (c *Client) PutShare(ctx context.Context, peer identity.Key, sd *object.Sig
 	return nil
 }
 
+// PutStream is a share being sent block by block: what one encoding pass
+// over the spool feeds, one stream per share, all at once.
+type PutStream struct {
+	st       *quic.Stream
+	geom     object.Geometry
+	resume   int
+	complete bool
+	next     int
+	err      error
+}
+
+// Resume is the segment the server wants first; blocks before it are
+// skipped by Write.
+func (p *PutStream) Resume() int { return p.resume }
+
+// Complete reports that the server already held the share: nothing to send.
+func (p *PutStream) Complete() bool { return p.complete }
+
+// Write sends the block of a segment; segments arrive in order.
+func (p *PutStream) Write(segment int, b []byte) error {
+	if p.err != nil {
+		return p.err
+	}
+	if p.complete || segment < p.resume {
+		return nil
+	}
+	if segment != p.next {
+		p.err = fmt.Errorf("shareproto: segment %d out of order, expected %d", segment, p.next)
+		return p.err
+	}
+	if len(b) != p.geom.BlockSize(segment) {
+		p.err = fmt.Errorf("shareproto: block %d has %d bytes, the geometry says %d", segment, len(b), p.geom.BlockSize(segment))
+		return p.err
+	}
+	if _, err := p.st.Write(b); err != nil {
+		p.err = err
+		return err
+	}
+	p.next++
+	return nil
+}
+
+// Finish waits for the server's verdict and closes the stream.
+func (p *PutStream) Finish() error {
+	defer p.st.Close()
+	if p.err != nil {
+		p.st.CancelRead(1)
+		return p.err
+	}
+	if p.complete {
+		return nil
+	}
+	if p.next != p.geom.Segments() {
+		p.st.CancelRead(1)
+		return fmt.Errorf("shareproto: only %d of %d segments were written", p.next, p.geom.Segments())
+	}
+	var done Response
+	if err := readMsg(p.st, &done); err != nil {
+		return fmt.Errorf("shareproto: put: %w", err)
+	}
+	if done.Status != StatusOK {
+		return &StatusError{Status: done.Status, Message: done.Message}
+	}
+	return nil
+}
+
+// Abandon drops the stream; the server keeps the partial for a resume.
+func (p *PutStream) Abandon() {
+	p.st.CancelRead(1)
+	_ = p.st.Close()
+}
+
+// BeginPut opens a put for share n and learns where to start.
+func (c *Client) BeginPut(ctx context.Context, peer identity.Key, sd *object.SignedDescriptor, n uint8) (*PutStream, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypePut, StorageIndex: sd.Descriptor.StorageIndex, Number: n, Descriptor: sd})
+	if err != nil {
+		return nil, err
+	}
+	p := &PutStream{st: st, geom: sd.Descriptor.Geometry(), resume: resp.Resume, complete: resp.Complete, next: resp.Resume}
+	return p, nil
+}
+
 // GetShare fetches a share's block hashes and the blocks of segments
 // [from, to); to of 0 means all. sink receives each block in order.
 func (c *Client) GetShare(ctx context.Context, peer identity.Key, si object.StorageIndex, n uint8, from, to int, geom object.Geometry, sink func(segment int, block []byte) error) ([]object.Hash, error) {

@@ -318,3 +318,84 @@ func Decode(ctx context.Context, w io.Writer, rc ReadCap, desc *Descriptor, conv
 	}
 	return nil
 }
+
+// DecodeRange rebuilds segments [from, to) into w, verifying every block
+// against the signed share roots. A range cannot check the ciphertext
+// hash or the key, which cover the whole object; Decode does both.
+func DecodeRange(ctx context.Context, w io.Writer, rc ReadCap, desc *Descriptor, sources []Source, from, to int) error {
+	if err := desc.check(); err != nil {
+		return err
+	}
+	dh, err := desc.Hash()
+	if err != nil {
+		return err
+	}
+	if dh != rc.DescriptorHash || desc.StorageIndex != rc.Key.StorageIndex() || desc.Size != rc.Size {
+		return ErrMismatch
+	}
+	geom := desc.Geometry()
+	segments := geom.Segments()
+	if from < 0 || to > segments || from > to {
+		return fmt.Errorf("object: segments %d to %d of %d", from, to, segments)
+	}
+	usable := map[int]Source{}
+	for _, src := range sources {
+		if src.Share < 0 || src.Share >= int(desc.N) || len(src.Hashes) != segments || ShareRoot(src.Hashes) != desc.ShareRoots[src.Share] {
+			continue
+		}
+		if _, dup := usable[src.Share]; !dup {
+			usable[src.Share] = src
+		}
+	}
+	if len(usable) < int(desc.K) {
+		return ErrNotEnoughShares
+	}
+	gcm, err := aead(rc.Key, desc.Cipher)
+	if err != nil {
+		return err
+	}
+	rs, err := reedsolomon.New(int(desc.K), int(desc.N)-int(desc.K))
+	if err != nil {
+		return err
+	}
+	order := make([]int, 0, len(usable))
+	for i := 0; i < int(desc.N); i++ {
+		if _, ok := usable[i]; ok {
+			order = append(order, i)
+		}
+	}
+	for s := from; s < to; s++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		shards := make([][]byte, desc.N)
+		have := 0
+		for _, i := range order {
+			if have == int(desc.K) {
+				break
+			}
+			src := usable[i]
+			b, err := src.Read(ctx, s)
+			if err != nil || len(b) != geom.BlockSize(s) || Sum(b) != src.Hashes[s] {
+				continue
+			}
+			shards[i] = b
+			have++
+		}
+		if have < int(desc.K) {
+			return ErrNotEnoughShares
+		}
+		if err := rs.ReconstructData(shards); err != nil {
+			return fmt.Errorf("object: reconstruct segment %d: %w", s, err)
+		}
+		ct := bytes.Join(shards[:desc.K], nil)[:geom.CiphertextLen(s)]
+		pt, err := gcm.Open(nil, nonce(uint64(s)), ct, additionalData(desc.StorageIndex, uint64(s), desc.Size))
+		if err != nil {
+			return fmt.Errorf("%w: segment %d fails authentication", ErrCorrupt, s)
+		}
+		if _, err := w.Write(pt); err != nil {
+			return err
+		}
+	}
+	return nil
+}

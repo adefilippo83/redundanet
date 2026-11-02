@@ -27,9 +27,11 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
 | `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, tombstones, root records, the census delta, the scrub, and the marker that ties the store to its disk | Done, with tests |
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
+| `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers) and a fake with the same contract for the jobs' tests | Done, with tests |
+| `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has), `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `status`, `open`, `logs`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -51,7 +53,7 @@ redundanet network status [--refresh]
 redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
-redundanet object put|get|has --network NAME --servers KEY,... FILE|CAP
+redundanet object put|get|has|check|repair --network NAME FILE|CAP
 ```
 
 Both long-lived commands need this device's identity file and a joined
