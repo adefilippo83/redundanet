@@ -17,13 +17,17 @@ import (
 
 	"github.com/quic-go/quic-go"
 
+	"github.com/adefilippo83/redundanet/agent/internal/api"
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
+	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
+	"github.com/adefilippo83/redundanet/agent/internal/version"
 )
 
 // `hub` and `agent` run the two long-lived modes against a signed manifest
@@ -39,6 +43,34 @@ type runtimeConfig struct {
 	allow   identity.Allow
 	current func() *manifest.Manifest
 	log     *slog.Logger
+	logs    *logbuf.Buffer
+	dataDir string
+	started time.Time
+}
+
+// snapshot is what the local API shows.
+func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater) api.Snapshot {
+	s := api.Snapshot{Version: version.Version, Uptime: time.Since(rc.started).Round(time.Second).String(), DataDir: rc.dataDir,
+		Device: rc.device.String(), Member: rc.state.Member.String(), MemberCode: identity.DisplayCode(rc.state.Member),
+		Roles: rc.state.Certificate.Certificate.Roles, Generated: time.Now()}
+	if m := rc.current(); m != nil {
+		s.Network = m.Network.Name
+	}
+	if ep != nil {
+		t := ep.Status()
+		s.Transport = &t
+	}
+	if rc.member != nil {
+		m := rc.member.Status()
+		s.Membership = &m
+	}
+	if u != nil {
+		st := u.Status()
+		s.Update = &st
+	}
+	sv := service.Query("")
+	s.Service = &sv
+	return s
 }
 
 // loadRuntime builds what agent and hub share. With a descriptor in the
@@ -70,8 +102,9 @@ func loadRuntime(ctx context.Context, dir, network, mPath, sigPath string, verbo
 	if verbose {
 		level = slog.LevelDebug
 	}
-	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
-	rc := &runtimeConfig{state: st, tlsID: tlsID, device: dev.ID(), log: lg}
+	ring := logbuf.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}), 500)
+	lg := slog.New(ring)
+	rc := &runtimeConfig{state: st, tlsID: tlsID, device: dev.ID(), log: lg, logs: ring, dataDir: d, started: time.Now()}
 
 	if mPath == "" {
 		m, err := openMembership(ctx, d, onApply)
@@ -168,6 +201,7 @@ func runAgent(args []string) error {
 	tcpOnly := fs.Bool("tcp-only", false, "reach hubs over TCP only")
 	loopback := fs.Bool("loopback-candidates", false, "advertise 127.0.0.1 too, for tests on one machine")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
+	apiAddr := fs.String("api", "127.0.0.1:4470", "local API and page; loopback only")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
@@ -241,6 +275,50 @@ func runAgent(args []string) error {
 		return runProbation(ctx, ep, wanted)
 	}
 
+	var u *update.Updater
+	apiSrv, err := api.Start(ctx, api.Config{
+		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log,
+		Snapshot: func() api.Snapshot { return rc.snapshot(current(), u) },
+		Actions: api.Actions{
+			CheckUpdate: func(ctx context.Context) (string, error) {
+				if u == nil {
+					return "", errors.New("updates are off")
+				}
+				rel, err := u.Check(ctx)
+				if err != nil || rel == nil {
+					return "", err
+				}
+				return rel.Version, nil
+			},
+			ApplyUpdate: func(ctx context.Context) error {
+				if u == nil {
+					return errors.New("updates are off")
+				}
+				rel, err := u.Check(ctx)
+				if err != nil {
+					return err
+				}
+				if rel == nil {
+					return errors.New("nothing to apply")
+				}
+				go func() {
+					if err := u.Apply(context.Background(), rel); errors.Is(err, update.ErrRestart) {
+						rc.log.Info("new version installed, exiting so the service starts it")
+						stop()
+						os.Exit(0)
+					} else if err != nil {
+						rc.log.Warn("update failed", "err", err)
+					}
+				}()
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_ = apiSrv
+
 	if !*noUpdate && *mPath == "" {
 		d, _ := dataDir(*dir)
 		// The peers this agent has are noted when the endpoint is handed
@@ -292,7 +370,7 @@ func runAgent(args []string) error {
 				}
 			}
 		}
-		u, err := newUpdater(d, *channel, probe, handover)
+		u, err = newUpdater(d, *channel, probe, handover)
 		if err != nil {
 			return err
 		}
