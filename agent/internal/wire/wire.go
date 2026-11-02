@@ -31,6 +31,7 @@ const (
 	FrameError      byte = 6 // hub to device: Error
 	FramePing       byte = 7
 	FramePong       byte = 8
+	FrameCensus     byte = 9 // device to hub: Census
 )
 
 // MaxFrame bounds a frame payload.
@@ -59,6 +60,34 @@ type Candidates struct {
 	Addrs  []string     `cbor:"addrs"`  // UDP candidates, observed first
 	Dialer bool         `cbor:"dialer"` // whether the receiver opens the connection
 	Online bool         `cbor:"online"` // false when the peer has no channel right now
+}
+
+// Census is a device's heartbeat to the hub: what the status page may show
+// about it. It carries no address and no path; the hub sees the channel's
+// source address on its own and keeps it to itself.
+type Census struct {
+	Version  string         `cbor:"version" json:"version"`
+	Uptime   uint64         `cbor:"uptime" json:"uptime"` // seconds
+	OS       string         `cbor:"os" json:"os"`         // GOOS/GOARCH
+	Roles    []string       `cbor:"roles" json:"roles"`
+	Manifest uint64         `cbor:"manifest" json:"manifest"` // the revision the device applied
+	Storage  *CensusStorage `cbor:"storage,omitempty" json:"storage,omitempty"`
+	Peers    []CensusPeer   `cbor:"peers" json:"peers"`
+	Update   string         `cbor:"update,omitempty" json:"update,omitempty"` // the self-updater's last word
+}
+
+// CensusStorage is the storage half of a heartbeat.
+type CensusStorage struct {
+	FreeBytes  uint64 `cbor:"free" json:"free_bytes"`
+	TotalBytes uint64 `cbor:"total" json:"total_bytes"`
+	State      string `cbor:"state" json:"state"` // "ok" until the engine has more to say
+}
+
+// CensusPeer is one session the device holds.
+type CensusPeer struct {
+	Device identity.Key `cbor:"device" json:"device"`
+	Direct bool         `cbor:"direct" json:"direct"`
+	Relay  bool         `cbor:"relay" json:"relay"`
 }
 
 // Error carries a hub-side refusal.

@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -18,6 +20,8 @@ import (
 	"github.com/quic-go/quic-go"
 
 	"github.com/adefilippo83/redundanet/agent/internal/api"
+	"github.com/adefilippo83/redundanet/agent/internal/collector"
+	"github.com/adefilippo83/redundanet/agent/internal/diskfree"
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
@@ -28,6 +32,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
 	"github.com/adefilippo83/redundanet/agent/internal/version"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // `hub` and `agent` run the two long-lived modes against a signed manifest
@@ -161,6 +166,8 @@ func runHub(args []string) error {
 	sigPath := fs.String("sig", "", "signature file (default: manifest.sig beside the manifest)")
 	udp := fs.String("udp", ":4433", "QUIC listener")
 	tcp := fs.String("tcp", ":4443", "TLS listener for UDP-blocked devices; empty disables")
+	status := fs.String("status", "127.0.0.1:4480", "status page and status.json; empty disables")
+	legacy := fs.String("legacy-status", "", "a RedundaNet 2 status.json to show beside the mesh census, for example https://redundanet-hub.fly.dev/status.json")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
@@ -175,11 +182,22 @@ func runHub(args []string) error {
 	if rc.current().HubByKey(rc.device) == nil {
 		return fmt.Errorf("device %s is not listed as a hub in the manifest", rc.device.Short())
 	}
-	h, err := hub.Start(ctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, Log: rc.log})
+	col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy, Started: rc.started, Log: rc.log})
+	if err != nil {
+		return err
+	}
+	h, err := hub.Start(ctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, Log: rc.log})
 	if err != nil {
 		return err
 	}
 	defer h.Close()
+	col.SetLive(h.Status)
+	go col.Run(ctx)
+	if *status != "" {
+		if _, err := col.Serve(ctx, *status); err != nil {
+			return err
+		}
+	}
 	logEvery(ctx, *every, func() any {
 		st := map[string]any{"hub": h.Status()}
 		if rc.member != nil {
@@ -202,6 +220,7 @@ func runAgent(args []string) error {
 	loopback := fs.Bool("loopback-candidates", false, "advertise 127.0.0.1 too, for tests on one machine")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	apiAddr := fs.String("api", "127.0.0.1:4470", "local API and page; loopback only")
+	storagePath := fs.String("storage-path", "", "the filesystem whose free space a storage device reports (default: the data directory)")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
@@ -225,6 +244,41 @@ func runAgent(args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	var (
+		uMu sync.Mutex
+		u   *update.Updater
+	)
+	getU := func() *update.Updater { uMu.Lock(); defer uMu.Unlock(); return u }
+	// census is the heartbeat each hub gets: no address and no path in it.
+	census := func() wire.Census {
+		cs := wire.Census{Version: version.Version, Uptime: uint64(time.Since(rc.started).Seconds()), OS: runtime.GOOS + "/" + runtime.GOARCH, Roles: rc.state.Certificate.Certificate.Roles}
+		if m := rc.current(); m != nil {
+			cs.Manifest = m.Revision
+		}
+		if slices.Contains(cs.Roles, identity.RoleStorage) {
+			p := *storagePath
+			if p == "" {
+				p = rc.dataDir
+			}
+			if free, total, err := diskfree.Free(p); err == nil {
+				cs.Storage = &wire.CensusStorage{FreeBytes: free, TotalBytes: total, State: "ok"}
+			} else {
+				cs.Storage = &wire.CensusStorage{State: "unreadable"}
+			}
+		}
+		if u := getU(); u != nil {
+			st := u.Status()
+			switch {
+			case len(st.Failed) > 0:
+				cs.Update = st.Failed[len(st.Failed)-1] + " failed probation"
+			case st.Available != "":
+				cs.Update = st.Available + " available"
+			case st.LastError != "":
+				cs.Update = "check failed"
+			}
+		}
+		return cs
 	}
 	var wanted []identity.Key
 	for _, c := range strings.Split(*connect+","+*probationPeers, ",") {
@@ -251,7 +305,7 @@ func runAgent(args []string) error {
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 			UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
-			OnStream: echoStream, Log: rc.log,
+			OnStream: echoStream, Census: census, Log: rc.log,
 		})
 		if err != nil {
 			return nil, err
@@ -275,12 +329,12 @@ func runAgent(args []string) error {
 		return runProbation(ctx, ep, wanted)
 	}
 
-	var u *update.Updater
 	apiSrv, err := api.Start(ctx, api.Config{
 		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log,
-		Snapshot: func() api.Snapshot { return rc.snapshot(current(), u) },
+		Snapshot: func() api.Snapshot { return rc.snapshot(current(), getU()) },
 		Actions: api.Actions{
 			CheckUpdate: func(ctx context.Context) (string, error) {
+				u := getU()
 				if u == nil {
 					return "", errors.New("updates are off")
 				}
@@ -291,6 +345,7 @@ func runAgent(args []string) error {
 				return rel.Version, nil
 			},
 			ApplyUpdate: func(ctx context.Context) error {
+				u := getU()
 				if u == nil {
 					return errors.New("updates are off")
 				}
@@ -370,25 +425,28 @@ func runAgent(args []string) error {
 				}
 			}
 		}
-		u, err = newUpdater(d, *channel, probe, handover)
+		nu, err := newUpdater(d, *channel, probe, handover)
 		if err != nil {
 			return err
 		}
-		u.MinVersionFrom(func() string {
+		uMu.Lock()
+		u = nu
+		uMu.Unlock()
+		nu.MinVersionFrom(func() string {
 			if m := rc.current(); m != nil {
 				return m.Network.MinVersion
 			}
 			return ""
 		})
 		go func() {
-			if err := u.Run(ctx); errors.Is(err, update.ErrRestart) {
+			if err := nu.Run(ctx); errors.Is(err, update.ErrRestart) {
 				rc.log.Info("new version installed, exiting so the service starts it")
 				stop()
 				os.Exit(0)
 			}
 		}()
 		logEvery(ctx, *every, func() any {
-			st := map[string]any{"update": u.Status()}
+			st := map[string]any{"update": nu.Status()}
 			if e := current(); e != nil {
 				st["transport"] = e.Status()
 			}

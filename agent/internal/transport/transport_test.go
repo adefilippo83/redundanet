@@ -13,6 +13,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // testNet is a hub and a membership policy that knows a fixed set of
@@ -25,7 +26,14 @@ type testNet struct {
 	hubKey  identity.Key
 	mu      sync.RWMutex
 	allowed map[identity.Key]bool
+	census  map[identity.Key][]wire.Census
 	log     *slog.Logger
+}
+
+func (n *testNet) censuses(k identity.Key) []wire.Census {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return append([]wire.Census(nil), n.census[k]...)
 }
 
 func (n *testNet) permit(k identity.Key) {
@@ -60,7 +68,7 @@ func device(t *testing.T, s identity.Seed, roles ...string) (*identity.DeviceKey
 func newTestNet(t *testing.T, tcp bool) *testNet {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	n := &testNet{t: t, ctx: ctx, cancel: cancel, allowed: map[identity.Key]bool{}}
+	n := &testNet{t: t, ctx: ctx, cancel: cancel, allowed: map[identity.Key]bool{}, census: map[identity.Key][]wire.Census{}}
 	n.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	if os.Getenv("TRANSPORT_TEST_LOG") != "" {
 		n.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -72,7 +80,12 @@ func newTestNet(t *testing.T, tcp bool) *testNet {
 	if tcp {
 		tcpAddr = "127.0.0.1:0"
 	}
-	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, Log: n.log})
+	onCensus := func(p identity.Peer, _ string, c wire.Census) {
+		n.mu.Lock()
+		n.census[p.Device] = append(n.census[p.Device], c)
+		n.mu.Unlock()
+	}
+	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, Log: n.log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,4 +260,34 @@ func TestRecheckClosesTheNoLongerAdmitted(t *testing.T) {
 	n.mu.Unlock()
 	a.Recheck()
 	eventually(t, 5*time.Second, "both connections to close", func() bool { return s.Best() == "" })
+}
+
+func TestCensusReachesTheHub(t *testing.T) {
+	old := censusEvery.Load()
+	censusEvery.Store(int64(200 * time.Millisecond))
+	t.Cleanup(func() { censusEvery.Store(old) })
+	n := newTestNet(t, false)
+	a, ak := n.endpoint(seed(1), true, func(c *Config) {
+		c.Census = func() wire.Census {
+			return wire.Census{Version: "test", Roles: []string{identity.RoleStorage}, Storage: &wire.CensusStorage{FreeBytes: 5, TotalBytes: 10, State: "ok"}}
+		}
+	})
+	_, bk := n.endpoint(seed(2), true, nil)
+	a.Connect(bk)
+	eventually(t, 10*time.Second, "a census from a naming b", func() bool {
+		for _, c := range n.censuses(ak) {
+			if c.Version != "test" || c.Storage == nil || c.Storage.FreeBytes != 5 {
+				continue
+			}
+			for _, p := range c.Peers {
+				if p.Device == bk && (p.Relay || p.Direct) {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	if len(n.censuses(bk)) != 0 {
+		t.Fatal("an endpoint without a census source must send none")
+	}
 }

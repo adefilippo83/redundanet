@@ -58,7 +58,10 @@ type Config struct {
 	LoopbackCandidates bool
 	// OnStream handles a stream a peer opened.
 	OnStream func(peer identity.Peer, path string, s *quic.Stream)
-	Log      *slog.Logger
+	// Census, when set, supplies the device-level fields of the heartbeat
+	// sent to each hub; the endpoint adds the peers itself.
+	Census func() wire.Census
+	Log    *slog.Logger
 }
 
 // Endpoint is one device's presence on the mesh.

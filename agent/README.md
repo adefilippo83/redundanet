@@ -18,9 +18,11 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
 | `internal/api` | The local HTTP API and page on 127.0.0.1: bearer token in `api.token` for the CLI, a session cookie (HttpOnly, SameSite=Strict) that a one-time link from `redundanet open` starts for the browser, a CSRF token on every change, Host and Origin checks on every request, no GET that changes anything | Done, with tests |
 | `internal/logbuf` | The last 500 log records in memory, for the page and `redundanet logs` | Done, with tests |
-| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
+| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the synthetic relay address | Done |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
-| `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
+| `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, the census hook, status | Done, tested through the transport |
+| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), joins it with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space and relay traffic; never an address or a path | Done, with tests |
+| `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
@@ -43,14 +45,22 @@ redundanet network join <descriptor>
 
 redundanet network status [--refresh]
 
-redundanet hub   --network NAME [--udp :4433] [--tcp :4443]
-redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only]
+redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
+redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR]
 ```
 
 Both long-lived commands need this device's identity file and a joined
 network; they refresh the manifest every five minutes, apply a newer
 signed revision on the spot, and close connections to devices the new
-policy no longer admits. `--manifest FILE` runs them from a signed file
+policy no longer admits. Every agent sends each hub a census heartbeat when
+the channel comes up and every minute after: version, uptime, platform,
+roles, the manifest revision it applied, free space on `--storage-path` for
+a storage device, and which peers it reaches directly or through a relay.
+No address and no path travel in it. The hub's collector keeps the
+heartbeats in `census.json`, serves the status page and `status.json` on
+`--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
+so today's nodes stay visible beside the new devices until G3.
+`--manifest FILE` runs them from a signed file
 instead, trusting the operators that file lists, for tests and for the hub
 that serves the repository it is listed in. The agent answers every stream
 with its own bytes, since nothing speaks over the mesh yet, and logs a
