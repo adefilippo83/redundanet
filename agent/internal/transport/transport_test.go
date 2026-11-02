@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"sync"
 	"testing"
@@ -290,4 +291,42 @@ func TestCensusReachesTheHub(t *testing.T) {
 	if len(n.censuses(bk)) != 0 {
 		t.Fatal("an endpoint without a census source must send none")
 	}
+}
+
+// A self-update's candidate binds the same ports right after the running
+// process closes them, so Close must release the UDP socket, which quic-go
+// does not do for a socket it did not open.
+func TestCloseReleasesThePorts(t *testing.T) {
+	n := newTestNet(t, true)
+	udp, tcp := n.hub.UDPAddr().String(), n.hub.TCPAddr().String()
+	if err := n.hub.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range []struct{ network, addr string }{{"udp", udp}, {"tcp", tcp}} {
+		if a.network == "udp" {
+			pc, err := net.ListenPacket("udp", a.addr)
+			if err != nil {
+				t.Fatalf("hub left %s bound: %v", a.addr, err)
+			}
+			_ = pc.Close()
+		} else {
+			ln, err := net.Listen("tcp", a.addr)
+			if err != nil {
+				t.Fatalf("hub left %s bound: %v", a.addr, err)
+			}
+			_ = ln.Close()
+		}
+	}
+
+	m := newTestNet(t, false)
+	ep, _ := m.endpoint(seed(1), true, nil)
+	addr := ep.LocalAddr().String()
+	if err := ep.Close(); err != nil {
+		t.Fatal(err)
+	}
+	pc, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		t.Fatalf("endpoint left %s bound: %v", addr, err)
+	}
+	_ = pc.Close()
 }

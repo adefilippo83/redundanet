@@ -147,7 +147,12 @@ func Start(ctx context.Context, cfg Config) (*Endpoint, error) {
 func (e *Endpoint) Close() error {
 	e.cancel()
 	_ = e.ln.Close()
-	return e.tr.Close()
+	err := e.tr.Close()
+	// quic-go closes only sockets it opened itself; this one is ours, and a
+	// device with a fixed forwarded port must free it for the update's
+	// candidate.
+	_ = e.udp.Close()
+	return err
 }
 
 // LocalAddr is the UDP socket's address.

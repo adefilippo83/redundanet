@@ -133,7 +133,11 @@ func (s *Server) Close() error {
 		_ = s.tcpLn.Close()
 	}
 	_ = s.ln.Close()
-	return s.tr.Close()
+	err := s.tr.Close()
+	// quic-go closes only sockets it opened itself; this one is ours, and a
+	// self-update's candidate binds the same port right after.
+	_ = s.udp.Close()
+	return err
 }
 
 // UDPAddr is the QUIC listener's address.
