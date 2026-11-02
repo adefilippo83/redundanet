@@ -10,6 +10,7 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -40,6 +41,7 @@ const (
 	defaultDeadAfter = 72 * time.Hour
 	legacyEvery      = 2 * time.Minute
 	saveEvery        = 30 * time.Second
+	publishEvery     = time.Minute
 )
 
 // Config wires a collector.
@@ -50,9 +52,14 @@ type Config struct {
 	Path     string                                                // the census file kept across restarts; "" keeps it in memory
 	Legacy   string                                                // the RedundaNet 2 status.json to mirror; "" for none
 	Fetch    func(ctx context.Context, url string) ([]byte, error) // defaults to an HTTP GET with a timeout
-	Started  time.Time
-	Now      func() time.Time
-	Log      *slog.Logger
+	// Publish is a base URL the page and status.json are PUT under every
+	// minute, with PublishToken as the bearer token; "" publishes nothing.
+	Publish      string
+	PublishToken string
+	Put          func(ctx context.Context, url, contentType string, body []byte, token string) error // defaults to an HTTP PUT
+	Started      time.Time
+	Now          func() time.Time
+	Log          *slog.Logger
 }
 
 // entry is what the collector remembers about one device.
@@ -69,10 +76,12 @@ type Collector struct {
 	log  *slog.Logger
 	tmpl *template.Template
 
-	mu      sync.Mutex
-	entries map[identity.Key]*entry
-	dirty   bool
-	legacy  *Legacy
+	mu          sync.Mutex
+	entries     map[identity.Key]*entry
+	dirty       bool
+	legacy      *Legacy
+	publishedAt time.Time
+	publishErr  string
 }
 
 //go:embed templates/status.html
@@ -94,6 +103,17 @@ func New(cfg Config) (*Collector, error) {
 	}
 	if cfg.Fetch == nil {
 		cfg.Fetch = httpFetch
+	}
+	if cfg.Put == nil {
+		cfg.Put = httpPut
+	}
+	if cfg.Publish != "" {
+		if !strings.HasSuffix(cfg.Publish, "/") {
+			cfg.Publish += "/"
+		}
+		if cfg.PublishToken == "" {
+			return nil, errors.New("collector: publishing needs a token")
+		}
 	}
 	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}}
 	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
@@ -125,15 +145,20 @@ func (c *Collector) Record(peer identity.Peer, carrier string, cs wire.Census) {
 	c.dirty = true
 }
 
-// Run refreshes the legacy mirror and saves the census until ctx ends, then
-// saves once more.
+// Run refreshes the legacy mirror, publishes and saves the census until ctx
+// ends, then saves once more.
 func (c *Collector) Run(ctx context.Context) {
 	if c.cfg.Legacy != "" {
 		c.refreshLegacy(ctx)
 	}
+	if c.cfg.Publish != "" {
+		c.publish(ctx)
+	}
 	legacy := time.NewTicker(legacyEvery)
+	publish := time.NewTicker(publishEvery)
 	save := time.NewTicker(saveEvery)
 	defer legacy.Stop()
+	defer publish.Stop()
 	defer save.Stop()
 	for {
 		select {
@@ -146,12 +171,84 @@ func (c *Collector) Run(ctx context.Context) {
 			if c.cfg.Legacy != "" {
 				c.refreshLegacy(ctx)
 			}
+		case <-publish.C:
+			if c.cfg.Publish != "" {
+				c.publish(ctx)
+			}
 		case <-save.C:
 			if err := c.Save(); err != nil {
 				c.log.Warn("census not saved", "err", err)
 			}
 		}
 	}
+}
+
+// Health is the collector's own state, for the hub's status line.
+type Health struct {
+	Devices     int       `json:"devices"`
+	Legacy      string    `json:"legacy,omitempty"`
+	LegacyError string    `json:"legacy_error,omitempty"`
+	Publish     string    `json:"publish,omitempty"`
+	PublishedAt time.Time `json:"published_at,omitempty"`
+	PublishErr  string    `json:"publish_error,omitempty"`
+}
+
+// Health reports the collector's own state.
+func (c *Collector) Health() Health {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h := Health{Devices: len(c.entries), Legacy: c.cfg.Legacy, Publish: c.cfg.Publish, PublishedAt: c.publishedAt, PublishErr: c.publishErr}
+	if c.legacy != nil {
+		h.LegacyError = c.legacy.Error
+	}
+	return h
+}
+
+// publish PUTs status.json and index.html under the publish URL.
+func (c *Collector) publish(ctx context.Context) {
+	st := c.Status()
+	var err error
+	if body, e := json.Marshal(st); e != nil {
+		err = e
+	} else if e := c.cfg.Put(ctx, c.cfg.Publish+"status.json", "application/json", body, c.cfg.PublishToken); e != nil {
+		err = e
+	} else if html, e := c.render(st); e != nil {
+		err = e
+	} else if e := c.cfg.Put(ctx, c.cfg.Publish+"index.html", "text/html; charset=utf-8", html, c.cfg.PublishToken); e != nil {
+		err = e
+	}
+	c.mu.Lock()
+	first := c.publishedAt.IsZero()
+	if err != nil {
+		c.publishErr = err.Error()
+		c.log.Warn("status not published", "url", c.cfg.Publish, "err", err)
+	} else {
+		c.publishErr = ""
+		c.publishedAt = c.cfg.Now()
+		if first {
+			c.log.Info("status published", "url", c.cfg.Publish)
+		}
+	}
+	c.mu.Unlock()
+}
+
+func httpPut(ctx context.Context, url, contentType string, body []byte, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	return nil
 }
 
 type file struct {
@@ -518,13 +615,26 @@ func (c *Collector) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		html, err := c.render(c.Status())
+		if err != nil {
+			c.log.Error("page", "err", err)
+			http.Error(w, "page could not be rendered", http.StatusInternalServerError)
+			return
+		}
 		c.headers(w)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := c.tmpl.Execute(w, pageData(c.Status())); err != nil {
-			c.log.Error("page", "err", err)
-		}
+		_, _ = w.Write(html)
 	})
 	return mux
+}
+
+// render is the page for a status.
+func (c *Collector) render(st Status) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := c.tmpl.Execute(&buf, pageData(st)); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 func (c *Collector) headers(w http.ResponseWriter) {
