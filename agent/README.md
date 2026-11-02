@@ -16,16 +16,18 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/release` | The signed release index: versions, channels, withdrawn flags, per-target assets with hashes, and the release key's rotation chain; download with hash and size checks and extraction of the executable from tar.gz or zip | Done, with tests |
 | `internal/update` | The two-stage self-update: fetch and verify the index, pick a release (channel, `min_version`, failed ones never retried), download, run the candidate on probation, rename it into place keeping the old binary, ask to be restarted | Done, with tests |
 | `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
+| `internal/api` | The local HTTP API and page on 127.0.0.1: bearer token in `api.token` for the CLI, a session cookie (HttpOnly, SameSite=Strict) that a one-time link from `redundanet open` starts for the browser, a CSRF token on every change, Host and Origin checks on every request, no GET that changes anything | Done, with tests |
+| `internal/logbuf` | The last 500 log records in memory, for the page and `redundanet logs` | Done, with tests |
 | `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `status`, `open`, `logs`, `version` | Growing |
 
-Next, in order: the local page and API, the census heartbeat and the
-hub's status collector, the hub's manifest mirror and the join endpoint,
-the container build for today's nodes.
+Next, in order: the census heartbeat and the hub's status collector, the
+hub's manifest mirror and the join endpoint, the container build for
+today's nodes.
 
 ## Running it today
 
@@ -54,6 +56,10 @@ with its own bytes, since nothing speaks over the mesh yet, and logs a
 status snapshot every minute.
 
 ```
+redundanet status [--json]      # what the running agent sees, through its local API
+redundanet open                 # the local page, through a one-time link that logs the browser in
+redundanet logs [-n 100]
+
 redundanet service install --network NAME     # this binary, as a user service that starts at login
 redundanet service status | uninstall
 
@@ -61,6 +67,16 @@ redundanet update check | apply | status [--channel early]
 redundanet release keygen --key release.key                 # maintainer, once, offline
 redundanet release sign --key release.key --index releases/index.yaml
 ```
+
+The agent serves its API and page on `127.0.0.1:4470` (`--api`), never on
+the LAN; a headless node is reached over an SSH tunnel. The CLI finds the
+address and the bearer token in the data directory (`api.addr`,
+`api.token`, mode 0600). A browser gets in only through `redundanet open`,
+whose link works once and for two minutes and sets a session cookie; every
+form on the page carries a CSRF token, the API refuses any request whose
+Host is not loopback and any change whose Origin is not the page, and no
+GET changes anything. These are the guards the RFC's Browser safety
+section lists.
 
 Self-update needs a release key embedded at build time (`-X
 .../version.ReleaseKey=`); a plain build has none and says so. The running

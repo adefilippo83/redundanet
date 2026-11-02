@@ -24,6 +24,9 @@ var commands = []command{
 	{"service", "install the agent as a user service: install, uninstall, status", runService},
 	{"update", "self-update from the signed release index: check, apply, status", runUpdate},
 	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},
+	{"status", "what the running agent sees", runStatus},
+	{"open", "open the local page in the browser, with a one-time link", runOpen},
+	{"logs", "the running agent's recent log lines", runLogs},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 

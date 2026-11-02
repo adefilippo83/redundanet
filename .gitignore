@@ -122,3 +122,4 @@ config.local.yaml
 # RedundaNet 3 agent (Go)
 agent/dist/
 agent/build/
+/agent/redundanet
