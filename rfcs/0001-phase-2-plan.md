@@ -70,6 +70,15 @@ The RFC's "Native engine" section as a library with no network in it.
 - Exit: the test suite, plus throughput measured on falcon-1 (Pi 5) and the
   Mac, written into this page. The RFC expects tens of megabytes per second
   on the Pi, which is far above its uplink.
+- Done 2026-11-02: `internal/object`, 60 round-trip cases over five
+  encodings, every single-block corruption caught, known answers pinned and
+  identical on arm64 and on the Mac. A 64 MiB object at 2-of-4, encode
+  including every share and decode from two shares with full verification:
+
+  | Machine | Encode | Decode |
+  | --- | --- | --- |
+  | Mac, Apple silicon | 102 MB/s | 208 MB/s |
+  | falcon-1, Raspberry Pi 5 | 43 MB/s | 90 MB/s |
 
 ### M2. The storage server and the share protocol
 
