@@ -61,7 +61,11 @@ type Config struct {
 	// Census, when set, supplies the device-level fields of the heartbeat
 	// sent to each hub; the endpoint adds the peers itself.
 	Census func() wire.Census
-	Log    *slog.Logger
+	// ShareCensus, when set, supplies a storage node's share census since
+	// a generation; the endpoint sends it to each hub in chunks whenever
+	// the generation moved.
+	ShareCensus func(since uint64) (*wire.ShareCensus, error)
+	Log         *slog.Logger
 }
 
 // Endpoint is one device's presence on the mesh.

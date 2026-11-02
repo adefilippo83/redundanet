@@ -29,6 +29,8 @@ type Config struct {
 	TCP      string // TLS listener for UDP-blocked devices, "" for none
 	// OnCensus receives each device's heartbeat; the collector keeps them.
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
+	// OnShares receives a storage node's share census chunks.
+	OnShares func(peer identity.Peer, c *wire.ShareCensus)
 	Log      *slog.Logger
 }
 
@@ -302,6 +304,14 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 			if s.cfg.OnCensus != nil {
 				s.cfg.OnCensus(c.peer, c.carrier, cs)
+			}
+		case wire.FrameShares:
+			var sc wire.ShareCensus
+			if err := identity.Unmarshal(payload, &sc); err != nil {
+				return
+			}
+			if s.cfg.OnShares != nil {
+				s.cfg.OnShares(c.peer, &sc)
 			}
 		case wire.FramePing:
 			_ = c.w.Frame(wire.FramePong, nil)

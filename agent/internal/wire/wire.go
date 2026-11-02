@@ -31,7 +31,8 @@ const (
 	FrameError      byte = 6 // hub to device: Error
 	FramePing       byte = 7
 	FramePong       byte = 8
-	FrameCensus     byte = 9 // device to hub: Census
+	FrameCensus     byte = 9  // device to hub: Census
+	FrameShares     byte = 10 // device to hub: ShareCensus, chunked
 )
 
 // MaxFrame bounds a frame payload.
@@ -80,8 +81,50 @@ type Census struct {
 type CensusStorage struct {
 	FreeBytes  uint64 `cbor:"free" json:"free_bytes"`
 	TotalBytes uint64 `cbor:"total" json:"total_bytes"`
-	State      string `cbor:"state" json:"state"` // "ok" until the engine has more to say
+	State      string `cbor:"state" json:"state"` // "ok", or why the store is not serving
+	Shares     uint64 `cbor:"shares,omitempty" json:"shares,omitempty"`
+	Bytes      uint64 `cbor:"bytes,omitempty" json:"bytes,omitempty"` // bytes of complete shares as accounted
 }
+
+// ShareCensus is a storage node's share census since a generation, in
+// chunks that fit a frame; More says another chunk follows. This is the
+// delta protocol of RFC 0001's Health section.
+type ShareCensus struct {
+	Since      uint64           `cbor:"since" json:"since"`
+	Generation uint64           `cbor:"generation" json:"generation"`
+	Added      []ShareEntry     `cbor:"added" json:"added"`
+	Removed    []ShareKey       `cbor:"removed" json:"removed"`
+	Tombstones []TombstoneEntry `cbor:"tombstones" json:"tombstones"`
+	More       bool             `cbor:"more" json:"more"`
+}
+
+// ShareEntry is one complete share.
+type ShareEntry struct {
+	StorageIndex   [16]byte     `cbor:"si" json:"si"`
+	Number         uint8        `cbor:"n" json:"n"`
+	Owner          identity.Key `cbor:"owner" json:"owner"`
+	Size           int64        `cbor:"size" json:"size"`
+	K              uint8        `cbor:"k" json:"k"`
+	N              uint8        `cbor:"nn" json:"nn"`
+	DescriptorHash [32]byte     `cbor:"dhash" json:"dhash"`
+}
+
+// ShareKey names a share that went away.
+type ShareKey struct {
+	StorageIndex [16]byte `cbor:"si" json:"si"`
+	Number       uint8    `cbor:"n" json:"n"`
+}
+
+// TombstoneEntry is a deleted object a node still records.
+type TombstoneEntry struct {
+	StorageIndex   [16]byte     `cbor:"si" json:"si"`
+	Owner          identity.Key `cbor:"owner" json:"owner"`
+	DescriptorHash [32]byte     `cbor:"dhash" json:"dhash"`
+	Purged         bool         `cbor:"purged" json:"purged"`
+}
+
+// ShareChunk bounds entries per frame so a chunk fits MaxFrame.
+const ShareChunk = 400
 
 // CensusPeer is one session the device holds.
 type CensusPeer struct {

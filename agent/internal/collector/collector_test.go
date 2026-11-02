@@ -268,3 +268,39 @@ func TestLegacyKeepsTheLastGoodNodes(t *testing.T) {
 		t.Fatal("nodes of the wrong shape accepted")
 	}
 }
+
+func TestShareCensusMakesMemberUsage(t *testing.T) {
+	w := newWorld(t, "", "")
+	entry := func(si byte, n uint8, owner identity.Key, size int64) wire.ShareEntry {
+		var e wire.ShareEntry
+		e.StorageIndex[0], e.Number, e.Owner, e.Size = si, n, owner, size
+		return e
+	}
+	// falcon reports in two chunks, then a delta that removes one share.
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 3, Added: []wire.ShareEntry{entry(1, 0, alice, 4096), entry(1, 1, alice, 4096)}, More: true})
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 3, Added: []wire.ShareEntry{entry(2, 0, bob, 8192)}})
+	w.c.RecordShares(identity.Peer{Device: spare, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 1, Added: []wire.ShareEntry{entry(2, 1, bob, 8192)}})
+	st := w.c.Status()
+	byName := map[string]Member{}
+	for _, m := range st.Members {
+		byName[m.Name] = m
+	}
+	if byName["alice"].StoredBytes != 8192 || byName["alice"].Objects != 1 || byName["bob"].StoredBytes != 16384 || byName["bob"].Objects != 1 {
+		t.Fatalf("usage: %+v", st.Members)
+	}
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 3, Generation: 4, Removed: []wire.ShareKey{{StorageIndex: [16]byte{1}, Number: 1}}})
+	st = w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "alice" && m.StoredBytes != 4096 {
+			t.Fatalf("after removal: %+v", m)
+		}
+	}
+	// A census from zero replaces the table: the node was rebuilt.
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 1, Added: []wire.ShareEntry{entry(9, 0, alice, 4096)}})
+	st = w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "bob" && m.StoredBytes != 8192 {
+			t.Fatalf("after a reset: %+v", m)
+		}
+	}
+}
