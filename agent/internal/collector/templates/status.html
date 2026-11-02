@@ -51,7 +51,7 @@ a { color: var(--accent) }
 </section>
 
 <div class="card"><h2>Devices</h2><div class="wrap"><table>
-<tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>peers</th><th>relayed</th><th>update</th></tr>
+<tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>peers</th><th>relayed</th><th>update</th></tr>
 {{range .Devices}}<tr>
   <td>{{if .Name}}{{.Name}} <code class="muted">{{short .Device}}</code>{{else}}<code>{{short .Device}}</code>{{end}}</td>
   <td>{{.Member}}</td>
@@ -62,7 +62,8 @@ a { color: var(--accent) }
   <td>{{.OS}}</td>
   <td>{{if .Uptime}}{{dur .Uptime}}{{end}}</td>
   <td>{{if .Manifest}}{{.Manifest}}{{end}}</td>
-  <td>{{if .FreeBytes}}{{gb .FreeBytes}} of {{gb .TotalBytes}}{{end}}</td>
+  <td>{{if .FreeBytes}}{{gb .FreeBytes}} of {{gb .TotalBytes}}{{end}}{{if and .Storage (ne .Storage "ok")}} <span class="bad">{{.Storage}}</span>{{end}}</td>
+  <td>{{if .Shares}}{{.Shares}}, {{size .Stored}}{{end}}</td>
   <td>{{if or .Direct .Relayed}}{{.Direct}} direct, {{.Relayed}} relayed{{end}}</td>
   <td>{{if or .RelayIn .RelayOut}}{{size .RelayIn}} in, {{size .RelayOut}} out{{end}}</td>
   <td>{{.Update}}</td>
@@ -70,8 +71,8 @@ a { color: var(--accent) }
 </table></div></div>
 
 <div class="card"><h2>Members</h2><div class="wrap"><table>
-<tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>devices</th></tr>
-{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}
+<tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>devices</th></tr>
+{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{if .Objects}}{{size .StoredBytes}} in {{.Objects}} objects{{else}}<span class="muted">nothing yet</span>{{end}}</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}
 </table></div></div>
 
 {{with .Legacy}}<div class="card"><h2>RedundaNet 2 nodes</h2><div class="wrap"><table>

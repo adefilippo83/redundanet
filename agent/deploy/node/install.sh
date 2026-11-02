@@ -3,6 +3,7 @@
 #
 #   install.sh prepare VERSION        user, directories, binary, unit; prints the device key
 #   install.sh finish CERTIFICATE     accepts the member's certificate, joins, starts
+#   install.sh storage                grants the store under STORAGE_PATH to a node installed earlier
 #
 # prepare downloads the release named VERSION from GitHub and checks it
 # against the sha256 in releases/index.yaml on main. finish needs the file
@@ -31,6 +32,19 @@ arch() {
   esac
 }
 
+# storage_grant lets the confined service write its store under the storage
+# disk: the redundanet3 directory, owned by the service user, and a drop-in
+# that adds it to the unit's writable paths. Idempotent; `install.sh storage`
+# applies it to a node installed before the store existed.
+storage_grant() {
+  local root="$STORAGE_PATH/redundanet3"
+  [ -d "$STORAGE_PATH" ] || die "$STORAGE_PATH is not a directory"
+  install -d -o redundanet3 -g redundanet3 -m 0750 "$root"
+  install -d -m 0755 "$UNIT.d"
+  printf '[Service]\nReadWritePaths=%s\n' "$root" > "$UNIT.d/storage.conf"
+  echo "store directory $root and unit drop-in in place"
+}
+
 prepare() {
   local version=${1:-}; [ -n "$version" ] || die "prepare needs a version, for example 3.0.0-alpha.2"
   local target="linux/$(arch)" asset="redundanet-$version-linux-$(arch).tar.gz"
@@ -56,6 +70,7 @@ prepare() {
     chmod 0644 "$ENV"
   fi
   install -m 0644 "$here/redundanet-agent.service" "$UNIT"
+  storage_grant
   systemctl daemon-reload
   # quic-go asks for 7 MiB socket buffers; an unprivileged process only gets them if the kernel allows
   if [ ! -f /etc/sysctl.d/90-redundanet-agent.conf ]; then
@@ -97,5 +112,6 @@ finish() {
 case "${1:-}" in
   prepare) prepare "${2:-}" ;;
   finish) finish "${2:-}" ;;
-  *) sed -n '2,9p' "$0"; exit 2 ;;
+  storage) [ -f "$ENV" ] && . "$ENV"; storage_grant; systemctl daemon-reload; systemctl restart redundanet-agent; echo "agent restarted with the store" ;;
+  *) sed -n '2,10p' "$0"; exit 2 ;;
 esac

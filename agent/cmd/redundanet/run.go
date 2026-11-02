@@ -17,8 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/api"
 	"github.com/adefilippo83/redundanet/agent/internal/collector"
 	"github.com/adefilippo83/redundanet/agent/internal/diskfree"
@@ -29,6 +27,8 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
+	"github.com/adefilippo83/redundanet/agent/internal/shareproto"
+	"github.com/adefilippo83/redundanet/agent/internal/store"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
 	"github.com/adefilippo83/redundanet/agent/internal/version"
@@ -233,7 +233,7 @@ func runHub(args []string) error {
 			cancel()
 			return nil, err
 		}
-		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, Log: rc.log})
+		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, Log: rc.log})
 		if err != nil {
 			cancel()
 			return nil, err
@@ -407,7 +407,8 @@ func runAgent(args []string) error {
 	loopback := fs.Bool("loopback-candidates", false, "advertise 127.0.0.1 too, for tests on one machine")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	apiAddr := fs.String("api", "127.0.0.1:4470", "local API and page; loopback only")
-	storagePath := fs.String("storage-path", "", "the filesystem whose free space a storage device reports (default: the data directory)")
+	storagePath := fs.String("storage-path", "", "the disk a storage device stores on; the store lives in its redundanet3 directory (default: the data directory)")
+	storageFloor := fs.Int64("storage-floor-gb", 10, "free gigabytes below which the store refuses writes")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
@@ -437,21 +438,55 @@ func runAgent(args []string) error {
 		u   *update.Updater
 	)
 	getU := func() *update.Updater { uMu.Lock(); defer uMu.Unlock(); return u }
+	// A storage device opens its store once; the endpoint may restart
+	// around it during a self-update.
+	var st *store.Store
+	isStorage := slices.Contains(rc.state.Certificate.Certificate.Roles, identity.RoleStorage)
+	storeErr := ""
+	if isStorage {
+		disk := *storagePath
+		if disk == "" {
+			disk = rc.dataDir
+		}
+		st, err = openStore(disk, rc.dataDir, *storageFloor, rc.log)
+		if err != nil {
+			storeErr = err.Error()
+			rc.log.Error("storage unavailable: this device will not serve shares until the disk is back", "disk", disk, "err", err)
+		} else {
+			defer st.Close()
+			go storeMaintenance(ctx, st, rc.log)
+		}
+	}
+	onStream := shareproto.RefuseAll
+	if st != nil {
+		onStream = shareproto.NewServer(st, &manifestPolicy{rc: rc}, rc.log).Handle
+	}
+
 	// census is the heartbeat each hub gets: no address and no path in it.
 	census := func() wire.Census {
 		cs := wire.Census{Version: version.Version, Uptime: uint64(time.Since(rc.started).Seconds()), OS: runtime.GOOS + "/" + runtime.GOARCH, Roles: rc.state.Certificate.Certificate.Roles}
 		if m := rc.current(); m != nil {
 			cs.Manifest = m.Revision
 		}
-		if slices.Contains(cs.Roles, identity.RoleStorage) {
+		if isStorage {
 			p := *storagePath
 			if p == "" {
 				p = rc.dataDir
 			}
+			cs.Storage = &wire.CensusStorage{State: "unavailable"}
 			if free, total, err := diskfree.Free(p); err == nil {
-				cs.Storage = &wire.CensusStorage{FreeBytes: free, TotalBytes: total, State: "ok"}
-			} else {
-				cs.Storage = &wire.CensusStorage{State: "unreadable"}
+				cs.Storage.FreeBytes, cs.Storage.TotalBytes = free, total
+			}
+			switch {
+			case st == nil:
+				cs.Storage.State = "unavailable: " + storeErr
+			case st.Available() != nil:
+				cs.Storage.State = "unavailable: disk or marker missing"
+			default:
+				cs.Storage.State = "ok"
+				if shares, bytes, err := st.Totals(); err == nil {
+					cs.Storage.Shares, cs.Storage.Bytes = uint64(shares), uint64(bytes)
+				}
 			}
 		}
 		if u := getU(); u != nil {
@@ -492,7 +527,7 @@ func runAgent(args []string) error {
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 			UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
-			OnStream: echoStream, Census: census, Log: rc.log,
+			OnStream: onStream, Census: census, ShareCensus: shareCensus(st), Log: rc.log,
 		})
 		if err != nil {
 			return nil, err
@@ -665,22 +700,135 @@ func runAgent(args []string) error {
 	return nil
 }
 
-// echoStream answers a stream with its own bytes: nothing speaks over the
-// mesh yet, and this lets a path be exercised.
-func echoStream(_ identity.Peer, _ string, s *quic.Stream) {
-	buf := make([]byte, 64<<10)
+// openStore opens the share store under the storage disk. The disk itself
+// must exist, which the store checks; its redundanet3 directory is ours to
+// create.
+func openStore(disk, dataDir string, floorGB int64, lg *slog.Logger) (*store.Store, error) {
+	if fi, err := os.Stat(disk); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", disk)
+	}
+	root := filepath.Join(disk, "redundanet3")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, err
+	}
+	return store.Open(store.Config{Root: root, RecordPath: filepath.Join(dataDir, "storage-id"), Floor: floorGB << 30, Log: lg})
+}
+
+// storeMaintenance expires stale partial shares and scrubs complete ones
+// at a rate that covers the store about once a month.
+func storeMaintenance(ctx context.Context, st *store.Store, lg *slog.Logger) {
+	t := time.NewTicker(10 * time.Minute)
+	defer t.Stop()
 	for {
-		n, err := s.Read(buf)
-		if n > 0 {
-			if _, werr := s.Write(buf[:n]); werr != nil {
-				break
-			}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
+		if st.Available() != nil {
+			continue
+		}
+		if n, err := st.ExpirePartials(7 * 24 * time.Hour); err != nil {
+			lg.Warn("partial shares not expired", "err", err)
+		} else if n > 0 {
+			lg.Info("partial shares expired", "count", n)
+		}
+		shares, _, err := st.Totals()
 		if err != nil {
-			break
+			continue
+		}
+		limit := int(shares/4320) + 1 // 4320 ticks a month
+		if checked, failed, err := st.Scrub(ctx, limit); err != nil && ctx.Err() == nil {
+			lg.Warn("scrub failed", "err", err)
+		} else if failed > 0 {
+			lg.Warn("scrub removed corrupt shares", "checked", checked, "failed", failed)
 		}
 	}
-	_ = s.Close()
+}
+
+// shareCensus adapts the store's census to the wire for the hub channel.
+func shareCensus(st *store.Store) func(since uint64) (*wire.ShareCensus, error) {
+	if st == nil {
+		return nil
+	}
+	return func(since uint64) (*wire.ShareCensus, error) {
+		if since > 0 {
+			if g, err := st.Generation(); err != nil || g == since {
+				return nil, err
+			}
+		}
+		d, err := st.Census(since)
+		if err != nil {
+			return nil, err
+		}
+		out := &wire.ShareCensus{Since: d.Since, Generation: d.Generation, Added: make([]wire.ShareEntry, 0, len(d.Added)), Removed: make([]wire.ShareKey, 0, len(d.Removed)), Tombstones: make([]wire.TombstoneEntry, 0, len(d.Tombstones))}
+		for _, e := range d.Added {
+			out.Added = append(out.Added, wire.ShareEntry{StorageIndex: e.StorageIndex, Number: e.Number, Owner: e.Owner, Size: e.Size, K: e.K, N: e.N, DescriptorHash: e.DescriptorHash})
+		}
+		for _, k := range d.Removed {
+			out.Removed = append(out.Removed, wire.ShareKey{StorageIndex: k.StorageIndex, Number: k.Number})
+		}
+		for _, t := range d.Tombstones {
+			out.Tombstones = append(out.Tombstones, wire.TombstoneEntry{StorageIndex: t.StorageIndex, Owner: t.Owner, DescriptorHash: t.DescriptorHash, Purged: t.Purged})
+		}
+		return out, nil
+	}
+}
+
+// manifestPolicy answers the storage server's questions from the manifest.
+type manifestPolicy struct{ rc *runtimeConfig }
+
+func (p *manifestPolicy) Network() string { return p.rc.state.Network }
+
+func (p *manifestPolicy) MemberStatus(k identity.Key) (bool, bool) {
+	m := p.rc.current()
+	if m == nil {
+		return false, false
+	}
+	mem := m.MemberByKey(k)
+	if mem == nil {
+		return false, false
+	}
+	return mem.Status == "active", mem.Status == "leaving"
+}
+
+// OwnerCap is the RFC's per-server bound: budget times this server's share
+// of the contribution times the headroom, where budget is the allocation
+// times n/k. This server's contribution is its member's, divided among
+// that member's storage devices.
+func (p *manifestPolicy) OwnerCap(owner identity.Key) int64 {
+	m := p.rc.current()
+	if m == nil {
+		return 0
+	}
+	mem := m.MemberByKey(owner)
+	if mem == nil || m.Network.Encoding.K == 0 {
+		return 0
+	}
+	var total, mine int64
+	var myMember string
+	devices := map[string]int{}
+	for _, s := range m.Storage {
+		devices[s.Member]++
+		if s.Device == p.rc.device {
+			myMember = s.Member
+		}
+	}
+	for _, x := range m.Members {
+		total += int64(x.ContributionGB)
+		if x.Name == myMember && devices[myMember] > 0 {
+			mine = int64(x.ContributionGB) / int64(devices[myMember])
+		}
+	}
+	if total == 0 || mine == 0 {
+		return 0
+	}
+	headroom := int64(m.Network.QuotaHeadroom)
+	if headroom <= 0 {
+		headroom = 2
+	}
+	budget := int64(m.Allocation(mem.Name)) << 30 * int64(m.Network.Encoding.N) / int64(m.Network.Encoding.K)
+	return budget * mine / total * headroom
 }
 
 // runProbation is the candidate's side: healthy means every hub channel is

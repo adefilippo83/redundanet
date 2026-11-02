@@ -78,10 +78,20 @@ type Collector struct {
 
 	mu          sync.Mutex
 	entries     map[identity.Key]*entry
+	shares      map[identity.Key]*shareTable // per storage device, from its share census
 	dirty       bool
 	legacy      *Legacy
 	publishedAt time.Time
 	publishErr  string
+}
+
+// shareTable is what one storage node holds, as its census reported it.
+// Kept in memory in phase 2's M2; the placement table of M5 moves it to
+// SQLite with the grid-wide view.
+type shareTable struct {
+	Generation uint64
+	Entries    map[wire.ShareKey]wire.ShareEntry
+	Tombstones []wire.TombstoneEntry
 }
 
 //go:embed templates/status.html
@@ -115,7 +125,7 @@ func New(cfg Config) (*Collector, error) {
 			return nil, errors.New("collector: publishing needs a token")
 		}
 	}
-	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}}
+	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, shares: map[identity.Key]*shareTable{}}
 	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
@@ -143,6 +153,52 @@ func (c *Collector) Record(peer identity.Peer, carrier string, cs wire.Census) {
 	defer c.mu.Unlock()
 	c.entries[peer.Device] = &entry{Member: peer.Member, Carrier: carrier, LastSeen: c.cfg.Now(), Census: cs}
 	c.dirty = true
+}
+
+// RecordShares applies a chunk of a storage node's share census. A chunk
+// since generation zero replaces what the collector held for the device.
+func (c *Collector) RecordShares(peer identity.Peer, sc *wire.ShareCensus) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := c.shares[peer.Device]
+	if t == nil || (sc.Since == 0 && t.Generation != 0 && t.Generation != sc.Generation) {
+		t = &shareTable{Entries: map[wire.ShareKey]wire.ShareEntry{}}
+		c.shares[peer.Device] = t
+	}
+	for _, e := range sc.Added {
+		t.Entries[wire.ShareKey{StorageIndex: e.StorageIndex, Number: e.Number}] = e
+	}
+	for _, k := range sc.Removed {
+		delete(t.Entries, k)
+	}
+	if sc.Since == 0 && !sc.More {
+		t.Tombstones = sc.Tombstones
+	} else if len(sc.Tombstones) > 0 {
+		t.Tombstones = sc.Tombstones
+	}
+	if !sc.More {
+		t.Generation = sc.Generation
+	}
+}
+
+// usage sums what every storage node accounts to each owner, and the
+// distinct objects per owner; the public "usage as servers see it".
+func (c *Collector) usage() (bytes map[identity.Key]int64, objects map[identity.Key]int) {
+	bytes, objects = map[identity.Key]int64{}, map[identity.Key]int{}
+	seen := map[identity.Key]map[[16]byte]bool{}
+	for _, t := range c.shares {
+		for _, e := range t.Entries {
+			bytes[e.Owner] += e.Size
+			if seen[e.Owner] == nil {
+				seen[e.Owner] = map[[16]byte]bool{}
+			}
+			seen[e.Owner][e.StorageIndex] = true
+		}
+	}
+	for owner, sis := range seen {
+		objects[owner] = len(sis)
+	}
+	return bytes, objects
 }
 
 // Run refreshes the legacy mirror, publishes and saves the census until ctx
@@ -333,6 +389,9 @@ type Device struct {
 	Manifest   uint64     `json:"manifest,omitempty"`
 	FreeBytes  *uint64    `json:"free_bytes,omitempty"`
 	TotalBytes *uint64    `json:"total_bytes,omitempty"`
+	Storage    string     `json:"storage,omitempty"` // the store's state: "ok" or why it is not serving
+	Shares     uint64     `json:"shares"`            // complete shares the node holds
+	Stored     uint64     `json:"stored_bytes"`      // their bytes as accounted
 	Direct     int        `json:"peers_direct"`
 	Relayed    int        `json:"peers_relayed"`
 	RelayIn    uint64     `json:"relay_bytes_in"`
@@ -340,7 +399,8 @@ type Device struct {
 	Update     string     `json:"update,omitempty"`
 }
 
-// Member is one member with the count of its devices.
+// Member is one member with the count of its devices and the usage the
+// storage nodes account to it.
 type Member struct {
 	Name           string `json:"name"`
 	Status         string `json:"status"`
@@ -348,6 +408,8 @@ type Member struct {
 	AllocationGB   int    `json:"allocation_gb"`
 	Devices        int    `json:"devices"`
 	Online         int    `json:"online"`
+	StoredBytes    int64  `json:"stored_bytes"` // bytes of shares servers account to the member
+	Objects        int    `json:"objects"`      // distinct objects with at least one complete share
 }
 
 // Status computes the projection now.
@@ -361,6 +423,7 @@ func (c *Collector) Status() Status {
 		entries[k] = *e
 	}
 	legacy := c.legacy
+	usedBytes, usedObjects := c.usage()
 	c.mu.Unlock()
 
 	st := Status{Hub: c.cfg.Device.String(), HubUptime: now.Sub(c.cfg.Started).Round(time.Second).String(), GeneratedAt: now, Legacy: legacy}
@@ -418,6 +481,7 @@ func (c *Collector) Status() Status {
 			if s := e.Census.Storage; s != nil {
 				free, total := s.FreeBytes, s.TotalBytes
 				d.FreeBytes, d.TotalBytes = &free, &total
+				d.Storage, d.Shares, d.Stored = s.State, s.Shares, s.Bytes
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {
@@ -479,7 +543,8 @@ func (c *Collector) Status() Status {
 	})
 	if m != nil {
 		for _, mem := range m.Members {
-			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name)}
+			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name),
+				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key]}
 			if pm := perMember[mem.Name]; pm != nil {
 				mm.Devices, mm.Online = pm.Devices, pm.Online
 			}
@@ -738,8 +803,25 @@ func gb(b *uint64) string {
 	return size(*b)
 }
 
-func size(b uint64) string {
-	v := float64(b)
+func size(v any) string {
+	var b uint64
+	switch x := v.(type) {
+	case uint64:
+		b = x
+	case int64:
+		if x > 0 {
+			b = uint64(x)
+		}
+	case int:
+		if x > 0 {
+			b = uint64(x)
+		}
+	}
+	v2 := float64(b)
+	return sizeOf(b, v2)
+}
+
+func sizeOf(b uint64, v float64) string {
 	switch {
 	case b >= 1<<40:
 		return fmt.Sprintf("%.1f TB", v/(1<<40))

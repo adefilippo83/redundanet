@@ -28,7 +28,14 @@ type testNet struct {
 	mu      sync.RWMutex
 	allowed map[identity.Key]bool
 	census  map[identity.Key][]wire.Census
+	shares  map[identity.Key][]*wire.ShareCensus
 	log     *slog.Logger
+}
+
+func (n *testNet) shareCensuses(k identity.Key) []*wire.ShareCensus {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return append([]*wire.ShareCensus(nil), n.shares[k]...)
 }
 
 func (n *testNet) censuses(k identity.Key) []wire.Census {
@@ -69,7 +76,7 @@ func device(t *testing.T, s identity.Seed, roles ...string) (*identity.DeviceKey
 func newTestNet(t *testing.T, tcp bool) *testNet {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	n := &testNet{t: t, ctx: ctx, cancel: cancel, allowed: map[identity.Key]bool{}, census: map[identity.Key][]wire.Census{}}
+	n := &testNet{t: t, ctx: ctx, cancel: cancel, allowed: map[identity.Key]bool{}, census: map[identity.Key][]wire.Census{}, shares: map[identity.Key][]*wire.ShareCensus{}}
 	n.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	if os.Getenv("TRANSPORT_TEST_LOG") != "" {
 		n.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -86,7 +93,12 @@ func newTestNet(t *testing.T, tcp bool) *testNet {
 		n.census[p.Device] = append(n.census[p.Device], c)
 		n.mu.Unlock()
 	}
-	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, Log: n.log})
+	onShares := func(p identity.Peer, c *wire.ShareCensus) {
+		n.mu.Lock()
+		n.shares[p.Device] = append(n.shares[p.Device], c)
+		n.mu.Unlock()
+	}
+	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, OnShares: onShares, Log: n.log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,4 +341,49 @@ func TestCloseReleasesThePorts(t *testing.T) {
 		t.Fatalf("endpoint left %s bound: %v", addr, err)
 	}
 	_ = pc.Close()
+}
+
+func TestShareCensusReachesTheHubInChunks(t *testing.T) {
+	old := censusEvery.Load()
+	censusEvery.Store(int64(200 * time.Millisecond))
+	t.Cleanup(func() { censusEvery.Store(old) })
+	n := newTestNet(t, false)
+	var mu sync.Mutex
+	gen := uint64(1)
+	entries := make([]wire.ShareEntry, wire.ShareChunk+5) // more than one chunk
+	for i := range entries {
+		entries[i].StorageIndex[0], entries[i].Number, entries[i].Size = byte(i), uint8(i%4), 4096
+	}
+	_, ak := n.endpoint(seed(1), true, func(c *Config) {
+		c.Census = func() wire.Census { return wire.Census{Version: "test"} }
+		c.ShareCensus = func(since uint64) (*wire.ShareCensus, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if since == gen {
+				return nil, nil
+			}
+			if since == 0 {
+				return &wire.ShareCensus{Since: 0, Generation: gen, Added: entries}, nil
+			}
+			return &wire.ShareCensus{Since: since, Generation: gen, Removed: []wire.ShareKey{{StorageIndex: entries[0].StorageIndex, Number: 0}}}, nil
+		}
+	})
+	eventually(t, 10*time.Second, "the full census in two chunks", func() bool {
+		cs := n.shareCensuses(ak)
+		return len(cs) >= 2 && cs[0].More && !cs[1].More && len(cs[0].Added)+len(cs[1].Added) == len(entries) && cs[1].Generation == gen
+	})
+	// The generation moves: only the delta travels.
+	mu.Lock()
+	gen = 2
+	mu.Unlock()
+	eventually(t, 10*time.Second, "the delta", func() bool {
+		cs := n.shareCensuses(ak)
+		last := cs[len(cs)-1]
+		return last.Since == 1 && last.Generation == 2 && len(last.Removed) == 1 && len(last.Added) == 0
+	})
+	before := len(n.shareCensuses(ak))
+	time.Sleep(700 * time.Millisecond)
+	if len(n.shareCensuses(ak)) != before {
+		t.Fatal("an unchanged generation must send nothing")
+	}
 }

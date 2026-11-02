@@ -26,6 +26,11 @@ sudo bash install.sh finish node.cert
 on main. `finish` joins the network with the descriptor derived from the
 manifest on main and enables `redundanet-agent.service`.
 
+The store lives in `STORAGE_PATH/redundanet3`, owned by the service user,
+and a unit drop-in (`redundanet-agent.service.d/storage.conf`) makes it
+writable for the confined service; `prepare` sets both up. A node installed
+before the store existed gets them with `sudo bash install.sh storage`.
+
 Layout: `/var/lib/redundanet3` (identity, manifest copy, census state,
 `versions/` for updates), `/var/lib/redundanet3/bin/redundanet` (the binary,
 owned by the service user so the updater can rename a new version into

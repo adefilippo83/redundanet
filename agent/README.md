@@ -25,9 +25,11 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
+| `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, tombstones, root records, the census delta, the scrub, and the marker that ties the store to its disk | Done, with tests |
+| `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has), `status`, `open`, `logs`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -48,7 +50,8 @@ redundanet network status [--refresh]
 
 redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
-redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR]
+redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
+redundanet object put|get|has --network NAME --servers KEY,... FILE|CAP
 ```
 
 Both long-lived commands need this device's identity file and a joined
@@ -58,6 +61,11 @@ policy no longer admits. Every agent sends each hub a census heartbeat when
 the channel comes up and every minute after: version, uptime, platform,
 roles, the manifest revision it applied, free space on `--storage-path` for
 a storage device, and which peers it reaches directly or through a relay.
+A storage device also opens its store in the `redundanet3` directory of
+`--storage-path`, serves the storage protocol on the mesh, scrubs its shares
+at a rate that covers them monthly, and sends each hub its share census as
+deltas since the generation that hub last received, so the status page can
+show usage per member as the servers account it.
 No address and no path travel in it. The hub's collector keeps the
 heartbeats in `census.json`, serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
