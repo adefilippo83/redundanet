@@ -379,3 +379,25 @@ func TestPolicy(t *testing.T) {
 		t.Fatal("a revocation for another network was applied")
 	}
 }
+
+func TestHubTCPAddr(t *testing.T) {
+	h := Hub{Relay: "hub.example.org:4433"}
+	if h.TCPAddr() != "hub.example.org:443" {
+		t.Fatalf("default: %s", h.TCPAddr())
+	}
+	h = Hub{Relay: "[2001:db8::1]:8443", TCP: "[2001:db8::1]:8443"}
+	if h.TCPAddr() != "[2001:db8::1]:8443" {
+		t.Fatalf("explicit: %s", h.TCPAddr())
+	}
+	if h = (Hub{Relay: "[2001:db8::1]:4433"}); h.TCPAddr() != "[2001:db8::1]:443" {
+		t.Fatalf("ipv6 default: %s", h.TCPAddr())
+	}
+	m := &Manifest{Hubs: []Hub{{Name: "hub", Relay: "h:4433", TCP: "nocolon"}}}
+	var found bool
+	for _, p := range m.Validate() {
+		found = found || strings.Contains(p.Msg, "tcp must be host:port")
+	}
+	if !found {
+		t.Fatal("a tcp entry without a port was accepted")
+	}
+}

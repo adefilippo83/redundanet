@@ -46,6 +46,7 @@ redundanet network join <descriptor>
 redundanet network status [--refresh]
 
 redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
+                 [--publish URL --publish-token-file FILE]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR]
 ```
 
@@ -59,7 +60,12 @@ a storage device, and which peers it reaches directly or through a relay.
 No address and no path travel in it. The hub's collector keeps the
 heartbeats in `census.json`, serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
-so today's nodes stay visible beside the new devices until G3.
+so today's nodes stay visible beside the new devices until G3. With
+`--publish` it also PUTs `status.json` and `index.html` under that URL every
+minute with the bearer token from `--publish-token-file`, which is how the
+fly.io page serves the new network under `/v3/` while the hub has no domain.
+A hub entry in the manifest names its QUIC relay as `relay: host:port` and,
+when its TLS carrier is not on port 443 of the same host, `tcp: host:port`.
 `--manifest FILE` runs them from a signed file
 instead, trusting the operators that file lists, for tests and for the hub
 that serves the repository it is listed in. The agent answers every stream

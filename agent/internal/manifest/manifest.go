@@ -81,9 +81,23 @@ type Operator struct {
 type Hub struct {
 	Name   string
 	Relay  string // host:port of the QUIC relay
+	TCP    string // host:port of the TLS carrier; empty means port 443 on the relay's host
 	Status string // URL of the status page
 	Join   string // URL of the join endpoint
 	Key    identity.Key
+}
+
+// TCPAddr is where the hub's TLS carrier listens: the `tcp` entry, or the
+// RFC's rule, port 443 on the relay's host.
+func (h Hub) TCPAddr() string {
+	if h.TCP != "" {
+		return h.TCP
+	}
+	host := h.Relay
+	if i := strings.LastIndex(h.Relay, ":"); i > 0 {
+		host = h.Relay[:i]
+	}
+	return host + ":443"
 }
 
 // Member is one entry of the `members` list.
@@ -168,6 +182,7 @@ type rawOperator struct {
 type rawHub struct {
 	Name   string `yaml:"name"`
 	Relay  string `yaml:"relay"`
+	TCP    string `yaml:"tcp"`
 	Status string `yaml:"status"`
 	Join   string `yaml:"join"`
 	Key    string `yaml:"key"`
@@ -257,7 +272,7 @@ func Parse(data []byte) (*Manifest, error) {
 		if err != nil {
 			return nil, fmt.Errorf("manifest: hubs[%d] %q: %w", i, h.Name, err)
 		}
-		m.Hubs = append(m.Hubs, Hub{Name: h.Name, Relay: h.Relay, Status: h.Status, Join: h.Join, Key: k})
+		m.Hubs = append(m.Hubs, Hub{Name: h.Name, Relay: h.Relay, TCP: h.TCP, Status: h.Status, Join: h.Join, Key: k})
 	}
 	for i, r := range raw.Members {
 		k, err := identity.ParseKey(r.Key)
@@ -405,6 +420,9 @@ func (m *Manifest) Validate() Problems {
 		seenNames["hub:"+h.Name] = true
 		if !strings.Contains(h.Relay, ":") {
 			ps.errorf("hubs: %q: relay must be host:port", h.Name)
+		}
+		if h.TCP != "" && !strings.Contains(h.TCP, ":") {
+			ps.errorf("hubs: %q: tcp must be host:port", h.Name)
 		}
 		for _, u := range []string{h.Status, h.Join} {
 			if u != "" && !strings.HasPrefix(u, "https://") {

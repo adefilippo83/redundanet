@@ -188,6 +188,66 @@ func TestPersistence(t *testing.T) {
 	}
 }
 
+func TestPublish(t *testing.T) {
+	type put struct {
+		path, auth, ctype string
+		body              []byte
+	}
+	var mu sync.Mutex
+	var puts []put
+	var refuse bool
+	fly := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		puts = append(puts, put{r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), body})
+		mu.Unlock()
+		if r.Method != http.MethodPut || refuse {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer fly.Close()
+	if _, err := New(Config{Device: hubKey, Manifest: demoManifest, Publish: fly.URL + "/v3"}); err == nil {
+		t.Fatal("publishing without a token was accepted")
+	}
+	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
+	m := demoManifest()
+	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Publish: fly.URL + "/v3", PublishToken: "s3cret",
+		Started: w.now.Add(-time.Hour), Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Version: "3.0.0-alpha.2", Roles: []string{"storage"}})
+	c.publish(context.Background())
+	mu.Lock()
+	got := append([]put(nil), puts...)
+	mu.Unlock()
+	if len(got) != 2 || got[0].path != "/v3/status.json" || got[1].path != "/v3/index.html" {
+		t.Fatalf("puts: %+v", got)
+	}
+	for _, p := range got {
+		if p.auth != "Bearer s3cret" {
+			t.Fatalf("auth: %q", p.auth)
+		}
+	}
+	var st Status
+	if got[0].ctype != "application/json" || json.Unmarshal(got[0].body, &st) != nil || len(st.Devices) != 2 || st.Devices[0].Version != "3.0.0-alpha.2" {
+		t.Fatalf("status.json: %s", got[0].body)
+	}
+	if !strings.HasPrefix(got[1].ctype, "text/html") || !strings.Contains(string(got[1].body), `href="status.json"`) || !strings.Contains(string(got[1].body), "falcon") {
+		t.Fatalf("index.html: %.200s", got[1].body)
+	}
+	if h := c.Health(); h.PublishErr != "" || !h.PublishedAt.Equal(w.now) || h.Publish != fly.URL+"/v3/" || h.Devices != 1 {
+		t.Fatalf("health: %+v", h)
+	}
+	refuse = true
+	c.publish(context.Background())
+	if h := c.Health(); !strings.Contains(h.PublishErr, "401") || !h.PublishedAt.Equal(w.now) {
+		t.Fatalf("health after a refusal: %+v", h)
+	}
+}
+
 func TestLegacyKeepsTheLastGoodNodes(t *testing.T) {
 	var fail bool
 	w := newWorld(t, "", "http://legacy.invalid/status.json")
