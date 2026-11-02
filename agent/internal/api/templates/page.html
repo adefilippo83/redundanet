@@ -59,6 +59,21 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
     <form method="post" action="/action/update-check"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check now</button></form>
     {{if .Available}}<form method="post" action="/action/update-apply"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Install {{.Available}}</button></form>{{end}}
   </p></div>{{end}}
+  {{with .Jobs}}<div class="card"><h2>Backups</h2>
+  {{if .Sets}}<table>
+  <tr><th>set</th><th>folders</th><th>last run</th><th>result</th></tr>
+  {{range .Runs}}<tr><td>{{.Set}}</td><td>{{range $i, $f := (index $.Jobs.Sets 0).Folders}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
+    <td>{{if .Running}}<span class="ok">running</span>{{with .Progress}} · {{.Phase}}, {{.Files}} files, {{.Uploaded}} bytes sent{{end}}{{else}}{{since .LastAt}}{{end}}</td>
+    <td>{{if .LastErr}}<span class="bad">{{.LastErr}}</span>{{else if .Last}}{{.Last.Snapshot.Files}} files, {{.Last.Snapshot.Skipped}} skipped{{if .Last.Snapshot.Partial}}, <span class="warn">partial</span>{{end}}, root {{.Last.RootVersion}}{{end}}</td></tr>{{end}}
+  </table>{{else}}<p class="muted">No backup set yet: <code class="cmd">redundanet backup add NAME FOLDER</code></p>{{end}}
+  <div class="kv" style="margin-top:8px"><b>every</b><span>{{.Every}}</span>
+    <b>last verified restore</b><span>{{with .LastVerify}}{{since .At}}: {{.Verified}} of {{.Sampled}} files read back{{if .Failed}}, <span class="bad">{{len .Failed}} failed</span>{{end}}{{else}}never{{end}}</span>
+    {{with .Restore}}<b>restore</b><span>{{if .Running}}running: {{.Path}} to {{.Target}}{{else if .Err}}<span class="bad">{{.Err}}</span>{{else if .Report}}{{.Report.Files}} files to {{.Target}}{{if .Report.Exceptions}}, {{len .Report.Exceptions}} exceptions{{end}}{{end}}</span>{{end}}
+  </div>
+  <p style="margin:10px 0 0">
+    <form method="post" action="/action/backup-run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Back up now</button></form>
+    <form method="post" action="/action/backup-verify"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Restore test</button></form>
+  </p></div>{{end}}
   {{with .Service}}<div class="card"><h2>Service</h2><div class="kv">
     <b>installed</b><span>{{if .Installed}}<span class="ok">yes</span>{{else}}no: run <code class="cmd">redundanet service install</code>{{end}}</span>
     <b>running</b><span>{{if .Running}}<span class="ok">yes</span>{{else}}{{if .Installed}}<span class="warn">no</span>{{else}}this process{{end}}{{end}}</span>

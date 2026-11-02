@@ -174,7 +174,7 @@ func (c *hubClient) session(ctx context.Context) error {
 			return fmt.Errorf("welcome: %w", err)
 		}
 		if typ == wire.FrameWelcome {
-			if err := identity.Unmarshal(payload, &welcome); err != nil {
+			if err := identity.UnmarshalLenient(payload, &welcome); err != nil {
 				return err
 			}
 			break
@@ -247,7 +247,7 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 	switch typ {
 	case wire.FrameCandidates:
 		var cand wire.Candidates
-		if err := identity.Unmarshal(payload, &cand); err != nil {
+		if err := identity.UnmarshalLenient(payload, &cand); err != nil {
 			c.ep.log.Warn("hub sent bad candidates", "err", err)
 			return
 		}
@@ -258,7 +258,7 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 		}
 	case wire.FrameError:
 		var e wire.Error
-		_ = identity.Unmarshal(payload, &e)
+		_ = identity.UnmarshalLenient(payload, &e)
 		c.ep.log.Warn("hub error", "hub", c.hub.Key.Short(), "msg", e.Msg)
 	case wire.FramePing:
 		_ = w.Frame(wire.FramePong, nil)

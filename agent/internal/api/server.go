@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
@@ -39,6 +43,7 @@ type Snapshot struct {
 	Transport  *transport.Status  `json:"transport,omitempty"`
 	Membership *membership.Status `json:"membership,omitempty"`
 	Update     *update.Status     `json:"update,omitempty"`
+	Jobs       *jobs.Status       `json:"jobs,omitempty"`
 	Service    *service.Status    `json:"service,omitempty"`
 	Generated  time.Time          `json:"generated"`
 }
@@ -56,6 +61,7 @@ type Config struct {
 	DataDir  string
 	Snapshot func() Snapshot
 	Actions  Actions
+	Jobs     *jobs.Runner // backup, restore test and restore; nil on a hub
 	Logs     *logbuf.Buffer
 	Log      *slog.Logger
 }
@@ -116,6 +122,14 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/update/check", s.apiUpdateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.apiUpdateApply)
 	mux.HandleFunc("POST /api/update/retry", s.apiUpdateRetry)
+	mux.HandleFunc("GET /api/backups", s.apiBackups)
+	mux.HandleFunc("POST /api/backup/add", s.apiBackupAdd)
+	mux.HandleFunc("POST /api/backup/remove", s.apiBackupRemove)
+	mux.HandleFunc("POST /api/backup/run", s.apiBackupRun)
+	mux.HandleFunc("POST /api/backup/verify", s.apiBackupVerify)
+	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
+	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
+	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
 	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -266,6 +280,130 @@ func (s *Server) apiUpdateRetry(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"result": v + " may be installed again at the next check"})
 }
 
+func (s *Server) needJobs(w http.ResponseWriter, r *http.Request) bool {
+	if !s.requireAPI(w, r) {
+		return false
+	}
+	if s.cfg.Jobs == nil {
+		http.Error(w, "this device runs no backup jobs", http.StatusNotImplemented)
+		return false
+	}
+	return true
+}
+
+func (s *Server) apiBackups(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	writeJSON(w, s.cfg.Jobs.Status())
+}
+
+func (s *Server) apiBackupAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var set backup.Set
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&set); err != nil {
+		http.Error(w, "bad set: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.AddSet(set); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "set " + set.Name + " saved"})
+}
+
+func (s *Server) apiBackupRemove(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	if err := s.cfg.Jobs.RemoveSet(r.FormValue("set")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "set removed"})
+}
+
+func (s *Server) apiBackupRun(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	s.cfg.Jobs.RunNow(r.FormValue("set"))
+	writeJSON(w, map[string]string{"result": "backup requested"})
+}
+
+func (s *Server) apiBackupVerify(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	s.cfg.Jobs.RunNow("verify")
+	writeJSON(w, map[string]string{"result": "restore test requested"})
+}
+
+func (s *Server) apiRestoreList(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	l, err := s.cfg.Jobs.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, l)
+}
+
+func (s *Server) apiRestoreBrowse(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	dev, err := identity.ParseKey(r.FormValue("device"))
+	if err != nil {
+		http.Error(w, "bad device key", http.StatusBadRequest)
+		return
+	}
+	entry, dir, err := s.cfg.Jobs.Browse(r.Context(), dev, r.FormValue("snapshot"), r.FormValue("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"entry": entry, "directory": dir})
+}
+
+// RestoreRequest starts a restore.
+type RestoreRequest struct {
+	Device    string `json:"device"`
+	Snapshot  string `json:"snapshot"`
+	Path      string `json:"path"`
+	Target    string `json:"target"`
+	Overwrite bool   `json:"overwrite"`
+}
+
+func (s *Server) apiRestoreStart(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var req RestoreRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	dev, err := identity.ParseKey(req.Device)
+	if err != nil {
+		http.Error(w, "bad device key", http.StatusBadRequest)
+		return
+	}
+	if req.Target == "" {
+		http.Error(w, "a target directory is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.StartRestore(dev, req.Snapshot, req.Path, req.Target, req.Overwrite); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "restore started"})
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.auth.redeem(r.URL.Query().Get("t"))
 	if !ok {
@@ -347,6 +485,20 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 		} else {
 			msg = "update started: the agent restarts when the new version passes probation"
 		}
+	case "backup-run":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		s.cfg.Jobs.RunNow(r.FormValue("set"))
+		msg = "backup requested; progress shows below"
+	case "backup-verify":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		s.cfg.Jobs.RunNow("verify")
+		msg = "restore test requested"
 	case "update-retry":
 		if s.cfg.Actions.RetryUpdate == nil {
 			msg = "updates are not configured in this build"

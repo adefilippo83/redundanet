@@ -71,8 +71,8 @@ a { color: var(--accent) }
 </table></div></div>
 
 <div class="card"><h2>Members</h2><div class="wrap"><table>
-<tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>devices</th></tr>
-{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{if .Objects}}{{size .StoredBytes}} in {{.Objects}} objects{{else}}<span class="muted">nothing yet</span>{{end}}</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}
+<tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>last backup</th><th>last verified restore</th><th>devices</th></tr>
+{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{if .Objects}}{{size .StoredBytes}} in {{.Objects}} objects{{else}}<span class="muted">nothing yet</span>{{end}}</td><td>{{if .LastBackup}}{{.LastBackup}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{if .LastVerified}}{{.LastVerified}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}
 </table></div></div>
 
 {{with .Legacy}}<div class="card"><h2>RedundaNet 2 nodes</h2><div class="wrap"><table>

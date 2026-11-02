@@ -147,7 +147,7 @@ func (e *RootEnvelope) Encode() ([]byte, error) { return identity.Marshal(e) }
 // DecodeRoot parses a stored envelope.
 func DecodeRoot(b []byte) (*RootEnvelope, error) {
 	var e RootEnvelope
-	if err := identity.Unmarshal(b, &e); err != nil {
+	if err := identity.UnmarshalLenient(b, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -196,5 +196,5 @@ func readMsg(r io.Reader, v any) error {
 	if _, err := io.ReadFull(r, b); err != nil {
 		return err
 	}
-	return identity.Unmarshal(b, v)
+	return identity.UnmarshalLenient(b, v)
 }

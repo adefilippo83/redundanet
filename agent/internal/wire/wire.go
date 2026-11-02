@@ -7,6 +7,11 @@
 // Control payloads are deterministic CBOR; a relay payload is the peer's
 // 32-byte device key followed by one end-to-end QUIC packet. Over a QUIC
 // channel relay payloads travel as datagrams instead, with the same layout.
+//
+// A receiver skips control fields it does not know (identity.UnmarshalLenient),
+// so a device and a hub may run different versions: adding a field to a
+// message is compatible both ways, and only a new frame type or a changed
+// meaning needs a protocol version.
 package wire
 
 import (
@@ -75,6 +80,16 @@ type Census struct {
 	Storage  *CensusStorage `cbor:"storage,omitempty" json:"storage,omitempty"`
 	Peers    []CensusPeer   `cbor:"peers" json:"peers"`
 	Update   string         `cbor:"update,omitempty" json:"update,omitempty"` // the self-updater's last word
+	Backup   *CensusBackup  `cbor:"backup,omitempty" json:"backup,omitempty"`
+}
+
+// CensusBackup is what a device says about its backups: dates only, the
+// public projection the RFC allows, at day granularity on the page.
+type CensusBackup struct {
+	LastBackup time.Time `cbor:"last_backup" json:"last_backup"`
+	Partial    bool      `cbor:"partial" json:"partial"`
+	LastVerify time.Time `cbor:"last_verify" json:"last_verify"`
+	VerifyOK   bool      `cbor:"verify_ok" json:"verify_ok"`
 }
 
 // CensusStorage is the storage half of a heartbeat.

@@ -40,6 +40,10 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 			cap TEXT NOT NULL, size INTEGER NOT NULL, placed INTEGER NOT NULL, created INTEGER NOT NULL, last_used INTEGER NOT NULL,
 			PRIMARY KEY (plaintext_hash, k, nn, segment_size))`,
 		`CREATE INDEX IF NOT EXISTS objects_placed ON objects(placed)`,
+		`CREATE TABLE IF NOT EXISTS scan (
+			path TEXT PRIMARY KEY, key TEXT NOT NULL, hash BLOB, size INTEGER NOT NULL,
+			cap TEXT, chunks TEXT, last_seen INTEGER NOT NULL, last_hashed INTEGER NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS scan_hashed ON scan(last_hashed)`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_version', 0)`,
 	} {
@@ -148,4 +152,94 @@ func (d *DB) RootVersion() (uint64, error) {
 func (d *DB) RecoverRootVersion(seen uint64) error {
 	_, err := d.db.Exec(`UPDATE meta SET value = MAX(value, ?) WHERE key = 'root_version'`, seen)
 	return err
+}
+
+// ScanRow is what the scan remembers about one path: the change key, the
+// plaintext hash, and the capabilities it was stored under.
+type ScanRow struct {
+	Path       string
+	Key        string // the change-detection key
+	Hash       object.Hash
+	Size       int64
+	Cap        string   // one object, or "" when chunked or inline
+	Chunks     []string // chunk capabilities for a large file
+	LastSeen   time.Time
+	LastHashed time.Time
+}
+
+// LookupScan returns the row of a path, nil when unknown.
+func (d *DB) LookupScan(path string) (*ScanRow, error) {
+	var r ScanRow
+	var h []byte
+	var chunks sql.NullString
+	var capStr sql.NullString
+	var seen, hashed int64
+	err := d.db.QueryRow(`SELECT path, key, hash, size, cap, chunks, last_seen, last_hashed FROM scan WHERE path = ?`, path).
+		Scan(&r.Path, &r.Key, &h, &r.Size, &capStr, &chunks, &seen, &hashed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	copy(r.Hash[:], h)
+	r.Cap = capStr.String
+	if chunks.Valid && chunks.String != "" {
+		r.Chunks = splitChunks(chunks.String)
+	}
+	r.LastSeen, r.LastHashed = time.Unix(seen, 0), time.Unix(hashed, 0)
+	return &r, nil
+}
+
+// RememberScan upserts a row.
+func (d *DB) RememberScan(r ScanRow) error {
+	_, err := d.db.Exec(`INSERT INTO scan (path, key, hash, size, cap, chunks, last_seen, last_hashed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (path) DO UPDATE SET key = excluded.key, hash = excluded.hash, size = excluded.size, cap = excluded.cap, chunks = excluded.chunks,
+		last_seen = excluded.last_seen, last_hashed = excluded.last_hashed`,
+		r.Path, r.Key, r.Hash[:], r.Size, r.Cap, joinChunks(r.Chunks), r.LastSeen.Unix(), r.LastHashed.Unix())
+	return err
+}
+
+// OldestHashed lists the paths whose hash is oldest, for the rolling
+// re-hash: a file that defeats every timestamp is still caught.
+func (d *DB) OldestHashed(limit int) (map[string]bool, error) {
+	rows, err := d.db.Query(`SELECT path FROM scan ORDER BY last_hashed ASC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out[p] = true
+	}
+	return out, rows.Err()
+}
+
+func joinChunks(c []string) string {
+	out := ""
+	for i, s := range c {
+		if i > 0 {
+			out += " "
+		}
+		out += s
+	}
+	return out
+}
+
+func splitChunks(s string) []string {
+	var out []string
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == ' ' {
+			if i > start {
+				out = append(out, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	return out
 }
