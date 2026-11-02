@@ -133,6 +133,19 @@ func (u *Updater) MinVersionFrom(f func() string) {
 func (u *Updater) Enabled() bool { return !u.cfg.Embedded.IsZero() && u.cfg.Version != "dev" }
 
 // Status snapshots the updater.
+// Retry forgets that a version failed probation, so the next check may
+// install it again; for the operator, after the cause is fixed.
+func (u *Updater) Retry(version string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if _, ok := u.st.Failed[version]; !ok {
+		return fmt.Errorf("%s is not marked as failed", version)
+	}
+	delete(u.st.Failed, version)
+	u.save()
+	return nil
+}
+
 func (u *Updater) Status() Status {
 	u.mu.Lock()
 	defer u.mu.Unlock()

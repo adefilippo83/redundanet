@@ -116,8 +116,19 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// Close stops the listeners.
+// Close tells every device to reconnect now and stops the listeners. Closing
+// the listeners alone would leave established connections to die at the
+// idle timeout, half a minute a self-update's candidate cannot wait.
 func (s *Server) Close() error {
+	s.mu.Lock()
+	clients := make([]*client, 0, len(s.clients))
+	for _, c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+	for _, c := range clients {
+		c.close()
+	}
 	if s.tcpLn != nil {
 		_ = s.tcpLn.Close()
 	}

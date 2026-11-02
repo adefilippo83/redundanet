@@ -209,3 +209,29 @@ func TestStatusReportsTheServiceChannel(t *testing.T) {
 		t.Fatalf("channel reported: %q", got)
 	}
 }
+
+func TestRetryForgetsAFailure(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	u, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("candidate crashed") })
+	rel, err := u.Check(context.Background())
+	if err != nil || rel == nil {
+		t.Fatalf("check: %v %v", rel, err)
+	}
+	if err := u.Apply(context.Background(), rel); err == nil {
+		t.Fatal("a failed probation must fail the apply")
+	}
+	if st := u.Status(); len(st.Failed) != 1 || st.Failed[0] != "3.0.1" {
+		t.Fatalf("failed list: %v", st.Failed)
+	}
+	if err := u.Retry("3.0.2"); err == nil {
+		t.Fatal("retrying a version that did not fail must be refused")
+	}
+	if err := u.Retry("3.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := newUpdater(t, r, dir, nil)
+	if st := again.Status(); len(st.Failed) != 0 {
+		t.Fatalf("the retry was not persisted: %v", st.Failed)
+	}
+}

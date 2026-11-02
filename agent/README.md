@@ -26,7 +26,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `status`, `open`, `logs`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -46,7 +46,7 @@ redundanet network join <descriptor>
 redundanet network status [--refresh]
 
 redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
-                 [--publish URL --publish-token-file FILE]
+                 [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR]
 ```
 
