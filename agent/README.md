@@ -135,6 +135,9 @@ go test -race ./...
 go build ./cmd/redundanet
 ```
 
+`deploy/hub/` holds the systemd unit and the install runbook for the hub on
+hub-hetzner.
+
 Go 1.27 or later, no cgo. `.github/workflows/agent.yml` runs the tests on
 Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`,
 or `agent/vX.Y.Z-alpha.N` for a pre-release, builds a draft release with
