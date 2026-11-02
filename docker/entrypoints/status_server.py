@@ -352,13 +352,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(200, ctype, body)
 
+    @staticmethod
+    def _v3_name(path: str, *, put: bool = False) -> str | None:
+        """The stored file a /v3/ path names, returned as one of our own
+        constants so the request string itself never reaches the filesystem."""
+        if not put and path in ("/v3", "/v3/"):
+            return "index.html"
+        for known in V3_FILES:
+            if path == f"/v3/{known}":
+                return known
+        return None
+
     def _get_v3(self, path: str) -> None:
-        name = {
-            "/v3": "index.html",
-            "/v3/": "index.html",
-            "/v3/index.html": "index.html",
-            "/v3/status.json": "status.json",
-        }.get(path)
+        name = self._v3_name(path)
         if name is None:
             self.send_error(404)
             return
@@ -377,8 +383,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         path = self.path.split("?", 1)[0]
-        name = path[len("/v3/") :] if path.startswith("/v3/") else ""
-        if name not in V3_FILES:
+        name = self._v3_name(path, put=True)
+        if name is None:
             self.send_error(404)
             return
         if not V3.enabled:
