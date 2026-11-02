@@ -218,6 +218,7 @@ func (c *hubClient) session(ctx context.Context) error {
 
 	pingCtx, cancelPing := context.WithCancel(ctx)
 	defer cancelPing()
+	go c.censusLoop(pingCtx, w)
 	go func() {
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()

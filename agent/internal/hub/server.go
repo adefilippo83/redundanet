@@ -27,6 +27,8 @@ type Config struct {
 	Allow    identity.Allow
 	UDP      string // QUIC listener, for example ":4433"
 	TCP      string // TLS listener for UDP-blocked devices, "" for none
+	// OnCensus receives each device's heartbeat; the collector keeps them.
+	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
 	Log      *slog.Logger
 }
 
@@ -277,6 +279,14 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		case wire.FrameRelay:
 			if dst, pkt, err := wire.SplitRelay(payload); err == nil {
 				s.relay(c, dst, pkt)
+			}
+		case wire.FrameCensus:
+			var cs wire.Census
+			if err := identity.Unmarshal(payload, &cs); err != nil {
+				return
+			}
+			if s.cfg.OnCensus != nil {
+				s.cfg.OnCensus(c.peer, c.carrier, cs)
 			}
 		case wire.FramePing:
 			_ = c.w.Frame(wire.FramePong, nil)
