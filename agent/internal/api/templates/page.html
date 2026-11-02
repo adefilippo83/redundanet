@@ -53,6 +53,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
     <b>running</b><span>{{.Running}} on the {{.Channel}} channel</span>
     <b>available</b><span>{{if .Available}}<span class="ok">{{.Available}}</span>{{else if .Enabled}}none{{else}}<span class="warn">disabled in this build</span>{{end}}</span>
     <b>last check</b><span>{{since .LastCheck}}{{if .LastError}} <span class="bad">{{.LastError}}</span>{{end}}</span>
+    {{if .Failed}}<b>failed</b><span>{{range .Failed}}<span class="bad">{{.}}</span> <form method="post" action="/action/update-retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="version" value="{{.}}"><button>Retry</button></form> {{end}}</span>{{end}}
   </div>
   <p style="margin:10px 0 0">
     <form method="post" action="/action/update-check"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check now</button></form>
