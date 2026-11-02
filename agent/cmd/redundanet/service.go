@@ -149,7 +149,7 @@ func newUpdater(dir, channel string, probation func(context.Context, string) err
 
 func runUpdate(args []string) error {
 	if len(args) == 0 {
-		return errors.New("update: a subcommand is needed: check, apply, status")
+		return errors.New("update: a subcommand is needed: check, apply, status, retry VERSION")
 	}
 	fs := flag.NewFlagSet("update "+args[0], flag.ContinueOnError)
 	dir, _ := commonFlags(fs)
@@ -184,6 +184,15 @@ func runUpdate(args []string) error {
 			return nil
 		}
 		fmt.Printf("running %s, available %s (%s)\n", version.Version, rel.Version, rel.Channel)
+		return nil
+	case "retry":
+		if fs.NArg() != 1 {
+			return errors.New("update retry needs the version that failed probation")
+		}
+		if err := u.Retry(fs.Arg(0)); err != nil {
+			return err
+		}
+		fmt.Printf("%s may be installed again at the next check\n", fs.Arg(0))
 		return nil
 	case "apply":
 		rel, err := u.Check(ctx)

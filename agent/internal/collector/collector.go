@@ -645,22 +645,31 @@ func (c *Collector) headers(w http.ResponseWriter) {
 	h.Set("Cache-Control", "public, max-age=30")
 }
 
-// Serve listens on addr and serves until ctx ends.
-func (c *Collector) Serve(ctx context.Context, addr string) (net.Addr, error) {
+// Serve listens on addr and serves until ctx ends or stop is called; stop
+// returns once the port is released, which a self-update's candidate
+// needs before it binds the same address.
+func (c *Collector) Serve(ctx context.Context, addr string) (net.Addr, func(), error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	srv := &http.Server{Handler: c.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(sctx)
+			_ = ln.Close()
+		})
+	}
 	go func() {
 		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(sctx)
+		stop()
 	}()
 	c.log.Info("status page up", "addr", ln.Addr())
-	return ln.Addr(), nil
+	return ln.Addr(), stop, nil
 }
 
 type page struct {

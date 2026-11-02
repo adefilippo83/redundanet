@@ -171,6 +171,10 @@ func runHub(args []string) error {
 	publish := fs.String("publish", "", "publish the page and status.json under this URL every minute, for example https://redundanet-hub.fly.dev/v3/")
 	tokenFile := fs.String("publish-token-file", "", "file holding the bearer token --publish sends")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
+	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
+	noUpdate := fs.Bool("no-update", false, "do not check for releases")
+	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising hub")
+	probationPeers := fs.String("probation-peers", "", "device keys the candidate must see connected to pass probation")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -197,31 +201,198 @@ func runHub(args []string) error {
 			return fmt.Errorf("%s is empty", *tokenFile)
 		}
 	}
-	col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy,
-		Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
-	if err != nil {
-		return err
-	}
-	h, err := hub.Start(ctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, Log: rc.log})
-	if err != nil {
-		return err
-	}
-	defer h.Close()
-	col.SetLive(h.Status)
-	go col.Run(ctx)
-	if *status != "" {
-		if _, err := col.Serve(ctx, *status); err != nil {
-			return err
+	var wanted []identity.Key
+	for _, c := range strings.Split(*probationPeers, ",") {
+		if c = strings.TrimSpace(c); c != "" {
+			k, err := identity.ParseKey(c)
+			if err != nil {
+				return err
+			}
+			wanted = append(wanted, k)
 		}
 	}
+
+	// Everything a self-update hands over lives in one bundle: the relay,
+	// the status listener and the collector's loops. The census on disk is
+	// what the candidate inherits.
+	type bundle struct {
+		h        *hub.Server
+		col      *collector.Collector
+		cancel   context.CancelFunc
+		stopHTTP func()
+	}
+	var (
+		mu  sync.Mutex
+		cur *bundle
+	)
+	start := func() (*bundle, error) {
+		bctx, cancel := context.WithCancel(ctx)
+		col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy,
+			Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, Log: rc.log})
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		col.SetLive(h.Status)
+		go col.Run(bctx)
+		b := &bundle{h: h, col: col, cancel: cancel, stopHTTP: func() {}}
+		if *status != "" {
+			_, stopHTTP, err := col.Serve(bctx, *status)
+			if err != nil {
+				_ = h.Close()
+				cancel()
+				return nil, err
+			}
+			b.stopHTTP = stopHTTP
+		}
+		return b, nil
+	}
+	stopBundle := func(b *bundle) {
+		b.stopHTTP()
+		_ = b.h.Close()
+		b.cancel()
+		if err := b.col.Save(); err != nil {
+			rc.log.Warn("census not saved at handover", "err", err)
+		}
+	}
+	cur, err = start()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if cur != nil {
+			stopBundle(cur)
+		}
+	}()
+	current := func() *bundle { mu.Lock(); defer mu.Unlock(); return cur }
+
+	if *probation {
+		return runHubProbation(ctx, func() hub.Status { return current().h.Status() }, wanted)
+	}
+
+	if !*noUpdate && *mPath == "" {
+		var peersMu sync.Mutex
+		var lastPeers []string
+		probe := func(pctx context.Context, exe string) error {
+			peersMu.Lock()
+			peers := append([]string(nil), lastPeers...)
+			peersMu.Unlock()
+			args := []string{"hub", "--network", *network, "--data-dir", rc.dataDir, "--udp", *udp, "--tcp", *tcp, "--status", *status,
+				"--legacy-status", *legacy, "--publish", *publish, "--publish-token-file", *tokenFile, "--probation", "--no-update"}
+			if len(peers) > 0 {
+				args = append(args, "--probation-peers", strings.Join(peers, ","))
+			}
+			return probeAgent(pctx, exe, args)
+		}
+		handover := func(stopIt bool) {
+			mu.Lock()
+			defer mu.Unlock()
+			if stopIt {
+				if cur != nil {
+					var peers []string
+					for _, c := range cur.h.Status().Clients {
+						peers = append(peers, c.Device)
+					}
+					peersMu.Lock()
+					lastPeers = peers
+					peersMu.Unlock()
+					stopBundle(cur)
+					cur = nil
+				}
+				return
+			}
+			if cur == nil {
+				if b, err := start(); err == nil {
+					cur = b
+				} else {
+					rc.log.Error("could not restart the hub after a failed probation", "err", err)
+				}
+			}
+		}
+		u, err := newUpdater(rc.dataDir, *channel, probe, handover)
+		if err != nil {
+			return err
+		}
+		u.MinVersionFrom(func() string {
+			if m := rc.current(); m != nil {
+				return m.Network.MinVersion
+			}
+			return ""
+		})
+		go func() {
+			if err := u.Run(ctx); errors.Is(err, update.ErrRestart) {
+				rc.log.Info("new version installed, exiting so the service starts it")
+				stop()
+				os.Exit(0)
+			}
+		}()
+		logEvery(ctx, *every, func() any {
+			st := map[string]any{"update": u.Status()}
+			if b := current(); b != nil {
+				st["hub"], st["collector"] = b.h.Status(), b.col.Health()
+			}
+			if rc.member != nil {
+				st["membership"] = rc.member.Status()
+			}
+			return st
+		}, rc.log)
+		return nil
+	}
+
 	logEvery(ctx, *every, func() any {
-		st := map[string]any{"hub": h.Status(), "collector": col.Health()}
+		st := map[string]any{}
+		if b := current(); b != nil {
+			st["hub"], st["collector"] = b.h.Status(), b.col.Health()
+		}
 		if rc.member != nil {
 			st["membership"] = rc.member.Status()
 		}
 		return st
 	}, rc.log)
 	return nil
+}
+
+// hubHealthy is a candidate hub's health: it is serving, and every device
+// the previous hub had is back on a channel.
+func hubHealthy(st hub.Status, peers []identity.Key) bool {
+	have := map[string]bool{}
+	for _, c := range st.Clients {
+		have[c.Device] = true
+	}
+	for _, p := range peers {
+		if !have[p.String()] {
+			return false
+		}
+	}
+	return true
+}
+
+// runHubProbation is the candidate hub's side of a self-update.
+func runHubProbation(ctx context.Context, status func() hub.Status, peers []identity.Key) error {
+	deadline := time.After(110 * time.Second)
+	t := time.NewTicker(500 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline:
+			return errors.New("probation: the devices did not come back within the deadline")
+		case <-t.C:
+		}
+		if hubHealthy(status(), peers) {
+			fmt.Println(probationOK)
+			<-ctx.Done() // keep serving until the supervisor stops us
+			return nil
+		}
+	}
 }
 
 func runAgent(args []string) error {

@@ -31,11 +31,12 @@ install -m 0640 -g redundanet3 /dev/stdin /etc/redundanet3/publish.token <<< "$T
 version=3.0.0-alpha.2
 curl -fsSL -o /tmp/rn.tgz "https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv$version/redundanet-$version-linux-amd64.tar.gz"
 echo "<sha256 from releases/index.yaml>  /tmp/rn.tgz" | sha256sum -c
-tar -xzf /tmp/rn.tgz -C /tmp && install -m 0755 /tmp/redundanet /usr/local/bin/redundanet
-/usr/local/bin/redundanet version
+install -d -o redundanet3 -g redundanet3 -m 0750 /var/lib/redundanet3/bin
+tar -xzf /tmp/rn.tgz -C /tmp && install -o redundanet3 -g redundanet3 -m 0755 "$(find /tmp -path '*linux-amd64/redundanet' | head -1)" /var/lib/redundanet3/bin/redundanet
+/var/lib/redundanet3/bin/redundanet version
 
 # the hub's identity: prints the device key that goes into the manifest
-sudo -u redundanet3 /usr/local/bin/redundanet identity init --network redundanet --yes --data-dir /var/lib/redundanet3
+sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet identity init --network redundanet --yes --data-dir /var/lib/redundanet3
 ```
 
 Put the device key in the manifest's `hubs:` entry, sign, merge. Then join
@@ -43,7 +44,7 @@ the network with the descriptor printed by
 `redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/adefilippo83/redundanet/main`:
 
 ```bash
-sudo -u redundanet3 /usr/local/bin/redundanet network join --data-dir /var/lib/redundanet3 'rn3:net:...'
+sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet network join --data-dir /var/lib/redundanet3 'rn3:net:...'
 install -m 0644 redundanet-hub.service /etc/systemd/system/redundanet-hub.service
 systemctl daemon-reload && systemctl enable --now redundanet-hub
 journalctl -u redundanet-hub -f
@@ -76,6 +77,16 @@ The status page stays on loopback (`127.0.0.1:4480`); read it over SSH with
 
 ## Update
 
-The hub does not self-update yet. Download the next asset, check its hash,
-`install` it over `/usr/local/bin/redundanet`, `systemctl restart
-redundanet-hub`. Devices reconnect within seconds; the census is on disk.
+The hub updates itself like a node: every hour it checks the signed release
+index on its channel (`--channel early` in the unit), downloads the asset,
+checks its hash, hands the relay, the status listener and the collector to
+the candidate, which runs `hub --probation` on the same ports and reports
+healthy once every device that was connected is back on a channel, then
+renames the new binary into place beside `redundanet.old` and exits for
+systemd to restart it. Devices see two reconnects of a few seconds. A
+candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`
+and never retried until `redundanet update retry VERSION`.
+
+By hand, for an emergency: download the asset, check its hash, `install` it
+over `/var/lib/redundanet3/bin/redundanet` owned by `redundanet3`, and
+`systemctl restart redundanet-hub`.
