@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 2
+revision: 3
 network:
   name: redundanet
   encoding: {k: 2, n: 4}
@@ -36,6 +36,25 @@ members:
     contribution_gb: 1800
     joined: 2026-11-02
     status: active
+    legacy_pgp:
+      fingerprint: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
+      signature: |
+        -----BEGIN PGP SIGNATURE-----
+        
+        iQIzBAABCgAdFiEEiY2fFtSERod98h8sGPjLfLrhuc0FAmronM0ACgkQGPjLfLrh
+        uc3U2Q//RiUyr7QM9xln/YlIGJ5D0wbsf6hpKYfaDHc4ya67c9Yx4uCGX4VsqKUl
+        v2w88jVmoP4YGMwqvtJ3mhNnWR5Xq3Q217va5IiftrG20Wqbj96hS5hTvozv14C2
+        fD+5M06KA/KdvLCCOyHZ/7hPcdddCXXa7EJ79clkgmWmX2zm9z5YUAx6lC3IIdA0
+        +iYgFz9bhtJ/t19nDI5J/fHlAfSrwIA9wfksBnF6pIngRbP2EXrHCGYVSFlLQk2F
+        bKno3osOi9z2RxMu86ot02HVdXQXP9Vc0xRFCNQjRwnEFN0W/CFhVUz+eV93ARvM
+        p7s4kx2vQZ0pd5nPfNeLDgkOkmzBXlF8tevbaErIBtULsiv9CbBlxReDN2Zz1xTN
+        utqp/Gudh8D1A3bdmd9o3A5dBD/MnTXHoJlMA9GHhfxFRR/m1bgFY7BbPkYS65uR
+        Jgm/Y36RCE3b864DsRlOTxwtdUWAiZcFMbG6cJMhIct6/sW/+8ML7ewGamTbgcaO
+        0wJdysSegwSav9Ri/Z85ngPembjVaHYaJTuSj9ly5ag4g7tGfsddr7THvuWNVYfk
+        KavQoVk2bnSH/smv5zgmkWvOVXuLPiKOYxGw4ubwLiguLBR2L6ohuDQElp5dXVc5
+        LQSlRyr0YkLOhVj5VoUswZBj2x16KGTGy0caX8DEBAPDmYtLNGo=
+        =ai+a
+        -----END PGP SIGNATURE-----
 storage:
   - member: adefilippo83
     device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
