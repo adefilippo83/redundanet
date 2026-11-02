@@ -168,6 +168,8 @@ func runHub(args []string) error {
 	tcp := fs.String("tcp", ":4443", "TLS listener for UDP-blocked devices; empty disables")
 	status := fs.String("status", "127.0.0.1:4480", "status page and status.json; empty disables")
 	legacy := fs.String("legacy-status", "", "a RedundaNet 2 status.json to show beside the mesh census, for example https://redundanet-hub.fly.dev/status.json")
+	publish := fs.String("publish", "", "publish the page and status.json under this URL every minute, for example https://redundanet-hub.fly.dev/v3/")
+	tokenFile := fs.String("publish-token-file", "", "file holding the bearer token --publish sends")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
@@ -182,7 +184,21 @@ func runHub(args []string) error {
 	if rc.current().HubByKey(rc.device) == nil {
 		return fmt.Errorf("device %s is not listed as a hub in the manifest", rc.device.Short())
 	}
-	col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy, Started: rc.started, Log: rc.log})
+	var token string
+	if *publish != "" {
+		if *tokenFile == "" {
+			return errors.New("--publish needs --publish-token-file")
+		}
+		b, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return err
+		}
+		if token = strings.TrimSpace(string(b)); token == "" {
+			return fmt.Errorf("%s is empty", *tokenFile)
+		}
+	}
+	col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy,
+		Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
 	if err != nil {
 		return err
 	}
@@ -199,7 +215,7 @@ func runHub(args []string) error {
 		}
 	}
 	logEvery(ctx, *every, func() any {
-		st := map[string]any{"hub": h.Status()}
+		st := map[string]any{"hub": h.Status(), "collector": col.Health()}
 		if rc.member != nil {
 			st["membership"] = rc.member.Status()
 		}
@@ -294,7 +310,7 @@ func runAgent(args []string) error {
 		man := rc.current()
 		var hubs []transport.HubAddr
 		for _, h := range man.Hubs {
-			hubs = append(hubs, transport.HubAddr{Key: h.Key, UDP: h.Relay, TCP: tcpFor(h.Relay)})
+			hubs = append(hubs, transport.HubAddr{Key: h.Key, UDP: h.Relay, TCP: h.TCPAddr()})
 		}
 		udpPort := 0
 		for _, s := range man.Storage {
@@ -523,16 +539,6 @@ func runProbation(ctx context.Context, ep *transport.Endpoint, peers []identity.
 			return nil
 		}
 	}
-}
-
-// tcpFor derives the TCP 443 carrier address from a relay address: same
-// host, port 443, the RFC's rule for UDP-blocked networks.
-func tcpFor(relay string) string {
-	host := relay
-	if i := strings.LastIndex(relay, ":"); i > 0 {
-		host = relay[:i]
-	}
-	return host + ":443"
 }
 
 func logEvery(ctx context.Context, every time.Duration, status func() any, lg *slog.Logger) {
