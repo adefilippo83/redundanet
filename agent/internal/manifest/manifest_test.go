@@ -150,31 +150,27 @@ func TestParseAndValidateFixture(t *testing.T) {
 }
 
 func TestTransitionalManifestKeepsV2Keys(t *testing.T) {
-	// The live RedundaNet 2 manifest, with the v3 keys appended: what main
-	// carries during the migration.
+	// The live manifest: RedundaNet 2 keys with the v3 keys beside them,
+	// what main carries during the migration. It must parse with the v2
+	// keys set aside and validate without errors.
 	live, err := os.ReadFile("../../../manifests/manifest.yaml")
 	if err != nil {
 		t.Skip("live manifest not beside the module")
 	}
 	live = []byte(strings.ReplaceAll(string(live), "\r\n", "\n")) // a Windows checkout has CRLF
-	f := newFixture(t)
-	v3 := f.yaml(t)
-	// Merge: the v3 fixture's network section lines go under the live one.
-	v3 = strings.Replace(v3, "network:\n  name: testnet\n", "", 1)
-	v3 = strings.Replace(v3, "  encoding: {k: 2, n: 4}\n  reserve_percent: 15\n  grace_days: 30\n  min_version: 3.0.0\n  signature_max_age_days: 90\n  quota_headroom: 2\n  objects_per_gb: 1000\n  repair_after_hours: 72\n", "", 1)
-	liveStr := strings.Replace(string(live), "network:\n  name: redundanet\n", "network:\n  name: redundanet\n  encoding: {k: 2, n: 4}\n  reserve_percent: 15\n  grace_days: 30\n  min_version: 3.0.0\n  signature_max_age_days: 90\n  quota_headroom: 2\n  objects_per_gb: 1000\n  repair_after_hours: 72\n", 1)
-	m, err := Parse([]byte(liveStr + v3))
+	m, err := Parse(live)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Network.Name != "redundanet" || len(m.Members) != 2 {
+	if m.Schema != 3 || m.Network.Name != "redundanet" || m.Network.Encoding != (Encoding{K: 2, N: 4}) || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
 		t.Fatalf("transitional parse: %+v", m.Network)
 	}
-	// The vouch is for network testnet, so it fails here; everything else must pass.
 	for _, p := range m.Validate().Errors() {
-		if !strings.Contains(p.Msg, "vouch") {
-			t.Errorf("unexpected error: %s", p.Msg)
-		}
+		t.Errorf("live manifest: %s", p.Msg)
+	}
+	// A v2-only file is refused, not misread.
+	if _, err := Parse([]byte("network:\n  name: redundanet\nnodes: []\n")); err == nil {
+		t.Fatal("a manifest without schema parsed")
 	}
 }
 

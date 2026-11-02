@@ -1,5 +1,13 @@
+# RedundaNet 3 (RFC 0001) keys live beside the RedundaNet 2 ones during the
+# migration: schema, revision, network.encoding, operators, hubs, members and
+# storage. The 2.x readers ignore them; the agent ignores the 2.x keys and
+# follows only a manifest whose manifest.sig an operator key signed. Edit,
+# then re-sign: redundanet manifest sign --key <operator.key>.
+schema: 3
+revision: 1
 network:
   name: redundanet
+  encoding: {k: 2, n: 4}
   version: 2.0.0
   domain: redundanet.local
   vpn_network: 10.100.0.0/16
@@ -11,6 +19,26 @@ network:
   quota:
     reserve: 0.15
     enforce: true
+operators:
+  - name: adefilippo83
+    key: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q
+hubs:
+  - name: hub-hetzner
+    relay: 2.29.46.249:8443
+    tcp: 2.29.46.249:8443
+    status: https://redundanet-hub.fly.dev/v3/
+    key: bm4ld4ezgwnvup4654wd6su7h3id2p4nvhfq6a7krn3qfgfsfkna
+# Phase 1 (RFC 0001, G1): the agent beside the stack stores nothing yet, so
+# every member is a client with no allocation. Contributions and storage
+# devices follow once the nodes run the agent.
+members:
+  - name: adefilippo83
+    key: wekrreaqlio4j3m4vzxo6hn5be2sa2gxxv7gx3mq54m4xffztv2a
+    contribution_gb: 0
+    allocation_gb: 0
+    sponsor: {member: reserve, gb: 0}
+    joined: 2026-11-02
+    status: active
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
 - name: hub-fly
