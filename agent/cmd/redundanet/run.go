@@ -284,12 +284,7 @@ func runHub(args []string) error {
 			peersMu.Lock()
 			peers := append([]string(nil), lastPeers...)
 			peersMu.Unlock()
-			args := []string{"hub", "--network", *network, "--data-dir", rc.dataDir, "--udp", *udp, "--tcp", *tcp, "--status", *status,
-				"--legacy-status", *legacy, "--publish", *publish, "--publish-token-file", *tokenFile, "--probation", "--no-update"}
-			if len(peers) > 0 {
-				args = append(args, "--probation-peers", strings.Join(peers, ","))
-			}
-			return probeAgent(pctx, exe, args)
+			return probeAgent(pctx, exe, candidateArgs(os.Args[1:], peers))
 		}
 		handover := func(stopIt bool) {
 			mu.Lock()
@@ -615,17 +610,10 @@ func runAgent(args []string) error {
 			peersMu.Lock()
 			peers := append([]string(nil), lastPeers...)
 			peersMu.Unlock()
-			args := []string{"agent", "--network", *network, "--data-dir", d, "--listen", *listen, "--probation", "--no-update"}
-			if len(peers) > 0 {
-				args = append(args, "--probation-peers", strings.Join(peers, ","))
-			}
-			if *tcpOnly {
-				args = append(args, "--tcp-only")
-			}
-			if *loopback {
-				args = append(args, "--loopback-candidates")
-			}
-			return probeAgent(pctx, exe, args)
+			// The candidate runs with this process's own flags, so it opens
+			// the same store on the same disk and listens where this one
+			// did; only the probation flags differ.
+			return probeAgent(pctx, exe, candidateArgs(os.Args[1:], peers))
 		}
 		handover := func(stopIt bool) {
 			epMu.Lock()
@@ -698,6 +686,38 @@ func runAgent(args []string) error {
 		return st
 	}, rc.log)
 	return nil
+}
+
+// candidateArgs is the command line of an update candidate: the running
+// process's own arguments with the probation flags replaced, so a flag
+// added later never has to be threaded through by hand. A flag may come
+// as --name value or --name=value.
+func candidateArgs(args []string, peers []string) []string {
+	skipValue := map[string]bool{"--probation-peers": true, "-probation-peers": true}
+	skip := map[string]bool{"--probation": true, "-probation": true, "--no-update": true, "-no-update": true}
+	out := make([]string, 0, len(args)+4)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		name := a
+		if eq := strings.IndexByte(a, '='); eq > 0 {
+			name = a[:eq]
+		}
+		switch {
+		case skip[name]:
+			continue
+		case skipValue[name]:
+			if name == a && i+1 < len(args) {
+				i++ // the value is the next argument
+			}
+			continue
+		}
+		out = append(out, a)
+	}
+	out = append(out, "--probation", "--no-update")
+	if len(peers) > 0 {
+		out = append(out, "--probation-peers", strings.Join(peers, ","))
+	}
+	return out
 }
 
 // openStore opens the share store under the storage disk. The disk itself
