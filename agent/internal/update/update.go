@@ -52,6 +52,7 @@ var ErrRestart = errors.New("update installed: restart to run it")
 
 // state is what persists between runs.
 type state struct {
+	Channel      string            `yaml:"channel,omitempty"` // the channel of the last check, for `update status` from another process
 	LastRevision uint64            `yaml:"last_index_revision"`
 	Failed       map[string]string `yaml:"failed"` // version -> why probation failed
 	Installed    map[string]string `yaml:"installed"`
@@ -136,6 +137,11 @@ func (u *Updater) Status() Status {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	st := Status{Enabled: u.Enabled(), Running: u.cfg.Version, Channel: u.cfg.Channel, LastCheck: u.st.LastCheck, LastError: u.st.LastError, LastRevision: u.st.LastRevision}
+	if u.st.Channel != "" {
+		// What the service last checked with, which is what the CLI's
+		// `update status` from another process wants to know.
+		st.Channel = u.st.Channel
+	}
 	if u.avail != nil {
 		st.Available = u.avail.Version
 	}
@@ -154,6 +160,7 @@ func (u *Updater) Check(ctx context.Context) (*release.Release, error) {
 	rel, err := u.check(ctx)
 	u.mu.Lock()
 	u.st.LastCheck = time.Now()
+	u.st.Channel = u.cfg.Channel
 	u.avail = rel
 	if err != nil {
 		u.st.LastError = err.Error()
