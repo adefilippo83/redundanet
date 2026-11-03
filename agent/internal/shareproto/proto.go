@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
@@ -23,6 +24,9 @@ const (
 	TypeHas      = "has"
 	TypePutRoot  = "put-root"
 	TypeGetRoots = "get-roots"
+	TypeDelete   = "delete"   // a signed delete token: the first phase of deletion
+	TypeUndelete = "undelete" // the owner's change of mind within the window
+	TypeList     = "list"     // the objects this server holds for the asking member
 )
 
 // Statuses a response carries; everything but StatusOK is a refusal the
@@ -38,6 +42,8 @@ const (
 	StatusPartial      = "partial"       // the share is not complete
 	StatusLowerVersion = "lower-version" // a root at or above this version is held
 	StatusUnavailable  = "unavailable"   // the storage disk is missing
+	StatusRecent       = "recent"        // delete: the owner touched the object within the immunity
+	StatusStale        = "stale"         // delete: the token predates the object's last touch
 	StatusBad          = "bad-request"   //
 	StatusFailed       = "error"         // the server failed
 )
@@ -58,6 +64,8 @@ type Request struct {
 	Member       identity.Key             `cbor:"member"`               // get-roots
 	Root         *RootEnvelope            `cbor:"root,omitempty"`       // put-root
 	Task         *wire.RepairTask         `cbor:"task,omitempty"`       // put by a repair worker: the hub's signed order
+	Token        *DeleteToken             `cbor:"token,omitempty"`      // delete
+	After        object.StorageIndex      `cbor:"after"`                // list: the page starts after this index
 }
 
 // Response answers a request; for put it precedes the blocks and a second
@@ -70,9 +78,22 @@ type Response struct {
 	Hashes     []object.Hash            `cbor:"hashes,omitempty"`     // get: the share's block hashes
 	Descriptor *object.SignedDescriptor `cbor:"descriptor,omitempty"` // get with hashes only: the share's signed descriptor
 	Segments   int                      `cbor:"segments"`             // get: how many the object has
-	Presence   *Presence                `cbor:"presence,omitempty"`   // has
+	Presence   *Presence                `cbor:"presence,omitempty"`   // has, delete
 	Roots      []*RootEnvelope          `cbor:"roots,omitempty"`      // get-roots
+	Objects    []ListedObject           `cbor:"objects,omitempty"`    // list
+	More       bool                     `cbor:"more"`                 // list: another page follows
 }
+
+// ListedObject is one object of the asking member as a server lists it.
+type ListedObject struct {
+	StorageIndex   object.StorageIndex `cbor:"si"`
+	DescriptorHash object.Hash         `cbor:"dhash"`
+	LastTouched    time.Time           `cbor:"touched"`
+	Tombstoned     bool                `cbor:"tombstoned"`
+}
+
+// ListPage bounds a list answer.
+const ListPage = 1000
 
 // Presence is what a server holds of an object.
 type Presence struct {
@@ -81,6 +102,72 @@ type Presence struct {
 	Complete       []uint8          `cbor:"complete"`
 	Partial        map[uint8]uint32 `cbor:"partial"`
 	Tombstoned     bool             `cbor:"tombstoned"`
+	Purged         bool             `cbor:"purged,omitempty"` // the tombstone's window has run
+}
+
+// DeleteToken is the owner's signed order to tombstone one object, RFC
+// 0001's `{network, member, storage index, descriptor hash, issued_at}`
+// signed by a device key certified for the member. A server applies it
+// only past the immunity and only when it was issued after the object's
+// last touch, so a captured token never deletes a copy uploaded later.
+type DeleteToken struct {
+	Network        string                     `cbor:"network"`
+	Member         identity.Key               `cbor:"member"`
+	Device         identity.Key               `cbor:"device"`
+	StorageIndex   object.StorageIndex        `cbor:"si"`
+	DescriptorHash object.Hash                `cbor:"dhash"`
+	IssuedAt       time.Time                  `cbor:"issued_at"`
+	Signature      []byte                     `cbor:"signature"`
+	Certificate    identity.SignedCertificate `cbor:"certificate"`
+}
+
+type deleteBody struct {
+	Network        string              `cbor:"network"`
+	Member         identity.Key        `cbor:"member"`
+	Device         identity.Key        `cbor:"device"`
+	StorageIndex   object.StorageIndex `cbor:"si"`
+	DescriptorHash object.Hash         `cbor:"dhash"`
+	IssuedAt       time.Time           `cbor:"issued_at"`
+}
+
+const domainDelete = "delete-token"
+
+// SignDelete makes a delete token for one object.
+func SignDelete(network string, dev *identity.DeviceKey, cert *identity.SignedCertificate, si object.StorageIndex, dhash object.Hash, issuedAt time.Time) (*DeleteToken, error) {
+	if cert == nil || cert.Certificate.Device != dev.ID() {
+		return nil, errors.New("shareproto: the certificate is not this device's")
+	}
+	t := &DeleteToken{Network: network, Member: cert.Certificate.Member, Device: dev.ID(), StorageIndex: si, DescriptorHash: dhash,
+		IssuedAt: issuedAt.UTC().Truncate(time.Second), Certificate: *cert}
+	body, err := identity.Marshal(deleteBody{t.Network, t.Member, t.Device, t.StorageIndex, t.DescriptorHash, t.IssuedAt})
+	if err != nil {
+		return nil, err
+	}
+	t.Signature = dev.Sign(domainDelete, body)
+	return t, nil
+}
+
+// Verify checks the token: certificate valid for the network and for this
+// member and device, signature by the device over the body.
+func (t *DeleteToken) Verify(network string) error {
+	if t.Network != network {
+		return fmt.Errorf("shareproto: delete token for network %q", t.Network)
+	}
+	if err := t.Certificate.Verify(); err != nil {
+		return fmt.Errorf("shareproto: delete token certificate: %w", err)
+	}
+	c := t.Certificate.Certificate
+	if c.Network != network || c.Member != t.Member || c.Device != t.Device {
+		return errors.New("shareproto: delete token certificate does not match the token")
+	}
+	body, err := identity.Marshal(deleteBody{t.Network, t.Member, t.Device, t.StorageIndex, t.DescriptorHash, t.IssuedAt})
+	if err != nil {
+		return err
+	}
+	if err := identity.VerifyDevice(t.Device, domainDelete, body, t.Signature); err != nil {
+		return fmt.Errorf("shareproto: delete token signature: %w", err)
+	}
+	return nil
 }
 
 // RootEnvelope is a device's root record as it travels and is stored:

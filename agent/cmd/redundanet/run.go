@@ -465,7 +465,8 @@ func runAgent(args []string) error {
 			rc.log.Error("storage unavailable: this device will not serve shares until the disk is back", "disk", disk, "err", err)
 		} else {
 			defer st.Close()
-			go storeMaintenance(ctx, st, rc.log)
+			pol := &manifestPolicy{rc: rc}
+			go storeMaintenance(ctx, st, pol.memberActive, pol.grace, rc.log)
 		}
 	}
 	onStream := shareproto.RefuseAll
@@ -503,7 +504,11 @@ func runAgent(args []string) error {
 		if err != nil {
 			return err
 		}
-		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Log: rc.log})
+		var revocations func() []*identity.SignedRevocation
+		if rc.member != nil {
+			revocations = rc.member.Revocations
+		}
+		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Revocations: revocations, Log: rc.log})
 		if err != nil {
 			return err
 		}
@@ -819,9 +824,11 @@ func openStore(disk, dataDir string, floorGB int64, lg *slog.Logger) (*store.Sto
 	return store.Open(store.Config{Root: root, RecordPath: filepath.Join(dataDir, "storage-id"), Floor: floorGB << 30, Log: lg})
 }
 
-// storeMaintenance expires stale partial shares and scrubs complete ones
-// at a rate that covers the store about once a month.
-func storeMaintenance(ctx context.Context, st *store.Store, lg *slog.Logger) {
+// storeMaintenance expires stale partial shares, scrubs complete ones at
+// a rate that covers the store about once a month, purges the shares of
+// tombstones past the window, and applies membership-driven deletion on
+// this server's own clock.
+func storeMaintenance(ctx context.Context, st *store.Store, active func(identity.Key) bool, grace func() time.Duration, lg *slog.Logger) {
 	t := time.NewTicker(10 * time.Minute)
 	defer t.Stop()
 	for {
@@ -837,6 +844,18 @@ func storeMaintenance(ctx context.Context, st *store.Store, lg *slog.Logger) {
 			lg.Warn("partial shares not expired", "err", err)
 		} else if n > 0 {
 			lg.Info("partial shares expired", "count", n)
+		}
+		if n, err := st.PurgeTombstones(); err != nil {
+			lg.Warn("tombstones not purged", "err", err)
+		} else if n > 0 {
+			lg.Info("tombstoned objects purged after the window", "count", n)
+		}
+		if active != nil {
+			if purged, err := st.ApplyMembership(active, grace()); err != nil {
+				lg.Warn("membership not applied to the store", "err", err)
+			} else if len(purged) > 0 {
+				lg.Info("members' data purged after the grace period", "members", len(purged))
+			}
 		}
 		shares, _, err := st.Totals()
 		if err != nil {
@@ -886,6 +905,25 @@ type manifestPolicy struct{ rc *runtimeConfig }
 func (p *manifestPolicy) Network() string { return p.rc.state.Network }
 
 func (p *manifestPolicy) Device() identity.Key { return p.rc.device }
+
+// memberActive says whether a member is listed and active: what starts
+// and clears the store's grace clock for membership-driven deletion.
+func (p *manifestPolicy) memberActive(k identity.Key) bool {
+	m := p.rc.current()
+	if m == nil {
+		return true // no manifest in hand is no reason to start a clock
+	}
+	mem := m.MemberByKey(k)
+	return mem != nil && mem.Status == manifest.StatusActive
+}
+
+// grace is the manifest's grace_days.
+func (p *manifestPolicy) grace() time.Duration {
+	if m := p.rc.current(); m != nil && m.Network.GraceDays > 0 {
+		return time.Duration(m.Network.GraceDays) * 24 * time.Hour
+	}
+	return 30 * 24 * time.Hour
+}
 
 func (p *manifestPolicy) IsHub(k identity.Key) bool {
 	m := p.rc.current()

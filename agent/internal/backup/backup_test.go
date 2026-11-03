@@ -14,6 +14,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
+	"github.com/adefilippo83/redundanet/agent/internal/object"
 	"github.com/adefilippo83/redundanet/agent/internal/restore"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 )
@@ -240,4 +241,55 @@ func TestUnreadableFileIsSkippedAndCounted(t *testing.T) {
 func (w *world) member2snap() *snapshot.Snapshot {
 	l, _ := restore.List(context.Background(), w.fake, w.member)
 	return l.Devices[0].Index.Latest()
+}
+
+// A file that comes back after being away is probed on the grid before
+// its cached capability is reused: an object tombstoned meanwhile is
+// stored again, so the new root never points at a deleted object. A file
+// seen in the last snapshot is not probed: the current root references it.
+func TestReturningFileIsProbedBeforeReuse(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	runWith := func(excludes ...string) {
+		t.Helper()
+		if _, err := backup.Run(ctx, backup.Config{Engine: w.fake, DB: w.db, Member: w.member, Device: w.device,
+			Set: backup.Set{Name: "home", Folders: []string{w.src}, Excludes: excludes}, Now: func() time.Time { return w.now }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runWith()
+	h := object.Sum(pattern(300_000, 1))
+	rc, ok, _ := w.fake.Has(ctx, h, 300_000)
+	if !ok {
+		t.Fatal("the report's object is not stored")
+	}
+	// The report sits out a run, excluded, and its object is deleted
+	// meanwhile, as the cleanup would once nothing referenced it.
+	w.now = w.now.Add(24 * time.Hour)
+	runWith("report.bin", "same.bin")
+	if err := w.fake.Delete(ctx, rc); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the rolling re-hash off these two files, so the cache path is
+	// the one under test.
+	for _, name := range []string{"report.bin", "same.bin"} {
+		row, err := w.db.LookupScan(filepath.Join(w.src, "docs", name))
+		if err != nil || row == nil {
+			t.Fatalf("scan row of %s: %v", name, err)
+		}
+		row.LastHashed = w.now
+		_ = w.db.RememberScan(*row)
+	}
+	w.now = w.now.Add(24 * time.Hour)
+	runWith()
+	if w.fake.Tombstoned(rc) || w.fake.Checks == 0 {
+		t.Fatalf("the returning file was not probed: tombstoned %v, %d checks", w.fake.Tombstoned(rc), w.fake.Checks)
+	}
+	// A file in the last snapshot is not probed: the root references it.
+	w.fake.Checks = 0
+	w.now = w.now.Add(24 * time.Hour)
+	runWith()
+	if w.fake.Checks != 0 {
+		t.Fatalf("%d probes for files the last snapshot holds", w.fake.Checks)
+	}
 }

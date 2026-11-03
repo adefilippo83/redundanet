@@ -77,14 +77,15 @@ var (
 )
 
 type run struct {
-	cfg      Config
-	log      *slog.Logger
-	start    time.Time
-	id       string
-	excludes []string
-	rehash   map[string]bool
-	prog     Progress
-	reasons  map[string]int64
+	cfg          Config
+	log          *slog.Logger
+	start        time.Time
+	id           string
+	excludes     []string
+	rehash       map[string]bool
+	prog         Progress
+	reasons      map[string]int64
+	lastSnapshot time.Time // when the last published snapshot started; zero before the first
 }
 
 // Run performs one backup of the set and publishes the root. When ctx
@@ -115,6 +116,9 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	index, err := r.currentIndex(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if last := index.Latest(); last != nil {
+		r.lastSnapshot = last.Started
 	}
 	// The rolling re-hash: about 1% of the known paths, oldest first.
 	if rows, err := cfg.DB.OldestHashed(100); err == nil {
@@ -330,7 +334,7 @@ func (r *run) scanFile(ctx context.Context, p string) (*snapshot.Entry, error) {
 		return e, nil
 	}
 	row, _ := r.cfg.DB.LookupScan(p)
-	if row != nil && row.Key == key && !r.rehash[p] {
+	if row != nil && row.Key == key && !r.rehash[p] && r.stillStored(ctx, row) {
 		e.Cap, e.Chunks = row.Cap, row.Chunks
 		row.LastSeen = now
 		_ = r.cfg.DB.RememberScan(*row)
@@ -370,6 +374,35 @@ func (r *run) scanFile(ctx context.Context, p string) (*snapshot.Entry, error) {
 	}
 	_ = r.cfg.DB.RememberScan(newRow)
 	return e, nil
+}
+
+// stillStored is the RFC's check before a root: a capability taken from
+// the scan cache that the previous root may not reference is confirmed
+// on the servers, which also touches it there. A file seen in the last
+// published snapshot is referenced by the current root and needs no
+// probe; one that was away longer, or any file before the first
+// snapshot, is probed, and an object that is gone or tombstoned makes
+// the file a miss, hashed and stored again.
+func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
+	if !r.lastSnapshot.IsZero() && !row.LastSeen.Before(r.lastSnapshot) {
+		return true
+	}
+	caps := row.Chunks
+	if row.Cap != "" {
+		caps = []string{row.Cap}
+	}
+	for _, c := range caps {
+		rc, err := object.ParseReadCap(c)
+		if err != nil {
+			return false
+		}
+		h, err := r.cfg.Engine.Check(ctx, rc)
+		if err != nil || h == nil || !h.Readable {
+			r.log.Info("a cached object is gone from the grid; the file is stored again", "err", err)
+			return false
+		}
+	}
+	return true
 }
 
 // storeSection stores a file's bytes, or a chunk, as one object: asked

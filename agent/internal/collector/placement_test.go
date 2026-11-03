@@ -48,8 +48,9 @@ func TestPlacementRules(t *testing.T) {
 	// 1: fully placed, two shares per server. 2: three of four numbers on
 	// one server. 3: fully placed with one share number held twice. 4: one
 	// share only. 5: every number on one server, the other holds nothing.
+	// 6: one share on falcon and a tombstone on spare: deleted.
 	w.report(falcon, 1, share(1, 0, alice), share(1, 1, alice), share(2, 0, alice), share(2, 1, alice), share(2, 2, alice),
-		share(3, 0, alice), share(3, 1, alice), share(3, 2, alice), share(4, 0, bob), share(5, 0, alice), share(5, 1, alice), share(5, 2, alice), share(5, 3, alice))
+		share(3, 0, alice), share(3, 1, alice), share(3, 2, alice), share(4, 0, bob), share(5, 0, alice), share(5, 1, alice), share(5, 2, alice), share(5, 3, alice), share(6, 0, alice))
 	w.report(spare, 1, share(1, 2, alice), share(1, 3, alice), share(3, 2, alice), share(3, 3, alice))
 	w.c.RecordShares(identity.Peer{Device: spare, Member: alice}, &wire.ShareCensus{Since: 1, Generation: 2, Tombstones: []wire.TombstoneEntry{{StorageIndex: [16]byte{6}, Owner: alice}}})
 
@@ -69,7 +70,10 @@ func TestPlacementRules(t *testing.T) {
 	if o := objs[5]; o.Placed || len(o.Shares) != 4 || o.Spread != 1 || o.Need != "quiescing" {
 		t.Fatalf("object 5: %+v", o)
 	}
-	if grid.Servers != 2 || grid.Objects != 5 || grid.Placed != 2 || grid.UnderPlaced != 3 || grid.Unreadable != 1 || grid.Surplus != 1 || grid.Tombstoned != 1 || grid.Quiescing != 3 || grid.Repair != 0 {
+	if o := objs[6]; !o.Tombstoned || o.Need != "" {
+		t.Fatalf("object 6: %+v", o)
+	}
+	if grid.Servers != 2 || grid.Objects != 6 || grid.Placed != 2 || grid.UnderPlaced != 3 || grid.Unreadable != 1 || grid.Surplus != 1 || grid.Tombstoned != 1 || grid.Quiescing != 3 || grid.Repair != 0 {
 		t.Fatalf("grid: %+v", grid)
 	}
 	if grid.Copies["4"] != 3 || grid.Copies["3"] != 1 || grid.Copies["1"] != 1 {
@@ -119,7 +123,7 @@ func TestPlacementRules(t *testing.T) {
 	// The dead server's bytes are still on its disk: usage counts them.
 	st = w.c.Status()
 	for _, m := range st.Members {
-		if m.Name == "alice" && m.StoredBytes != 16*4096 {
+		if m.Name == "alice" && m.StoredBytes != 17*4096 {
 			t.Fatalf("usage with a dead server: %+v", m)
 		}
 	}
@@ -127,7 +131,7 @@ func TestPlacementRules(t *testing.T) {
 	rec := httptest.NewRecorder()
 	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
-	for _, want := range []string{"5 objects", "under-placed", "unreadable", "objects due", "checked since"} {
+	for _, want := range []string{"6 objects", "under-placed", "unreadable", "objects due", "checked since"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page lacks %q:\n%s", want, page)
 		}

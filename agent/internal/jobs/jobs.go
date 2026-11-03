@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
@@ -25,17 +26,18 @@ import (
 
 // File is backup.yaml in the data directory.
 type File struct {
-	Sets        []backup.Set       `yaml:"sets"`
-	Every       time.Duration      `yaml:"every"`        // between runs of each set; default 24h
-	VerifyEvery time.Duration      `yaml:"verify_every"` // between restore tests; default 30 days
-	Retention   snapshot.Retention `yaml:"retention"`
+	Sets         []backup.Set       `yaml:"sets"`
+	Every        time.Duration      `yaml:"every"`         // between runs of each set; default 24h
+	VerifyEvery  time.Duration      `yaml:"verify_every"`  // between restore tests; default 30 days
+	CleanupEvery time.Duration      `yaml:"cleanup_every"` // between cleanups of unreferenced objects; default 7 days
+	Retention    snapshot.Retention `yaml:"retention"`
 }
 
 const fileName = "backup.yaml"
 
 // Load reads the configuration; a missing file is an empty one.
 func Load(dir string) (*File, error) {
-	f := &File{Every: 24 * time.Hour, VerifyEvery: 30 * 24 * time.Hour, Retention: snapshot.DefaultRetention}
+	f := &File{Every: 24 * time.Hour, VerifyEvery: 30 * 24 * time.Hour, CleanupEvery: 7 * 24 * time.Hour, Retention: snapshot.DefaultRetention}
 	b, err := os.ReadFile(filepath.Join(dir, fileName))
 	if errors.Is(err, os.ErrNotExist) {
 		return f, nil
@@ -51,6 +53,9 @@ func Load(dir string) (*File, error) {
 	}
 	if f.VerifyEvery <= 0 {
 		f.VerifyEvery = 30 * 24 * time.Hour
+	}
+	if f.CleanupEvery <= 0 {
+		f.CleanupEvery = 7 * 24 * time.Hour
 	}
 	if f.Retention == (snapshot.Retention{}) {
 		f.Retention = snapshot.DefaultRetention
@@ -105,11 +110,13 @@ type RestoreStatus struct {
 
 // Status is everything the page shows about the jobs.
 type Status struct {
-	Sets       []backup.Set          `json:"sets"`
-	Every      string                `json:"every"`
-	Runs       []RunStatus           `json:"runs"`
-	LastVerify *restore.Verification `json:"last_verify,omitempty"`
-	Restore    *RestoreStatus        `json:"restore,omitempty"`
+	Sets        []backup.Set          `json:"sets"`
+	Every       string                `json:"every"`
+	Runs        []RunStatus           `json:"runs"`
+	LastVerify  *restore.Verification `json:"last_verify,omitempty"`
+	Restore     *RestoreStatus        `json:"restore,omitempty"`
+	LastCleanup *cleanup.Report       `json:"last_cleanup,omitempty"`
+	Cleaning    bool                  `json:"cleaning"`
 }
 
 // Config wires the runner.
@@ -119,8 +126,11 @@ type Config struct {
 	DB      *localdb.DB
 	Member  identity.Key
 	Device  identity.Key
-	Log     *slog.Logger
-	Now     func() time.Time
+	// Revocations lists the member's revoked devices, for the cleanup; nil
+	// when the agent runs from a manifest file.
+	Revocations func() []*identity.SignedRevocation
+	Log         *slog.Logger
+	Now         func() time.Time
 }
 
 // Runner schedules and runs the jobs.
@@ -133,8 +143,10 @@ type Runner struct {
 	busy bool
 	kick chan string
 
-	lastVerify *restore.Verification
-	restore    *RestoreStatus
+	lastVerify  *restore.Verification
+	restore     *RestoreStatus
+	lastCleanup *cleanup.Report
+	cleaning    bool
 }
 
 // New loads the configuration.
@@ -160,7 +172,7 @@ func New(cfg Config) (*Runner, error) {
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), LastVerify: r.lastVerify}
+	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning}
 	if r.restore != nil {
 		cp := *r.restore
 		st.Restore = &cp
@@ -225,12 +237,14 @@ func (r *Runner) RunNow(set string) {
 // test at its own interval, and runs asked for in between.
 func (r *Runner) Run(ctx context.Context) {
 	r.mu.Lock()
-	every, verifyEvery := r.file.Every, r.file.VerifyEvery
+	every, verifyEvery, cleanupEvery := r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery
 	r.mu.Unlock()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	v := time.NewTicker(verifyEvery)
 	defer v.Stop()
+	cl := time.NewTicker(cleanupEvery)
+	defer cl.Stop()
 	// The first run shortly after start, so a new set is not a day away.
 	first := time.NewTimer(2 * time.Minute)
 	defer first.Stop()
@@ -243,15 +257,51 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-t.C:
 			r.runAll(ctx, "")
 		case name := <-r.kick:
-			if name == "verify" {
+			switch name {
+			case "verify":
 				r.verify(ctx)
-			} else {
+			case "cleanup":
+				_, _ = r.RunCleanup(ctx, false, false)
+			default:
 				r.runAll(ctx, name)
 			}
 		case <-v.C:
 			r.verify(ctx)
+		case <-cl.C:
+			_, _ = r.RunCleanup(ctx, false, false)
 		}
 	}
+}
+
+// ErrCleaning says a cleanup is already running.
+var ErrCleaning = errors.New("jobs: a cleanup is already running")
+
+// RunCleanup runs the owner's cleanup now, one at a time, and keeps the
+// report for the page. It runs beside a backup, which the 7-day immunity
+// on the servers and the probe before a root make safe.
+func (r *Runner) RunCleanup(ctx context.Context, dryRun, force bool) (*cleanup.Report, error) {
+	g, ok := r.cfg.Engine.(cleanup.Grid)
+	if !ok {
+		return nil, errors.New("jobs: this engine cannot list or delete objects")
+	}
+	r.mu.Lock()
+	if r.cleaning {
+		r.mu.Unlock()
+		return nil, ErrCleaning
+	}
+	r.cleaning = true
+	r.mu.Unlock()
+	rep, err := cleanup.Run(ctx, cleanup.Config{Grid: g, Member: r.cfg.Member, Revocations: r.cfg.Revocations, DryRun: dryRun, Force: force, Now: r.cfg.Now, Log: r.log})
+	r.mu.Lock()
+	r.cleaning = false
+	if rep != nil && !dryRun {
+		r.lastCleanup = rep
+	}
+	r.mu.Unlock()
+	if err != nil {
+		r.log.Warn("cleanup did not complete", "err", err)
+	}
+	return rep, err
 }
 
 func (r *Runner) runAll(ctx context.Context, only string) {

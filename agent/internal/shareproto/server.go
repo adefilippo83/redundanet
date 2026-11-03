@@ -75,6 +75,12 @@ func (s *Server) Handle(peer identity.Peer, _ string, st *quic.Stream) {
 		err = s.putRoot(peer, st, &req)
 	case TypeGetRoots:
 		err = s.getRoots(peer, st, &req)
+	case TypeDelete:
+		err = s.delete(peer, st, &req)
+	case TypeUndelete:
+		err = s.undelete(peer, st, &req)
+	case TypeList:
+		err = s.list(peer, st, &req)
 	default:
 		err = writeMsg(st, Response{Status: StatusBad, Message: "unknown request " + req.Type})
 	}
@@ -104,10 +110,81 @@ func statusOf(err error) (string, string) {
 		return StatusPartial, err.Error()
 	case errors.Is(err, store.ErrLowerVersion):
 		return StatusLowerVersion, err.Error()
+	case errors.Is(err, store.ErrRecent):
+		return StatusRecent, err.Error()
+	case errors.Is(err, store.ErrStale):
+		return StatusStale, err.Error()
+	case errors.Is(err, store.ErrNotOwner):
+		return StatusRefused, err.Error()
 	case errors.Is(err, store.ErrRoot), errors.Is(err, object.ErrCorrupt):
 		return StatusBad, err.Error()
 	}
 	return StatusFailed, err.Error()
+}
+
+func presenceOf(p *store.Presence) *Presence {
+	if p == nil {
+		return nil
+	}
+	return &Presence{DescriptorHash: p.DescriptorHash, Owner: p.Owner, Complete: p.Complete, Partial: p.Partial, Tombstoned: p.Tombstoned, Purged: p.Purged}
+}
+
+// delete applies a delete token: the first phase of deletion, from any
+// device of the member whose token it is, so a late token queued on one
+// device may be delivered by another.
+func (s *Server) delete(peer identity.Peer, st *quic.Stream, req *Request) error {
+	t := req.Token
+	if t == nil {
+		return refuse(st, StatusBad, "delete without a token")
+	}
+	if err := t.Verify(s.pol.Network()); err != nil {
+		return refuse(st, StatusBad, err.Error())
+	}
+	if t.Member != peer.Member {
+		return refuse(st, StatusRefused, "a delete token is accepted from the member's own devices only")
+	}
+	if t.StorageIndex != req.StorageIndex {
+		return refuse(st, StatusBad, "the storage index does not match the token")
+	}
+	if err := s.st.Available(); err != nil {
+		return refuse(st, StatusUnavailable, err.Error())
+	}
+	p, err := s.st.ApplyDelete(t.StorageIndex, t.Member, t.DescriptorHash, t.IssuedAt)
+	if err != nil {
+		code, msg := statusOf(err)
+		return refuse(st, code, msg)
+	}
+	return writeMsg(st, Response{Status: StatusOK, Presence: presenceOf(p)})
+}
+
+// undelete clears a tombstone the member's own token placed, within the
+// window.
+func (s *Server) undelete(peer identity.Peer, st *quic.Stream, req *Request) error {
+	if err := s.st.Available(); err != nil {
+		return refuse(st, StatusUnavailable, err.Error())
+	}
+	if err := s.st.Undelete(req.StorageIndex, peer.Member); err != nil {
+		code, msg := statusOf(err)
+		return refuse(st, code, msg)
+	}
+	return writeMsg(st, Response{Status: StatusOK})
+}
+
+// list pages through the objects held for the asking member: the grid's
+// side of the owner's cleanup, never a local cache.
+func (s *Server) list(peer identity.Peer, st *quic.Stream, req *Request) error {
+	if err := s.st.Available(); err != nil {
+		return refuse(st, StatusUnavailable, err.Error())
+	}
+	page, more, err := s.st.ListOwner(peer.Member, req.After, ListPage)
+	if err != nil {
+		return refuse(st, StatusFailed, err.Error())
+	}
+	resp := Response{Status: StatusOK, More: more, Objects: make([]ListedObject, 0, len(page))}
+	for _, l := range page {
+		resp.Objects = append(resp.Objects, ListedObject{StorageIndex: l.StorageIndex, DescriptorHash: l.DescriptorHash, LastTouched: l.LastTouched, Tombstoned: l.Tombstoned})
+	}
+	return writeMsg(st, resp)
 }
 
 // put receives one share: the checks of "Who may store what", in order.
@@ -268,8 +345,7 @@ func (s *Server) has(peer identity.Peer, st *quic.Stream, req *Request) error {
 	if peer.Member == pres.Owner {
 		_ = s.st.Touch(req.StorageIndex)
 	}
-	return writeMsg(st, Response{Status: StatusOK, Presence: &Presence{DescriptorHash: pres.DescriptorHash, Owner: pres.Owner,
-		Complete: pres.Complete, Partial: pres.Partial, Tombstoned: pres.Tombstoned}})
+	return writeMsg(st, Response{Status: StatusOK, Presence: presenceOf(pres)})
 }
 
 // putRoot stores a device's root, from that device only.

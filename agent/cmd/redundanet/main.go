@@ -24,7 +24,7 @@ var commands = []command{
 	{"service", "install the agent as a user service: install, uninstall, status", runService},
 	{"update", "self-update from the signed release index: check, apply, status", runUpdate},
 	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},
-	{"object", "store, fetch or look up one object on the grid: put, get, has, check, repair", runObject},
+	{"object", "store, fetch or look up one object on the grid: put, get, has, check, repair, delete", runObject},
 	{"storage", "this node's own share store, beside the running agent: has, drop", runStorage},
 	{"backup", "backup sets of the running agent: add, remove, list, run, verify", runBackup},
 	{"restore", "restore from the running agent: list, browse, start, status", runRestore},

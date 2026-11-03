@@ -283,6 +283,36 @@ The hub and node sides of the RFC's "Health" section.
   only the cleanup of slice 3 can remove. `storage drop` was added for
   the drill: it removes one share on a node beside the running agent, so
   a fully placed object loses a share on purpose and the task follows.
+  The drill passed on the live grid the same afternoon: share 3 of a
+  10 MB object dropped on falcon-1 at 14:57 UTC, task issued to falcon by
+  the next tick, rebuilt from falcon's own two shares and stored back on
+  falcon-1, reported done eleven seconds after the issue.
+- 2026-11-03, slice 3: deletion. The store applies a delete token past
+  the 7-day immunity on its own clock and only when the token is newer
+  than the last touch, tombstones, purges after the 30-day window and
+  keeps the record (dropped 90 days after the purge), undeletes within
+  the window, lists an owner's objects by page, and purges a member's
+  shares, roots and tombstones once `grace_days` have run after it first
+  found them leaving or unlisted, clearing the note when they reappear.
+  The share protocol gains `delete` with the signed token, `undelete`
+  and `list`, and the statuses `recent` and `stale`. The engine sends
+  tokens to every server, lists the member's objects across them, reads
+  a tombstoned object for the owner within the window, and probes the
+  servers before trusting a cache row older than six days. The backup
+  probes a returning file's cached capability before a root is published.
+  The cleanup job computes the reachable set on the grid from every root
+  under quorum, refuses on an unreadable root or directory and on more
+  than half the grid as garbage unless forced, and skips roots of devices
+  revoked longer ago than the window; it runs weekly, on `backup
+  cleanup`, with a dry run, and its report is on the local page. The
+  node's maintenance purges tombstones and applies membership on its
+  clock with the manifest's grace. The page's tombstone count holds only
+  while a server still reports a share. Exit test in process on a real
+  grid: an orphan refused within the immunity and tombstoned past it, a
+  pruned snapshot's objects collected, the purge after the window, the
+  owner's read failing only then. Pending sets, the RFC's third mechanism
+  for a backup in progress, are not needed yet: a run's new objects are
+  touched by their upload and its reused ones by the probes.
 
 ### M6. The second platform and the G2 month
 

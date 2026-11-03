@@ -95,6 +95,26 @@ type world struct {
 	server *member
 	srvEp  *transport.Endpoint
 	log    *slog.Logger
+	clock  struct {
+		mu sync.Mutex
+		t  time.Time
+	}
+}
+
+// now is the server's clock, which a test may move past the immunity.
+func (w *world) now() time.Time {
+	w.clock.mu.Lock()
+	defer w.clock.mu.Unlock()
+	if w.clock.t.IsZero() {
+		return time.Now()
+	}
+	return w.clock.t
+}
+
+func (w *world) setNow(t time.Time) {
+	w.clock.mu.Lock()
+	w.clock.t = t
+	w.clock.mu.Unlock()
 }
 
 func newWorld(t *testing.T) *world {
@@ -114,7 +134,7 @@ func newWorld(t *testing.T) *world {
 
 	root := filepath.Join(t.TempDir(), "disk")
 	_ = os.Mkdir(root, 0o755)
-	st, err := store.Open(store.Config{Root: root, RecordPath: filepath.Join(t.TempDir(), "storage-id"), Floor: 1, Log: w.log})
+	st, err := store.Open(store.Config{Root: root, RecordPath: filepath.Join(t.TempDir(), "storage-id"), Floor: 1, Now: w.now, Log: w.log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,5 +515,93 @@ func TestRepairPutNeedsAValidTask(t *testing.T) {
 	}
 	if err := putWith(3, task(me, 3, peer, time.Hour, hubSigner)); !isStatus(err, StatusTombstoned) {
 		t.Fatalf("repair of a tombstoned object: %v", err)
+	}
+}
+
+// Deletion over the protocol: a signed token from the member's own device
+// tombstones the object past the immunity; undelete brings it back; list
+// pages the member's objects and nobody else's.
+func TestDeleteUndeleteAndList(t *testing.T) {
+	w := newWorld(t)
+	peer := w.server.dev.ID()
+	alice := w.server
+	c, ctx, laptop := client(t, w, alice)
+	o := encode(t, alice, 2*8192+10, 7)
+	si := o.sd.Descriptor.StorageIndex
+	dh, _ := o.sd.Descriptor.Hash()
+	for _, n := range []uint8{0, 1} {
+		if err := c.PutShare(ctx, peer, o.sd, n, func(s int) ([]byte, error) { return o.blocks[n][s], nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token := func(dev *member, issued time.Time) *DeleteToken {
+		tk, err := SignDelete("testnet", dev.dev, dev.cert, si, dh, issued)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk
+	}
+	// Within the immunity: refused as recent, and the share still serves.
+	if _, err := c.Delete(ctx, peer, token(laptop, time.Now())); !isStatus(err, StatusRecent) {
+		t.Fatalf("delete within the immunity: %v", err)
+	}
+	// A stranger's token, and a token the stranger delivers, are refused.
+	bob := newMember(t, 2, identity.RoleClient)
+	w.pol.mu.Lock()
+	w.pol.active[bob.key] = true
+	w.pol.mu.Unlock()
+	bc, bctx, bobDev := client(t, w, bob)
+	if _, err := bc.Delete(bctx, peer, token(bobDev, time.Now())); !isStatus(err, StatusRefused) && !isStatus(err, StatusRecent) {
+		t.Fatalf("a stranger's token: %v", err)
+	}
+	if _, err := bc.Delete(bctx, peer, token(laptop, time.Now())); !isStatus(err, StatusRefused) {
+		t.Fatalf("a stranger delivering the owner's token: %v", err)
+	}
+	// Past the immunity, on the server's clock: tombstoned, served to the
+	// owner only, listed as tombstoned, cleared by undelete.
+	w.setNow(time.Now().Add(store.Immunity + time.Hour))
+	tk := token(laptop, time.Now().Add(store.Immunity+2*time.Hour))
+	p, err := c.Delete(ctx, peer, tk)
+	if err != nil || p == nil || !p.Tombstoned {
+		t.Fatalf("delete past the immunity: %+v %v", p, err)
+	}
+	if _, err := bc.GetShare(bctx, peer, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusTombstoned) {
+		t.Fatalf("a stranger reads a tombstoned object: %v", err)
+	}
+	if _, err := c.GetShare(ctx, peer, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); err != nil {
+		t.Fatalf("the owner reads a tombstoned object: %v", err)
+	}
+	list, err := c.List(ctx, peer)
+	if err != nil || len(list) != 1 || list[0].StorageIndex != si || !list[0].Tombstoned || list[0].DescriptorHash != dh || list[0].LastTouched.IsZero() {
+		t.Fatalf("list: %+v %v", list, err)
+	}
+	if blist, err := bc.List(bctx, peer); err != nil || len(blist) != 0 {
+		t.Fatalf("a stranger's list: %+v %v", blist, err)
+	}
+	if err := bc.Undelete(bctx, peer, si); !isStatus(err, StatusRefused) {
+		t.Fatalf("a stranger's undelete: %v", err)
+	}
+	if err := c.Undelete(ctx, peer, si); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := c.Has(ctx, peer, si); p == nil || p.Tombstoned {
+		t.Fatalf("after undelete: %+v", p)
+	}
+	// A token older than the owner's last touch is stale.
+	if _, err := c.Delete(ctx, peer, token(laptop, time.Now().Add(-time.Hour))); !isStatus(err, StatusStale) && !isStatus(err, StatusRecent) {
+		t.Fatalf("a stale token: %v", err)
+	}
+	// A token for nothing held is a no-op.
+	var none object.StorageIndex
+	none[0] = 0xee
+	tk2, _ := SignDelete("testnet", laptop.dev, laptop.cert, none, dh, time.Now())
+	if p, err := c.Delete(ctx, peer, tk2); err != nil || p != nil {
+		t.Fatalf("delete of nothing: %+v %v", p, err)
+	}
+	// Tampering breaks the signature.
+	bad := *tk
+	bad.DescriptorHash[0] ^= 1
+	if _, err := c.Delete(ctx, peer, &bad); !isStatus(err, StatusBad) {
+		t.Fatalf("tampered token: %v", err)
 	}
 }

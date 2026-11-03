@@ -29,6 +29,8 @@ var (
 	ErrNotReadable      = errors.New("engine: fewer than k shares are reachable")
 	ErrNotImplemented   = errors.New("engine: not in this phase")
 	ErrSize             = errors.New("engine: the reader did not deliver the announced size")
+	ErrRecentlyTouched  = errors.New("engine: a server refused the delete token: the object was touched within the immunity")
+	ErrIncomplete       = errors.New("engine: not every server answered")
 )
 
 // Range is a byte range of an object.
@@ -70,6 +72,11 @@ type Health struct {
 	Placed   bool                     // all n distinct shares
 	Asked    int
 	Answered int
+	// Tombstoned says a holder has the object under a delete token; its
+	// shares are in Ghosts, which the owner may still read within the
+	// window, and count toward nothing else.
+	Tombstoned bool
+	Ghosts     map[identity.Key][]uint8
 }
 
 // Engine is what everything above the engine is written against.
@@ -141,6 +148,3 @@ func (e *Native) Census(_ context.Context, since uint64) (*store.CensusDelta, er
 	}
 	return e.cfg.Store.Census(since)
 }
-
-// Delete comes with the two-phase deletion of M5.
-func (e *Native) Delete(context.Context, object.ReadCap) error { return ErrNotImplemented }

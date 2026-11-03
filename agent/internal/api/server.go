@@ -129,6 +129,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/backup/remove", s.apiBackupRemove)
 	mux.HandleFunc("POST /api/backup/run", s.apiBackupRun)
 	mux.HandleFunc("POST /api/backup/verify", s.apiBackupVerify)
+	mux.HandleFunc("POST /api/backup/cleanup", s.apiBackupCleanup)
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
@@ -341,6 +342,32 @@ func (s *Server) apiBackupVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	s.cfg.Jobs.RunNow("verify")
 	writeJSON(w, map[string]string{"result": "restore test requested"})
+}
+
+// CleanupRequest asks for the owner's cleanup: a dry run counts and
+// deletes nothing; force lifts the bound on how much one run may delete.
+type CleanupRequest struct {
+	DryRun bool `json:"dry_run"`
+	Force  bool `json:"force"`
+}
+
+func (s *Server) apiBackupCleanup(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var req CleanupRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	rep, err := s.cfg.Jobs.RunCleanup(r.Context(), req.DryRun, req.Force)
+	if err != nil && rep == nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, rep)
 }
 
 func (s *Server) apiRestoreList(w http.ResponseWriter, r *http.Request) {

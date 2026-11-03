@@ -248,3 +248,44 @@ func (c *Client) GetRoots(ctx context.Context, peer identity.Key, member identit
 	done(st)
 	return resp.Roots, nil
 }
+
+// Delete delivers a delete token to a server; the presence answers what
+// the server holds, nil for nothing. A refusal for a recent touch or a
+// stale token comes back as a *StatusError with StatusRecent or
+// StatusStale.
+func (c *Client) Delete(ctx context.Context, peer identity.Key, t *DeleteToken) (*Presence, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeDelete, StorageIndex: t.StorageIndex, Token: t})
+	if err != nil {
+		return nil, err
+	}
+	done(st)
+	return resp.Presence, nil
+}
+
+// Undelete clears this member's tombstone on a server within the window.
+func (c *Client) Undelete(ctx context.Context, peer identity.Key, si object.StorageIndex) error {
+	st, _, err := c.exchange(ctx, peer, &Request{Type: TypeUndelete, StorageIndex: si})
+	if err != nil {
+		return err
+	}
+	done(st)
+	return nil
+}
+
+// List fetches every object a server holds for this member, page by page.
+func (c *Client) List(ctx context.Context, peer identity.Key) ([]ListedObject, error) {
+	var out []ListedObject
+	var after object.StorageIndex
+	for {
+		st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeList, After: after})
+		if err != nil {
+			return nil, err
+		}
+		done(st)
+		out = append(out, resp.Objects...)
+		if !resp.More || len(resp.Objects) == 0 {
+			return out, nil
+		}
+		after = resp.Objects[len(resp.Objects)-1].StorageIndex
+	}
+}
