@@ -93,7 +93,8 @@ func (c *Collector) Schedule(ctx context.Context) {
 		c.log.Warn("tasks not expired", "err", err)
 	}
 	alive, servers := c.aliveServers(now, m)
-	objects, _, err := c.pl.compute(now, alive, servers)
+	enc, conv := encodingOfManifest(m)
+	objects, _, err := c.pl.compute(now, alive, servers, enc, conv)
 	if err != nil {
 		c.log.Warn("placement not computed", "err", err)
 		return

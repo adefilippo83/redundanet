@@ -591,3 +591,42 @@ func TestMembershipGrace(t *testing.T) {
 		t.Fatalf("census after the purge: %d shares", len(d.Added))
 	}
 }
+
+func TestUsageExcludesTheEncodingBeingRetired(t *testing.T) {
+	s, _ := newStore(t)
+	o := newOwner(t, 1)
+	putAll(t, s, encode(t, o, data(9000, 7)), 0) // 2-of-4, as small says
+	wide := object.Params{K: 2, N: 3, SegmentSize: 4096, Cipher: object.CipherAESGCM}
+	r := bytes.NewReader(data(9000, 8))
+	h, _ := object.HashSpool(r, 9000)
+	e, err := object.Encode(r, 9000, h, wide, o.conv, o.member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, _ := object.Sign(e.Descriptor, o.dev, o.cert)
+	blocks := map[int][]byte{}
+	_ = e.Shares(context.Background(), func(share, seg int, b []byte) error {
+		if share == 0 {
+			blocks[seg] = append([]byte(nil), b...)
+		}
+		return nil
+	})
+	p, err := s.BeginPut(sd, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for seg := 0; seg < p.Segments(); seg++ {
+		if err := p.WriteBlock(seg, blocks[seg]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.Complete(); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := s.Usage(o.member)
+	without, _ := s.UsageExcluding(o.member, 2, 4)
+	other, _ := s.UsageExcluding(o.member, 3, 5)
+	if without <= 0 || without >= all || other != all {
+		t.Fatalf("usage %d, excluding 2-of-4 %d, excluding an absent encoding %d", all, without, other)
+	}
+}

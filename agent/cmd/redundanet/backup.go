@@ -50,7 +50,7 @@ func arg(pos []string, i int) string {
 
 func runBackup(args []string) error {
 	if len(args) == 0 {
-		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup")
+		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup, rebalance")
 	}
 	fs := flag.NewFlagSet("backup "+args[0], flag.ContinueOnError)
 	dir, _ := commonFlags(fs)
@@ -147,6 +147,22 @@ func runBackup(args []string) error {
 		fmt.Printf("garbage: %d; %s: %d; waiting out the immunity: %d; holders not all answering: %d; failed: %d\n", rep.Garbage, what, rep.Tombstoned, rep.Recent, rep.Incomplete, rep.Failed)
 		if rep.Error != "" {
 			return errors.New(rep.Error)
+		}
+		return nil
+	case "rebalance":
+		lctx, lcancel := context.WithTimeout(context.Background(), 12*time.Hour)
+		defer lcancel()
+		st, err := c.BackupRebalance(lctx)
+		if err != nil {
+			return err
+		}
+		if st.Nothing {
+			fmt.Println("nothing to convert: no encoding transition in the manifest, or no backup yet")
+			return nil
+		}
+		fmt.Printf("%s to %s: %d of %d snapshots converted, %d objects re-encoded, %d bytes\n", st.From, st.To, st.Done, st.Snapshots, st.Objects, st.Bytes)
+		if st.Err != "" {
+			return errors.New(st.Err)
 		}
 		return nil
 	}

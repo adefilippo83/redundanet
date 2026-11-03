@@ -129,7 +129,7 @@ func New(cfg Config) (*Collector, error) {
 		return nil, err
 	}
 	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
-	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
+	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum, "pct": pct}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
 		_ = pl.close()
@@ -194,7 +194,17 @@ func (c *Collector) Objects() ([]Object, *Grid, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	alive, servers := c.aliveServers(now, m)
-	return c.pl.compute(now, alive, servers)
+	enc, conv := encodingOfManifest(m)
+	return c.pl.compute(now, alive, servers, enc, conv)
+}
+
+// encodingOfManifest is the manifest's encoding and transition, zero
+// values without a manifest.
+func encodingOfManifest(m *manifest.Manifest) (manifest.Encoding, *manifest.Transition) {
+	if m == nil {
+		return manifest.Encoding{}, nil
+	}
+	return m.Network.Encoding, m.Network.EncodingTransition
 }
 
 // aliveServers lists the manifest's storage servers whose shares count:
@@ -452,6 +462,8 @@ type Member struct {
 	LastVerified   string `json:"last_verified_restore,omitempty"` // day of the newest passing restore test
 	UnderPlaced    int    `json:"under_placed"`                    // the member's objects short of a share or of spread
 	Unreadable     int    `json:"unreadable"`                      // the member's objects below k shares
+	OldEncoding    int    `json:"old_encoding,omitempty"`          // objects still under the encoding a transition retires
+	OldBytes       int64  `json:"old_encoding_bytes,omitempty"`    // their bytes, accounted at zero until the deadline
 }
 
 // Status computes the projection now.
@@ -465,12 +477,22 @@ func (c *Collector) Status() Status {
 		entries[k] = *e
 	}
 	legacy := c.legacy
-	usedBytes, usedObjects, err := c.pl.usage()
+	enc, conv := encodingOfManifest(m)
+	var old *manifest.Encoding
+	counting := false
+	if conv != nil {
+		from := conv.From
+		old = &from
+		if d, err := conv.DeadlineTime(); err == nil && !now.Before(d) {
+			counting = true
+		}
+	}
+	usedBytes, oldBytes, usedObjects, oldObjects, err := c.pl.usage(old, counting)
 	if err != nil {
 		c.log.Warn("usage not computed", "err", err)
 	}
 	alive, servers := c.aliveServers(now, m)
-	objects, grid, err := c.pl.compute(now, alive, servers)
+	objects, grid, err := c.pl.compute(now, alive, servers, enc, conv)
 	if err != nil {
 		c.log.Warn("placement not computed", "err", err)
 	}
@@ -626,7 +648,8 @@ func (c *Collector) Status() Status {
 	if m != nil {
 		for _, mem := range m.Members {
 			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name),
-				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key], UnderPlaced: underPlaced[mem.Key], Unreadable: unreadable[mem.Key]}
+				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key], UnderPlaced: underPlaced[mem.Key], Unreadable: unreadable[mem.Key],
+				OldEncoding: oldObjects[mem.Key], OldBytes: oldBytes[mem.Key]}
 			if t := lastBackup[mem.Name]; !t.IsZero() {
 				mm.LastBackup = t.UTC().Format("2006-01-02")
 			}
@@ -646,6 +669,14 @@ func (c *Collector) Status() Status {
 		st.Members = []Member{}
 	}
 	return st
+}
+
+// pct is a percentage for the page's bars.
+func pct(part, whole int) int {
+	if whole <= 0 {
+		return 100
+	}
+	return part * 100 / whole
 }
 
 func boolInt(b bool) int {

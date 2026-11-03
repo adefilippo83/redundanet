@@ -98,6 +98,79 @@ func (d *DB) LookupObject(h object.Hash, p object.Params) (*Object, error) {
 	return &Object{PlaintextHash: h, Params: p, Cap: rc, Placed: placed, LastUsed: time.Unix(lastUsed, 0)}, nil
 }
 
+// LookupByCap finds an object by its capability, for the encoding it was
+// written under; nil when unknown.
+func (d *DB) LookupByCap(capStr string) (*Object, error) {
+	var h []byte
+	var k, nn int
+	var segment uint32
+	var placed int
+	var lastUsed int64
+	err := d.db.QueryRow(`SELECT plaintext_hash, k, nn, segment_size, placed, last_used FROM objects WHERE cap = ?`, capStr).Scan(&h, &k, &nn, &segment, &placed, &lastUsed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rc, err := object.ParseReadCap(capStr)
+	if err != nil {
+		return nil, err
+	}
+	o := &Object{Params: object.Params{K: uint8(k), N: uint8(nn), SegmentSize: segment, Cipher: object.CipherAESGCM}, Cap: rc, Placed: placed, LastUsed: time.Unix(lastUsed, 0)}
+	copy(o.PlaintextHash[:], h)
+	return o, nil
+}
+
+// RewriteCaps replaces capabilities in the scan rows: what rebalance
+// does once it has re-encoded an object, so the next backup reuses the
+// new object and never the old one.
+func (d *DB) RewriteCaps(replace map[string]string) error {
+	if len(replace) == 0 {
+		return nil
+	}
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for oldCap, newCap := range replace {
+		if _, err := tx.Exec(`UPDATE scan SET cap = ? WHERE cap = ?`, newCap, oldCap); err != nil {
+			return err
+		}
+	}
+	rows, err := tx.Query(`SELECT path, chunks FROM scan WHERE chunks != '' AND chunks IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	type upd struct{ path, chunks string }
+	var updates []upd
+	for rows.Next() {
+		var path, chunks string
+		if err := rows.Scan(&path, &chunks); err != nil {
+			rows.Close()
+			return err
+		}
+		parts := splitChunks(chunks)
+		changed := false
+		for i, c := range parts {
+			if n, ok := replace[c]; ok {
+				parts[i], changed = n, true
+			}
+		}
+		if changed {
+			updates = append(updates, upd{path, joinChunks(parts)})
+		}
+	}
+	rows.Close()
+	for _, u := range updates {
+		if _, err := tx.Exec(`UPDATE scan SET chunks = ? WHERE path = ?`, u.chunks, u.path); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // Forget drops an object the grid no longer confirms.
 func (d *DB) Forget(h object.Hash, p object.Params) error {
 	_, err := d.db.Exec(`DELETE FROM objects WHERE plaintext_hash = ? AND k = ? AND nn = ? AND segment_size = ?`, h[:], p.K, p.N, p.SegmentSize)

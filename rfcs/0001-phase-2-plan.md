@@ -313,6 +313,25 @@ The hub and node sides of the RFC's "Health" section.
   owner's read failing only then. Pending sets, the RFC's third mechanism
   for a backup in progress, are not needed yet: a run's new objects are
   touched by their upload and its reused ones by the probes.
+- 2026-11-03, slice 4: rebalance, and M5 complete. The manifest's
+  `encoding_transition` gains its rules (to must be the encoding, from
+  and to differ, a warning past the deadline) and `Converting(now)`.
+  Servers account the old encoding at zero until the deadline. The hub's
+  placement table counts objects per encoding: the page shows the
+  conversion bar, the old bytes and whether they count, and per member
+  the objects to convert. The owner's device converts its snapshots in
+  `internal/rebalance`: every object under the old encoding is read and
+  stored again under the new one, directories are rewritten up to the
+  top, the scan rows are rewritten before the root is published after
+  each snapshot, so the next backup reuses the new objects and never the
+  old; a stopped run resumes. It runs every six hours while a transition
+  is declared and on `backup rebalance`. Exit test in process on a real
+  grid with the hub: a backup under 2-of-4, the manifest moved to 2-of-3,
+  the conversion, the hub's bar reaching the end, a restore of the
+  converted snapshot, the next backup uploading nothing, and the old
+  objects tombstoned by a forced cleanup. The live cleanup of the stalled
+  first backup's 1761 objects waits for the immunity to run out on
+  10 November; the first live conversion is a manifest change away.
 
 ### M6. The second platform and the G2 month
 

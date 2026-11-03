@@ -68,9 +68,10 @@ func newMember(t *testing.T, b byte, roles ...string) *member {
 
 // policy is one server's view of the manifest.
 type policy struct {
-	m    *manifest.Manifest
-	self identity.Key
-	hubs map[identity.Key]bool
+	convK, convN int // the encoding accounted at zero, when set
+	m            *manifest.Manifest
+	self         identity.Key
+	hubs         map[identity.Key]bool
 }
 
 func (p *policy) Network() string { return "testnet" }
@@ -78,9 +79,10 @@ func (p *policy) MemberStatus(k identity.Key) (bool, bool) {
 	mem := p.m.MemberByKey(k)
 	return mem != nil && mem.Status == "active", false
 }
-func (p *policy) OwnerCap(identity.Key) int64 { return 1 << 40 }
-func (p *policy) IsHub(k identity.Key) bool   { return p.hubs[k] }
-func (p *policy) Device() identity.Key        { return p.self }
+func (p *policy) OwnerCap(identity.Key) int64  { return 1 << 40 }
+func (p *policy) IsHub(k identity.Key) bool    { return p.hubs[k] }
+func (p *policy) Device() identity.Key         { return p.self }
+func (p *policy) Converting() (int, int, bool) { return p.convK, p.convN, p.convK > 0 }
 
 type node struct {
 	member *member

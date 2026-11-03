@@ -20,6 +20,8 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
+	"github.com/adefilippo83/redundanet/agent/internal/manifest"
+	"github.com/adefilippo83/redundanet/agent/internal/rebalance"
 	"github.com/adefilippo83/redundanet/agent/internal/restore"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 )
@@ -117,6 +119,7 @@ type Status struct {
 	Restore     *RestoreStatus        `json:"restore,omitempty"`
 	LastCleanup *cleanup.Report       `json:"last_cleanup,omitempty"`
 	Cleaning    bool                  `json:"cleaning"`
+	Rebalance   *rebalance.Status     `json:"rebalance,omitempty"` // the conversion running or last run
 }
 
 // Config wires the runner.
@@ -129,8 +132,12 @@ type Config struct {
 	// Revocations lists the member's revoked devices, for the cleanup; nil
 	// when the agent runs from a manifest file.
 	Revocations func() []*identity.SignedRevocation
-	Log         *slog.Logger
-	Now         func() time.Time
+	// Manifest is the current manifest, for the conversion job; nil means
+	// no conversion ever runs.
+	Manifest func() *manifest.Manifest
+	SpoolDir string
+	Log      *slog.Logger
+	Now      func() time.Time
 }
 
 // Runner schedules and runs the jobs.
@@ -147,6 +154,7 @@ type Runner struct {
 	restore     *RestoreStatus
 	lastCleanup *cleanup.Report
 	cleaning    bool
+	rebalance   *rebalance.Status
 }
 
 // New loads the configuration.
@@ -173,6 +181,10 @@ func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning}
+	if r.rebalance != nil {
+		cp := *r.rebalance
+		st.Rebalance = &cp
+	}
 	if r.restore != nil {
 		cp := *r.restore
 		st.Restore = &cp
@@ -245,6 +257,10 @@ func (r *Runner) Run(ctx context.Context) {
 	defer v.Stop()
 	cl := time.NewTicker(cleanupEvery)
 	defer cl.Stop()
+	// A conversion runs while the manifest declares a transition, a few
+	// times a day, and after each backup run has had its say.
+	rb := time.NewTicker(rebalanceEvery)
+	defer rb.Stop()
 	// The first run shortly after start, so a new set is not a day away.
 	first := time.NewTimer(2 * time.Minute)
 	defer first.Stop()
@@ -262,6 +278,8 @@ func (r *Runner) Run(ctx context.Context) {
 				r.verify(ctx)
 			case "cleanup":
 				_, _ = r.RunCleanup(ctx, false, false)
+			case "rebalance":
+				_, _ = r.RunRebalance(ctx)
 			default:
 				r.runAll(ctx, name)
 			}
@@ -269,8 +287,65 @@ func (r *Runner) Run(ctx context.Context) {
 			r.verify(ctx)
 		case <-cl.C:
 			_, _ = r.RunCleanup(ctx, false, false)
+		case <-rb.C:
+			if r.transitionDeclared() {
+				_, _ = r.RunRebalance(ctx)
+			}
 		}
 	}
+}
+
+// rebalanceEvery is how often a device looks for objects to convert while
+// a transition is declared.
+const rebalanceEvery = 6 * time.Hour
+
+func (r *Runner) transitionDeclared() bool {
+	if r.cfg.Manifest == nil {
+		return false
+	}
+	m := r.cfg.Manifest()
+	return m != nil && m.Network.EncodingTransition != nil
+}
+
+// ErrRebalancing says a conversion is already running.
+var ErrRebalancing = errors.New("jobs: a conversion is already running")
+
+// RunRebalance converts this device's snapshots to the manifest's
+// encoding now, one run at a time, and keeps the status for the page.
+func (r *Runner) RunRebalance(ctx context.Context) (*rebalance.Status, error) {
+	g, ok := r.cfg.Engine.(rebalance.Grid)
+	if !ok || r.cfg.Manifest == nil {
+		return nil, errors.New("jobs: this engine cannot convert objects")
+	}
+	r.mu.Lock()
+	if r.rebalance != nil && r.rebalance.Running {
+		r.mu.Unlock()
+		return nil, ErrRebalancing
+	}
+	r.rebalance = &rebalance.Status{Running: true}
+	r.mu.Unlock()
+	st, err := rebalance.Run(ctx, rebalance.Config{Grid: g, DB: r.cfg.DB, Member: r.cfg.Member, Device: r.cfg.Device, Manifest: r.cfg.Manifest, SpoolDir: r.cfg.SpoolDir,
+		Now: r.cfg.Now, Log: r.log, Progress: func(s rebalance.Status) {
+			r.mu.Lock()
+			cp := s
+			r.rebalance = &cp
+			r.mu.Unlock()
+		}})
+	if st != nil {
+		r.mu.Lock()
+		cp := *st
+		cp.Running = false
+		r.rebalance = &cp
+		r.mu.Unlock()
+	} else {
+		r.mu.Lock()
+		r.rebalance = &rebalance.Status{At: r.cfg.Now(), Err: err.Error()}
+		r.mu.Unlock()
+	}
+	if err != nil {
+		r.log.Warn("conversion did not complete", "err", err)
+	}
+	return st, err
 }
 
 // ErrCleaning says a cleanup is already running.
