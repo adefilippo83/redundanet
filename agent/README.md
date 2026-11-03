@@ -21,7 +21,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the synthetic relay address | Done |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, the census hook, status | Done, tested through the transport |
-| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), joins it with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space and relay traffic; never an address or a path | Done, with tests |
+| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules (phase 2, M5), joins them with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement counts; never an address, a path or a storage index | Done, with tests |
 | `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
@@ -72,8 +72,8 @@ a storage device, and which peers it reaches directly or through a relay.
 A storage device also opens its store in the `redundanet3` directory of
 `--storage-path`, serves the storage protocol on the mesh, scrubs its shares
 at a rate that covers them monthly, and sends each hub its share census as
-deltas since the generation that hub last received, so the status page can
-show usage per member as the servers account it.
+deltas since the generation that hub last received, with the date its
+oldest integrity check dates from and its free-space floor.
 The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
 the restore test monthly, and restores in the background; `backup` and
@@ -81,7 +81,17 @@ the restore test monthly, and restores in the background; `backup` and
 the last backup and of the last passing restore test, which the hub page
 shows per member.
 No address and no path travel in it. The hub's collector keeps the
-heartbeats in `census.json`, serves the status page and `status.json` on
+heartbeats in `census.json` and the share census in `placement.sqlite`,
+the grid-wide placement table of the RFC's "Health" section: per object
+the distinct shares held on servers that are not dead (a server is down
+after ten minutes without a heartbeat and still counts; dead after
+`repair_after_hours`, 72 by default, and counts no more), the spread over
+servers against min(n, servers not dead), surplus, tombstones, and
+whether it needs repair at once (it had been fully placed) or after the
+24-hour quiescence window (it never was). The page and `status.json`
+carry the counts only: objects per number of copies, under-placed,
+unreadable, due for repair, and per member its under-placed objects.
+The collector serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
 so today's nodes stay visible beside the new devices until G3. With
 `--publish` it also PUTs `status.json` and `index.html` under that URL every

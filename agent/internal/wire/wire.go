@@ -99,6 +99,11 @@ type CensusStorage struct {
 	State      string `cbor:"state" json:"state"` // "ok", or why the store is not serving
 	Shares     uint64 `cbor:"shares,omitempty" json:"shares,omitempty"`
 	Bytes      uint64 `cbor:"bytes,omitempty" json:"bytes,omitempty"` // bytes of complete shares as accounted
+	// Verified is the oldest integrity check among the complete shares:
+	// every share was read back and checked since then. Zero while any
+	// share awaits its first check.
+	Verified time.Time `cbor:"verified" json:"verified"`
+	Floor    uint64    `cbor:"floor,omitempty" json:"floor,omitempty"` // free bytes below which the node refuses writes
 }
 
 // ShareCensus is a storage node's share census since a generation, in

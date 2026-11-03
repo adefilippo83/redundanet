@@ -229,6 +229,26 @@ The hub and node sides of the RFC's "Health" section.
   directory and watch repair restore full placement without the owner;
   prune a snapshot and watch the space return after the tombstone window;
   change k-of-n and watch the conversion bar reach the end.
+- Built in four slices, each a pull request: the placement table and the
+  page, repair tasks and the worker, deletion, rebalance.
+- 2026-11-03, slice 1: the placement table in `placement.sqlite` on the
+  hub, fed by the share census as before, so a node that is down keeps
+  counting across a hub restart. Per object: the distinct shares on
+  servers not dead, the spread against min(n, servers not dead), fully
+  placed, readable, surplus, the descriptor the holders agree on,
+  tombstoned, and whether repair is due at once (it had been fully placed,
+  so a server died or a share failed its check) or after the 24-hour
+  quiescence window (it never was). A server the manifest retires is
+  forgotten with its shares. The census carries the date a node's oldest
+  integrity check dates from and its free-space floor. The page gets an
+  objects card (counts per number of copies, under-placed, unreadable,
+  due for repair, deleted), a placement column per member and a "checked
+  since" column per device; `status.json` carries the same counts and
+  never a storage index. The pull request's macOS run also caught a race
+  in the transport: a handshake that passed the policy before a manifest
+  change could complete after `Recheck` and be filed unchecked. A
+  connection is now checked against the policy once more when it is
+  filed.
 
 ### M6. The second platform and the G2 month
 
