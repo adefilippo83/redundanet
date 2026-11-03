@@ -195,7 +195,11 @@ restore" and "Roots and snapshots".
   read half of a request stream, so after 1024 requests the server's
   stream limit held every further request for its 30 s deadline. Both
   ends now cancel the read half once the last byte is in; a test sends
-  1500 requests over one connection. Shipped as alpha.9.
+  1500 requests over one connection. Shipped as alpha.9. Reinstalling the
+  Mac service for it hit a second race: launchctl bootout returns before
+  the old instance is gone, and the bootstrap that followed failed with
+  "Input/output error". The installer now waits for the old instance and
+  retries the bootstrap; a gated test reinstalls a throwaway agent.
 
 ### M5. Health: census table, repair, deletion, rebalance
 
