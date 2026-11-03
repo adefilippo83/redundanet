@@ -114,7 +114,7 @@ func Run(ctx context.Context, cfg Config) (*Status, error) {
 		st.Nothing = true
 		return finish(nil)
 	}
-	r := &run{cfg: cfg, lg: lg, st: st, target: target, params: map[string]object.Params{}, replaced: map[string]string{}, report: report}
+	r := &run{cfg: cfg, lg: lg, st: st, target: target, params: map[string]object.Params{}, replaced: map[string]string{}, dirs: map[string]string{}, report: report}
 	x, err := r.fetchIndex(ctx, indexCap)
 	if err != nil {
 		return finish(err)
@@ -124,6 +124,7 @@ func Run(ctx context.Context, cfg Config) (*Status, error) {
 		snap := &x.Snapshots[i]
 		st.Snapshot = snap.ID
 		report()
+		before := st.Objects
 		newTop, changed, err := r.convertDir(ctx, snap.Top)
 		if err != nil {
 			return finish(fmt.Errorf("snapshot %s: %w", snap.ID, err))
@@ -135,14 +136,15 @@ func Run(ctx context.Context, cfg Config) (*Status, error) {
 		snap.Top = newTop
 		// The local database first, then the index and the root: a run
 		// that stops between the two leaves a consistent cache either way.
+		// The map of replacements is kept for the whole run: snapshots
+		// share their unchanged objects, and each is converted once.
 		if err := cfg.DB.RewriteCaps(r.replaced); err != nil {
 			return finish(err)
 		}
-		r.replaced = map[string]string{}
 		if err := r.publish(ctx, x); err != nil {
 			return finish(err)
 		}
-		lg.Info("snapshot converted", "snapshot", snap.ID, "objects", st.Objects, "bytes", st.Bytes)
+		lg.Info("snapshot converted", "snapshot", snap.ID, "objects", st.Objects-before, "bytes", st.Bytes)
 	}
 	st.Snapshot = ""
 	return finish(nil)
@@ -155,6 +157,7 @@ type run struct {
 	target   object.Params
 	params   map[string]object.Params // the encoding of each capability seen
 	replaced map[string]string        // old capability -> new, for the scan rows
+	dirs     map[string]string        // directory capability -> its converted form, once walked
 	report   func()
 }
 
@@ -203,6 +206,9 @@ func (r *run) current(p object.Params) bool {
 func (r *run) convertDir(ctx context.Context, capStr string) (string, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return "", false, err
+	}
+	if done, ok := r.dirs[capStr]; ok {
+		return done, done != capStr, nil
 	}
 	rc, err := object.ParseReadCap(capStr)
 	if err != nil {
@@ -254,6 +260,7 @@ func (r *run) convertDir(ctx context.Context, capStr string) (string, bool, erro
 		return "", false, err
 	}
 	if !changed && r.current(p) {
+		r.dirs[capStr] = capStr
 		return capStr, false, nil
 	}
 	b, err := d.Encode()
@@ -265,6 +272,7 @@ func (r *run) convertDir(ctx context.Context, capStr string) (string, bool, erro
 		return "", false, fmt.Errorf("directory: %w", err)
 	}
 	r.params[newRC.String()] = r.target
+	r.dirs[capStr] = newRC.String()
 	r.st.Objects++
 	r.st.Bytes += int64(len(b))
 	r.report()
