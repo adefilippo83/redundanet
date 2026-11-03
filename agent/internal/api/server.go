@@ -130,6 +130,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/backup/run", s.apiBackupRun)
 	mux.HandleFunc("POST /api/backup/verify", s.apiBackupVerify)
 	mux.HandleFunc("POST /api/backup/cleanup", s.apiBackupCleanup)
+	mux.HandleFunc("POST /api/backup/rebalance", s.apiBackupRebalance)
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
@@ -368,6 +369,18 @@ func (s *Server) apiBackupCleanup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, rep)
+}
+
+func (s *Server) apiBackupRebalance(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	st, err := s.cfg.Jobs.RunRebalance(r.Context())
+	if err != nil && st == nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, st)
 }
 
 func (s *Server) apiRestoreList(w http.ResponseWriter, r *http.Request) {

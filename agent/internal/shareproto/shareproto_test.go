@@ -52,18 +52,20 @@ func newMember(t *testing.T, b byte, roles ...string) *member {
 
 // policy is the manifest as the server sees it.
 type policy struct {
-	self    identity.Key
-	hubs    map[identity.Key]bool
-	mu      sync.Mutex
-	active  map[identity.Key]bool
-	leaving map[identity.Key]bool
-	capFor  map[identity.Key]int64
-	allowed map[identity.Key]bool
+	convK, convN int // the encoding accounted at zero, when set
+	self         identity.Key
+	hubs         map[identity.Key]bool
+	mu           sync.Mutex
+	active       map[identity.Key]bool
+	leaving      map[identity.Key]bool
+	capFor       map[identity.Key]int64
+	allowed      map[identity.Key]bool
 }
 
-func (p *policy) Network() string           { return "testnet" }
-func (p *policy) Device() identity.Key      { return p.self }
-func (p *policy) IsHub(k identity.Key) bool { return p.hubs[k] }
+func (p *policy) Network() string              { return "testnet" }
+func (p *policy) Device() identity.Key         { return p.self }
+func (p *policy) Converting() (int, int, bool) { return p.convK, p.convN, p.convK > 0 }
+func (p *policy) IsHub(k identity.Key) bool    { return p.hubs[k] }
 func (p *policy) MemberStatus(m identity.Key) (bool, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -603,5 +605,53 @@ func TestDeleteUndeleteAndList(t *testing.T) {
 	bad.DescriptorHash[0] ^= 1
 	if _, err := c.Delete(ctx, peer, &bad); !isStatus(err, StatusBad) {
 		t.Fatalf("tampered token: %v", err)
+	}
+}
+
+// During a transition the owner's shares under the old encoding are
+// accounted at zero: a member at the cap can still store under the new
+// encoding.
+func TestTransitionAccountsTheOldEncodingAtZero(t *testing.T) {
+	w := newWorld(t)
+	peer := w.server.dev.ID()
+	c, ctx, _ := client(t, w, w.server)
+	old := encode(t, w.server, 3*8192+100, 11) // 2-of-4, as params says
+	for _, n := range []uint8{0, 1} {
+		if err := c.PutShare(ctx, peer, old.sd, n, func(s int) ([]byte, error) { return old.blocks[n][s], nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A cap below what is held: a new object is refused for quota.
+	w.pol.mu.Lock()
+	w.pol.capFor[w.server.key] = 10000
+	w.pol.mu.Unlock()
+	wide := object.Params{K: 2, N: 3, SegmentSize: 8192, Cipher: object.CipherAESGCM}
+	data := make([]byte, 8192+10)
+	for i := range data {
+		data[i] = byte(i*3 + 1)
+	}
+	r := bytes.NewReader(data)
+	h, _ := object.HashSpool(r, int64(len(data)))
+	e, err := object.Encode(r, int64(len(data)), h, wide, w.server.conv, w.server.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, _ := object.Sign(e.Descriptor, w.server.dev, w.server.cert)
+	blocks := map[int][]byte{}
+	_ = e.Shares(ctx, func(share, seg int, b []byte) error {
+		if share == 0 {
+			blocks[seg] = append([]byte(nil), b...)
+		}
+		return nil
+	})
+	if err := c.PutShare(ctx, peer, sd, 0, func(s int) ([]byte, error) { return blocks[s], nil }); !isStatus(err, StatusQuota) {
+		t.Fatalf("over the cap without a transition: %v", err)
+	}
+	// With 2-of-4 being retired, the old shares do not count: accepted.
+	w.pol.mu.Lock()
+	w.pol.convK, w.pol.convN = 2, 4
+	w.pol.mu.Unlock()
+	if err := c.PutShare(ctx, peer, sd, 0, func(s int) ([]byte, error) { return blocks[s], nil }); err != nil {
+		t.Fatalf("over the cap during the transition: %v", err)
 	}
 }

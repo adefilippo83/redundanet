@@ -216,3 +216,67 @@ func TestDescriptorConflictFollowsTheMajority(t *testing.T) {
 }
 
 var _ = manifest.Manifest{}
+
+// A transition in the manifest: the page shows the conversion, the old
+// encoding's bytes are accounted at zero until the deadline, and per
+// member the objects still to convert.
+func TestConversionProgress(t *testing.T) {
+	m := demoManifest()
+	m.Network.Encoding = manifest.Encoding{K: 2, N: 3}
+	m.Network.EncodingTransition = &manifest.Transition{From: manifest.Encoding{K: 2, N: 4}, To: manifest.Encoding{K: 2, N: 3}, Deadline: "2026-11-10"}
+	w := newWorldWith(t, m, "", "", "")
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	narrow := func(si byte, n uint8) wire.ShareEntry {
+		e := share(si, n, alice)
+		e.N = 3
+		return e
+	}
+	// 1: converted, three shares of 2-of-3 over two servers. 2: still
+	// 2-of-4. 3: 2-of-4, bob's.
+	w.report(falcon, 1, narrow(1, 0), narrow(1, 1), share(2, 0, alice), share(2, 1, alice), share(3, 0, bob), share(3, 1, bob))
+	w.report(spare, 1, narrow(1, 2), share(2, 2, alice), share(2, 3, alice), share(3, 2, bob), share(3, 3, bob))
+	st := w.c.Status()
+	c := st.Grid.Conversion
+	if c == nil || c.From != "2-of-4" || c.To != "2-of-3" || c.Deadline != "2026-11-10" || c.Counting || c.Objects != 3 || c.Converted != 1 || c.OldBytes != 8*4096 {
+		t.Fatalf("conversion: %+v", c)
+	}
+	for _, mm := range st.Members {
+		switch mm.Name {
+		case "alice":
+			if mm.OldEncoding != 1 || mm.OldBytes != 4*4096 || mm.StoredBytes != 3*4096 || mm.Objects != 2 {
+				t.Fatalf("alice: %+v", mm)
+			}
+		case "bob":
+			if mm.OldEncoding != 1 || mm.StoredBytes != 0 || mm.Objects != 1 {
+				t.Fatalf("bob before the deadline: %+v", mm)
+			}
+		}
+	}
+	rec := httptest.NewRecorder()
+	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	page := rec.Body.String()
+	for _, want := range []string{"1 of 3 objects converted", "not counted yet", "width:33%", "1 to convert"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("page lacks %q:\n%s", want, page)
+		}
+	}
+	// Past the deadline, the end of that day, the old shares count again.
+	w.advance(9 * 24 * time.Hour)
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	st = w.c.Status()
+	if !st.Grid.Conversion.Counting {
+		t.Fatalf("past the deadline: %+v", st.Grid.Conversion)
+	}
+	for _, mm := range st.Members {
+		if mm.Name == "bob" && mm.StoredBytes != 4*4096 {
+			t.Fatalf("bob past the deadline: %+v", mm)
+		}
+	}
+	// Without a transition there is no conversion to show.
+	m.Network.EncodingTransition = nil
+	if st := w.c.Status(); st.Grid.Conversion != nil {
+		t.Fatal("a conversion shown without a transition")
+	}
+}

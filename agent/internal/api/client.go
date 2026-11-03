@@ -8,6 +8,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
+	"github.com/adefilippo83/redundanet/agent/internal/rebalance"
 	"github.com/adefilippo83/redundanet/agent/internal/restore"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"io"
@@ -110,6 +111,16 @@ func (c *Client) BackupCleanup(ctx context.Context, dryRun, force bool) (*cleanu
 		return nil, err
 	}
 	return &rep, nil
+}
+
+// BackupRebalance converts this device's snapshots to the manifest's
+// encoding now and returns the status; its Error says why a run stopped.
+func (c *Client) BackupRebalance(ctx context.Context) (*rebalance.Status, error) {
+	var st rebalance.Status
+	if err := c.doJSON(ctx, http.MethodPost, "/api/backup/rebalance", nil, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
 }
 
 // RestoreList is what the member can restore from.

@@ -91,6 +91,14 @@ func (e *Native) locate(ctx context.Context, rc object.ReadCap) (*object.Descrip
 	return desc, hl, sources, nil
 }
 
+// Describe fetches an object's descriptor from a holder, verified against
+// the capability: what rebalance asks when the local database does not
+// know an object's encoding.
+func (e *Native) Describe(ctx context.Context, rc object.ReadCap) (*object.Descriptor, error) {
+	desc, _, _, err := e.locate(ctx, rc)
+	return desc, err
+}
+
 // Get reads an object, or a byte range of it, with every block verified.
 func (e *Native) Get(ctx context.Context, rc object.ReadCap, w io.Writer, rng *Range) error {
 	desc, _, sources, err := e.locate(ctx, rc)

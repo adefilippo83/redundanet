@@ -29,6 +29,9 @@ type Policy interface {
 	IsHub(device identity.Key) bool
 	// Device is this server's own device key, which a repair task names.
 	Device() identity.Key
+	// Converting is the encoding a transition retires, while its deadline
+	// has not passed: shares under it are accounted at zero.
+	Converting() (k, n int, ok bool)
 }
 
 // Server serves the storage protocol over streams of the mesh.
@@ -243,7 +246,13 @@ func (s *Server) put(peer identity.Peer, st *quic.Stream, req *Request) error {
 		// never the free-space floor, which the store applies.
 		p, err = s.st.BeginRepair(sd, req.Number)
 	} else {
-		usage, uerr := s.st.Usage(owner)
+		var usage int64
+		var uerr error
+		if k, n, ok := s.pol.Converting(); ok {
+			usage, uerr = s.st.UsageExcluding(owner, k, n)
+		} else {
+			usage, uerr = s.st.Usage(owner)
+		}
 		if uerr != nil {
 			return refuse(st, StatusFailed, uerr.Error())
 		}

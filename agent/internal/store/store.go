@@ -314,6 +314,17 @@ func (s *Store) Usage(owner identity.Key) (int64, error) {
 	return total.Int64, nil
 }
 
+// UsageExcluding is Usage without the shares under one encoding: during
+// a transition servers account the old encoding at zero until the
+// deadline, so a member near budget can convert first.
+func (s *Store) UsageExcluding(owner identity.Key, k, n int) (int64, error) {
+	var total sql.NullInt64
+	if err := s.db.QueryRow(`SELECT SUM(size) FROM shares WHERE owner = ? AND NOT (k = ? AND nn = ?)`, owner[:], k, n).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total.Int64, nil
+}
+
 // Totals is what the store holds: complete shares and their bytes.
 func (s *Store) Totals() (shares int64, bytes int64, err error) {
 	var b sql.NullInt64

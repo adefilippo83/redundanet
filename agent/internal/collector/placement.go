@@ -9,6 +9,7 @@ import (
 	_ "modernc.org/sqlite" // the placement table, pure Go
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
@@ -218,12 +219,32 @@ type Grid struct {
 	RepairBlocked int    `json:"repair_blocked"`      // objects due with no server to place on
 	RepairShort   int64  `json:"repair_short_bytes"`  // bytes the live servers lack above their floors for them
 	Scheduler     string `json:"scheduler,omitempty"` // the hub scheduling repair, as this hub sees it
+	// Conversion is the k-of-n change in progress, when the manifest
+	// declares one.
+	Conversion *Conversion `json:"conversion,omitempty"`
 }
+
+// Conversion is the progress of a k-of-n change across the grid: the
+// objects under the manifest's encoding against all, and what the old
+// encoding still holds, accounted at zero until the deadline.
+type Conversion struct {
+	From      string `json:"from"`     // "2-of-4"
+	To        string `json:"to"`       //
+	Deadline  string `json:"deadline"` // YYYY-MM-DD
+	Counting  bool   `json:"counting"` // the deadline has passed: old-encoding shares count again
+	Objects   int    `json:"objects"`  // objects not deleted
+	Converted int    `json:"converted"`
+	OldBytes  int64  `json:"old_bytes"` // bytes of shares under the old encoding
+}
+
+// encodingOf is "k-of-n".
+func encodingOf(k, n int) string { return fmt.Sprintf("%d-of-%d", k, n) }
 
 // compute walks the table once and classifies every object. alive lists
 // the storage servers whose shares count, servers is how many there are;
-// a dead, retired or never-seen server's rows are skipped.
-func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers int) ([]Object, *Grid, error) {
+// a dead, retired or never-seen server's rows are skipped. enc is the
+// manifest's encoding and conv its transition, nil without one.
+func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers int, enc manifest.Encoding, conv *manifest.Transition) ([]Object, *Grid, error) {
 	rows, err := p.db.Query(`SELECT device, si, n, owner, size, k, nn, dhash FROM shares ORDER BY si, n, device`)
 	if err != nil {
 		return nil, nil, err
@@ -310,6 +331,12 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 	rows.Close()
 
 	g := &Grid{Servers: servers, Copies: map[string]int{}}
+	if conv != nil {
+		g.Conversion = &Conversion{From: encodingOf(conv.From.K, conv.From.N), To: encodingOf(conv.To.K, conv.To.N), Deadline: conv.Deadline}
+		if d, err := conv.DeadlineTime(); err == nil && !now.Before(d) {
+			g.Conversion.Counting = true
+		}
+	}
 	var objects []Object
 	var reachedNow [][16]byte
 	for _, si := range order {
@@ -383,6 +410,14 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 			g.Tombstoned++
 			continue
 		}
+		if c := g.Conversion; c != nil {
+			c.Objects++
+			if o.K == enc.K && o.N == enc.N {
+				c.Converted++
+			} else {
+				c.OldBytes += o.Size * int64(len(o.Shares))
+			}
+		}
 		g.Copies[fmt.Sprint(len(o.Shares))]++
 		if o.Placed {
 			g.Placed++
@@ -426,23 +461,35 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 // usage sums what every storage node accounts to each owner, and the
 // distinct objects per owner: the public "usage as servers see it". Every
 // server counts here, dead or not, because the bytes are on its disk.
-func (p *placement) usage() (bytes map[identity.Key]int64, objects map[identity.Key]int, err error) {
-	bytes, objects = map[identity.Key]int64{}, map[identity.Key]int{}
-	rows, err := p.db.Query(`SELECT owner, SUM(size), COUNT(DISTINCT si) FROM shares GROUP BY owner`)
+// With an encoding being retired before its deadline, its shares are
+// accounted at zero, as the servers do, and reported apart; the objects
+// still under it are counted per owner.
+func (p *placement) usage(old *manifest.Encoding, counting bool) (bytes, oldBytes map[identity.Key]int64, objects, oldObjects map[identity.Key]int, err error) {
+	bytes, oldBytes, objects, oldObjects = map[identity.Key]int64{}, map[identity.Key]int64{}, map[identity.Key]int{}, map[identity.Key]int{}
+	rows, err := p.db.Query(`SELECT owner, k, nn, SUM(size), COUNT(DISTINCT si) FROM shares GROUP BY owner, k, nn`)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var owner []byte
+		var k, nn int
 		var b int64
 		var n int
-		if err := rows.Scan(&owner, &b, &n); err != nil {
-			return nil, nil, err
+		if err := rows.Scan(&owner, &k, &nn, &b, &n); err != nil {
+			return nil, nil, nil, nil, err
 		}
-		var k identity.Key
-		copy(k[:], owner)
-		bytes[k], objects[k] = b, n
+		var key identity.Key
+		copy(key[:], owner)
+		objects[key] += n
+		if old != nil && k == old.K && nn == old.N {
+			oldBytes[key] += b
+			oldObjects[key] += n
+			if !counting {
+				continue
+			}
+		}
+		bytes[key] += b
 	}
-	return bytes, objects, rows.Err()
+	return bytes, oldBytes, objects, oldObjects, rows.Err()
 }

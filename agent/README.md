@@ -29,6 +29,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/repair` | The node side of repair without the owner (phase 2, M5): a worker that takes the hub's signed task, fetches the descriptor and k shares from the holders (its own store for shares it holds), regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says (its own store when the task names it), then reports; and the surplus release, given up only after confirming with the other holders directly that every share number stays complete | Done, with tests |
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
 | `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers, delete tokens to every server, the per-member listing, reads of a tombstoned object within the window, and a cache whose word is probed on the servers once it is six days old) and a fake with the same contract for the jobs' tests | Done, with tests |
+| `internal/rebalance` | The owner's side of a k-of-n change (phase 2, M5): with a transition in the manifest, each device walks its snapshots, reads every object still under the old encoding, stores it again under the new one, rewrites the directories up to the top and the index, updates the scan rows before anything is published, and publishes the root after each snapshot; a stopped run resumes where it was | Done, with tests |
 | `internal/cleanup` | The owner's cleanup job (phase 2, M5): the reachable set over every root of the member, walked on the grid, against what the servers hold for the member; a delete token for each object nothing references; refused without the root quorum, when any root or directory cannot be read, and when a run would delete more than half of what the grid holds unless forced; roots of devices revoked longer ago than the window no longer count | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
 | `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
@@ -61,7 +62,7 @@ redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
 redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
-redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force]
+redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
 
@@ -105,6 +106,19 @@ server that finds a member leaving or unlisted notes the time and purges
 their shares and roots only once the manifest's `grace_days` have run on
 its own clock with the manifest still saying so; a member who reappears
 clears the note.
+A k-of-n change is declared in the manifest as `encoding_transition:
+{from, to, deadline}` beside the new `encoding`; `validate` refuses a
+transition whose `to` is not the encoding and warns once the deadline
+has passed. Until the deadline every server accounts shares under the
+old encoding at zero, so a member near budget converts without deleting
+first; the hub page shows the conversion as a bar, converted of all
+objects, with the old encoding's bytes and whether they count yet, and
+per member the objects still to convert. Each device converts what its
+own root references (`backup rebalance`, and on its own every six hours
+while a transition is declared): fetch, decode, store under the new
+encoding, rewrite the directories and the index, publish the root after
+each snapshot. The old objects fall to the cleanup. Once every member
+has converted, the operators remove the transition.
 No address and no path travel in it. The hub's collector keeps the
 heartbeats in `census.json` and the share census in `placement.sqlite`,
 the grid-wide placement table of the RFC's "Health" section: per object

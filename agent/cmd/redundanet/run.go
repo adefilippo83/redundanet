@@ -508,7 +508,8 @@ func runAgent(args []string) error {
 		if rc.member != nil {
 			revocations = rc.member.Revocations
 		}
-		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Revocations: revocations, Log: rc.log})
+		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Revocations: revocations,
+			Manifest: rc.current, SpoolDir: spoolDir, Log: rc.log})
 		if err != nil {
 			return err
 		}
@@ -905,6 +906,15 @@ type manifestPolicy struct{ rc *runtimeConfig }
 func (p *manifestPolicy) Network() string { return p.rc.state.Network }
 
 func (p *manifestPolicy) Device() identity.Key { return p.rc.device }
+
+func (p *manifestPolicy) Converting() (int, int, bool) {
+	m := p.rc.current()
+	if m == nil {
+		return 0, 0, false
+	}
+	e, ok := m.Converting(time.Now())
+	return e.K, e.N, ok
+}
 
 // memberActive says whether a member is listed and active: what starts
 // and clears the store's grace clock for membership-driven deletion.

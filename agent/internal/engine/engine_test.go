@@ -57,16 +57,18 @@ func deviceOf(t *testing.T, s identity.Seed, roles ...string) *member {
 
 // policy is one server's view of the manifest, with a cap per owner.
 type policy struct {
-	m    *manifest.Manifest
-	self identity.Key
-	hubs map[identity.Key]bool
-	mu   sync.Mutex
-	caps map[identity.Key]int64
+	convK, convN int // the encoding accounted at zero, when set
+	m            *manifest.Manifest
+	self         identity.Key
+	hubs         map[identity.Key]bool
+	mu           sync.Mutex
+	caps         map[identity.Key]int64
 }
 
-func (p *policy) Network() string           { return "testnet" }
-func (p *policy) Device() identity.Key      { return p.self }
-func (p *policy) IsHub(k identity.Key) bool { return p.hubs[k] }
+func (p *policy) Network() string              { return "testnet" }
+func (p *policy) Device() identity.Key         { return p.self }
+func (p *policy) Converting() (int, int, bool) { return p.convK, p.convN, p.convK > 0 }
+func (p *policy) IsHub(k identity.Key) bool    { return p.hubs[k] }
 func (p *policy) MemberStatus(k identity.Key) (bool, bool) {
 	mem := p.m.MemberByKey(k)
 	return mem != nil && mem.Status == "active", false
