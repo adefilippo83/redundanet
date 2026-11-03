@@ -301,6 +301,20 @@ func (s *Store) Totals() (shares int64, bytes int64, err error) {
 	return shares, b.Int64, err
 }
 
+// VerifiedSince is the oldest integrity check among the complete shares,
+// so every share was read back since then; zero while any share has not
+// been checked yet, and when the store is empty.
+func (s *Store) VerifiedSince() (time.Time, error) {
+	var oldest, unchecked sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MIN(verified), SUM(verified IS NULL) FROM shares WHERE state = 'complete'`).Scan(&oldest, &unchecked); err != nil {
+		return time.Time{}, err
+	}
+	if !oldest.Valid || unchecked.Int64 > 0 {
+		return time.Time{}, nil
+	}
+	return time.Unix(oldest.Int64, 0), nil
+}
+
 // Remove deletes a share and records the removal for the census.
 func (s *Store) Remove(si object.StorageIndex, n uint8, reason string) error {
 	tx, err := s.db.Begin()

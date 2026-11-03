@@ -65,15 +65,20 @@ func demoManifest() *manifest.Manifest {
 
 func newWorld(t *testing.T, path, legacyURL string) *world {
 	t.Helper()
+	return newWorldWith(t, demoManifest(), path, "", legacyURL)
+}
+
+func newWorldWith(t *testing.T, m *manifest.Manifest, path, placement, legacyURL string) *world {
+	t.Helper()
 	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
-	m := demoManifest()
-	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Legacy: legacyURL,
+	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Placement: placement, Legacy: legacyURL,
 		Started: w.now.Add(-time.Hour), Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.SetLive(func() hub.Status { w.mu.Lock(); defer w.mu.Unlock(); return w.live })
 	w.c = c
+	t.Cleanup(func() { _ = c.Close() })
 	return w
 }
 

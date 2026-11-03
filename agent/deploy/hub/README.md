@@ -73,7 +73,8 @@ The status page stays on loopback (`127.0.0.1:4480`); read it over SSH with
 - `curl -s https://redundanet-hub.fly.dev/v3/status.json | head -c 300`
   names the network and the hub, with `X-Published-At` within the last
   minute.
-- `/var/lib/redundanet3/census.json` appears after the first heartbeat.
+- `/var/lib/redundanet3/census.json` appears after the first heartbeat,
+  `placement.sqlite` with the first share census.
 
 ## Update
 

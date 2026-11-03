@@ -232,8 +232,8 @@ func runHub(args []string) error {
 	)
 	start := func() (*bundle, error) {
 		bctx, cancel := context.WithCancel(ctx)
-		col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"), Legacy: *legacy,
-			Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
+		col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
+			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Legacy: *legacy, Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
 		if err != nil {
 			cancel()
 			return nil, err
@@ -264,6 +264,7 @@ func runHub(args []string) error {
 		if err := b.col.Save(); err != nil {
 			rc.log.Warn("census not saved at handover", "err", err)
 		}
+		_ = b.col.Close()
 	}
 	cur, err = start()
 	if err != nil {
@@ -516,8 +517,12 @@ func runAgent(args []string) error {
 				cs.Storage.State = "unavailable: disk or marker missing"
 			default:
 				cs.Storage.State = "ok"
+				cs.Storage.Floor = uint64(st.Floor())
 				if shares, bytes, err := st.Totals(); err == nil {
 					cs.Storage.Shares, cs.Storage.Bytes = uint64(shares), uint64(bytes)
+				}
+				if t, err := st.VerifiedSince(); err == nil {
+					cs.Storage.Verified = t
 				}
 			}
 		}

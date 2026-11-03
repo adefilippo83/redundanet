@@ -302,10 +302,16 @@ func TestScrubFindsCorruption(t *testing.T) {
 	b[0] ^= 1
 	_, _ = f.WriteAt(b[:], off)
 	f.Close()
+	if since, err := s.VerifiedSince(); err != nil || !since.IsZero() {
+		t.Fatalf("verified since before any check: %v %v", since, err)
+	}
 	c.t = c.t.Add(time.Hour)
 	checked, failed, err := s.Scrub(context.Background(), 10)
 	if err != nil || checked != 2 || failed != 1 {
 		t.Fatalf("scrub: checked %d failed %d err %v", checked, failed, err)
+	}
+	if since, err := s.VerifiedSince(); err != nil || !since.Equal(c.t) {
+		t.Fatalf("verified since after the pass: %v %v, want %v", since, err, c.t)
 	}
 	if pres, _ := s.Has(bad.sd.Descriptor.StorageIndex); pres != nil && len(pres.Complete) != 0 {
 		t.Fatal("the corrupt share stayed")

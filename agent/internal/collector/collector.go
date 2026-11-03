@@ -52,6 +52,9 @@ type Config struct {
 	Path     string                                                // the census file kept across restarts; "" keeps it in memory
 	Legacy   string                                                // the RedundaNet 2 status.json to mirror; "" for none
 	Fetch    func(ctx context.Context, url string) ([]byte, error) // defaults to an HTTP GET with a timeout
+	// Placement is the SQLite file of the placement table; "" keeps it in
+	// memory, for tests.
+	Placement string
 	// Publish is a base URL the page and status.json are PUT under every
 	// minute, with PublishToken as the bearer token; "" publishes nothing.
 	Publish      string
@@ -78,20 +81,11 @@ type Collector struct {
 
 	mu          sync.Mutex
 	entries     map[identity.Key]*entry
-	shares      map[identity.Key]*shareTable // per storage device, from its share census
+	pl          *placement // the placement table, from the share census
 	dirty       bool
 	legacy      *Legacy
 	publishedAt time.Time
 	publishErr  string
-}
-
-// shareTable is what one storage node holds, as its census reported it.
-// Kept in memory in phase 2's M2; the placement table of M5 moves it to
-// SQLite with the grid-wide view.
-type shareTable struct {
-	Generation uint64
-	Entries    map[wire.ShareKey]wire.ShareEntry
-	Tombstones []wire.TombstoneEntry
 }
 
 //go:embed templates/status.html
@@ -125,19 +119,32 @@ func New(cfg Config) (*Collector, error) {
 			return nil, errors.New("collector: publishing needs a token")
 		}
 	}
-	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, shares: map[identity.Key]*shareTable{}}
+	pl, err := openPlacement(cfg.Placement)
+	if err != nil {
+		return nil, err
+	}
+	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl}
 	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
+		_ = pl.close()
 		return nil, err
 	}
 	c.tmpl = tmpl
 	if cfg.Path != "" {
 		if err := c.load(); err != nil {
+			_ = pl.close()
 			return nil, err
 		}
 	}
 	return c, nil
+}
+
+// Close releases the placement table; Save first.
+func (c *Collector) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pl.close()
 }
 
 // SetLive gives the collector the hub's live view once the hub exists.
@@ -155,50 +162,62 @@ func (c *Collector) Record(peer identity.Peer, carrier string, cs wire.Census) {
 	c.dirty = true
 }
 
-// RecordShares applies a chunk of a storage node's share census. A chunk
-// since generation zero replaces what the collector held for the device.
+// RecordShares applies a chunk of a storage node's share census to the
+// placement table. A chunk since generation zero under a new generation
+// replaces what the table held for the device.
 func (c *Collector) RecordShares(peer identity.Peer, sc *wire.ShareCensus) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	t := c.shares[peer.Device]
-	if t == nil || (sc.Since == 0 && t.Generation != 0 && t.Generation != sc.Generation) {
-		t = &shareTable{Entries: map[wire.ShareKey]wire.ShareEntry{}}
-		c.shares[peer.Device] = t
-	}
-	for _, e := range sc.Added {
-		t.Entries[wire.ShareKey{StorageIndex: e.StorageIndex, Number: e.Number}] = e
-	}
-	for _, k := range sc.Removed {
-		delete(t.Entries, k)
-	}
-	if sc.Since == 0 && !sc.More {
-		t.Tombstones = sc.Tombstones
-	} else if len(sc.Tombstones) > 0 {
-		t.Tombstones = sc.Tombstones
-	}
-	if !sc.More {
-		t.Generation = sc.Generation
+	if err := c.pl.apply(peer.Device, sc, c.cfg.Now()); err != nil {
+		c.log.Warn("share census not recorded", "device", peer.Device.Short(), "err", err)
 	}
 }
 
-// usage sums what every storage node accounts to each owner, and the
-// distinct objects per owner; the public "usage as servers see it".
-func (c *Collector) usage() (bytes map[identity.Key]int64, objects map[identity.Key]int) {
-	bytes, objects = map[identity.Key]int64{}, map[identity.Key]int{}
-	seen := map[identity.Key]map[[16]byte]bool{}
-	for _, t := range c.shares {
-		for _, e := range t.Entries {
-			bytes[e.Owner] += e.Size
-			if seen[e.Owner] == nil {
-				seen[e.Owner] = map[[16]byte]bool{}
-			}
-			seen[e.Owner][e.StorageIndex] = true
+// Objects classifies every object the placement table knows, with the
+// grid summary: what the repair scheduler and the page work from.
+func (c *Collector) Objects() ([]Object, *Grid, error) {
+	now := c.cfg.Now()
+	m := c.cfg.Manifest()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	alive, servers := c.aliveServers(now, m)
+	return c.pl.compute(now, alive, servers)
+}
+
+// aliveServers lists the manifest's storage servers whose shares count:
+// seen within the dead threshold, or on a channel now. A server the
+// manifest retired is forgotten with its shares. Called with the lock.
+func (c *Collector) aliveServers(now time.Time, m *manifest.Manifest) (map[identity.Key]bool, int) {
+	alive := map[identity.Key]bool{}
+	if m == nil {
+		return alive, 0
+	}
+	deadAfter := defaultDeadAfter
+	if m.Network.RepairAfterHours > 0 {
+		deadAfter = time.Duration(m.Network.RepairAfterHours) * time.Hour
+	}
+	listed := map[identity.Key]bool{}
+	for _, s := range m.Storage {
+		listed[s.Device] = true
+		if e, ok := c.entries[s.Device]; ok && now.Sub(e.LastSeen) <= deadAfter {
+			alive[s.Device] = true
 		}
 	}
-	for owner, sis := range seen {
-		objects[owner] = len(sis)
+	if c.cfg.Live != nil {
+		for _, cl := range c.cfg.Live().Clients {
+			if k, err := identity.ParseKey(cl.Device); err == nil && listed[k] {
+				alive[k] = true
+			}
+		}
 	}
-	return bytes, objects
+	for _, dev := range c.pl.devices() {
+		if !listed[dev] {
+			if err := c.pl.forget(dev); err == nil {
+				c.log.Info("storage device retired from the manifest; its shares no longer count", "device", dev.Short())
+			}
+		}
+	}
+	return alive, len(alive)
 }
 
 // Run refreshes the legacy mirror, publishes and saves the census until ctx
@@ -370,6 +389,7 @@ type Status struct {
 	GeneratedAt      time.Time `json:"generated_at"`
 	Devices          []Device  `json:"devices"`
 	Members          []Member  `json:"members"`
+	Grid             *Grid     `json:"grid,omitempty"`
 	Legacy           *Legacy   `json:"redundanet2,omitempty"`
 }
 
@@ -389,9 +409,10 @@ type Device struct {
 	Manifest   uint64     `json:"manifest,omitempty"`
 	FreeBytes  *uint64    `json:"free_bytes,omitempty"`
 	TotalBytes *uint64    `json:"total_bytes,omitempty"`
-	Storage    string     `json:"storage,omitempty"` // the store's state: "ok" or why it is not serving
-	Shares     uint64     `json:"shares"`            // complete shares the node holds
-	Stored     uint64     `json:"stored_bytes"`      // their bytes as accounted
+	Storage    string     `json:"storage,omitempty"`  // the store's state: "ok" or why it is not serving
+	Shares     uint64     `json:"shares"`             // complete shares the node holds
+	Stored     uint64     `json:"stored_bytes"`       // their bytes as accounted
+	Verified   string     `json:"verified,omitempty"` // day the oldest integrity check of a share dates from: every share was read back since
 	Direct     int        `json:"peers_direct"`
 	Relayed    int        `json:"peers_relayed"`
 	RelayIn    uint64     `json:"relay_bytes_in"`
@@ -412,6 +433,8 @@ type Member struct {
 	Objects        int    `json:"objects"`                         // distinct objects with at least one complete share
 	LastBackup     string `json:"last_backup,omitempty"`           // day of the newest backup of any device, "" when none
 	LastVerified   string `json:"last_verified_restore,omitempty"` // day of the newest passing restore test
+	UnderPlaced    int    `json:"under_placed"`                    // the member's objects short of a share or of spread
+	Unreadable     int    `json:"unreadable"`                      // the member's objects below k shares
 }
 
 // Status computes the projection now.
@@ -425,7 +448,15 @@ func (c *Collector) Status() Status {
 		entries[k] = *e
 	}
 	legacy := c.legacy
-	usedBytes, usedObjects := c.usage()
+	usedBytes, usedObjects, err := c.pl.usage()
+	if err != nil {
+		c.log.Warn("usage not computed", "err", err)
+	}
+	alive, servers := c.aliveServers(now, m)
+	objects, grid, err := c.pl.compute(now, alive, servers)
+	if err != nil {
+		c.log.Warn("placement not computed", "err", err)
+	}
 	c.mu.Unlock()
 
 	st := Status{Hub: c.cfg.Device.String(), HubUptime: now.Sub(c.cfg.Started).Round(time.Second).String(), GeneratedAt: now, Legacy: legacy}
@@ -485,6 +516,9 @@ func (c *Collector) Status() Status {
 				free, total := s.FreeBytes, s.TotalBytes
 				d.FreeBytes, d.TotalBytes = &free, &total
 				d.Storage, d.Shares, d.Stored = s.State, s.Shares, s.Bytes
+				if !s.Verified.IsZero() {
+					d.Verified = s.Verified.UTC().Format("2006-01-02")
+				}
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {
@@ -553,10 +587,23 @@ func (c *Collector) Status() Status {
 		}
 		return a.Device < b.Device
 	})
+	underPlaced, unreadable := map[identity.Key]int{}, map[identity.Key]int{}
+	for _, o := range objects {
+		if o.Tombstoned {
+			continue
+		}
+		if !o.Placed {
+			underPlaced[o.Owner]++
+		}
+		if !o.Readable {
+			unreadable[o.Owner]++
+		}
+	}
+	st.Grid = grid
 	if m != nil {
 		for _, mem := range m.Members {
 			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name),
-				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key]}
+				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key], UnderPlaced: underPlaced[mem.Key], Unreadable: unreadable[mem.Key]}
 			if t := lastBackup[mem.Name]; !t.IsZero() {
 				mm.LastBackup = t.UTC().Format("2006-01-02")
 			}
