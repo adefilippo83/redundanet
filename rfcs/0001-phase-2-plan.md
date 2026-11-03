@@ -244,7 +244,11 @@ The hub and node sides of the RFC's "Health" section.
   objects card (counts per number of copies, under-placed, unreadable,
   due for repair, deleted), a placement column per member and a "checked
   since" column per device; `status.json` carries the same counts and
-  never a storage index.
+  never a storage index. The pull request's macOS run also caught a race
+  in the transport: a handshake that passed the policy before a manifest
+  change could complete after `Recheck` and be filed unchecked. A
+  connection is now checked against the policy once more when it is
+  filed.
 
 ### M6. The second platform and the G2 month
 

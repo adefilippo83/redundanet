@@ -267,12 +267,29 @@ func TestRecheckClosesTheNoLongerAdmitted(t *testing.T) {
 	a, _ := n.endpoint(seed(1), true, nil)
 	_, bID := n.endpoint(seed(2), true, nil)
 	s := a.Connect(bID)
-	eventually(t, 10*time.Second, "the direct path", func() bool { return s.Best() == PathDirect })
+	// Both paths up before the policy changes; a handshake still in flight
+	// is refused when it completes, which the second half checks.
+	eventually(t, 10*time.Second, "both paths", func() bool { st := s.status(); return st.Direct != "" && st.Relay })
 	n.mu.Lock()
 	delete(n.allowed, bID)
 	n.mu.Unlock()
+	// A handshake that began under the old policy completes now: filing
+	// its connection must refuse it.
+	s.mu.Lock()
+	late := s.directConn
+	s.mu.Unlock()
+	s.setConn(late, PathDirect)
+	if late.Context().Err() == nil {
+		t.Fatal("a connection completed after the policy change was filed")
+	}
 	a.Recheck()
-	eventually(t, 5*time.Second, "both connections to close", func() bool { return s.Best() == "" })
+	eventually(t, 10*time.Second, "both connections to close", func() bool { return s.Best() == "" })
+	// The session keeps asking for a rendezvous; no connection may come of
+	// it while b is not admitted.
+	time.Sleep(3 * time.Second)
+	if st := s.status(); st.Direct != "" || st.Relay {
+		t.Fatalf("a connection to a device no longer admitted was filed: %+v", st)
+	}
 }
 
 func TestCensusReachesTheHub(t *testing.T) {
