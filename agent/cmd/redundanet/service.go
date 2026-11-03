@@ -28,6 +28,7 @@ func runService(args []string) error {
 	}
 	fs := flag.NewFlagSet("service "+args[0], flag.ContinueOnError)
 	dir, network := commonFlags(fs)
+	channel := fs.String("channel", release.ChannelStable, "install: release channel for self-update: stable or early")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -50,7 +51,11 @@ func runService(args []string) error {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}
-		spec := service.Spec{Executable: exe, Args: []string{"agent", "--network", *network, "--data-dir", d}, DataDir: d}
+		args := []string{"agent", "--network", *network, "--data-dir", d}
+		if *channel != release.ChannelStable {
+			args = append(args, "--channel", *channel)
+		}
+		spec := service.Spec{Executable: exe, Args: args, DataDir: d}
 		path, err := service.Install(spec)
 		if err != nil {
 			return err

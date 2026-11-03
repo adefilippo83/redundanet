@@ -371,3 +371,21 @@ func TestRoots(t *testing.T) {
 		t.Fatalf("tampered root: %v", err)
 	}
 }
+
+// TestStreamsAreReleased: a backup makes thousands of requests on one
+// connection; each must release its stream, or the server's stream limit
+// (1024 at the endpoint) stalls every request after it.
+func TestStreamsAreReleased(t *testing.T) {
+	w := newWorld(t)
+	c, _, _ := client(t, w, w.server)
+	peer := w.server.dev.ID()
+	o := encode(t, w.server, 100, 7)
+	for i := 0; i < 1500; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := c.Has(ctx, peer, o.sd.Descriptor.StorageIndex)
+		cancel()
+		if err != nil {
+			t.Fatalf("request %d: %v", i+1, err)
+		}
+	}
+}

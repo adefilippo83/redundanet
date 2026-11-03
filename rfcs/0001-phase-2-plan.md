@@ -190,6 +190,12 @@ restore" and "Roots and snapshots".
   pending-set root publish during a long run, pausing a set while it is
   being restored, and a settings page for schedule and retention (today
   they are edited in `backup.yaml`).
+- 2026-11-03: the first real set (a 10,000-file workspace from the Mac)
+  stalled after 238 files: neither end of the share protocol completed the
+  read half of a request stream, so after 1024 requests the server's
+  stream limit held every further request for its 30 s deadline. Both
+  ends now cancel the read half once the last byte is in; a test sends
+  1500 requests over one connection. Shipped as alpha.9.
 
 ### M5. Health: census table, repair, deletion, rebalance
 

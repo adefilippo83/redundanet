@@ -41,8 +41,17 @@ func NewServer(st *store.Store, pol Policy, log *slog.Logger) *Server {
 }
 
 // Handle is the endpoint's OnStream: one request per stream.
+//
+// A stream is released only when both of its halves are done: the write
+// half by Close, the read half by reading to EOF or cancelling it. Every
+// request's bytes have been read when a handler returns, so the read half
+// is cancelled with code 0 (nothing is lost). A stream left half-open
+// counts against the peer's stream limit until the connection ends; the
+// first long backup hit that limit after about a thousand requests and
+// every further request waited for a stream that never came.
 func (s *Server) Handle(peer identity.Peer, _ string, st *quic.Stream) {
 	defer st.Close()
+	defer st.CancelRead(0)
 	var req Request
 	if err := readMsg(st, &req); err != nil {
 		st.CancelRead(1)
