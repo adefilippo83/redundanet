@@ -1,6 +1,6 @@
 network: redundanet
-revision: 3
-issued_at: 2026-11-02T14:25:37Z
-sha256: ac1eb0e8239783e95d48e4f394d92709978801eb2950b16c667a55b7a54b637c
+revision: 4
+issued_at: 2026-11-03T16:36:36Z
+sha256: 750dfc7ef0a2dc893ca0783d8fd37a1ecf9e1b7b16ee270123127ae80fe1dd3b
 operator: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q
-signature: Vdqj8OtQWudfOuucCVBz9mKlKbdbtINW/eb3PH/oztEykKP6dl7Q9YrhUBY/aL/I3nFNeiALuy7mFdEJj1htCw==
+signature: FkiSxHzv6cEmjzaaIlesP47HNaAIkQlFroJel49DDWC12qvlGpyV+mKvlZs4sE2Dmmh1yzp4uRDS/XkgJPLiDw==
