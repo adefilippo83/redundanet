@@ -100,7 +100,7 @@ redundanet status [--json]      # what the running agent sees, through its local
 redundanet open                 # the local page, through a one-time link that logs the browser in
 redundanet logs [-n 100]
 
-redundanet service install --network NAME     # this binary, as a user service that starts at login
+redundanet service install --network NAME [--channel early]  # this binary, as a user service that starts at login
 redundanet service status | uninstall
 
 redundanet update check | apply | status [--channel early]

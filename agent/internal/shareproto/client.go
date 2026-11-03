@@ -20,6 +20,15 @@ type Client struct{ open Opener }
 // NewClient wraps an opener.
 func NewClient(open Opener) *Client { return &Client{open: open} }
 
+// done releases a stream whose last byte has been read: the read half is
+// cancelled with code 0 and the write half closed, so quic-go frees the
+// stream on both ends and the server's stream limit gets its credit back.
+// Without it a client leaks one half-open stream per request.
+func done(st *quic.Stream) {
+	st.CancelRead(0)
+	_ = st.Close()
+}
+
 func (c *Client) exchange(ctx context.Context, peer identity.Key, req *Request) (*quic.Stream, *Response, error) {
 	st, _, err := c.open(ctx, peer)
 	if err != nil {
@@ -50,7 +59,7 @@ func (c *Client) Has(ctx context.Context, peer identity.Key, si object.StorageIn
 	if err != nil {
 		return nil, err
 	}
-	_ = st.Close()
+	done(st)
 	return resp.Presence, nil
 }
 
@@ -62,7 +71,7 @@ func (c *Client) PutShare(ctx context.Context, peer identity.Key, sd *object.Sig
 	if err != nil {
 		return err
 	}
-	defer st.Close()
+	defer done(st)
 	if resp.Complete {
 		return nil
 	}
@@ -134,7 +143,7 @@ func (p *PutStream) Write(segment int, b []byte) error {
 
 // Finish waits for the server's verdict and closes the stream.
 func (p *PutStream) Finish() error {
-	defer p.st.Close()
+	defer done(p.st)
 	if p.err != nil {
 		p.st.CancelRead(1)
 		return p.err
@@ -179,7 +188,7 @@ func (c *Client) GetShare(ctx context.Context, peer identity.Key, si object.Stor
 	if err != nil {
 		return nil, err
 	}
-	defer st.Close()
+	defer done(st)
 	if to == 0 {
 		to = resp.Segments
 	}
@@ -204,7 +213,7 @@ func (c *Client) GetInfo(ctx context.Context, peer identity.Key, si object.Stora
 	if err != nil {
 		return nil, nil, err
 	}
-	_ = st.Close()
+	done(st)
 	return resp.Descriptor, resp.Hashes, nil
 }
 
@@ -214,7 +223,8 @@ func (c *Client) PutRoot(ctx context.Context, peer identity.Key, e *RootEnvelope
 	if err != nil {
 		return err
 	}
-	return st.Close()
+	done(st)
+	return nil
 }
 
 // GetRoots lists the member's device roots a server holds.
@@ -223,6 +233,6 @@ func (c *Client) GetRoots(ctx context.Context, peer identity.Key, member identit
 	if err != nil {
 		return nil, err
 	}
-	_ = st.Close()
+	done(st)
 	return resp.Roots, nil
 }
