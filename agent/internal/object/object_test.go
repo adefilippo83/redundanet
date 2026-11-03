@@ -505,3 +505,77 @@ func TestDecodeRange(t *testing.T) {
 		t.Fatal("a range past the end was accepted")
 	}
 }
+
+func TestReconstructRegeneratesShares(t *testing.T) {
+	o := newOwner(t, 1, 11)
+	data := pattern(2*DefaultSegmentSize+777, 4)
+	e := encodeAll(t, o, data, DefaultParams(2, 4))
+	ctx := context.Background()
+	// From any two shares, the other two come back block for block, with
+	// no key in sight.
+	for a := 0; a < 4; a++ {
+		for b := a + 1; b < 4; b++ {
+			var wanted []uint8
+			for n := 0; n < 4; n++ {
+				if n != a && n != b {
+					wanted = append(wanted, uint8(n))
+				}
+			}
+			got := map[uint8][][]byte{}
+			hashes, err := Reconstruct(ctx, &e.Descriptor, e.sources(a, b), wanted, func(share uint8, segment int, block []byte) error {
+				got[share] = append(got[share], append([]byte(nil), block...))
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("from %d,%d: %v", a, b, err)
+			}
+			for i, w := range wanted {
+				for s := range e.blocks[w] {
+					if !bytes.Equal(got[w][s], e.blocks[w][s]) {
+						t.Fatalf("from %d,%d: share %d segment %d differs", a, b, w, s)
+					}
+				}
+				if ShareRoot(hashes[i]) != e.Descriptor.ShareRoots[w] {
+					t.Fatalf("from %d,%d: share %d root differs", a, b, w)
+				}
+			}
+		}
+	}
+	// A present share can be asked for too: it is served as is.
+	n := 0
+	if _, err := Reconstruct(ctx, &e.Descriptor, e.sources(0, 1), []uint8{0}, func(share uint8, segment int, block []byte) error {
+		if !bytes.Equal(block, e.blocks[0][segment]) {
+			t.Fatalf("segment %d of a present share differs", segment)
+		}
+		n++
+		return nil
+	}); err != nil || n != 3 {
+		t.Fatalf("present share: %v, %d blocks", err, n)
+	}
+	// Fewer than k, the same share twice, a tampered hash list, a corrupt
+	// block, a share number out of range: all refused.
+	if _, err := Reconstruct(ctx, &e.Descriptor, e.sources(2), []uint8{0}, nil); !errors.Is(err, ErrNotEnoughShares) {
+		t.Fatalf("one share: %v", err)
+	}
+	if _, err := Reconstruct(ctx, &e.Descriptor, e.sources(2, 2), []uint8{0}, nil); !errors.Is(err, ErrNotEnoughShares) {
+		t.Fatalf("the same share twice: %v", err)
+	}
+	bad := e.sources(0, 1)
+	bad[0].Hashes = append([]Hash(nil), bad[0].Hashes...)
+	bad[0].Hashes[1][0] ^= 1
+	if _, err := Reconstruct(ctx, &e.Descriptor, bad, []uint8{2}, nil); !errors.Is(err, ErrNotEnoughShares) {
+		t.Fatalf("tampered hash list: %v", err)
+	}
+	corrupt := e.sources(0, 1)
+	corrupt[1].Read = func(_ context.Context, s int) ([]byte, error) {
+		b := append([]byte(nil), e.blocks[1][s]...)
+		b[0] ^= 1
+		return b, nil
+	}
+	if _, err := Reconstruct(ctx, &e.Descriptor, corrupt, []uint8{2}, func(uint8, int, []byte) error { return nil }); !errors.Is(err, ErrNotEnoughShares) {
+		t.Fatalf("corrupt block: %v", err)
+	}
+	if _, err := Reconstruct(ctx, &e.Descriptor, e.sources(0, 1), []uint8{4}, nil); err == nil {
+		t.Fatal("share number 4 of n=4 accepted")
+	}
+}

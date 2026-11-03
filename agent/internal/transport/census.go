@@ -22,6 +22,16 @@ func init() {
 	censusPoll.Store(int64(5 * time.Second))
 }
 
+// SetCensusTiming shortens the heartbeat period and the poll for changes,
+// for tests outside this package that wait on a hub's view; it returns a
+// function that restores the previous values.
+func SetCensusTiming(every, poll time.Duration) (restore func()) {
+	oldEvery, oldPoll := censusEvery.Load(), censusPoll.Load()
+	censusEvery.Store(int64(every))
+	censusPoll.Store(int64(poll))
+	return func() { censusEvery.Store(oldEvery); censusPoll.Store(oldPoll) }
+}
+
 // census is the heartbeat for a hub: the caller's device-level fields plus
 // the sessions this endpoint holds, in a fixed order.
 func (e *Endpoint) census() (wire.Census, bool) {

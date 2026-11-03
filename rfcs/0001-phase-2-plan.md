@@ -249,6 +249,33 @@ The hub and node sides of the RFC's "Health" section.
   change could complete after `Recheck` and be filed unchecked. A
   connection is now checked against the policy once more when it is
   filed.
+- 2026-11-03, slice 2: repair without the owner. The hub channel gains
+  the hub-signed repair task, the worker's report and the surplus release
+  hint. The scheduling hub (the first in manifest order whose status page
+  is fresh, the next taking over after ten minutes of silence) turns each
+  object due into a task every minute: missing numbers to live servers
+  with room above their floors, servers holding nothing of the object
+  first, at most ceil(n / servers not dead) per server, spread raised by
+  copying from the fullest holder, never a plan on fewer than k servers;
+  blocked, with the bytes short, when no server has room. A storage node
+  volunteers as a worker in its heartbeat and takes at most two tasks at
+  a time. The worker fetches the descriptor and k shares (its own store
+  for what it holds), regenerates the missing numbers with
+  `object.Reconstruct`, which needs no key, checks them against the
+  signed roots and stores them, through the protocol or into its own
+  store when the task names it, then reports. The server accepts a share
+  from a device that is not the owner's only with a task signed by a
+  listed hub that names it, the object, the share number and the worker,
+  past the owner's cap but never its floor, never over a tombstone, and
+  for a leaving member too. Tasks close on the census, the report or
+  their expiry and sit in `placement.sqlite`. A returning server's
+  surplus is hinted to the holder with the most shares, which asks the
+  others directly and removes its copy only when every share number stays
+  complete. The page shows running, repaired and failed counts, the
+  blocked objects with the bytes short, and which hub schedules. The
+  slice's exit test runs in process: three nodes, one dies, the hub's
+  task restores full placement with the owner idle, the node returns and
+  the surplus is released.
 
 ### M6. The second platform and the G2 month
 

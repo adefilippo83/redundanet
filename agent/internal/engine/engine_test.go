@@ -58,11 +58,15 @@ func deviceOf(t *testing.T, s identity.Seed, roles ...string) *member {
 // policy is one server's view of the manifest, with a cap per owner.
 type policy struct {
 	m    *manifest.Manifest
+	self identity.Key
+	hubs map[identity.Key]bool
 	mu   sync.Mutex
 	caps map[identity.Key]int64
 }
 
-func (p *policy) Network() string { return "testnet" }
+func (p *policy) Network() string           { return "testnet" }
+func (p *policy) Device() identity.Key      { return p.self }
+func (p *policy) IsHub(k identity.Key) bool { return p.hubs[k] }
 func (p *policy) MemberStatus(k identity.Key) (bool, bool) {
 	mem := p.m.MemberByKey(k)
 	return mem != nil && mem.Status == "active", false
@@ -154,7 +158,7 @@ func newGrid(t *testing.T) (*grid, *member, *member) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = st.Close() })
-		pol := &policy{m: g.m, caps: map[identity.Key]int64{}}
+		pol := &policy{m: g.m, self: m.dev.ID(), hubs: map[identity.Key]bool{g.hubKey: true}, caps: map[identity.Key]int64{}}
 		srv := shareproto.NewServer(st, pol, g.log)
 		node := &serverNode{member: m, store: st, pol: pol}
 		node.ep = g.endpoint(t, m, srv.Handle)

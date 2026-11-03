@@ -74,7 +74,9 @@ The status page stays on loopback (`127.0.0.1:4480`); read it over SSH with
   names the network and the hub, with `X-Published-At` within the last
   minute.
 - `/var/lib/redundanet3/census.json` appears after the first heartbeat,
-  `placement.sqlite` with the first share census.
+  `placement.sqlite` with the first share census; the repair tasks the
+  hub issues are in its `tasks` table, and `repair task issued` lines
+  in the journal name the worker and the object.
 
 ## Update
 

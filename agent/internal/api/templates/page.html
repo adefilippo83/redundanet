@@ -59,6 +59,11 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
     <form method="post" action="/action/update-check"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check now</button></form>
     {{if .Available}}<form method="post" action="/action/update-apply"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Install {{.Available}}</button></form>{{end}}
   </p></div>{{end}}
+  {{with .Repair}}<div class="card"><h2>Repair</h2><div class="kv">
+    <b>now</b><span>{{if .Running}}<span class="ok">repairing {{.Running}}</span>{{else}}idle{{end}}{{if .Queued}}, {{.Queued}} queued{{end}}</span>
+    <b>since start</b><span>{{.Done}} tasks done, {{.Failed}} failed, {{.Released}} surplus shares released</span>
+    {{if .Last}}<b>last</b><span>{{since .LastAt}}: {{.Last}}</span>{{end}}
+  </div></div>{{end}}
   {{with .Jobs}}<div class="card"><h2>Backups</h2>
   {{if .Sets}}<table>
   <tr><th>set</th><th>folders</th><th>last run</th><th>result</th></tr>

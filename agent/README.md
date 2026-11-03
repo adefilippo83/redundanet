@@ -18,14 +18,15 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
 | `internal/api` | The local HTTP API and page on 127.0.0.1: bearer token in `api.token` for the CLI, a session cookie (HttpOnly, SameSite=Strict) that a one-time link from `redundanet open` starts for the browser, a CSRF token on every change, Host and Origin checks on every request, no GET that changes anything; update check, apply and retry as actions | Done, with tests |
 | `internal/logbuf` | The last 500 log records in memory, for the page and `redundanet logs` | Done, with tests |
-| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the synthetic relay address | Done |
+| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the hub-signed repair task with the worker's report and the surplus release hint, the synthetic relay address | Done, with tests |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, the census hook, status | Done, tested through the transport |
-| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules (phase 2, M5), joins them with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement counts; never an address, a path or a storage index | Done, with tests |
+| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules, the repair scheduler (phase 2, M5: signed tasks to volunteering nodes, the one-scheduler rule between hubs, expiry and retry, blocked when the live servers lack room above their floors, surplus hints), joins them with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement and repair counts; never an address, a path or a storage index | Done, with tests |
 | `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
 | `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, tombstones, root records, the census delta, the scrub, and the marker that ties the store to its disk | Done, with tests |
+| `internal/repair` | The node side of repair without the owner (phase 2, M5): a worker that takes the hub's signed task, fetches the descriptor and k shares from the holders (its own store for shares it holds), regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says (its own store when the task names it), then reports; and the surplus release, given up only after confirming with the other holders directly that every share number stays complete | Done, with tests |
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
 | `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers) and a fake with the same contract for the jobs' tests | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
@@ -91,6 +92,30 @@ whether it needs repair at once (it had been fully placed) or after the
 24-hour quiescence window (it never was). The page and `status.json`
 carry the counts only: objects per number of copies, under-placed,
 unreadable, due for repair, and per member its under-placed objects.
+Every minute the hub that schedules repair (the first in manifest order
+whose status page is fresh; the others take over when it has been gone
+ten minutes) turns each object due into a task signed by its device key:
+the missing share numbers, where each goes (a live server with room above
+its floor that does not hold it, servers holding nothing of the object
+first, at most ceil(n / servers not dead) per server, never a plan that
+leaves the object on fewer than k servers), the holders to fetch from,
+and an expiry. A storage node volunteers as a worker in its heartbeat;
+the task goes to one that is not a target when there is one, at most two
+tasks at a time each. The worker fetches the descriptor and k shares,
+regenerates the missing numbers without the key, checks them against the
+signed share roots and stores them; the receiving server checks the task
+before it accepts a share from a device that is not the owner's, lets a
+repair write pass the owner's cap but never its own floor, and never
+crosses a tombstone. The task closes when the share census shows the
+object placed, when the worker reports, or at its expiry, after which the
+object waits ten minutes before another task. When no live server has
+room for a share the page says "blocked: X short above the floors", which
+tells the community to add disk. When a server returns from the dead and
+an object has more complete shares than n, the hub hints at the holder
+with the most shares; that holder asks the other holders itself and gives
+its copy up only once every share number stays complete without it.
+Tasks live in `placement.sqlite` with the table, so a hub restart neither
+loses nor doubles them.
 The collector serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
 so today's nodes stay visible beside the new devices until G3. With

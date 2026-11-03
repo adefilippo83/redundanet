@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/quic-go/quic-go"
 
@@ -23,6 +24,11 @@ type Policy interface {
 	// server's share of the contribution times the headroom. Zero or less
 	// refuses every write.
 	OwnerCap(owner identity.Key) int64
+	// IsHub reports whether a device key is one of the manifest's hubs,
+	// whose signed repair tasks this server honours.
+	IsHub(device identity.Key) bool
+	// Device is this server's own device key, which a repair task names.
+	Device() identity.Key
 }
 
 // Server serves the storage protocol over streams of the mesh.
@@ -114,26 +120,61 @@ func (s *Server) put(peer identity.Peer, st *quic.Stream, req *Request) error {
 		return refuse(st, StatusBad, err.Error())
 	}
 	owner := sd.Descriptor.Owner
-	if peer.Member != owner {
-		// Repair workers come in phase 2's M5 with a signed task; until
-		// then only the owner's devices store the owner's shares.
-		return refuse(st, StatusRefused, "only a device of the owner may store this object")
-	}
-	if active, _ := s.pol.MemberStatus(owner); !active {
-		return refuse(st, StatusRefused, "the owner is not an active member")
-	}
 	if sd.Descriptor.StorageIndex != req.StorageIndex {
 		return refuse(st, StatusBad, "the storage index does not match the descriptor")
 	}
+	// A device that is not the owner's stores a share only as a repair
+	// worker carrying a task signed by a hub of this network that names
+	// it, this object under this descriptor, and this server for this
+	// share number.
+	repair := peer.Member != owner
+	if repair {
+		t := req.Task
+		if t == nil {
+			return refuse(st, StatusRefused, "only a device of the owner may store this object without a repair task")
+		}
+		if err := t.Verify(s.pol.Network(), time.Now()); err != nil {
+			return refuse(st, StatusRefused, err.Error())
+		}
+		if !s.pol.IsHub(t.Hub) {
+			return refuse(st, StatusRefused, "the repair task is not signed by a hub of this network")
+		}
+		if t.Worker != peer.Device {
+			return refuse(st, StatusRefused, "the repair task names another worker")
+		}
+		dhash, err := sd.Descriptor.Hash()
+		if err != nil {
+			return refuse(st, StatusFailed, err.Error())
+		}
+		if object.StorageIndex(t.StorageIndex) != req.StorageIndex || object.Hash(t.DescriptorHash) != dhash || t.Owner != owner {
+			return refuse(st, StatusRefused, "the repair task is for another object")
+		}
+		if !t.Places(s.pol.Device(), req.Number) {
+			return refuse(st, StatusRefused, fmt.Sprintf("the repair task does not place share %d on this server", req.Number))
+		}
+	}
+	// Writes need an active owner; repair on a leaving member's behalf
+	// continues, so their data is still there if they return.
+	if active, leaving := s.pol.MemberStatus(owner); !active && !(repair && leaving) {
+		return refuse(st, StatusRefused, "the owner is not an active member")
+	}
 	geom := sd.Descriptor.Geometry()
-	usage, err := s.st.Usage(owner)
-	if err != nil {
-		return refuse(st, StatusFailed, err.Error())
+	var p *store.Put
+	var err error
+	if repair {
+		// Repair writes may exceed the owner's cap, using the reserve, but
+		// never the free-space floor, which the store applies.
+		p, err = s.st.BeginRepair(sd, req.Number)
+	} else {
+		usage, uerr := s.st.Usage(owner)
+		if uerr != nil {
+			return refuse(st, StatusFailed, uerr.Error())
+		}
+		if capBytes := s.pol.OwnerCap(owner); usage+object.ShareSize(geom, 0) > capBytes {
+			return refuse(st, StatusQuota, fmt.Sprintf("the owner holds %d bytes here of %d allowed", usage, capBytes))
+		}
+		p, err = s.st.BeginPut(sd, req.Number)
 	}
-	if capBytes := s.pol.OwnerCap(owner); usage+object.ShareSize(geom, 0) > capBytes {
-		return refuse(st, StatusQuota, fmt.Sprintf("the owner holds %d bytes here of %d allowed", usage, capBytes))
-	}
-	p, err := s.st.BeginPut(sd, req.Number)
 	if errors.Is(err, store.ErrAlreadyComplete) {
 		return writeMsg(st, Response{Status: StatusOK, Complete: true, Resume: geom.Segments()})
 	}
@@ -161,7 +202,7 @@ func (s *Server) put(peer identity.Peer, st *quic.Stream, req *Request) error {
 		code, msg := statusOf(err)
 		return refuse(st, code, msg)
 	}
-	s.log.Info("share stored", "si", req.StorageIndex.String()[:8], "n", req.Number, "owner", owner.Short(), "from", peer.Device.Short())
+	s.log.Info("share stored", "si", req.StorageIndex.String()[:8], "n", req.Number, "owner", owner.Short(), "from", peer.Device.Short(), "repair", repair)
 	return writeMsg(st, Response{Status: StatusOK, Complete: true, Resume: geom.Segments()})
 }
 

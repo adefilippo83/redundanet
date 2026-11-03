@@ -31,6 +31,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
+	"github.com/adefilippo83/redundanet/agent/internal/repair"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/shareproto"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
@@ -59,7 +60,7 @@ type runtimeConfig struct {
 }
 
 // snapshot is what the local API shows.
-func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater) api.Snapshot {
+func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *repair.Worker) api.Snapshot {
 	s := api.Snapshot{Version: version.Version, Uptime: time.Since(rc.started).Round(time.Second).String(), DataDir: rc.dataDir,
 		Device: rc.device.String(), Member: rc.state.Member.String(), MemberCode: identity.DisplayCode(rc.state.Member),
 		Roles: rc.state.Certificate.Certificate.Roles, Generated: time.Now()}
@@ -77,6 +78,10 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater) api
 	if u != nil {
 		st := u.Status()
 		s.Update = &st
+	}
+	if w != nil {
+		st := w.Status()
+		s.Repair = &st
 	}
 	sv := service.Query("")
 	s.Service = &sv
@@ -230,20 +235,25 @@ func runHub(args []string) error {
 		mu  sync.Mutex
 		cur *bundle
 	)
+	hubKey, err := rc.state.Device()
+	if err != nil {
+		return err
+	}
 	start := func() (*bundle, error) {
 		bctx, cancel := context.WithCancel(ctx)
-		col, err := collector.New(collector.Config{Device: rc.device, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
+		col, err := collector.New(collector.Config{Device: rc.device, Signer: hubKey, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
 			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Legacy: *legacy, Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
 		if err != nil {
 			cancel()
 			return nil, err
 		}
-		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, Log: rc.log})
+		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log})
 		if err != nil {
 			cancel()
 			return nil, err
 		}
 		col.SetLive(h.Status)
+		col.SetSend(h.Send)
 		go col.Run(bctx)
 		b := &bundle{h: h, col: col, cancel: cancel, stopHTTP: func() {}}
 		if *status != "" {
@@ -476,16 +486,20 @@ func runAgent(args []string) error {
 	}
 	spoolDir := filepath.Join(rc.dataDir, "spool")
 	_ = os.MkdirAll(spoolDir, 0o700)
+	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
+		e := current()
+		if e == nil {
+			return nil, "", errors.New("the endpoint is handing over")
+		}
+		return e.OpenStream(ctx, peer)
+	})
 	var runner *jobs.Runner
+	// A storage node volunteers as a repair worker: it takes the hub's
+	// signed tasks and answers its surplus hints.
+	var worker *repair.Worker
 	if !*probation {
 		eng, err := engine.New(engine.Config{Network: rc.state.Network, Member: rc.state.Member, Secret: rc.state.MemberSecret, Device: devKey, Cert: &rc.state.Certificate,
-			Manifest: rc.current, Client: shareproto.NewClient(func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
-				e := current()
-				if e == nil {
-					return nil, "", errors.New("the endpoint is handing over")
-				}
-				return e.OpenStream(ctx, peer)
-			}), DB: ldb, SpoolDir: spoolDir, Store: st, Log: rc.log})
+			Manifest: rc.current, Client: client, DB: ldb, SpoolDir: spoolDir, Store: st, Log: rc.log})
 		if err != nil {
 			return err
 		}
@@ -493,6 +507,18 @@ func runAgent(args []string) error {
 		if err != nil {
 			return err
 		}
+		if st != nil {
+			worker, err = repair.New(repair.Config{Device: rc.device, Manifest: rc.current, Client: client, Store: st, Log: rc.log})
+			if err != nil {
+				return err
+			}
+			go worker.Run(ctx)
+		}
+	}
+	var onTask func(*wire.RepairTask, func(*wire.TaskReport) error)
+	var onRelease func(*wire.ReleaseHint)
+	if worker != nil {
+		onTask, onRelease = worker.Handle, worker.Release
 	}
 
 	// census is the heartbeat each hub gets: no address and no path in it.
@@ -518,6 +544,7 @@ func runAgent(args []string) error {
 			default:
 				cs.Storage.State = "ok"
 				cs.Storage.Floor = uint64(st.Floor())
+				cs.Worker = worker != nil
 				if shares, bytes, err := st.Totals(); err == nil {
 					cs.Storage.Shares, cs.Storage.Bytes = uint64(shares), uint64(bytes)
 				}
@@ -574,7 +601,7 @@ func runAgent(args []string) error {
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 			UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
-			OnStream: onStream, Census: census, ShareCensus: shareCensus(st), Log: rc.log,
+			OnStream: onStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, Log: rc.log,
 		})
 		if err != nil {
 			return nil, err
@@ -602,7 +629,7 @@ func runAgent(args []string) error {
 	apiSrv, err := api.Start(ctx, api.Config{
 		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log, Jobs: runner,
 		Snapshot: func() api.Snapshot {
-			s := rc.snapshot(current(), getU())
+			s := rc.snapshot(current(), getU(), worker)
 			js := runner.Status()
 			s.Jobs = &js
 			return s
@@ -857,6 +884,13 @@ func shareCensus(st *store.Store) func(since uint64) (*wire.ShareCensus, error) 
 type manifestPolicy struct{ rc *runtimeConfig }
 
 func (p *manifestPolicy) Network() string { return p.rc.state.Network }
+
+func (p *manifestPolicy) Device() identity.Key { return p.rc.device }
+
+func (p *manifestPolicy) IsHub(k identity.Key) bool {
+	m := p.rc.current()
+	return m != nil && m.HubByKey(k) != nil
+}
 
 func (p *manifestPolicy) MemberStatus(k identity.Key) (bool, bool) {
 	m := p.rc.current()
