@@ -275,7 +275,14 @@ The hub and node sides of the RFC's "Health" section.
   blocked objects with the bytes short, and which hub schedules. The
   slice's exit test runs in process: three nodes, one dies, the hub's
   task restores full placement with the owner idle, the node returns and
-  the surplus is released.
+  the surplus is released. Shipped as alpha.11 the same day; the fleet
+  was on it by 14:30 UTC, the page naming hub-hetzner as the scheduler.
+  The first real table showed 1890 objects with 9 under-placed: seven
+  with every share on one server (the engine's retry after a refusal),
+  one short of a number, one unreadable stub with a single share that
+  only the cleanup of slice 3 can remove. `storage drop` was added for
+  the drill: it removes one share on a node beside the running agent, so
+  a fully placed object loses a share on purpose and the task follows.
 
 ### M6. The second platform and the G2 month
 

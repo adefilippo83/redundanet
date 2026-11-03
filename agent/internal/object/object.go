@@ -294,5 +294,14 @@ func ParseVerifyCap(s string) (VerifyCap, error) {
 // String is the storage index in the capability alphabet.
 func (si StorageIndex) String() string { return enc32(si[:]) }
 
+// ParseStorageIndex reads a storage index as String prints it.
+func ParseStorageIndex(s string) (StorageIndex, error) {
+	b, err := dec32(s, len(StorageIndex{}))
+	if err != nil {
+		return StorageIndex{}, fmt.Errorf("object: storage index: %w", err)
+	}
+	return StorageIndex(b), nil
+}
+
 // String is the hash in the capability alphabet.
 func (h Hash) String() string { return enc32(h[:]) }
