@@ -199,7 +199,13 @@ restore" and "Roots and snapshots".
   Mac service for it hit a second race: launchctl bootout returns before
   the old instance is gone, and the bootstrap that followed failed with
   "Input/output error". The installer now waits for the old instance and
-  retries the bootstrap; a gated test reinstalls a throwaway agent.
+  retries the bootstrap; a gated test reinstalls a throwaway agent. With
+  all three devices on alpha.9 the set backed up in two minutes (113
+  files once node_modules was excluded, a second run two seconds later
+  sent nothing) and the page shows the day. Three files were iCloud Drive
+  placeholders, evicted by optimised storage: a service may not fetch
+  them and the read fails with EDEADLK, so they are listed as skipped;
+  the reason now says they are in the cloud, not on this computer.
 
 ### M5. Health: census table, repair, deletion, rebalance
 

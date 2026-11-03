@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zeebo/blake3"
@@ -266,13 +267,8 @@ func (r *run) scanDir(ctx context.Context, root, dir string) (*snapshot.Entry, e
 		case mode.IsRegular():
 			e, err := r.scanFile(ctx, p)
 			if err != nil {
-				reason := "unreadable"
-				if errors.Is(err, fs.ErrPermission) {
-					reason = "permission denied"
-				} else if ctx.Err() != nil {
-					reason = "interrupted"
-				}
-				entries = append(entries, snapshot.Entry{Name: name, UTF8: u, Kind: snapshot.KindSkipped, Reason: err.Error()})
+				reason, detail := skipReason(ctx, err)
+				entries = append(entries, snapshot.Entry{Name: name, UTF8: u, Kind: snapshot.KindSkipped, Reason: detail})
 				r.skip(reason)
 				continue
 			}
@@ -432,6 +428,24 @@ func (r *run) putBytes(ctx context.Context, b []byte) (string, error) {
 	}
 	r.prog.Uploaded += int64(len(b))
 	return rc.String(), nil
+}
+
+// skipReason classifies a file that could not be read: the reason counted
+// for the page, and the wording the snapshot entry keeps. A placeholder
+// of a file evicted to the cloud (iCloud Drive's optimised storage, or
+// another file provider's online-only file) fails with EDEADLK on macOS
+// when a service is not allowed to fetch it; the backup lists it rather
+// than pulling it down.
+func skipReason(ctx context.Context, err error) (counted, detail string) {
+	switch {
+	case errors.Is(err, fs.ErrPermission):
+		return "permission denied", err.Error()
+	case ctx.Err() != nil:
+		return "interrupted", err.Error()
+	case errors.Is(err, syscall.EDEADLK):
+		return "not on this computer", "evicted to the cloud, not on this computer: " + err.Error()
+	}
+	return "unreadable", err.Error()
 }
 
 // Reasons lists the skip reasons sorted by count, for the page.
