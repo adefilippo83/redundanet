@@ -262,6 +262,12 @@ func TestConversionOnTheGrid(t *testing.T) {
 		return res
 	}
 	run()
+	// A second, identical snapshot: it shares every object with the first,
+	// so the conversion must touch each once.
+	g.mu.Lock()
+	g.now = g.now.Add(time.Hour)
+	g.mu.Unlock()
+	run()
 	conv := func() *collector.Conversion {
 		_, grid, err := g.col.Objects()
 		if err != nil || grid == nil {
@@ -281,30 +287,34 @@ func TestConversionOnTheGrid(t *testing.T) {
 	m2.Network.Encoding = manifest.Encoding{K: 2, N: 3}
 	m2.Network.EncodingTransition = &manifest.Transition{From: manifest.Encoding{K: 2, N: 4}, To: manifest.Encoding{K: 2, N: 3}, Deadline: g.clock().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")}
 	g.setManifest(&m2)
-	// The table holds the six objects of the snapshot once both servers
-	// have reported: a.bin, sub/b.bin, two directories, the top, the index.
+	// The table holds seven objects once both servers have reported:
+	// a.bin, sub/b.bin, two directories, the top, and the two indexes.
 	eventually(t, 30*time.Second, "the hub to see the old encoding", func() bool {
 		c := conv()
-		return c != nil && c.Objects == 6 && c.Converted == 0
+		return c != nil && c.Objects == 7 && c.Converted == 0
 	})
 	before := conv()
 	// The owner converts: every object the snapshot references, the
 	// directories and the index.
 	st, err = Run(ctx, cfg)
-	if err != nil || st.Nothing || st.Done != 1 || st.Snapshots != 1 || st.Objects == 0 || st.From != "2-of-4" || st.To != "2-of-3" {
+	if err != nil || st.Nothing || st.Done != 2 || st.Snapshots != 2 || st.Objects == 0 || st.From != "2-of-4" || st.To != "2-of-3" {
 		t.Fatalf("conversion: %+v %v", st, err)
 	}
 	// a.bin, sub/b.bin, the sub and folder directories, the top directory:
-	// five objects in the walk; the index is published beside them.
+	// five objects in the walk, each once although two snapshots share
+	// them; the index is published beside them.
 	if st.Objects != 5 {
 		t.Fatalf("%d objects re-encoded, want 5", st.Objects)
 	}
 	// The hub's bar reaches the end: as many converted as the old count,
 	// and the old ones still there until the cleanup.
+	// Seven new objects: the five of the walk and an index published after
+	// each snapshot, so progress is durable. The old seven stay until the
+	// cleanup.
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		c := conv()
-		if c != nil && c.Converted == before.Objects && c.Objects == before.Objects+c.Converted {
+		if c != nil && c.Converted == 7 && c.Objects == before.Objects+7 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -314,10 +324,10 @@ func TestConversionOnTheGrid(t *testing.T) {
 	}
 	// A restore reads the converted snapshot.
 	l, err := restore.List(ctx, e, laptop.key)
-	if err != nil || len(l.Devices) != 1 || l.Devices[0].Index == nil || len(l.Devices[0].Index.Snapshots) != 1 {
+	if err != nil || len(l.Devices) != 1 || l.Devices[0].Index == nil || len(l.Devices[0].Index.Snapshots) != 2 {
 		t.Fatalf("listing after conversion: %+v %v", l, err)
 	}
-	snap := l.Devices[0].Index.Snapshots[0]
+	snap := l.Devices[0].Index.Snapshots[1]
 	if d, err := e.Describe(ctx, mustCap(t, snap.Top)); err != nil || d.N != 3 {
 		t.Fatalf("the top directory after conversion: %+v %v", d, err)
 	}
@@ -352,13 +362,13 @@ func TestConversionOnTheGrid(t *testing.T) {
 		t.Fatalf("after the next backup: %+v %v", st, err)
 	}
 	// The old objects are garbage for the cleanup once past the immunity,
-	// and so is the index the conversion published, replaced by the next
-	// backup's.
+	// and so are the two indexes the conversion published, replaced by the
+	// next backup's.
 	g.mu.Lock()
 	g.now = g.now.Add(8 * 24 * time.Hour)
 	g.mu.Unlock()
 	crep, err := cleanup.Run(ctx, cleanup.Config{Grid: e, Member: laptop.key, Now: g.clock, Log: g.log, Force: true})
-	if err != nil || crep.Tombstoned != before.Objects+1 || crep.Reachable != 6 {
+	if err != nil || crep.Tombstoned != before.Objects+2 || crep.Reachable != 6 {
 		t.Fatalf("cleanup after conversion: %+v %v (old objects %d)", crep, err, before.Objects)
 	}
 }

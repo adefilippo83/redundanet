@@ -162,8 +162,14 @@ func TestTransitionalManifestKeepsV2Keys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Schema != 3 || m.Network.Name != "redundanet" || m.Network.Encoding != (Encoding{K: 2, N: 4}) || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
+	e := m.Network.Encoding
+	if m.Schema != 3 || m.Network.Name != "redundanet" || e.K < 1 || e.N < e.K || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
 		t.Fatalf("transitional parse: %+v", m.Network)
+	}
+	// The encoding changes with the community's decisions; what holds is
+	// that a declared transition targets the encoding in force.
+	if tr := m.Network.EncodingTransition; tr != nil && tr.To != e {
+		t.Fatalf("transition %+v does not target the encoding %+v", tr, e)
 	}
 	for _, p := range m.Validate().Errors() {
 		t.Errorf("live manifest: %s", p.Msg)

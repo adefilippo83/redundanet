@@ -331,7 +331,15 @@ The hub and node sides of the RFC's "Health" section.
   converted snapshot, the next backup uploading nothing, and the old
   objects tombstoned by a forced cleanup. The live cleanup of the stalled
   first backup's 1761 objects waits for the immunity to run out on
-  10 November; the first live conversion is a manifest change away.
+  10 November. The live conversion ran the same evening: manifest
+  revision 4 moved the encoding to 2-of-3 with a transition until
+  3 December, and `backup rebalance` on the Mac converted the ten
+  snapshots of its index. The drill showed that snapshots sharing
+  unchanged objects were each walked afresh, re-reading every object and
+  counting it again (no second upload, the cache stopped that); the
+  replacements and the walked directories are now kept for the whole
+  run, so each object is converted once, which the exit test checks with
+  two identical snapshots.
 
 ### M6. The second platform and the G2 month
 
