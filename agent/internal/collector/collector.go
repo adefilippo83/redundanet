@@ -55,6 +55,9 @@ type Config struct {
 	// Placement is the SQLite file of the placement table; "" keeps it in
 	// memory, for tests.
 	Placement string
+	// Signer is the hub's device key, which signs repair tasks; nil means
+	// this hub never schedules repair.
+	Signer *identity.DeviceKey
 	// Publish is a base URL the page and status.json are PUT under every
 	// minute, with PublishToken as the bearer token; "" publishes nothing.
 	Publish      string
@@ -82,6 +85,8 @@ type Collector struct {
 	mu          sync.Mutex
 	entries     map[identity.Key]*entry
 	pl          *placement // the placement table, from the share census
+	send        func(device identity.Key, typ byte, v any) error
+	rep         repairState
 	dirty       bool
 	legacy      *Legacy
 	publishedAt time.Time
@@ -123,7 +128,7 @@ func New(cfg Config) (*Collector, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl}
+	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
 	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
@@ -151,6 +156,14 @@ func (c *Collector) Close() error {
 func (c *Collector) SetLive(live func() hub.Status) {
 	c.mu.Lock()
 	c.cfg.Live = live
+	c.mu.Unlock()
+}
+
+// SetSend gives the collector the hub's channel writer, for repair tasks
+// and release hints; the hub's Send fits.
+func (c *Collector) SetSend(send func(device identity.Key, typ byte, v any) error) {
+	c.mu.Lock()
+	c.send = send
 	c.mu.Unlock()
 }
 
@@ -232,9 +245,11 @@ func (c *Collector) Run(ctx context.Context) {
 	legacy := time.NewTicker(legacyEvery)
 	publish := time.NewTicker(publishEvery)
 	save := time.NewTicker(saveEvery)
+	schedule := time.NewTicker(scheduleEvery)
 	defer legacy.Stop()
 	defer publish.Stop()
 	defer save.Stop()
+	defer schedule.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -242,6 +257,8 @@ func (c *Collector) Run(ctx context.Context) {
 				c.log.Warn("census not saved", "err", err)
 			}
 			return
+		case <-schedule.C:
+			c.Schedule(ctx)
 		case <-legacy.C:
 			if c.cfg.Legacy != "" {
 				c.refreshLegacy(ctx)
@@ -456,6 +473,12 @@ func (c *Collector) Status() Status {
 	objects, grid, err := c.pl.compute(now, alive, servers)
 	if err != nil {
 		c.log.Warn("placement not computed", "err", err)
+	}
+	if grid != nil && m != nil {
+		grid.RepairRunning, grid.RepairDone, grid.RepairFailed = c.taskCounts(now)
+		out := plan(c.planInput(now, m, objects, servers))
+		grid.RepairBlocked, grid.RepairShort = out.blocked, out.short
+		grid.Scheduler = c.rep.scheduler
 	}
 	c.mu.Unlock()
 

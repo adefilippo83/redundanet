@@ -399,3 +399,102 @@ func DecodeRange(ctx context.Context, w io.Writer, rc ReadCap, desc *Descriptor,
 	}
 	return nil
 }
+
+// ---- regenerating shares without the key ----
+
+// Reconstruct regenerates the wanted share numbers from any k shares. It
+// needs no key: Reed-Solomon runs over the ciphertext blocks, which is
+// what lets a repair worker that is not the owner do it. Every source
+// block is checked against its hash list, whose root the signed descriptor
+// fixes, and each regenerated share is checked against its own signed root
+// once its last block is known. sink receives the blocks in segment order,
+// share by share within a segment, before that final check, so a caller
+// that streams them to a server must wait for Reconstruct to return
+// before it lets the server mark the share complete; the server checks
+// the root once more on its side. The hash lists of the wanted shares are
+// returned, indexed like wanted.
+func Reconstruct(ctx context.Context, desc *Descriptor, sources []Source, wanted []uint8, sink func(share uint8, segment int, block []byte) error) ([][]Hash, error) {
+	if err := desc.check(); err != nil {
+		return nil, err
+	}
+	for _, w := range wanted {
+		if int(w) >= int(desc.N) {
+			return nil, fmt.Errorf("object: share number %d of n=%d", w, desc.N)
+		}
+	}
+	geom := desc.Geometry()
+	segments := geom.Segments()
+	usable := map[int]Source{}
+	for _, src := range sources {
+		if src.Share < 0 || src.Share >= int(desc.N) || len(src.Hashes) != segments || ShareRoot(src.Hashes) != desc.ShareRoots[src.Share] {
+			continue
+		}
+		if _, dup := usable[src.Share]; !dup {
+			usable[src.Share] = src
+		}
+	}
+	if len(usable) < int(desc.K) {
+		return nil, ErrNotEnoughShares
+	}
+	rs, err := reedsolomon.New(int(desc.K), int(desc.N)-int(desc.K))
+	if err != nil {
+		return nil, err
+	}
+	order := make([]int, 0, len(usable))
+	for i := 0; i < int(desc.N); i++ {
+		if _, ok := usable[i]; ok {
+			order = append(order, i)
+		}
+	}
+	hashes := make([][]Hash, len(wanted))
+	for i := range hashes {
+		hashes[i] = make([]Hash, segments)
+	}
+	for s := 0; s < segments; s++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		shards := make([][]byte, desc.N)
+		have := 0
+		var lastErr error
+		for _, i := range order {
+			if have == int(desc.K) {
+				break
+			}
+			src := usable[i]
+			b, err := src.Read(ctx, s)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if len(b) != geom.BlockSize(s) || Sum(b) != src.Hashes[s] {
+				lastErr = ErrCorrupt
+				continue
+			}
+			shards[i] = b
+			have++
+		}
+		if have < int(desc.K) {
+			if lastErr != nil {
+				return nil, fmt.Errorf("%w (segment %d: %v)", ErrNotEnoughShares, s, lastErr)
+			}
+			return nil, ErrNotEnoughShares
+		}
+		if err := rs.Reconstruct(shards); err != nil {
+			return nil, fmt.Errorf("object: reconstruct segment %d: %w", s, err)
+		}
+		for i, w := range wanted {
+			b := shards[w]
+			hashes[i][s] = Sum(b)
+			if err := sink(w, s, b); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for i, w := range wanted {
+		if ShareRoot(hashes[i]) != desc.ShareRoots[w] {
+			return nil, fmt.Errorf("%w: regenerated share %d does not match its signed root", ErrCorrupt, w)
+		}
+	}
+	return hashes, nil
+}

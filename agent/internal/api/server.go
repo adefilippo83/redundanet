@@ -25,6 +25,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/repair"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
@@ -44,6 +45,7 @@ type Snapshot struct {
 	Membership *membership.Status `json:"membership,omitempty"`
 	Update     *update.Status     `json:"update,omitempty"`
 	Jobs       *jobs.Status       `json:"jobs,omitempty"`
+	Repair     *repair.Status     `json:"repair,omitempty"` // a storage node's repair worker
 	Service    *service.Status    `json:"service,omitempty"`
 	Generated  time.Time          `json:"generated"`
 }

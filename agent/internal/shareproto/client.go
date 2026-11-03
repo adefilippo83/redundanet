@@ -9,6 +9,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // Opener opens a stream to a peer; the endpoint's OpenStream fits.
@@ -173,7 +174,18 @@ func (p *PutStream) Abandon() {
 
 // BeginPut opens a put for share n and learns where to start.
 func (c *Client) BeginPut(ctx context.Context, peer identity.Key, sd *object.SignedDescriptor, n uint8) (*PutStream, error) {
-	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypePut, StorageIndex: sd.Descriptor.StorageIndex, Number: n, Descriptor: sd})
+	return c.beginPut(ctx, peer, sd, n, nil)
+}
+
+// BeginRepairPut is BeginPut by a repair worker: the hub's signed task
+// travels with the request, and the server checks it before it accepts a
+// share from a device that is not the owner's.
+func (c *Client) BeginRepairPut(ctx context.Context, peer identity.Key, sd *object.SignedDescriptor, n uint8, task *wire.RepairTask) (*PutStream, error) {
+	return c.beginPut(ctx, peer, sd, n, task)
+}
+
+func (c *Client) beginPut(ctx context.Context, peer identity.Key, sd *object.SignedDescriptor, n uint8, task *wire.RepairTask) (*PutStream, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypePut, StorageIndex: sd.Descriptor.StorageIndex, Number: n, Descriptor: sd, Task: task})
 	if err != nil {
 		return nil, err
 	}

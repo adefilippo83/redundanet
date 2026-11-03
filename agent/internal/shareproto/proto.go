@@ -13,6 +13,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // Request types.
@@ -56,6 +57,7 @@ type Request struct {
 	HashesOnly   bool                     `cbor:"hashes_only"`          // get: the hash list, no blocks
 	Member       identity.Key             `cbor:"member"`               // get-roots
 	Root         *RootEnvelope            `cbor:"root,omitempty"`       // put-root
+	Task         *wire.RepairTask         `cbor:"task,omitempty"`       // put by a repair worker: the hub's signed order
 }
 
 // Response answers a request; for put it precedes the blocks and a second

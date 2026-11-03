@@ -38,6 +38,9 @@ const (
 	FramePong       byte = 8
 	FrameCensus     byte = 9  // device to hub: Census
 	FrameShares     byte = 10 // device to hub: ShareCensus, chunked
+	FrameTask       byte = 11 // hub to device: RepairTask, signed by the hub
+	FrameTaskReport byte = 12 // device to hub: TaskReport
+	FrameRelease    byte = 13 // hub to device: ReleaseHint
 )
 
 // MaxFrame bounds a frame payload.
@@ -81,6 +84,7 @@ type Census struct {
 	Peers    []CensusPeer   `cbor:"peers" json:"peers"`
 	Update   string         `cbor:"update,omitempty" json:"update,omitempty"` // the self-updater's last word
 	Backup   *CensusBackup  `cbor:"backup,omitempty" json:"backup,omitempty"`
+	Worker   bool           `cbor:"worker,omitempty" json:"worker,omitempty"` // volunteers as a repair worker
 }
 
 // CensusBackup is what a device says about its backups: dates only, the

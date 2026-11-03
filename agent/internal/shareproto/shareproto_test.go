@@ -18,6 +18,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // A member with one device on the mesh.
@@ -51,17 +52,22 @@ func newMember(t *testing.T, b byte, roles ...string) *member {
 
 // policy is the manifest as the server sees it.
 type policy struct {
+	self    identity.Key
+	hubs    map[identity.Key]bool
 	mu      sync.Mutex
 	active  map[identity.Key]bool
+	leaving map[identity.Key]bool
 	capFor  map[identity.Key]int64
 	allowed map[identity.Key]bool
 }
 
-func (p *policy) Network() string { return "testnet" }
+func (p *policy) Network() string           { return "testnet" }
+func (p *policy) Device() identity.Key      { return p.self }
+func (p *policy) IsHub(k identity.Key) bool { return p.hubs[k] }
 func (p *policy) MemberStatus(m identity.Key) (bool, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.active[m], false
+	return p.active[m], p.leaving[m]
 }
 func (p *policy) OwnerCap(o identity.Key) int64 {
 	p.mu.Lock()
@@ -95,7 +101,7 @@ func newWorld(t *testing.T) *world {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	w := &world{ctx: ctx, pol: &policy{active: map[identity.Key]bool{}, capFor: map[identity.Key]int64{}, allowed: map[identity.Key]bool{}}}
+	w := &world{ctx: ctx, pol: &policy{hubs: map[identity.Key]bool{}, active: map[identity.Key]bool{}, leaving: map[identity.Key]bool{}, capFor: map[identity.Key]int64{}, allowed: map[identity.Key]bool{}}}
 	w.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	h := newMember(t, 100, identity.RoleHub)
 	w.pol.allowed[h.dev.ID()] = true
@@ -116,6 +122,7 @@ func newWorld(t *testing.T) *world {
 	w.st = st
 	w.server = newMember(t, 1, identity.RoleClient, identity.RoleStorage)
 	w.pol.active[w.server.key] = true
+	w.pol.self = w.server.dev.ID()
 	srv := NewServer(st, w.pol, w.log)
 	w.srvEp = w.endpoint(t, w.server, srv.Handle)
 	return w
@@ -387,5 +394,106 @@ func TestStreamsAreReleased(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request %d: %v", i+1, err)
 		}
+	}
+}
+
+// A device of another member stores a share only as a repair worker with
+// a task a hub signed, and then past the owner's cap, never past a
+// tombstone.
+func TestRepairPutNeedsAValidTask(t *testing.T) {
+	w := newWorld(t)
+	peer := w.server.dev.ID()
+	alice := w.server
+	bob := newMember(t, 2, identity.RoleClient, identity.RoleStorage)
+	w.pol.mu.Lock()
+	w.pol.active[bob.key] = true
+	w.pol.mu.Unlock()
+	hubSigner, _ := identity.NewDeviceKey()
+	w.pol.mu.Lock()
+	w.pol.hubs[hubSigner.ID()] = true
+	w.pol.mu.Unlock()
+	bc, ctx, worker := client(t, w, bob)
+	o := encode(t, alice, 3*8192+100, 3)
+	si := o.sd.Descriptor.StorageIndex
+	dhash, _ := o.sd.Descriptor.Hash()
+	task := func(worker identity.Key, number uint8, server identity.Key, expires time.Duration, signer *identity.DeviceKey) *wire.RepairTask {
+		tk := &wire.RepairTask{Network: "testnet", ID: 1, StorageIndex: si, Owner: alice.key, DescriptorHash: dhash, Worker: worker,
+			Shares: []wire.RepairShare{{Number: number, Server: server}}, Issued: time.Now(), Expires: time.Now().Add(expires)}
+		if err := tk.Sign(signer); err != nil {
+			t.Fatal(err)
+		}
+		return tk
+	}
+	putWith := func(number uint8, tk *wire.RepairTask) error {
+		ps, err := bc.BeginRepairPut(ctx, peer, o.sd, number, tk)
+		if err != nil {
+			return err
+		}
+		for s := range o.blocks[number] {
+			if err := ps.Write(s, o.blocks[number][s]); err != nil {
+				ps.Abandon()
+				return err
+			}
+		}
+		return ps.Finish()
+	}
+	me := worker.dev.ID()
+	if err := bc.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) { return o.blocks[2][s], nil }); !isStatus(err, StatusRefused) {
+		t.Fatalf("a stranger's put without a task: %v", err)
+	}
+	stranger, _ := identity.NewDeviceKey()
+	var other identity.Key
+	other[0] = 7
+	for name, tk := range map[string]*wire.RepairTask{
+		"signed by a key that is not a hub": task(me, 2, peer, time.Hour, stranger),
+		"naming another worker":             task(other, 2, peer, time.Hour, hubSigner),
+		"naming another server":             task(me, 2, other, time.Hour, hubSigner),
+		"naming another share number":       task(me, 3, peer, time.Hour, hubSigner),
+		"expired":                           task(me, 2, peer, -time.Minute, hubSigner),
+	} {
+		if err := putWith(2, tk); !isStatus(err, StatusRefused) {
+			t.Fatalf("task %s: %v", name, err)
+		}
+	}
+	if err := putWith(2, task(me, 2, peer, time.Hour, hubSigner)); err != nil {
+		t.Fatalf("a valid task: %v", err)
+	}
+	p, err := bc.Has(ctx, peer, si)
+	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 2 || p.Owner != alice.key {
+		t.Fatalf("after the repair put: %+v %v", p, err)
+	}
+	// The same put again moves nothing.
+	if ps, err := bc.BeginRepairPut(ctx, peer, o.sd, 2, task(me, 2, peer, time.Hour, hubSigner)); err != nil || !ps.Complete() {
+		t.Fatalf("repeat: %v", err)
+	} else {
+		ps.Abandon()
+	}
+	// Past the owner's cap: the owner is refused, repair goes through.
+	w.pol.mu.Lock()
+	w.pol.capFor[alice.key] = 0
+	w.pol.mu.Unlock()
+	ac, actx, _ := client(t, w, alice)
+	if err := ac.PutShare(actx, peer, o.sd, 0, func(s int) ([]byte, error) { return o.blocks[0][s], nil }); !isStatus(err, StatusQuota) {
+		t.Fatalf("owner past the cap: %v", err)
+	}
+	if err := putWith(0, task(me, 0, peer, time.Hour, hubSigner)); err != nil {
+		t.Fatalf("repair past the cap: %v", err)
+	}
+	// A leaving member: writes refused, repair on their behalf continues.
+	w.pol.mu.Lock()
+	w.pol.active[alice.key], w.pol.leaving[alice.key] = false, true
+	w.pol.mu.Unlock()
+	if err := ac.PutShare(actx, peer, o.sd, 1, func(s int) ([]byte, error) { return o.blocks[1][s], nil }); !isStatus(err, StatusRefused) {
+		t.Fatalf("leaving owner: %v", err)
+	}
+	if err := putWith(1, task(me, 1, peer, time.Hour, hubSigner)); err != nil {
+		t.Fatalf("repair for a leaving member: %v", err)
+	}
+	// A tombstone is never crossed by repair.
+	if err := w.st.Tombstone(si, alice.key, dhash, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := putWith(3, task(me, 3, peer, time.Hour, hubSigner)); !isStatus(err, StatusTombstoned) {
+		t.Fatalf("repair of a tombstoned object: %v", err)
 	}
 }

@@ -48,6 +48,9 @@ func openPlacement(path string) (*placement, error) {
 			purged INTEGER NOT NULL, PRIMARY KEY (device, si))`,
 		`CREATE TABLE IF NOT EXISTS devices (device BLOB PRIMARY KEY, generation INTEGER NOT NULL, updated INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS objects (si BLOB PRIMARY KEY, first_seen INTEGER NOT NULL, last_change INTEGER NOT NULL, reached INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, si BLOB NOT NULL, worker BLOB NOT NULL, issued INTEGER NOT NULL,
+			expires INTEGER NOT NULL, bytes INTEGER NOT NULL, task BLOB NOT NULL, state TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT '', ended INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			_ = db.Close()
@@ -208,6 +211,13 @@ type Grid struct {
 	Quiescing   int            `json:"quiescing"`    // under-placed but younger than the quiescence window
 	Repair      int            `json:"repair"`       // objects a repair task is due for
 	Bytes       int64          `json:"bytes"`        // bytes of complete shares on servers not dead
+	// The repair scheduler's view, filled by the collector.
+	RepairRunning int    `json:"repair_running"`      // tasks handed to workers and not yet closed
+	RepairDone    int    `json:"repair_done_24h"`     // tasks closed as done in the last day
+	RepairFailed  int    `json:"repair_failed_24h"`   // tasks that failed or expired in the last day
+	RepairBlocked int    `json:"repair_blocked"`      // objects due with no server to place on
+	RepairShort   int64  `json:"repair_short_bytes"`  // bytes the live servers lack above their floors for them
+	Scheduler     string `json:"scheduler,omitempty"` // the hub scheduling repair, as this hub sees it
 }
 
 // compute walks the table once and classifies every object. alive lists

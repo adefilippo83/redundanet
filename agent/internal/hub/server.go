@@ -31,7 +31,9 @@ type Config struct {
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
 	// OnShares receives a storage node's share census chunks.
 	OnShares func(peer identity.Peer, c *wire.ShareCensus)
-	Log      *slog.Logger
+	// OnTaskReport receives a repair worker's word on a task.
+	OnTaskReport func(peer identity.Peer, r *wire.TaskReport)
+	Log          *slog.Logger
 }
 
 var quicConfig = &quic.Config{
@@ -313,11 +315,34 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			if s.cfg.OnShares != nil {
 				s.cfg.OnShares(c.peer, &sc)
 			}
+		case wire.FrameTaskReport:
+			var r wire.TaskReport
+			if err := identity.UnmarshalLenient(payload, &r); err != nil {
+				return
+			}
+			if s.cfg.OnTaskReport != nil {
+				s.cfg.OnTaskReport(c.peer, &r)
+			}
 		case wire.FramePing:
 			_ = c.w.Frame(wire.FramePong, nil)
 		case wire.FramePong:
 		}
 	}
+}
+
+// ErrNoChannel is Send's answer for a device without a channel right now.
+var ErrNoChannel = errors.New("hub: the device has no channel")
+
+// Send writes a control frame to a device on its channel: how the
+// collector hands a repair task or a release hint to a storage node.
+func (s *Server) Send(device identity.Key, typ byte, v any) error {
+	s.mu.Lock()
+	c := s.clients[device]
+	s.mu.Unlock()
+	if c == nil {
+		return ErrNoChannel
+	}
+	return c.w.Message(typ, v)
 }
 
 func (c *client) candidates() []string {

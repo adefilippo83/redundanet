@@ -31,9 +31,22 @@ func (p *Put) Resume() int { return p.received }
 func (p *Put) Segments() int { return p.geom.Segments() }
 
 // BeginPut starts or resumes receiving share n of the object the signed
-// descriptor describes. The descriptor must already be verified by the
-// caller. It returns ErrAlreadyComplete when nothing needs moving.
+// descriptor describes, from a device of the owner. The descriptor must
+// already be verified by the caller. It returns ErrAlreadyComplete when
+// nothing needs moving. An upload from the owner clears a tombstone the
+// owner issued.
 func (s *Store) BeginPut(sd *object.SignedDescriptor, n uint8) (*Put, error) {
+	return s.beginPut(sd, n, false)
+}
+
+// BeginRepair is BeginPut for a repair worker that is not the owner: a
+// tombstone is never cleared, the write is refused instead, so a deleted
+// object never comes back through repair.
+func (s *Store) BeginRepair(sd *object.SignedDescriptor, n uint8) (*Put, error) {
+	return s.beginPut(sd, n, true)
+}
+
+func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Put, error) {
 	if err := s.Available(); err != nil {
 		return nil, err
 	}
@@ -55,7 +68,7 @@ func (s *Store) BeginPut(sd *object.SignedDescriptor, n uint8) (*Put, error) {
 			return nil, ErrDescriptor
 		}
 		if pres.Tombstoned {
-			if pres.TombstoneOwner != d.Owner {
+			if repair || pres.TombstoneOwner != d.Owner {
 				return nil, ErrTombstoned
 			}
 			// An upload from a device of the owner clears the tombstone.

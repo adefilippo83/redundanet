@@ -65,7 +65,12 @@ type Config struct {
 	// a generation; the endpoint sends it to each hub in chunks whenever
 	// the generation moved.
 	ShareCensus func(since uint64) (*wire.ShareCensus, error)
-	Log         *slog.Logger
+	// OnTask receives a repair task a hub sent; report answers that hub on
+	// the same channel. It must not block: the worker queues the task.
+	OnTask func(t *wire.RepairTask, report func(*wire.TaskReport) error)
+	// OnRelease receives a hub's hint that this node holds a surplus share.
+	OnRelease func(h *wire.ReleaseHint)
+	Log       *slog.Logger
 }
 
 // Endpoint is one device's presence on the mesh.
@@ -147,9 +152,16 @@ func Start(ctx context.Context, cfg Config) (*Endpoint, error) {
 	return ep, nil
 }
 
-// Close stops everything.
+// Close stops everything, telling each hub goodbye first so its view of
+// this device is current at once.
 func (e *Endpoint) Close() error {
 	e.cancel()
+	e.mu.Lock()
+	hubs := append([]*hubClient(nil), e.hubs...)
+	e.mu.Unlock()
+	for _, h := range hubs {
+		h.goodbye()
+	}
 	_ = e.ln.Close()
 	err := e.tr.Close()
 	// quic-go closes only sockets it opened itself; this one is ours, and a
