@@ -36,7 +36,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `backup` (add, remove, list, run, verify), `restore` (list, browse, start, status), `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `storage` (has, drop), `backup` (add, remove, list, run, verify), `restore` (list, browse, start, status), `status`, `open`, `logs`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -59,6 +59,7 @@ redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
 redundanet object put|get|has|check|repair --network NAME FILE|CAP
+redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
@@ -115,7 +116,12 @@ an object has more complete shares than n, the hub hints at the holder
 with the most shares; that holder asks the other holders itself and gives
 its copy up only once every share number stays complete without it.
 Tasks live in `placement.sqlite` with the table, so a hub restart neither
-loses nor doubles them.
+loses nor doubles them. `storage drop`, run on a node as the service user
+beside the running agent, removes one share on purpose: the census
+reports the loss within seconds and, since the object had been fully
+placed, the hub issues a task at once. That is how repair is drilled on
+a live network, and `object check CAP` from any device of the owner
+prints the storage index and the holders to pick from.
 The collector serves the status page and `status.json` on
 `--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
 so today's nodes stay visible beside the new devices until G3. With

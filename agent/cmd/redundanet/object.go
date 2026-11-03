@@ -195,6 +195,7 @@ func objectCheck(ctx context.Context, e *engine.Native, capStr string, repair bo
 		h, err = e.Check(ctx, rc)
 	}
 	if h != nil {
+		fmt.Printf("storage index %s\n", rc.Key.StorageIndex())
 		fmt.Println(describe(h))
 		for dev, shares := range h.Holders {
 			fmt.Printf("  %s holds %v\n", dev.Short(), shares)
