@@ -63,7 +63,8 @@ type Object struct {
 	PlaintextHash object.Hash
 	Params        object.Params
 	Cap           object.ReadCap
-	Placed        int // distinct complete share numbers known at the last put or check
+	Placed        int       // distinct complete share numbers known at the last put or check
+	LastUsed      time.Time // the previous lookup, before this one: when the grid last confirmed it
 }
 
 // RememberObject records an object under its plaintext hash and encoding.
@@ -81,8 +82,9 @@ func (d *DB) RememberObject(o Object) error {
 func (d *DB) LookupObject(h object.Hash, p object.Params) (*Object, error) {
 	var capStr string
 	var placed int
-	err := d.db.QueryRow(`SELECT cap, placed FROM objects WHERE plaintext_hash = ? AND k = ? AND nn = ? AND segment_size = ?`,
-		h[:], p.K, p.N, p.SegmentSize).Scan(&capStr, &placed)
+	var lastUsed int64
+	err := d.db.QueryRow(`SELECT cap, placed, last_used FROM objects WHERE plaintext_hash = ? AND k = ? AND nn = ? AND segment_size = ?`,
+		h[:], p.K, p.N, p.SegmentSize).Scan(&capStr, &placed, &lastUsed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -93,8 +95,13 @@ func (d *DB) LookupObject(h object.Hash, p object.Params) (*Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _ = d.db.Exec(`UPDATE objects SET last_used = ? WHERE plaintext_hash = ? AND k = ? AND nn = ? AND segment_size = ?`, d.now().Unix(), h[:], p.K, p.N, p.SegmentSize)
-	return &Object{PlaintextHash: h, Params: p, Cap: rc, Placed: placed}, nil
+	return &Object{PlaintextHash: h, Params: p, Cap: rc, Placed: placed, LastUsed: time.Unix(lastUsed, 0)}, nil
+}
+
+// Forget drops an object the grid no longer confirms.
+func (d *DB) Forget(h object.Hash, p object.Params) error {
+	_, err := d.db.Exec(`DELETE FROM objects WHERE plaintext_hash = ? AND k = ? AND nn = ? AND segment_size = ?`, h[:], p.K, p.N, p.SegmentSize)
+	return err
 }
 
 // UnderPlaced lists objects whose last known placement is below n.
@@ -201,9 +208,18 @@ func (d *DB) RememberScan(r ScanRow) error {
 }
 
 // OldestHashed lists the paths whose hash is oldest, for the rolling
-// re-hash: a file that defeats every timestamp is still caught.
+// re-hash: about 1% of the known paths per run, at least one and at most
+// limit, so a file that defeats every timestamp is still caught.
 func (d *DB) OldestHashed(limit int) (map[string]bool, error) {
-	rows, err := d.db.Query(`SELECT path FROM scan ORDER BY last_hashed ASC LIMIT ?`, limit)
+	var n int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM scan`).Scan(&n); err != nil {
+		return nil, err
+	}
+	take := max(1, n/100)
+	if take > limit {
+		take = limit
+	}
+	rows, err := d.db.Query(`SELECT path FROM scan ORDER BY last_hashed ASC LIMIT ?`, take)
 	if err != nil {
 		return nil, err
 	}

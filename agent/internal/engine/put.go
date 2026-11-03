@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/zeebo/blake3"
 
@@ -41,7 +42,7 @@ func (e *Native) Put(ctx context.Context, r io.Reader, size int64) (object.ReadC
 	}
 	var ph object.Hash
 	copy(ph[:], h.Sum(nil))
-	if o, _ := e.cfg.DB.LookupObject(ph, p); o != nil && o.Placed >= int(p.N) {
+	if o, _ := e.cfg.DB.LookupObject(ph, p); o != nil && o.Placed >= int(p.N) && e.fresh(o) {
 		return o.Cap, nil
 	}
 	key := object.DeriveKey(e.conv, ph, p)
@@ -159,7 +160,7 @@ func (e *Native) Has(ctx context.Context, ph object.Hash, size int64) (object.Re
 	if err != nil {
 		return object.ReadCap{}, false, err
 	}
-	if o, _ := e.cfg.DB.LookupObject(ph, p); o != nil && o.Placed >= int(p.K) {
+	if o, _ := e.cfg.DB.LookupObject(ph, p); o != nil && o.Placed >= int(p.K) && e.fresh(o) {
 		return o.Cap, true, nil
 	}
 	key := object.DeriveKey(e.conv, ph, p)
@@ -185,3 +186,16 @@ func (e *Native) Has(ctx context.Context, ph object.Hash, size int64) (object.Re
 }
 
 var errNoDescriptor = errors.New("engine: no server could give the descriptor")
+
+// reuseProbe is how long the local database's word on an object is taken
+// without asking the servers. A reuse through the cache alone never
+// touches the object on the servers, and the owner's cleanup deletes what
+// no root references once it has gone untouched for the immunity; so
+// an object the cache has not confirmed within the immunity is probed,
+// which touches it on every server and finds a tombstone in time to
+// upload again.
+const reuseProbe = 6 * 24 * time.Hour
+
+func (e *Native) fresh(o *localdb.Object) bool {
+	return e.cfg.Now().Sub(o.LastUsed) < reuseProbe
+}

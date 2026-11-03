@@ -381,3 +381,213 @@ func TestRoots(t *testing.T) {
 		t.Fatalf("kept %d versions, want %d", kept, keepRoots+1)
 	}
 }
+
+func TestDeleteTokensAndTheWindow(t *testing.T) {
+	s, c := newStore(t)
+	o := newOwner(t, 1)
+	ob := encode(t, o, data(9000, 6))
+	si := ob.sd.Descriptor.StorageIndex
+	dh, _ := ob.sd.Descriptor.Hash()
+	putAll(t, s, ob, 0)
+	putAll(t, s, ob, 1)
+	uploaded := c.t
+	// Nothing held: nothing to do, no error.
+	var other object.StorageIndex
+	other[0] = 0xff
+	if p, err := s.ApplyDelete(other, o.member, dh, c.t); err != nil || p != nil {
+		t.Fatalf("delete of nothing: %+v %v", p, err)
+	}
+	// Within the immunity the token is refused; so is another member's,
+	// another descriptor's, and one issued before the last touch.
+	if _, err := s.ApplyDelete(si, o.member, dh, c.t); !errors.Is(err, ErrRecent) {
+		t.Fatalf("within the immunity: %v", err)
+	}
+	c.t = c.t.Add(Immunity + time.Hour)
+	stranger := newOwner(t, 2)
+	if _, err := s.ApplyDelete(si, stranger.member, dh, c.t); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("another member's token: %v", err)
+	}
+	var otherHash object.Hash
+	otherHash[0] = 1
+	if _, err := s.ApplyDelete(si, o.member, otherHash, c.t); !errors.Is(err, ErrDescriptor) {
+		t.Fatalf("another descriptor: %v", err)
+	}
+	if _, err := s.ApplyDelete(si, o.member, dh, uploaded.Add(-time.Minute)); !errors.Is(err, ErrStale) {
+		t.Fatalf("a token older than the last touch: %v", err)
+	}
+	// A touch by the owner restarts the immunity.
+	if err := s.Touch(si); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApplyDelete(si, o.member, dh, c.t); !errors.Is(err, ErrRecent) {
+		t.Fatalf("after a touch: %v", err)
+	}
+	c.t = c.t.Add(Immunity + time.Hour)
+	p, err := s.ApplyDelete(si, o.member, dh, c.t)
+	if err != nil || !p.Tombstoned || p.Purged {
+		t.Fatalf("delete: %+v %v", p, err)
+	}
+	if p, err := s.ApplyDelete(si, o.member, dh, c.t); err != nil || !p.Tombstoned {
+		t.Fatalf("delete twice: %+v %v", p, err)
+	}
+	// Undelete within the window brings it back; after the purge it cannot.
+	if err := s.Undelete(si, stranger.member); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("a stranger's undelete: %v", err)
+	}
+	if err := s.Undelete(si, o.member); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.Has(si); p.Tombstoned {
+		t.Fatal("undelete left the tombstone")
+	}
+	if _, err := s.ApplyDelete(si, o.member, dh, c.t); err != nil {
+		t.Fatal(err)
+	}
+	// The window: nothing purged before it, the shares gone after it, the
+	// record kept and reported as purged by the census, repair refused,
+	// the owner's upload accepted again.
+	c.t = c.t.Add(TombstoneWindow - time.Hour)
+	if n, err := s.PurgeTombstones(); err != nil || n != 0 {
+		t.Fatalf("purge before the window: %d %v", n, err)
+	}
+	c.t = c.t.Add(2 * time.Hour)
+	if n, err := s.PurgeTombstones(); err != nil || n != 1 {
+		t.Fatalf("purge after the window: %d %v", n, err)
+	}
+	p, _ = s.Has(si)
+	if p == nil || !p.Tombstoned || !p.Purged || len(p.Complete) != 0 {
+		t.Fatalf("after the purge: %+v", p)
+	}
+	d, _ := s.Census(0)
+	if len(d.Added) != 0 || len(d.Tombstones) != 1 || !d.Tombstones[0].Purged {
+		t.Fatalf("census after the purge: %+v", d)
+	}
+	if err := s.Undelete(si, o.member); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("undelete after the purge: %v", err)
+	}
+	if _, err := s.BeginRepair(ob.sd, 0); !errors.Is(err, ErrTombstoned) {
+		t.Fatalf("repair after the purge: %v", err)
+	}
+	putAll(t, s, ob, 0)
+	if p, _ := s.Has(si); p.Tombstoned || len(p.Complete) != 1 {
+		t.Fatalf("the owner's upload after the purge: %+v", p)
+	}
+	// A purged record is dropped long after.
+	if _, err := s.ApplyDelete(si, o.member, dh, c.t.Add(Immunity+time.Hour)); err != nil {
+		c.t = c.t.Add(Immunity + time.Hour)
+		if _, err := s.ApplyDelete(si, o.member, dh, c.t); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.t = c.t.Add(TombstoneWindow + time.Hour)
+	_, _ = s.PurgeTombstones()
+	c.t = c.t.Add(tombstoneKeep + time.Hour)
+	_, _ = s.PurgeTombstones()
+	if p, _ := s.Has(si); p != nil {
+		t.Fatalf("the record outlived its keep: %+v", p)
+	}
+}
+
+func TestListOwnerPages(t *testing.T) {
+	s, c := newStore(t)
+	o := newOwner(t, 1)
+	stranger := newOwner(t, 2)
+	var sis []object.StorageIndex
+	for i := 0; i < 5; i++ {
+		ob := encode(t, o, data(100+i, byte(i)))
+		putAll(t, s, ob, 0)
+		sis = append(sis, ob.sd.Descriptor.StorageIndex)
+	}
+	putAll(t, s, encode(t, stranger, data(100, 9)), 0)
+	dh, _ := encode(t, o, data(100, 0)).sd.Descriptor.Hash()
+	c.t = c.t.Add(Immunity + time.Hour)
+	if _, err := s.ApplyDelete(sis[0], o.member, dh, c.t); err != nil {
+		t.Fatal(err)
+	}
+	var all []Listed
+	var after object.StorageIndex
+	pages := 0
+	for {
+		page, more, err := s.ListOwner(o.member, after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages++
+		all = append(all, page...)
+		if !more {
+			break
+		}
+		after = page[len(page)-1].StorageIndex
+	}
+	if len(all) != 5 || pages != 3 {
+		t.Fatalf("listed %d in %d pages", len(all), pages)
+	}
+	tomb := 0
+	for i, l := range all {
+		if i > 0 && bytes.Compare(all[i-1].StorageIndex[:], l.StorageIndex[:]) >= 0 {
+			t.Fatal("not in storage index order")
+		}
+		if l.Tombstoned {
+			tomb++
+		}
+		if l.LastTouched.IsZero() {
+			t.Fatal("no last touch")
+		}
+	}
+	if tomb != 1 {
+		t.Fatalf("%d tombstoned", tomb)
+	}
+}
+
+func TestMembershipGrace(t *testing.T) {
+	s, c := newStore(t)
+	alice, bob := newOwner(t, 1), newOwner(t, 2)
+	a := encode(t, alice, data(500, 1))
+	b := encode(t, bob, data(500, 2))
+	putAll(t, s, a, 0)
+	putAll(t, s, b, 0)
+	if err := s.PutRoot(RootRecord{Member: bob.member, Device: bob.dev.ID(), Version: 1, Envelope: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	active := map[identity.Key]bool{alice.member: true, bob.member: true}
+	status := func(m identity.Key) bool { return active[m] }
+	grace := 30 * 24 * time.Hour
+	if purged, err := s.ApplyMembership(status, grace); err != nil || len(purged) != 0 {
+		t.Fatalf("all active: %v %v", purged, err)
+	}
+	// Bob leaves: noted, nothing purged until the grace has run.
+	active[bob.member] = false
+	if purged, _ := s.ApplyMembership(status, grace); len(purged) != 0 {
+		t.Fatal("purged at once")
+	}
+	c.t = c.t.Add(grace - time.Hour)
+	if purged, _ := s.ApplyMembership(status, grace); len(purged) != 0 {
+		t.Fatal("purged before the grace")
+	}
+	// Bob comes back: the note goes, and leaving again starts afresh.
+	active[bob.member] = true
+	_, _ = s.ApplyMembership(status, grace)
+	active[bob.member] = false
+	c.t = c.t.Add(2 * time.Hour)
+	if purged, _ := s.ApplyMembership(status, grace); len(purged) != 0 {
+		t.Fatal("a reverted leave counted the old clock")
+	}
+	c.t = c.t.Add(grace + time.Hour)
+	purged, err := s.ApplyMembership(status, grace)
+	if err != nil || len(purged) != 1 || purged[0] != bob.member {
+		t.Fatalf("after the grace: %v %v", purged, err)
+	}
+	if p, _ := s.Has(b.sd.Descriptor.StorageIndex); p != nil {
+		t.Fatalf("bob's share stayed: %+v", p)
+	}
+	if roots, _ := s.Roots(bob.member); len(roots) != 0 {
+		t.Fatal("bob's root stayed")
+	}
+	if p, _ := s.Has(a.sd.Descriptor.StorageIndex); p == nil || len(p.Complete) != 1 {
+		t.Fatal("alice's share went")
+	}
+	d, _ := s.Census(0)
+	if len(d.Added) != 1 {
+		t.Fatalf("census after the purge: %d shares", len(d.Added))
+	}
+}

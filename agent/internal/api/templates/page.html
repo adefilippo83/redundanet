@@ -73,6 +73,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
   </table>{{else}}<p class="muted">No backup set yet: <code class="cmd">redundanet backup add NAME FOLDER</code></p>{{end}}
   <div class="kv" style="margin-top:8px"><b>every</b><span>{{.Every}}</span>
     <b>last verified restore</b><span>{{with .LastVerify}}{{since .At}}: {{.Verified}} of {{.Sampled}} files read back{{if .Failed}}, <span class="bad">{{len .Failed}} failed</span>{{end}}{{else}}never{{end}}</span>
+    <b>cleanup</b><span>{{if .Cleaning}}<span class="ok">running</span>{{else}}{{with .LastCleanup}}{{since .At}}: {{.Reachable}} objects live, {{.Tombstoned}} deleted{{if .Recent}}, {{.Recent}} waiting out the immunity{{end}}{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}{{else}}never{{end}}{{end}}</span>
     {{with .Restore}}<b>restore</b><span>{{if .Running}}running: {{.Path}} to {{.Target}}{{else if .Err}}<span class="bad">{{.Err}}</span>{{else if .Report}}{{.Report.Files}} files to {{.Target}}{{if .Report.Exceptions}}, {{len .Report.Exceptions}} exceptions{{end}}{{end}}</span>{{end}}
   </div>
   <p style="margin:10px 0 0">

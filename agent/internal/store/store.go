@@ -39,6 +39,19 @@ var (
 	ErrOutOfOrder      = errors.New("store: blocks must arrive in segment order")
 	ErrRoot            = errors.New("store: the blocks do not match the signed share root")
 	ErrLowerVersion    = errors.New("store: a root with this version or a higher one is already held")
+	ErrRecent          = errors.New("store: the object was touched by its owner in the last 7 days")
+	ErrStale           = errors.New("store: the delete token was issued before the object was last touched")
+	ErrNotOwner        = errors.New("store: the object belongs to another member")
+)
+
+// Windows of RFC 0001's "Deletion": an object touched by its owner within
+// the immunity refuses a delete token; a tombstone keeps the shares for
+// the window and the record for a while after the purge, so a late repair
+// write is still refused.
+const (
+	Immunity        = 7 * 24 * time.Hour
+	TombstoneWindow = 30 * 24 * time.Hour
+	tombstoneKeep   = 90 * 24 * time.Hour
 )
 
 // Usage rounds a share's bytes on disk up to 4 KiB, so an object costs at
@@ -183,6 +196,7 @@ func (s *Store) migrate() error {
 			envelope BLOB NOT NULL, received INTEGER NOT NULL, PRIMARY KEY (member, device, version))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('gen', 0)`,
+		`CREATE TABLE IF NOT EXISTS missing (member BLOB PRIMARY KEY, since INTEGER NOT NULL)`,
 	}
 	for _, q := range stmts {
 		if _, err := s.db.Exec(q); err != nil {
@@ -223,14 +237,16 @@ type Presence struct {
 	Owner          identity.Key
 	Complete       []uint8
 	Partial        map[uint8]uint32 // share number -> segments received
+	LastTouched    time.Time        // the newest touch of any share, on this server's clock
 	Tombstoned     bool
 	TombstoneOwner identity.Key // who issued the tombstone, when Tombstoned
+	Purged         bool         // the tombstone's window has run and the shares are gone
 }
 
 // Has reports the shares held for a storage index; nil when nothing is
 // held and no tombstone exists.
 func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
-	rows, err := s.db.Query(`SELECT n, owner, dhash, state, received FROM shares WHERE si = ? ORDER BY n`, si[:])
+	rows, err := s.db.Query(`SELECT n, owner, dhash, state, received, last_touched FROM shares WHERE si = ? ORDER BY n`, si[:])
 	if err != nil {
 		return nil, err
 	}
@@ -240,14 +256,17 @@ func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
 		var n int
 		var owner, dhash []byte
 		var state string
-		var received int64
-		if err := rows.Scan(&n, &owner, &dhash, &state, &received); err != nil {
+		var received, touched int64
+		if err := rows.Scan(&n, &owner, &dhash, &state, &received, &touched); err != nil {
 			return nil, err
 		}
 		if p == nil {
 			p = &Presence{Partial: map[uint8]uint32{}}
 			copy(p.DescriptorHash[:], dhash)
 			copy(p.Owner[:], owner)
+		}
+		if t := time.Unix(touched, 0); t.After(p.LastTouched) {
+			p.LastTouched = t
 		}
 		if state == "complete" {
 			p.Complete = append(p.Complete, uint8(n))
@@ -269,6 +288,7 @@ func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
 			copy(p.Owner[:], owner)
 		}
 		p.Tombstoned = true
+		p.Purged = purged.Valid
 		copy(p.TombstoneOwner[:], owner)
 	case errors.Is(err, sql.ErrNoRows):
 	default:
@@ -390,6 +410,241 @@ func (s *Store) Tombstone(si object.StorageIndex, owner identity.Key, dhash obje
 func (s *Store) ClearTombstone(si object.StorageIndex) error {
 	_, err := s.db.Exec(`DELETE FROM tombstones WHERE si = ?`, si[:])
 	return err
+}
+
+// ApplyDelete is a delete token's effect, the first phase of deletion:
+// the object becomes tombstoned, served to the owner's devices only. The
+// token is refused when the object belongs to another member or sits
+// under another descriptor, when the owner touched it within the
+// immunity, and when it was issued before the last touch, so a captured
+// token cannot delete a copy uploaded again later. Nothing held is
+// nothing to do.
+func (s *Store) ApplyDelete(si object.StorageIndex, owner identity.Key, dhash object.Hash, issued time.Time) (*Presence, error) {
+	p, err := s.Has(si)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	if p.Owner != owner {
+		return p, ErrNotOwner
+	}
+	if p.DescriptorHash != dhash {
+		return p, ErrDescriptor
+	}
+	if p.Tombstoned {
+		return p, nil
+	}
+	now := s.now()
+	if now.Sub(p.LastTouched) < Immunity {
+		return p, ErrRecent
+	}
+	if issued.Before(p.LastTouched) {
+		return p, ErrStale
+	}
+	if err := s.Tombstone(si, owner, dhash, issued); err != nil {
+		return p, err
+	}
+	s.log.Info("object tombstoned", "si", si.String()[:8], "owner", owner.Short())
+	p.Tombstoned, p.TombstoneOwner = true, owner
+	return p, nil
+}
+
+// Undelete is the owner's change of mind within the window: the tombstone
+// goes and the shares serve again. After the purge there is nothing to
+// bring back; a new upload does that.
+func (s *Store) Undelete(si object.StorageIndex, owner identity.Key) error {
+	p, err := s.Has(si)
+	if err != nil {
+		return err
+	}
+	if p == nil || !p.Tombstoned {
+		return ErrNotFound
+	}
+	if p.TombstoneOwner != owner {
+		return ErrNotOwner
+	}
+	if p.Purged {
+		return fmt.Errorf("%w: the tombstone window has run and the shares are gone", ErrNotFound)
+	}
+	return s.ClearTombstone(si)
+}
+
+// PurgeTombstones is the second phase: once a tombstone is older than the
+// window, the shares go and the record stays, so a repair write for the
+// object is still refused. Records purged long ago are dropped, which
+// bounds the table. The removals reach the census like any other.
+func (s *Store) PurgeTombstones() (purged int, err error) {
+	now := s.now()
+	rows, err := s.db.Query(`SELECT si FROM tombstones WHERE purged IS NULL AND created <= ?`, now.Add(-TombstoneWindow).Unix())
+	if err != nil {
+		return 0, err
+	}
+	var due []object.StorageIndex
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		var si object.StorageIndex
+		copy(si[:], b)
+		due = append(due, si)
+	}
+	rows.Close()
+	for _, si := range due {
+		p, err := s.Has(si)
+		if err != nil {
+			return purged, err
+		}
+		for n := range p.Partial {
+			if err := s.Remove(si, n, "tombstone window elapsed"); err != nil && !errors.Is(err, ErrNotFound) {
+				return purged, err
+			}
+		}
+		for _, n := range p.Complete {
+			if err := s.Remove(si, n, "tombstone window elapsed"); err != nil && !errors.Is(err, ErrNotFound) {
+				return purged, err
+			}
+		}
+		if _, err := s.db.Exec(`UPDATE tombstones SET purged = ? WHERE si = ?`, now.Unix(), si[:]); err != nil {
+			return purged, err
+		}
+		purged++
+	}
+	_, err = s.db.Exec(`DELETE FROM tombstones WHERE purged IS NOT NULL AND purged <= ?`, now.Add(-tombstoneKeep).Unix())
+	return purged, err
+}
+
+// Listed is one object of an owner as the owner's cleanup job lists it.
+type Listed struct {
+	StorageIndex   object.StorageIndex
+	DescriptorHash object.Hash
+	LastTouched    time.Time
+	Tombstoned     bool
+}
+
+// ListOwner pages through the objects an owner has shares of here, in
+// storage index order: the server's half of the reachable-set
+// computation, which runs against the grid and never against a local
+// cache. limit bounds a page; more says another follows.
+func (s *Store) ListOwner(owner identity.Key, after object.StorageIndex, limit int) (list []Listed, more bool, err error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	rows, err := s.db.Query(`SELECT s.si, s.dhash, MAX(s.last_touched), t.si IS NOT NULL FROM shares s LEFT JOIN tombstones t ON t.si = s.si
+		WHERE s.owner = ? AND s.si > ? GROUP BY s.si ORDER BY s.si LIMIT ?`, owner[:], after[:], limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var l Listed
+		var si, dhash []byte
+		var touched int64
+		if err := rows.Scan(&si, &dhash, &touched, &l.Tombstoned); err != nil {
+			return nil, false, err
+		}
+		copy(l.StorageIndex[:], si)
+		copy(l.DescriptorHash[:], dhash)
+		l.LastTouched = time.Unix(touched, 0)
+		list = append(list, l)
+	}
+	if len(list) > limit {
+		return list[:limit], true, rows.Err()
+	}
+	return list, false, rows.Err()
+}
+
+// ApplyMembership is membership-driven deletion, which never acts on
+// absence alone: a member found leaving or unlisted is noted with the
+// time, and their shares, roots and tombstones go only once the grace has
+// run on this server's clock and the manifest still says so. A member who
+// reappears clears the note. active says whether a member is listed and
+// active in the current manifest.
+func (s *Store) ApplyMembership(active func(member identity.Key) bool, grace time.Duration) (purged []identity.Key, err error) {
+	now := s.now()
+	members := map[identity.Key]bool{}
+	for _, q := range []string{`SELECT DISTINCT owner FROM shares`, `SELECT DISTINCT member FROM roots`, `SELECT DISTINCT owner FROM tombstones`} {
+		rows, err := s.db.Query(q)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var b []byte
+			if err := rows.Scan(&b); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			var k identity.Key
+			copy(k[:], b)
+			members[k] = true
+		}
+		rows.Close()
+	}
+	for m := range members {
+		if active(m) {
+			if _, err := s.db.Exec(`DELETE FROM missing WHERE member = ?`, m[:]); err != nil {
+				return purged, err
+			}
+			continue
+		}
+		var since sql.NullInt64
+		if err := s.db.QueryRow(`SELECT since FROM missing WHERE member = ?`, m[:]).Scan(&since); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return purged, err
+		}
+		if !since.Valid {
+			if _, err := s.db.Exec(`INSERT INTO missing (member, since) VALUES (?, ?)`, m[:], now.Unix()); err != nil {
+				return purged, err
+			}
+			s.log.Info("member leaving or unlisted; their data goes after the grace", "member", m.Short(), "grace", grace)
+			continue
+		}
+		if now.Sub(time.Unix(since.Int64, 0)) < grace {
+			continue
+		}
+		if err := s.purgeMember(m); err != nil {
+			return purged, err
+		}
+		purged = append(purged, m)
+	}
+	return purged, nil
+}
+
+// purgeMember removes everything a member has here.
+func (s *Store) purgeMember(m identity.Key) error {
+	rows, err := s.db.Query(`SELECT si, n FROM shares WHERE owner = ?`, m[:])
+	if err != nil {
+		return err
+	}
+	type key struct {
+		si object.StorageIndex
+		n  uint8
+	}
+	var all []key
+	for rows.Next() {
+		var si []byte
+		var n int
+		if err := rows.Scan(&si, &n); err != nil {
+			rows.Close()
+			return err
+		}
+		var k key
+		copy(k.si[:], si)
+		k.n = uint8(n)
+		all = append(all, k)
+	}
+	rows.Close()
+	for _, k := range all {
+		if err := s.Remove(k.si, k.n, "member gone after the grace period"); err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	}
+	for _, q := range []string{`DELETE FROM roots WHERE member = ?`, `DELETE FROM tombstones WHERE owner = ?`, `DELETE FROM missing WHERE member = ?`} {
+		if _, err := s.db.Exec(q, m[:]); err != nil {
+			return err
+		}
+	}
+	s.log.Info("member's data purged after the grace period", "member", m.Short(), "shares", len(all))
+	return nil
 }
 
 // ---- roots ----

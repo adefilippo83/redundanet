@@ -309,7 +309,7 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 	}
 	rows.Close()
 
-	g := &Grid{Servers: servers, Copies: map[string]int{}, Tombstoned: len(tomb)}
+	g := &Grid{Servers: servers, Copies: map[string]int{}}
 	var objects []Object
 	var reachedNow [][16]byte
 	for _, si := range order {
@@ -376,6 +376,13 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		}
 		objects = append(objects, o)
 		g.Objects++
+		// A deleted object is neither placed nor under-placed: it counts
+		// as tombstoned while a server still reports a share of it, and a
+		// record kept after the purge is bookkeeping.
+		if o.Tombstoned {
+			g.Tombstoned++
+			continue
+		}
 		g.Copies[fmt.Sprint(len(o.Shares))]++
 		if o.Placed {
 			g.Placed++

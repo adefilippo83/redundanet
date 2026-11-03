@@ -25,10 +25,11 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
-| `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, tombstones, root records, the census delta, the scrub, and the marker that ties the store to its disk | Done, with tests |
+| `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, root records, the census delta, the scrub, the marker that ties the store to its disk, and the server's half of deletion (M5): delete tokens applied past the 7-day immunity on the server's own clock, tombstones purged after the 30-day window with the record kept, undelete within it, the per-owner listing, and membership-driven deletion after the grace period | Done, with tests |
 | `internal/repair` | The node side of repair without the owner (phase 2, M5): a worker that takes the hub's signed task, fetches the descriptor and k shares from the holders (its own store for shares it holds), regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says (its own store when the task names it), then reports; and the surplus release, given up only after confirming with the other holders directly that every share number stays complete | Done, with tests |
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
-| `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers) and a fake with the same contract for the jobs' tests | Done, with tests |
+| `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers, delete tokens to every server, the per-member listing, reads of a tombstoned object within the window, and a cache whose word is probed on the servers once it is six days old) and a fake with the same contract for the jobs' tests | Done, with tests |
+| `internal/cleanup` | The owner's cleanup job (phase 2, M5): the reachable set over every root of the member, walked on the grid, against what the servers hold for the member; a delete token for each object nothing references; refused without the root quorum, when any root or directory cannot be read, and when a run would delete more than half of what the grid holds unless forced; roots of devices revoked longer ago than the window no longer count | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
 | `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
 | `internal/backup` | The backup job against the engine interface: scan with the per-platform change key and the rolling re-hash, default excludes, per-file failures counted and listed, dedup through the local database and the engine, chunking, directory and index objects bottom-up, the root published even after an interruption as a partial snapshot | Done, with tests on the fake engine |
@@ -58,9 +59,9 @@ redundanet network status [--refresh]
 redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
-redundanet object put|get|has|check|repair --network NAME FILE|CAP
+redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
-redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify
+redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force]
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
 
@@ -78,10 +79,32 @@ deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
 The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
-the restore test monthly, and restores in the background; `backup` and
-`restore` are thin clients of its API. The heartbeat carries the day of
-the last backup and of the last passing restore test, which the hub page
-shows per member.
+the restore test monthly, the cleanup weekly, and restores in the
+background; `backup` and `restore` are thin clients of its API. The
+heartbeat carries the day of the last backup and of the last passing
+restore test, which the hub page shows per member.
+Deletion follows the RFC's two phases and its one invariant. The cleanup
+job (`backup cleanup`, weekly on its own) reads every root of the member
+under the quorum rule, walks the indexes, snapshots and directories on
+the grid to the reachable set, lists what every server holds for the
+member, and sends a delete token signed by the device for each object
+nothing references; it refuses to run when a root or a directory cannot
+be read, and refuses to delete more than half of what the grid holds
+unless forced. A server tombstones the object only when the owner has
+not touched it for 7 days on the server's own clock and the token is
+newer than the last touch; within the 30-day window the owner's devices
+still read it, `undelete` brings it back, and a new upload clears it;
+after the window the shares go and the record stays, so repair never
+fills a deleted object in. Pruning a snapshot drops it from the index and
+leaves the deletion of what it alone referenced to the next cleanup. Two
+checks on the device keep a root from pointing at a deleted object: a
+file that comes back after a run away is probed on the servers before its
+cached capability is reused, and an object the cache has not confirmed
+for six days is probed too; both touch the object on every server. A
+server that finds a member leaving or unlisted notes the time and purges
+their shares and roots only once the manifest's `grace_days` have run on
+its own clock with the manifest still saying so; a member who reappears
+clears the note.
 No address and no path travel in it. The hub's collector keeps the
 heartbeats in `census.json` and the share census in `placement.sqlite`,
 the grid-wide placement table of the RFC's "Health" section: per object

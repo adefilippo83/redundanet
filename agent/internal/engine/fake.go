@@ -21,17 +21,32 @@ type Fake struct {
 	K, N   int
 	Params object.Params
 
-	mu      sync.Mutex
-	objects map[object.Hash][]byte // plaintext hash -> bytes
-	caps    map[object.Hash]object.ReadCap
-	roots   map[identity.Key]RootView
-	version uint64
-	Puts    int // how many uploads actually happened
+	mu        sync.Mutex
+	objects   map[object.Hash][]byte // plaintext hash -> bytes
+	caps      map[object.Hash]object.ReadCap
+	tombstone map[object.Hash]bool // deleted: the owner may still read, nothing else counts it
+	roots     map[identity.Key]RootView
+	unopen    map[identity.Key]bool // roots that do not open with the member's key
+	version   uint64
+	Puts      int // how many uploads actually happened
+	Deletes   int // how many delete tokens were sent
+	Checks    int // how many placement checks were asked
+	// RootsAnswered is how many servers GetRoots reports answering; -1
+	// means all of them.
+	RootsAnswered int
 }
 
 // NewFake makes a fake engine for one member and device.
 func NewFake(member, device identity.Key, k, n int) *Fake {
-	return &Fake{Member: member, Device: device, K: k, N: n, Params: object.DefaultParams(k, n), objects: map[object.Hash][]byte{}, caps: map[object.Hash]object.ReadCap{}, roots: map[identity.Key]RootView{}}
+	return &Fake{Member: member, Device: device, K: k, N: n, Params: object.DefaultParams(k, n), objects: map[object.Hash][]byte{}, caps: map[object.Hash]object.ReadCap{},
+		tombstone: map[object.Hash]bool{}, roots: map[identity.Key]RootView{}, unopen: map[identity.Key]bool{}, RootsAnswered: -1}
+}
+
+// SetUnopenable makes a device's root one the member's key does not open.
+func (f *Fake) SetUnopenable(device identity.Key) {
+	f.mu.Lock()
+	f.unopen[device] = true
+	f.mu.Unlock()
 }
 
 func (f *Fake) capOf(data []byte) (object.Hash, object.ReadCap) {
@@ -54,9 +69,10 @@ func (f *Fake) Put(_ context.Context, r io.Reader, size int64) (object.ReadCap, 
 	ph, rc := f.capOf(data)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.objects[ph]; !ok {
+	if _, ok := f.objects[ph]; !ok || f.tombstone[ph] {
 		f.objects[ph] = data
 		f.caps[ph] = rc
+		delete(f.tombstone, ph)
 		f.Puts++
 	}
 	return rc, nil
@@ -89,21 +105,28 @@ func (f *Fake) Get(_ context.Context, rc object.ReadCap, w io.Writer, rng *Range
 	return err
 }
 
-// Has looks the bytes up by hash.
+// Has looks the bytes up by hash; a tombstoned object is not held.
 func (f *Fake) Has(_ context.Context, ph object.Hash, size int64) (object.ReadCap, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rc, ok := f.caps[ph]
-	if !ok || rc.Size != uint64(size) {
+	if !ok || rc.Size != uint64(size) || f.tombstone[ph] {
 		return object.ReadCap{}, false, nil
 	}
 	return rc, true, nil
 }
 
-// Check reports full placement for anything stored.
+// Check reports full placement for anything stored and not tombstoned.
 func (f *Fake) Check(_ context.Context, rc object.ReadCap) (*Health, error) {
+	f.mu.Lock()
+	f.Checks++
+	f.mu.Unlock()
 	h := &Health{Cap: rc.Verify(), K: f.K, N: f.N, Holders: map[identity.Key][]uint8{}, Asked: f.N, Answered: f.N}
 	if _, ok := f.find(rc); !ok {
+		return h, nil
+	}
+	if f.Tombstoned(rc) {
+		h.Tombstoned = true
 		return h, nil
 	}
 	for i := 0; i < f.N; i++ {
@@ -121,18 +144,75 @@ func (f *Fake) Repair(ctx context.Context, rc object.ReadCap) (*Health, error) {
 	return f.Check(ctx, rc)
 }
 
-// Delete forgets the object.
+// Delete tombstones the object: the owner may still read it, Has and
+// Check no longer count it, and a Put brings it back.
 func (f *Fake) Delete(_ context.Context, rc object.ReadCap) error {
+	_, err := f.DeleteByIndex(context.Background(), rc.Key.StorageIndex(), rc.DescriptorHash)
+	return err
+}
+
+// DeleteByIndex is Delete by storage index and descriptor hash.
+func (f *Fake) DeleteByIndex(_ context.Context, si object.StorageIndex, dhash object.Hash) (*DeleteResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Deletes++
+	res := &DeleteResult{Servers: f.N, Answered: f.N, Failed: map[identity.Key]string{}}
+	for ph, c := range f.caps {
+		if c.Key.StorageIndex() == si && c.DescriptorHash == dhash {
+			f.tombstone[ph] = true
+			res.Tombstoned = f.N
+			return res, nil
+		}
+	}
+	res.NotHeld = f.N
+	return res, nil
+}
+
+// Tombstoned reports whether Delete marked the object.
+func (f *Fake) Tombstoned(rc object.ReadCap) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for ph, c := range f.caps {
 		if c == rc {
-			delete(f.caps, ph)
-			delete(f.objects, ph)
-			return nil
+			return f.tombstone[ph]
 		}
 	}
-	return ErrNotReadable
+	return false
+}
+
+// ListObjects lists everything stored, tombstoned or not.
+func (f *Fake) ListObjects(context.Context) (*Listing, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := &Listing{Objects: map[object.StorageIndex]*ListedObject{}, Answered: f.N, Servers: f.N}
+	for ph, c := range f.caps {
+		si := c.Key.StorageIndex()
+		o := &ListedObject{StorageIndex: si, DescriptorHash: c.DescriptorHash, Tombstoned: f.tombstone[ph]}
+		for i := 0; i < f.N; i++ {
+			var dev identity.Key
+			dev[0] = byte(i + 1)
+			o.Holders = append(o.Holders, dev)
+		}
+		out.Objects[si] = o
+	}
+	return out, nil
+}
+
+// AddRoot records another device's root, for the cleanup's tests.
+func (f *Fake) AddRoot(device identity.Key, root Root) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.version++
+	r := root
+	f.roots[device] = RootView{Device: device, Version: f.version, Root: &r}
+}
+
+// DropRoot forgets a device's root, as a tombstoned root would after the
+// window.
+func (f *Fake) DropRoot(device identity.Key) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.roots, device)
 }
 
 // PutRoot keeps the highest root per device.
@@ -153,10 +233,16 @@ func (f *Fake) GetRoots(_ context.Context, member identity.Key) (*Roots, error) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := &Roots{Answered: f.N, Servers: f.N}
+	if f.RootsAnswered >= 0 {
+		out.Answered = f.RootsAnswered
+	}
 	if member != f.Member {
 		return out, nil
 	}
-	for _, v := range f.roots {
+	for dev, v := range f.roots {
+		if f.unopen[dev] {
+			v.Root = nil
+		}
 		out.Views = append(out.Views, v)
 	}
 	return out, nil

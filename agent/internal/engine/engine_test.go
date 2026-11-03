@@ -89,6 +89,19 @@ type grid struct {
 	allowed map[identity.Key]bool
 	mu      sync.Mutex
 	servers map[identity.Key]*serverNode
+	now     time.Time // the clock of every store and engine, movable
+}
+
+func (g *grid) clock() time.Time {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.now
+}
+
+func (g *grid) advance(d time.Duration) {
+	g.mu.Lock()
+	g.now = g.now.Add(d)
+	g.mu.Unlock()
 }
 
 type serverNode struct {
@@ -135,7 +148,7 @@ func newGrid(t *testing.T) (*grid, *member, *member) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	g := &grid{ctx: ctx, allowed: map[identity.Key]bool{}, servers: map[identity.Key]*serverNode{}}
+	g := &grid{ctx: ctx, allowed: map[identity.Key]bool{}, servers: map[identity.Key]*serverNode{}, now: time.Now()}
 	g.log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	h := newMember(t, 100, identity.RoleHub)
 	g.permit(h.dev.ID())
@@ -153,7 +166,7 @@ func newGrid(t *testing.T) (*grid, *member, *member) {
 	for _, m := range []*member{alice, bob} {
 		root := filepath.Join(t.TempDir(), "disk")
 		_ = os.Mkdir(root, 0o755)
-		st, err := store.Open(store.Config{Root: root, RecordPath: filepath.Join(t.TempDir(), "storage-id"), Floor: 1, Log: g.log})
+		st, err := store.Open(store.Config{Root: root, RecordPath: filepath.Join(t.TempDir(), "storage-id"), Floor: 1, Now: g.clock, Log: g.log})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,13 +188,13 @@ func (g *grid) engineFor(t *testing.T, m *member) (*Native, *member) {
 	for dev := range g.servers {
 		ep.Connect(dev)
 	}
-	db, err := localdb.Open(t.TempDir(), nil)
+	db, err := localdb.Open(t.TempDir(), g.clock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	e, err := New(Config{Network: "testnet", Member: m.key, Secret: m.seed.Secret(), Device: laptop.dev, Cert: laptop.cert,
-		Manifest: func() *manifest.Manifest { return g.m }, Client: shareproto.NewClient(ep.OpenStream), DB: db, SpoolDir: t.TempDir(), Timeout: 5 * time.Second, Log: g.log})
+		Manifest: func() *manifest.Manifest { return g.m }, Client: shareproto.NewClient(ep.OpenStream), DB: db, SpoolDir: t.TempDir(), Timeout: 5 * time.Second, Now: g.clock, Log: g.log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,5 +366,91 @@ func TestPlan(t *testing.T) {
 	got = plan(si, 4, []int{2, 3}, servers, map[identity.Key]int{a: 2}, map[identity.Key]bool{b: true})
 	if len(got) != 2 || got[2] != c || got[3] != c {
 		t.Fatalf("plan around a full and a bad server: %v", got)
+	}
+}
+
+// Deletion on the grid: a token is refused within the immunity on the
+// servers' clocks, tombstones the object past it, the owner still reads
+// it within the window, Check and Has no longer count it, a new upload
+// clears it, and the listing shows it all.
+func TestDeleteTombstonesEverywhere(t *testing.T) {
+	g, alice, _ := newGrid(t)
+	e, _ := g.engineFor(t, alice)
+	ctx := context.Background()
+	data := pattern(object.DefaultSegmentSize+21, 5)
+	rc, err := e.Put(ctx, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.DeleteByIndex(ctx, rc.Key.StorageIndex(), rc.DescriptorHash); !errors.Is(err, ErrRecentlyTouched) {
+		t.Fatalf("delete within the immunity: %v", err)
+	}
+	g.advance(8 * 24 * time.Hour)
+	res, err := e.DeleteByIndex(ctx, rc.Key.StorageIndex(), rc.DescriptorHash)
+	if err != nil || res.Tombstoned != 2 || res.Answered != 2 {
+		t.Fatalf("delete: %+v %v", res, err)
+	}
+	h, _ := e.Check(ctx, rc)
+	if h.Readable || !h.Tombstoned || len(h.Ghosts) != 2 {
+		t.Fatalf("check after delete: %+v", h)
+	}
+	var out bytes.Buffer
+	if err := e.Get(ctx, rc, &out, nil); err != nil || !bytes.Equal(out.Bytes(), data) {
+		t.Fatalf("the owner's read within the window: %v", err)
+	}
+	if _, ok, _ := e.Has(ctx, object.Sum(data), int64(len(data))); ok {
+		t.Fatal("has counts a tombstoned object")
+	}
+	l, err := e.ListObjects(ctx)
+	if err != nil || l.Answered != 2 || len(l.Objects) != 1 {
+		t.Fatalf("list: %+v %v", l, err)
+	}
+	if o := l.Objects[rc.Key.StorageIndex()]; o == nil || !o.Tombstoned || len(o.Holders) != 2 || o.DescriptorHash != rc.DescriptorHash {
+		t.Fatalf("listed: %+v", o)
+	}
+	// Delete by capability says the same; a new upload clears the tombstone.
+	if err := e.Delete(ctx, rc); err != nil {
+		t.Fatalf("delete again: %v", err)
+	}
+	again, err := e.Put(ctx, bytes.NewReader(data), int64(len(data)))
+	if err != nil || again != rc {
+		t.Fatalf("put after delete: %v", err)
+	}
+	h, _ = e.Check(ctx, rc)
+	if !h.Placed || h.Tombstoned {
+		t.Fatalf("check after the upload: %+v", h)
+	}
+	l, _ = e.ListObjects(ctx)
+	if o := l.Objects[rc.Key.StorageIndex()]; o == nil || o.Tombstoned {
+		t.Fatalf("listed after the upload: %+v", o)
+	}
+}
+
+// The local cache's word on an object is taken only while fresh: past
+// the probe age the servers are asked, which touches the object and
+// catches a tombstone.
+func TestCacheReuseIsProbedWhenStale(t *testing.T) {
+	g, alice, _ := newGrid(t)
+	e, _ := g.engineFor(t, alice)
+	ctx := context.Background()
+	data := pattern(5000, 6)
+	rc, err := e.Put(ctx, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.advance(8 * 24 * time.Hour)
+	if _, err := e.DeleteByIndex(ctx, rc.Key.StorageIndex(), rc.DescriptorHash); err != nil {
+		t.Fatal(err)
+	}
+	// Has through the stale cache probes, finds the tombstone and says no;
+	// Put uploads again and clears it.
+	if _, ok, _ := e.Has(ctx, object.Sum(data), int64(len(data))); ok {
+		t.Fatal("a stale cache row hid the tombstone")
+	}
+	if again, err := e.Put(ctx, bytes.NewReader(data), int64(len(data))); err != nil || again != rc {
+		t.Fatalf("put: %v", err)
+	}
+	if h, _ := e.Check(ctx, rc); !h.Placed || h.Tombstoned {
+		t.Fatalf("after the put: %+v", h)
 	}
 }

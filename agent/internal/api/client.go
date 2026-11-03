@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/restore"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
@@ -99,6 +100,16 @@ func (c *Client) BackupRun(ctx context.Context, set string) error {
 // BackupVerify asks for a restore test.
 func (c *Client) BackupVerify(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, "/api/backup/verify", nil)
+}
+
+// BackupCleanup runs the owner's cleanup now and returns its report; the
+// report's Error says why a run stopped short.
+func (c *Client) BackupCleanup(ctx context.Context, dryRun, force bool) (*cleanup.Report, error) {
+	var rep cleanup.Report
+	if err := c.doJSON(ctx, http.MethodPost, "/api/backup/cleanup", CleanupRequest{DryRun: dryRun, Force: force}, &rep); err != nil {
+		return nil, err
+	}
+	return &rep, nil
 }
 
 // RestoreList is what the member can restore from.

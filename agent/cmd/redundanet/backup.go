@@ -50,11 +50,13 @@ func arg(pos []string, i int) string {
 
 func runBackup(args []string) error {
 	if len(args) == 0 {
-		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify")
+		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup")
 	}
 	fs := flag.NewFlagSet("backup "+args[0], flag.ContinueOnError)
 	dir, _ := commonFlags(fs)
 	exclude := fs.String("exclude", "", "add: comma-separated excludes beside the defaults (base-name globs or relative prefixes)")
+	dryRun := fs.Bool("dry-run", false, "cleanup: count what would be deleted and delete nothing")
+	force := fs.Bool("force", false, "cleanup: lift the bound on how much one run may delete")
 	pos, err := parseInterspersed(fs, args[1:])
 	if err != nil {
 		return err
@@ -129,6 +131,23 @@ func runBackup(args []string) error {
 			return err
 		}
 		fmt.Println("restore test requested; the result shows in: redundanet backup list")
+		return nil
+	case "cleanup":
+		lctx, lcancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer lcancel()
+		rep, err := c.BackupCleanup(lctx, *dryRun, *force)
+		if err != nil {
+			return err
+		}
+		what := "deleted"
+		if rep.DryRun {
+			what = "would be deleted"
+		}
+		fmt.Printf("roots: %d walked from %d of %d servers; %d objects reachable; %d held for the member\n", rep.Roots, rep.RootsAnswered, rep.Servers, rep.Reachable, rep.Listed)
+		fmt.Printf("garbage: %d; %s: %d; waiting out the immunity: %d; holders not all answering: %d; failed: %d\n", rep.Garbage, what, rep.Tombstoned, rep.Recent, rep.Incomplete, rep.Failed)
+		if rep.Error != "" {
+			return errors.New(rep.Error)
+		}
 		return nil
 	}
 	return fmt.Errorf("backup: unknown subcommand %q", args[0])

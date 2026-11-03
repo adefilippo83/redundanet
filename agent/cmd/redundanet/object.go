@@ -27,7 +27,7 @@ import (
 
 func runObject(args []string) error {
 	if len(args) == 0 {
-		return errors.New("object: a subcommand is needed: put, get, has, check, repair")
+		return errors.New("object: a subcommand is needed: put, get, has, check, repair, delete")
 	}
 	fs := flag.NewFlagSet("object "+args[0], flag.ContinueOnError)
 	dir, network := commonFlags(fs)
@@ -37,7 +37,7 @@ func runObject(args []string) error {
 		return err
 	}
 	if *network == "" || fs.NArg() != 1 {
-		return errors.New("usage: object put|get|has|check|repair --network NAME FILE|CAP")
+		return errors.New("usage: object put|get|has|check|repair|delete --network NAME FILE|CAP")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -61,6 +61,20 @@ func runObject(args []string) error {
 		return objectHas(ctx, e, fs.Arg(0))
 	case "check", "repair":
 		return objectCheck(ctx, e, fs.Arg(0), args[0] == "repair")
+	case "delete":
+		rc, err := object.ParseReadCap(fs.Arg(0))
+		if err != nil {
+			return err
+		}
+		res, err := e.DeleteByIndex(ctx, rc.Key.StorageIndex(), rc.DescriptorHash)
+		if res != nil {
+			fmt.Printf("%d of %d servers answered: %d tombstoned, %d held nothing, %d refused as touched recently, %d refused as stale\n",
+				res.Answered, res.Servers, res.Tombstoned, res.NotHeld, res.Recent, res.Stale)
+			for dev, msg := range res.Failed {
+				fmt.Printf("  %s: %s\n", dev.Short(), msg)
+			}
+		}
+		return err
 	}
 	return fmt.Errorf("object: unknown subcommand %q", args[0])
 }

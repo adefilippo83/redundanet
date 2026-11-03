@@ -137,7 +137,10 @@ func (e *Native) presence(ctx context.Context, si object.StorageIndex, servers [
 }
 
 // health turns a presence into a Health: the complete shares under the
-// capability's descriptor hash, and how many servers and members hold them.
+// capability's descriptor hash, and how many servers and members hold
+// them. A tombstoned holder does not count, so an upload clears the
+// tombstone and repair never fills a deleted object in; it is kept aside
+// for the owner's reads within the window.
 func health(vc object.VerifyCap, k, n int, p *presence, servers []server) *Health {
 	h := &Health{Cap: vc, K: k, N: n, Holders: map[identity.Key][]uint8{}, Asked: p.Asked, Answered: p.Answered}
 	memberOf := map[identity.Key]string{}
@@ -147,7 +150,15 @@ func health(vc object.VerifyCap, k, n int, p *presence, servers []server) *Healt
 	distinct := map[uint8]bool{}
 	members := map[string]bool{}
 	for dev, pr := range p.Pres {
-		if pr.DescriptorHash != vc.DescriptorHash || pr.Tombstoned || len(pr.Complete) == 0 {
+		if pr.DescriptorHash != vc.DescriptorHash || len(pr.Complete) == 0 {
+			continue
+		}
+		if pr.Tombstoned {
+			h.Tombstoned = true
+			if h.Ghosts == nil {
+				h.Ghosts = map[identity.Key][]uint8{}
+			}
+			h.Ghosts[dev] = append([]uint8(nil), pr.Complete...)
 			continue
 		}
 		h.Holders[dev] = append([]uint8(nil), pr.Complete...)

@@ -24,23 +24,40 @@ func (e *Native) locate(ctx context.Context, rc object.ReadCap) (*object.Descrip
 	si := rc.Key.StorageIndex()
 	pres := e.presence(ctx, si, servers)
 	hl := health(rc.Verify(), int(p.K), int(p.N), pres, servers)
-	if !hl.Readable {
-		return nil, hl, nil, fmt.Errorf("%w: %d of %d shares on %d of %d servers", ErrNotReadable, len(hl.Shares), p.K, hl.Answered, hl.Asked)
-	}
-	// One holder per share number, the fastest answering first.
+	// One holder per share number, the fastest answering first. The
+	// owner may still read an object under a tombstone within the window,
+	// so those holders serve when the live ones are not enough.
 	type holder struct {
 		dev identity.Key
 		rtt int64
 	}
 	byShare := map[uint8][]holder{}
+	numbers := map[uint8]bool{}
 	for dev, shares := range hl.Holders {
 		for _, s := range shares {
 			byShare[s] = append(byShare[s], holder{dev, int64(pres.RTT[dev])})
+			numbers[s] = true
 		}
 	}
+	if len(numbers) < int(p.K) {
+		for dev, shares := range hl.Ghosts {
+			for _, s := range shares {
+				byShare[s] = append(byShare[s], holder{dev, int64(pres.RTT[dev])})
+				numbers[s] = true
+			}
+		}
+	}
+	if len(numbers) < int(p.K) {
+		return nil, hl, nil, fmt.Errorf("%w: %d of %d shares on %d of %d servers", ErrNotReadable, len(numbers), p.K, hl.Answered, hl.Asked)
+	}
+	var all []uint8
+	for s := range numbers {
+		all = append(all, s)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
 	var desc *object.Descriptor
 	var sources []shareproto.Source
-	for _, s := range hl.Shares {
+	for _, s := range all {
 		hs := byShare[s]
 		sort.Slice(hs, func(i, j int) bool { return hs[i].rtt < hs[j].rtt })
 		dev := hs[0].dev
