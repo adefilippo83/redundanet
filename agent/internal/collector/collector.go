@@ -129,7 +129,7 @@ func New(cfg Config) (*Collector, error) {
 		return nil, err
 	}
 	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
-	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum, "pct": pct}
+	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum, "pct": pct, "plural": plural}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
 		_ = pl.close()
@@ -675,6 +675,14 @@ func (c *Collector) Status() Status {
 		st.Members = []Member{}
 	}
 	return st
+}
+
+// plural gives a word its plural when the count is not one.
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // pct is a percentage for the page's bars.
