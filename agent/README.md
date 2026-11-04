@@ -33,7 +33,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/cleanup` | The owner's cleanup job (phase 2, M5): the reachable set over every root of the member, walked on the grid, against what the servers hold for the member; a delete token for each object nothing references; refused without the root quorum, when any root or directory cannot be read, and when a run would delete more than half of what the grid holds unless forced; roots of devices revoked longer ago than the window no longer count | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
 | `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
-| `internal/backup` | The backup job against the engine interface: scan with the per-platform change key and the rolling re-hash, default excludes, per-file failures counted and listed, dedup through the local database and the engine, chunking, directory and index objects bottom-up, the root published even after an interruption as a partial snapshot | Done, with tests on the fake engine |
+| `internal/backup` | The backup job against the engine interface: scan with the per-platform change key and the rolling re-hash, default excludes, per-file failures counted and listed, dedup through the local database and the engine, chunking, directory and index objects bottom-up, the root published even after an interruption as a partial snapshot; the change-detection key with the file id and change time on every platform (a handle per file on Windows), cloud placeholders skipped and counted (iCloud's evicted files on macOS, OneDrive's online-only files on Windows), the privacy probe that reports a folder the service cannot read with the setting to change before a run, and default excludes for macOS, Windows and Linux | Done, with tests on the fake engine |
 | `internal/restore` | List a member's device roots and indexes, browse a snapshot without fetching what is not asked for, restore with temporary names and renames, mtime and mode after the data, name mapping and a report that is complete with exceptions, and the unattended restore test | Done, with tests |
 | `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
@@ -89,6 +89,14 @@ a restart. The heartbeat carries the day of the last backup, the day of
 the last passing restore test and how many weeks in a row had a passing
 one, which the hub page shows per member: the month the G2 gate measures
 reads as "4 weeks in a row" there.
+On macOS a service reading Documents, Desktop or Downloads needs Full
+Disk Access, and the agent says so: `backup add` probes each folder as
+the service and refuses one the system guards, with the setting to
+change, and the local page and `backup list` show the same line for a
+folder that becomes unreadable later. A OneDrive online-only file on
+Windows and an evicted iCloud file on macOS are listed as skipped, "not
+on this computer", never pulled down. The change-detection key carries
+the file id and change time on Windows too, through a handle per file.
 Deletion follows the RFC's two phases and its one invariant. The cleanup
 job (`backup cleanup`, weekly on its own) reads every root of the member
 under the quorum rule, walks the indexes, snapshots and directories on

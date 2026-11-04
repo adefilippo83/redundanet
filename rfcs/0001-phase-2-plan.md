@@ -358,6 +358,16 @@ The hub and node sides of the RFC's "Health" section.
   carries how many weeks in a row had a passing test, which the hub page
   shows beside the member's last verified restore. The G2 record will
   quote that number and the other platform's backup and restore.
+- 2026-11-04, the second platform's code: the Windows scan key gains the
+  file id and change time through a handle per file; OneDrive's
+  online-only files are skipped and counted like iCloud's evicted ones;
+  the privacy probe lists a folder as the service does, refuses it at
+  `backup add` with the Full Disk Access hint on macOS, lists it as
+  skipped with the hint at the start of a run, and shows it on the page
+  and in `backup list` when it becomes unreadable later; the default
+  excludes cover macOS, Windows and Linux. The Windows pieces are proven
+  by CI's Windows job; a member's backup and restore on that platform is
+  still the gate's own test. The diagnostics bundle is the next slice.
 
 ## Order and reasons
 

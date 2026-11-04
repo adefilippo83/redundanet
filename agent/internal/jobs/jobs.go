@@ -112,6 +112,9 @@ type RunStatus struct {
 	LastAt   time.Time        `json:"last_at,omitempty"`
 	Last     *backup.Result   `json:"last,omitempty"`
 	LastErr  string           `json:"last_error,omitempty"`
+	// Needs lists the set's folders the service cannot read right now,
+	// each with the setting to change; checked when the status is asked.
+	Needs []string `json:"needs,omitempty"`
 }
 
 // RestoreStatus is the restore in progress or the last one.
@@ -256,11 +259,12 @@ func (r *Runner) Status() Status {
 		st.Restore = &cp
 	}
 	for _, s := range r.file.Sets {
-		if rs := r.runs[s.Name]; rs != nil {
-			st.Runs = append(st.Runs, *rs)
-		} else {
-			st.Runs = append(st.Runs, RunStatus{Set: s.Name})
+		rs := RunStatus{Set: s.Name}
+		if cur := r.runs[s.Name]; cur != nil {
+			rs = *cur
 		}
+		rs.Needs = backup.Needs(s)
+		st.Runs = append(st.Runs, rs)
 	}
 	return st
 }
@@ -277,6 +281,11 @@ func (r *Runner) AddSet(s backup.Set) error {
 		}
 		if fi, err := os.Stat(abs); err != nil || !fi.IsDir() {
 			return fmt.Errorf("jobs: %s is not a directory", f)
+		}
+		// The service probes the folder as it will read it: a folder the
+		// system guards is refused here with the setting to change.
+		if err := backup.ProbeFolder(abs); err != nil {
+			return fmt.Errorf("jobs: %w", err)
 		}
 		s.Folders[i] = abs
 	}

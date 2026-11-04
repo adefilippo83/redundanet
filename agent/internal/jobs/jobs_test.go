@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,5 +199,45 @@ func TestRestoreTestsAreRecordedAndSurviveARestart(t *testing.T) {
 	}
 	if r2.VerifyStreak() != 2 {
 		t.Fatalf("streak after a restart: %d", r2.VerifyStreak())
+	}
+}
+
+// A folder the service cannot read is refused when the set is added, and
+// one that becomes unreadable later shows on the status with what to do.
+func TestSetsReportFoldersTheServiceCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("an unreadable folder needs a non-root unix user")
+	}
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	fake := engine.NewFake(member, device, 2, 4)
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	r, err := New(Config{DataDir: dir, Engine: fake, DB: db, Member: member, Device: device})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guarded := filepath.Join(t.TempDir(), "guarded")
+	_ = os.Mkdir(guarded, 0o000)
+	t.Cleanup(func() { _ = os.Chmod(guarded, 0o755) })
+	if err := r.AddSet(backup.Set{Name: "g", Folders: []string{guarded}}); err == nil || !strings.Contains(err.Error(), guarded) {
+		t.Fatalf("an unreadable folder was accepted: %v", err)
+	}
+	open := filepath.Join(t.TempDir(), "open")
+	_ = os.Mkdir(open, 0o755)
+	if err := r.AddSet(backup.Set{Name: "o", Folders: []string{open}}); err != nil {
+		t.Fatal(err)
+	}
+	if st := r.Status(); len(st.Runs) != 1 || len(st.Runs[0].Needs) != 0 {
+		t.Fatalf("a readable set needs nothing: %+v", st.Runs)
+	}
+	_ = os.Chmod(open, 0o000)
+	t.Cleanup(func() { _ = os.Chmod(open, 0o755) })
+	if st := r.Status(); len(st.Runs[0].Needs) != 1 || !strings.Contains(st.Runs[0].Needs[0], open) {
+		t.Fatalf("a folder that became unreadable: %+v", st.Runs)
 	}
 }

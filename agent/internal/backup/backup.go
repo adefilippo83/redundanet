@@ -37,9 +37,18 @@ type Set struct {
 	Excludes []string `yaml:"excludes,omitempty" json:"excludes,omitempty"` // base-name globs or relative path prefixes, beside the defaults
 }
 
-// DefaultExcludes are caches and the cloud providers' own databases, by
-// base name or by relative path prefix inside a folder.
-var DefaultExcludes = []string{".DS_Store", "Thumbs.db", "desktop.ini", ".Trash", ".Trashes", "Library/Caches", ".cache", ".dropbox.cache", "*.partial", "*.crdownload"}
+// DefaultExcludes are caches, the systems' own folders and the cloud
+// providers' databases, by base name or by relative path prefix inside a
+// folder: what no one wants restored, on every platform at once.
+var DefaultExcludes = []string{
+	// macOS
+	".DS_Store", ".Trash", ".Trashes", "Library/Caches", ".Spotlight-V100", ".fseventsd", ".TemporaryItems", ".DocumentRevisions-V100",
+	// Windows
+	"Thumbs.db", "desktop.ini", "$RECYCLE.BIN", "System Volume Information", "pagefile.sys", "hiberfil.sys", "swapfile.sys", "~$*",
+	"AppData/Local/Temp", "AppData/Local/Microsoft/Windows/INetCache",
+	// Linux and everywhere
+	".cache", ".dropbox.cache", "*.partial", "*.crdownload",
+}
 
 // Config runs one backup.
 type Config struct {
@@ -131,6 +140,15 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		abs, err := filepath.Abs(folder)
 		if err != nil {
 			abs = folder
+		}
+		// The probe first: a folder the system guards is listed with the
+		// setting to change, not scanned into a tree of refusals.
+		if err := ProbeFolder(abs); err != nil {
+			name, u := snapshot.MakeName(abs)
+			tops = append(tops, snapshot.Entry{Name: name, UTF8: u, Kind: snapshot.KindSkipped, Reason: err.Error()})
+			r.skip("folder unreadable")
+			r.log.Warn("folder not backed up", "folder", abs, "err", err)
+			continue
 		}
 		e, err := r.scanDir(ctx, abs, abs)
 		if err != nil {
@@ -319,6 +337,9 @@ func (r *run) scanFile(ctx context.Context, p string) (*snapshot.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cloudPlaceholder(fi) {
+		return nil, errPlaceholder
+	}
 	key := scanKey(p, fi)
 	now := r.cfg.Now()
 	r.prog.Current = p
@@ -471,6 +492,8 @@ func (r *run) putBytes(ctx context.Context, b []byte) (string, error) {
 // than pulling it down.
 func skipReason(ctx context.Context, err error) (counted, detail string) {
 	switch {
+	case errors.Is(err, errPlaceholder):
+		return "not on this computer", err.Error()
 	case errors.Is(err, fs.ErrPermission):
 		return "permission denied", err.Error()
 	case ctx.Err() != nil:
@@ -480,6 +503,9 @@ func skipReason(ctx context.Context, err error) (counted, detail string) {
 	}
 	return "unreadable", err.Error()
 }
+
+// errPlaceholder is a file a cloud provider keeps online-only.
+var errPlaceholder = errors.New("evicted to the cloud, not on this computer")
 
 // Reasons lists the skip reasons sorted by count, for the page.
 func (res *Result) ReasonList() []string {
