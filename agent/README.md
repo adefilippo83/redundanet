@@ -97,7 +97,8 @@ the service and refuses one the system guards, with the setting to
 change, and the local page and `backup list` show the same line for a
 folder that becomes unreadable later. A OneDrive online-only file on
 Windows and an evicted iCloud file on macOS are listed as skipped, "not
-on this computer", never pulled down. The change-detection key carries
+on this computer", never pulled down; the local page and `backup list`
+count the skipped files by reason, and `restore browse` shows each one's. The change-detection key carries
 the file id and change time on Windows too, through a handle per file.
 When something is wrong, `redundanet diagnostics` writes a bundle to send
 by hand, and the local page has a button for it. It works with the agent
@@ -265,7 +266,12 @@ hub-hetzner; `deploy/node/` the unit, installer and runbook for a storage node.
 Go 1.27 or later, no cgo. `.github/workflows/agent.yml` runs the tests on
 Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`,
 or `agent/vX.Y.Z-alpha.N` for a pre-release, builds a draft release with
-checksums (`agent-release.yml`).
+checksums (`agent-release.yml`). The Windows binary carries a version
+resource (product name and version in its properties) generated at release
+time from `cmd/redundanet/versioninfo.json`. The workflow signs the Windows
+binary through SignPath Foundation and signs and notarizes the macOS
+binaries with a Developer ID as soon as the secrets its header names exist;
+until then those jobs are skipped and the binaries ship unsigned.
 
 ## Identity commands
 

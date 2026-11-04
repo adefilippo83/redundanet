@@ -114,6 +114,9 @@ func runBackup(args []string) error {
 			case rs.Last != nil:
 				s := rs.Last.Snapshot
 				fmt.Printf("  last run %s: %d files, %d bytes, %d sent, %d skipped%s, root %d\n", rs.LastAt.Format(time.RFC3339), s.Files, s.Bytes, s.Uploaded, s.Skipped, map[bool]string{true: ", partial", false: ""}[s.Partial], rs.Last.RootVersion)
+				if why := rs.Last.SkipReasons(); why != "" {
+					fmt.Printf("  skipped: %s\n", why)
+				}
 			default:
 				fmt.Println("  not run yet")
 			}

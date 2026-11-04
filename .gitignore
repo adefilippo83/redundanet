@@ -123,3 +123,6 @@ config.local.yaml
 agent/dist/
 agent/build/
 /agent/redundanet
+
+# Go: the Windows version resource is generated at release time
+*.syso
