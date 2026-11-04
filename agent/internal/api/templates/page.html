@@ -38,6 +38,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
 {{if .Message}}<p class="msg">{{.Message}}</p>{{end}}
 <div class="grid">
   <div class="card"><h2>This device</h2><div class="kv">
+    <b>help</b><span><a href="/diagnostics.zip">Download a diagnostics bundle</a> to send when something is wrong: versions, counts and redacted log lines, no file names, no addresses, nothing uploaded</span>
     <b>member</b><span><code>{{.Member}}</code><br><small>{{.MemberCode}}</small></span>
     <b>device</b><code>{{.Device}}</code>
     <b>roles</b><span>{{range .Roles}}{{.}} {{end}}</span>
