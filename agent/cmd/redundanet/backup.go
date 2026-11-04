@@ -115,9 +115,22 @@ func runBackup(args []string) error {
 				fmt.Println("  not run yet")
 			}
 		}
-		fmt.Printf("every %s\n", st.Every)
+		fmt.Printf("every %s; restore test every %s\n", st.Every, st.VerifyEvery)
 		if v := st.LastVerify; v != nil {
 			fmt.Printf("last verified restore %s: %d of %d files read back, %d compared with unchanged sources, %d failed\n", v.At.Format(time.RFC3339), v.Verified, v.Sampled, v.Compared, len(v.Failed))
+		}
+		if st.VerifyStreak > 0 {
+			fmt.Printf("restore tests passing %d weeks in a row\n", st.VerifyStreak)
+		}
+		for i, v := range st.Verifications {
+			if i == 0 {
+				fmt.Println("restore tests:")
+			}
+			result := "passed"
+			if !v.Passed() {
+				result = fmt.Sprintf("%d failed", len(v.Failed))
+			}
+			fmt.Printf("  %s  snapshot %s: %d of %d read back, %d compared, %s\n", v.At.Format("2006-01-02 15:04"), v.Snapshot, v.Verified, v.Sampled, v.Compared, result)
 		}
 		return nil
 	case "run":

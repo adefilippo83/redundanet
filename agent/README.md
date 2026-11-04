@@ -80,10 +80,15 @@ deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
 The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
-the restore test monthly, the cleanup weekly, and restores in the
-background; `backup` and `restore` are thin clients of its API. The
-heartbeat carries the day of the last backup and of the last passing
-restore test, which the hub page shows per member.
+the restore test weekly (a file saved by an earlier version with the
+monthly default it then had moves to weekly on load), the cleanup
+weekly, and restores in the background; `backup` and `restore` are thin
+clients of its API. Every restore test is kept in the local database and
+listed on the local page and by `backup list`, and the last one survives
+a restart. The heartbeat carries the day of the last backup, the day of
+the last passing restore test and how many weeks in a row had a passing
+one, which the hub page shows per member: the month the G2 gate measures
+reads as "4 weeks in a row" there.
 Deletion follows the RFC's two phases and its one invariant. The cleanup
 job (`backup cleanup`, weekly on its own) reads every root of the member
 under the quorum rule, walks the indexes, snapshots and directories on
