@@ -367,7 +367,20 @@ The hub and node sides of the RFC's "Health" section.
   and in `backup list` when it becomes unreadable later; the default
   excludes cover macOS, Windows and Linux. The Windows pieces are proven
   by CI's Windows job; a member's backup and restore on that platform is
-  still the gate's own test. The diagnostics bundle is the next slice.
+  still the gate's own test.
+- 2026-11-04, the diagnostics bundle: `redundanet diagnostics` and the
+  page's download button write one zip from the running agent when it
+  answers and from the data directory and the service log when it does
+  not. The contents are the RFC's allowlist, as a projection with named
+  fields rather than a filtered dump: versions, the manifest revision on
+  disk and as applied, the service state, hubs and peers as counts, the
+  sets with each folder as label plus hash, restore tests, cleanup, the
+  repair worker, warnings and errors by kind and count, free space, and
+  the last log lines with every path, URL and address replaced. The test
+  feeds it names, folders, URLs and addresses and checks none come out.
+  Left in M6: signing and notarization behind the credentials, and the
+  G2 record once four weekly tests have passed and a member on another
+  platform has backed up and restored.
 
 ## Order and reasons
 

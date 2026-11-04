@@ -8,6 +8,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
+	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/rebalance"
 	"github.com/adefilippo83/redundanet/agent/internal/restore"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
@@ -157,6 +158,13 @@ func (c *Client) Status(ctx context.Context) (*Snapshot, error) {
 // Logs fetches the last n lines.
 func (c *Client) Logs(ctx context.Context, n int) ([]json.RawMessage, error) {
 	var lines []json.RawMessage
+	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/logs?n=%d", n), &lines)
+	return lines, err
+}
+
+// LogLines is Logs as typed lines.
+func (c *Client) LogLines(ctx context.Context, n int) ([]logbuf.Line, error) {
+	var lines []logbuf.Line
 	err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/logs?n=%d", n), &lines)
 	return lines, err
 }

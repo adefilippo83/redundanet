@@ -31,6 +31,7 @@ var commands = []command{
 	{"status", "what the running agent sees", runStatus},
 	{"open", "open the local page in the browser, with a one-time link", runOpen},
 	{"logs", "the running agent's recent log lines", runLogs},
+	{"diagnostics", "write the bundle to send when something is wrong; works with the agent down", runDiagnostics},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 

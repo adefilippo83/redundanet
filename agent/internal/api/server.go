@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/diag"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
@@ -116,6 +117,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
+	mux.HandleFunc("GET /diagnostics.zip", s.diagnostics)
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /action/{name}", s.pageAction)
 	mux.HandleFunc("GET /api/status", s.apiStatus)
@@ -491,6 +493,30 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 
 // pageAction handles the page's forms: same checks as the API, then back
 // to the page with a message.
+// diagnostics is the page's button: the bundle built from what the agent
+// holds, downloaded to the member's own machine. It changes nothing and
+// needs the page's session.
+func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.auth.sessionOf(r); !ok {
+		http.Error(w, "open the page with redundanet open first", http.StatusUnauthorized)
+		return
+	}
+	snap := s.cfg.Snapshot()
+	in := diag.Input{Now: time.Now(), Version: snap.Version, Network: snap.Network, DataDir: s.cfg.DataDir, Device: snap.Device, Member: snap.Member, Roles: snap.Roles,
+		AgentUp: true, Uptime: snap.Uptime, Service: snap.Service, Transport: snap.Transport, Membership: snap.Membership, Update: snap.Update, Jobs: snap.Jobs, Repair: snap.Repair}
+	if s.cfg.Logs != nil {
+		in.Lines = s.cfg.Logs.Last(2000)
+	}
+	if text, err := diag.TailFile(filepath.Join(s.cfg.DataDir, "service.log"), 1<<20); err == nil {
+		in.LogText = text
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="redundanet-diagnostics-%s.zip"`, in.Now.UTC().Format("20060102-150405")))
+	if err := diag.Write(w, in); err != nil {
+		s.cfg.Log.Warn("diagnostics bundle not written", "err", err)
+	}
+}
+
 func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.auth.sessionOf(r)
 	if !ok {

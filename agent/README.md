@@ -30,6 +30,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes | Done, with tests through a real hub |
 | `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers, delete tokens to every server, the per-member listing, reads of a tombstoned object within the window, and a cache whose word is probed on the servers once it is six days old) and a fake with the same contract for the jobs' tests | Done, with tests |
 | `internal/rebalance` | The owner's side of a k-of-n change (phase 2, M5): with a transition in the manifest, each device walks its snapshots, reads every object still under the old encoding, stores it again under the new one, rewrites the directories up to the top and the index, updates the scan rows before anything is published, and publishes the root after each snapshot; a stopped run resumes where it was | Done, with tests |
+| `internal/diag` | The diagnostics bundle (phase 2, M6): one zip the member sends by hand, built from the running agent when it answers and from the data directory and the service log when it does not; an allowlist of versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with folders as label plus hash, restore tests, cleanup, error kinds and counts, a disk check, and the last log lines with every path, URL and address redacted | Done, with tests |
 | `internal/cleanup` | The owner's cleanup job (phase 2, M5): the reachable set over every root of the member, walked on the grid, against what the servers hold for the member; a delete token for each object nothing references; refused without the root quorum, when any root or directory cannot be read, and when a run would delete more than half of what the grid holds unless forced; roots of devices revoked longer ago than the window no longer count | Done, with tests |
 | `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
 | `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
@@ -38,7 +39,7 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair), `storage` (has, drop), `backup` (add, remove, list, run, verify), `restore` (list, browse, start, status), `status`, `open`, `logs`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair, delete), `storage` (has, drop), `backup` (add, remove, list, run, verify, cleanup, rebalance), `restore` (list, browse, start, status), `status`, `open`, `logs`, `diagnostics`, `version` | Growing |
 
 Next, in order: the census heartbeat and the hub's status collector, the
 hub's manifest mirror and the join endpoint, the container build for
@@ -63,6 +64,7 @@ redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-onl
 redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
+redundanet diagnostics [--out FILE]
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
 
@@ -97,6 +99,14 @@ folder that becomes unreadable later. A OneDrive online-only file on
 Windows and an evicted iCloud file on macOS are listed as skipped, "not
 on this computer", never pulled down. The change-detection key carries
 the file id and change time on Windows too, through a handle per file.
+When something is wrong, `redundanet diagnostics` writes a bundle to send
+by hand, and the local page has a button for it. It works with the agent
+down, from the data directory and the service log, and holds only what
+the RFC allows: versions, the manifest revision, the service state, hubs
+and peers as counts, the backup sets with each folder as the set's label
+plus a hash, the restore tests, the cleanup, warnings and errors by kind
+and count, a disk check, and the last log lines with every path, URL and
+address replaced. Nothing is uploaded.
 Deletion follows the RFC's two phases and its one invariant. The cleanup
 job (`backup cleanup`, weekly on its own) reads every root of the member
 under the quorum rule, walks the indexes, snapshots and directories on
