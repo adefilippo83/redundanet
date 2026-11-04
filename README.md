@@ -271,6 +271,10 @@ you review, test, and own what you submit.
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
+## Privacy
+
+RedundaNet collects nothing: no accounts, no analytics, no telemetry. What the software sends to hubs, storage servers and GitHub, and what stays on your device, is spelled out in [PRIVACY.md](PRIVACY.md).
+
 ## Acknowledgments
 
 - [Tahoe-LAFS](https://tahoe-lafs.org/) - Distributed storage system
