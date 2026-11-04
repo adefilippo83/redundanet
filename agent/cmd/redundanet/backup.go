@@ -103,6 +103,9 @@ func runBackup(args []string) error {
 				}
 			}
 			fmt.Printf("%s: %s\n", rs.Set, strings.Join(set.Folders, ", "))
+			for _, n := range rs.Needs {
+				fmt.Printf("  needs attention: %s\n", n)
+			}
 			switch {
 			case rs.Running && rs.Progress != nil:
 				fmt.Printf("  running: %s, %d files, %d bytes sent\n", rs.Progress.Phase, rs.Progress.Files, rs.Progress.Uploaded)

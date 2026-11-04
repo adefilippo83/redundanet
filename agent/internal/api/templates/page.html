@@ -69,7 +69,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
   <tr><th>set</th><th>folders</th><th>last run</th><th>result</th></tr>
   {{range .Runs}}<tr><td>{{.Set}}</td><td>{{range $i, $f := (index $.Jobs.Sets 0).Folders}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
     <td>{{if .Running}}<span class="ok">running</span>{{with .Progress}} · {{.Phase}}, {{.Files}} files, {{.Uploaded}} bytes sent{{end}}{{else}}{{since .LastAt}}{{end}}</td>
-    <td>{{if .LastErr}}<span class="bad">{{.LastErr}}</span>{{else if .Last}}{{.Last.Snapshot.Files}} files, {{.Last.Snapshot.Skipped}} skipped{{if .Last.Snapshot.Partial}}, <span class="warn">partial</span>{{end}}, root {{.Last.RootVersion}}{{end}}</td></tr>{{end}}
+    <td>{{range .Needs}}<span class="bad">{{.}}</span><br>{{end}}{{if .LastErr}}<span class="bad">{{.LastErr}}</span>{{else if .Last}}{{.Last.Snapshot.Files}} files, {{.Last.Snapshot.Skipped}} skipped{{if .Last.Snapshot.Partial}}, <span class="warn">partial</span>{{end}}, root {{.Last.RootVersion}}{{end}}</td></tr>{{end}}
   </table>{{else}}<p class="muted">No backup set yet: <code class="cmd">redundanet backup add NAME FOLDER</code></p>{{end}}
   <div class="kv" style="margin-top:8px"><b>every</b><span>{{.Every}}</span>
     <b>restore tests</b><span>every {{.VerifyEvery}}{{if .VerifyStreak}}, <span class="ok">{{.VerifyStreak}} week{{if ne .VerifyStreak 1}}s{{end}} in a row passing</span>{{end}}</span>
