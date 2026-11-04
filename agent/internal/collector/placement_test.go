@@ -98,7 +98,7 @@ func TestPlacementRules(t *testing.T) {
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	objs, grid = objectsBySI(t, w)
-	if objs[2].Need != "repair" || objs[5].Need != "repair" || grid.Repair != 3 || grid.Quiescing != 0 {
+	if objs[2].Need != "repair" || objs[5].Need != "repair" || grid.Repair != 2 || grid.BeyondRepair != 1 || grid.Quiescing != 0 {
 		t.Fatalf("after quiescence: %+v %+v", objs[2], grid)
 	}
 
@@ -131,7 +131,7 @@ func TestPlacementRules(t *testing.T) {
 	rec := httptest.NewRecorder()
 	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
-	for _, want := range []string{"6 objects", "under-placed", "unreadable", "objects due", "checked since"} {
+	for _, want := range []string{"6 objects", "under-placed", "unreadable", "objects due", "beyond repair", "checked since"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page lacks %q:\n%s", want, page)
 		}

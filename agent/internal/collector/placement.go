@@ -211,7 +211,11 @@ type Grid struct {
 	Tombstoned  int            `json:"tombstoned"`   // deleted by their owner, in the 30-day window or purged
 	Quiescing   int            `json:"quiescing"`    // under-placed but younger than the quiescence window
 	Repair      int            `json:"repair"`       // objects a repair task is due for
-	Bytes       int64          `json:"bytes"`        // bytes of complete shares on servers not dead
+	// BeyondRepair counts objects due for repair that no task can rebuild:
+	// fewer than k shares remain. They stay until a dead server returns or
+	// the owner's cleanup tombstones them.
+	BeyondRepair int   `json:"beyond_repair"`
+	Bytes        int64 `json:"bytes"` // bytes of complete shares on servers not dead
 	// The repair scheduler's view, filled by the collector.
 	RepairRunning int    `json:"repair_running"`      // tasks handed to workers and not yet closed
 	RepairDone    int    `json:"repair_done_24h"`     // tasks closed as done in the last day
@@ -437,7 +441,11 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		case "quiescing":
 			g.Quiescing++
 		case "repair":
-			g.Repair++
+			if o.Readable {
+				g.Repair++
+			} else {
+				g.BeyondRepair++
+			}
 		}
 	}
 	if len(reachedNow) > 0 {
