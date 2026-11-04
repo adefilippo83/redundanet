@@ -232,6 +232,9 @@ func TestUnreadableFileIsSkippedAndCounted(t *testing.T) {
 	if err != nil || res.Snapshot.Skipped != 1 || res.Reasons["permission denied"] != 1 || res.Snapshot.Partial {
 		t.Fatalf("unreadable: %+v %+v %v", res.Snapshot, res.Reasons, err)
 	}
+	if why := res.SkipReasons(); why != "1 permission denied" {
+		t.Fatalf("skip reasons: %q", why)
+	}
 	_, docs, _ := restore.Browse(context.Background(), w.fake, w.member2snap(), []string{w.src, "docs"})
 	if e := docs.Find("secret.bin"); e == nil || e.Kind != snapshot.KindSkipped {
 		t.Fatalf("the unreadable file is not listed as skipped: %+v", e)

@@ -507,12 +507,22 @@ func skipReason(ctx context.Context, err error) (counted, detail string) {
 // errPlaceholder is a file a cloud provider keeps online-only.
 var errPlaceholder = errors.New("evicted to the cloud, not on this computer")
 
-// Reasons lists the skip reasons sorted by count, for the page.
-func (res *Result) ReasonList() []string {
-	var out []string
-	for reason, n := range res.Reasons {
-		out = append(out, fmt.Sprintf("%s: %d", reason, n))
+// SkipReasons words why files were skipped, most frequent first: "2 not on
+// this computer, 1 permission denied". Empty when nothing was skipped.
+func (res *Result) SkipReasons() string {
+	reasons := make([]string, 0, len(res.Reasons))
+	for reason := range res.Reasons {
+		reasons = append(reasons, reason)
 	}
-	sort.Strings(out)
-	return out
+	sort.Slice(reasons, func(i, j int) bool {
+		if res.Reasons[reasons[i]] != res.Reasons[reasons[j]] {
+			return res.Reasons[reasons[i]] > res.Reasons[reasons[j]]
+		}
+		return reasons[i] < reasons[j]
+	})
+	parts := make([]string, len(reasons))
+	for i, reason := range reasons {
+		parts[i] = fmt.Sprintf("%d %s", res.Reasons[reason], reason)
+	}
+	return strings.Join(parts, ", ")
 }

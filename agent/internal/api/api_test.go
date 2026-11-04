@@ -19,6 +19,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/repair"
+	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
 )
@@ -47,7 +48,7 @@ func newHarness(t *testing.T) *harness {
 				Transport: &transport.Status{Sessions: []transport.SessionStatus{{Peer: "peerpeerpeer", Relay: true, Events: []transport.Event{{Time: time.Now(), What: "relay connection up"}}}}},
 				Update:    &update.Status{Enabled: true, Running: "3.0.0-test", Channel: "stable", Available: "3.0.1", Failed: []string{"3.0.1"}},
 				Repair:    &repair.Status{Running: "abcdefgh", Done: 2, Failed: 1, Released: 3, Last: "task 7 for abcdefgh: stored 1 shares", LastAt: time.Now()},
-				Jobs: &jobs.Status{Sets: []backup.Set{{Name: "home", Folders: []string{"/home/x"}}}, Runs: []jobs.RunStatus{{Set: "home", Needs: []string{"/home/x/Documents: macOS denies the service access to this folder: grant Full Disk Access"}}}, Every: "24h0m0s", VerifyEvery: "168h0m0s", VerifyStreak: 2,
+				Jobs: &jobs.Status{Sets: []backup.Set{{Name: "home", Folders: []string{"/home/x"}}}, Runs: []jobs.RunStatus{{Set: "home", Needs: []string{"/home/x/Documents: macOS denies the service access to this folder: grant Full Disk Access"}, LastAt: time.Now(), Last: &backup.Result{Snapshot: snapshot.Snapshot{Files: 3, Skipped: 1}, RootVersion: 2, Reasons: map[string]int64{"not on this computer": 1}}}}, Every: "24h0m0s", VerifyEvery: "168h0m0s", VerifyStreak: 2,
 					Verifications: []localdb.Verification{{At: time.Now(), Snapshot: "2026-11-04T09:00:00Z", Sampled: 20, Verified: 20, Compared: 18}, {At: time.Now().AddDate(0, 0, -7), Snapshot: "s0", Sampled: 20, Verified: 19, Failed: []string{"x"}}}},
 				Generated: time.Now()}
 		},
@@ -152,7 +153,7 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "testnet") || !strings.Contains(string(page), "Install 3.0.1") ||
 		!strings.Contains(string(page), "repairing abcdefgh") || !strings.Contains(string(page), "3 surplus shares released") || strings.Contains(string(page), "%!") ||
 		!strings.Contains(string(page), "2 weeks in a row passing") || !strings.Contains(string(page), "20 of 20") || !strings.Contains(string(page), "1 failed") ||
-		!strings.Contains(string(page), "grant Full Disk Access") {
+		!strings.Contains(string(page), "grant Full Disk Access") || !strings.Contains(string(page), "1 skipped (1 not on this computer)") {
 		t.Fatalf("page after login: %d %s", resp.StatusCode, firstLines(string(page)))
 	}
 	// The link is single use.
