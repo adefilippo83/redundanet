@@ -460,6 +460,7 @@ type Member struct {
 	Objects        int    `json:"objects"`                         // distinct objects with at least one complete share
 	LastBackup     string `json:"last_backup,omitempty"`           // day of the newest backup of any device, "" when none
 	LastVerified   string `json:"last_verified_restore,omitempty"` // day of the newest passing restore test
+	VerifyStreak   int    `json:"verify_streak"`                   // the longest run of weeks in a row with a passing restore test among the member's devices
 	UnderPlaced    int    `json:"under_placed"`                    // the member's objects short of a share or of spread
 	Unreadable     int    `json:"unreadable"`                      // the member's objects below k shares
 	OldEncoding    int    `json:"old_encoding,omitempty"`          // objects still under the encoding a transition retires
@@ -543,6 +544,7 @@ func (c *Collector) Status() Status {
 	}
 	perMember := map[string]*Member{}
 	lastBackup, lastVerify := map[string]time.Time{}, map[string]time.Time{}
+	streaks := map[string]int{}
 	for k := range known {
 		d := Device{Device: k.String(), State: "never"}
 		var memberKey identity.Key
@@ -608,6 +610,9 @@ func (c *Collector) Status() Status {
 			if b.VerifyOK && b.LastVerify.After(lastVerify[d.Member]) {
 				lastVerify[d.Member] = b.LastVerify
 			}
+			if b.VerifyStreak > streaks[d.Member] {
+				streaks[d.Member] = b.VerifyStreak
+			}
 		}
 		if pm := perMember[d.Member]; pm != nil {
 			pm.Devices++
@@ -655,6 +660,7 @@ func (c *Collector) Status() Status {
 			}
 			if t := lastVerify[mem.Name]; !t.IsZero() {
 				mm.LastVerified = t.UTC().Format("2006-01-02")
+				mm.VerifyStreak = streaks[mem.Name]
 			}
 			if pm := perMember[mem.Name]; pm != nil {
 				mm.Devices, mm.Online = pm.Devices, pm.Online

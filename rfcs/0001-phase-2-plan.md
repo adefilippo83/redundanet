@@ -351,6 +351,13 @@ The hub and node sides of the RFC's "Health" section.
   settings.
 - The month of weekly restore tests on the maintainer's data, recorded on
   the page, and the G2 record beside this plan.
+- 2026-11-04, the G2 month starts: the restore test runs weekly (files
+  saved with the old monthly default move over on load), every test is
+  kept in the local database and listed on the local page and by
+  `backup list`, the last one survives a restart, and the heartbeat
+  carries how many weeks in a row had a passing test, which the hub page
+  shows beside the member's last verified restore. The G2 record will
+  quote that number and the other platform's backup and restore.
 
 ## Order and reasons
 

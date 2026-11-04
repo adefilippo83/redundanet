@@ -102,3 +102,34 @@ func TestLookupByCapAndRewriteCaps(t *testing.T) {
 		t.Fatalf("after the rewrite: %+v %+v %+v", a, b, c)
 	}
 }
+
+func TestVerificationsAreKeptNewestFirst(t *testing.T) {
+	d, err := Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	base := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
+	for i := 0; i < 3; i++ {
+		v := Verification{At: base.AddDate(0, 0, 7*i), Snapshot: "s", Sampled: 20, Verified: 20, Compared: 18}
+		if i == 1 {
+			v.Verified, v.Failed = 19, []string{"a.txt: read failed", "b.txt: differs from the unchanged source"}
+		}
+		if err := d.RememberVerification(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vs, err := d.Verifications(10)
+	if err != nil || len(vs) != 3 {
+		t.Fatalf("verifications: %d %v", len(vs), err)
+	}
+	if !vs[0].At.Equal(base.AddDate(0, 0, 14)) || !vs[0].Passed() || vs[1].Passed() || len(vs[1].Failed) != 2 || vs[1].Failed[1] != "b.txt: differs from the unchanged source" || !vs[2].Passed() {
+		t.Fatalf("order or content: %+v", vs)
+	}
+	if vs, _ := d.Verifications(1); len(vs) != 1 || !vs[0].At.Equal(base.AddDate(0, 0, 14)) {
+		t.Fatalf("limit: %+v", vs)
+	}
+	if (Verification{}).Passed() {
+		t.Fatal("an empty test passed")
+	}
+}

@@ -309,3 +309,25 @@ func TestShareCensusMakesMemberUsage(t *testing.T) {
 		}
 	}
 }
+
+// The restore test streak travels in the heartbeat and the member row
+// shows it beside the last verified restore.
+func TestVerifyStreakOnTheMemberRow(t *testing.T) {
+	w := newWorld(t, "", "")
+	when := w.now.Add(-2 * time.Hour)
+	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Roles: []string{"client"},
+		Backup: &wire.CensusBackup{LastBackup: when, LastVerify: when, VerifyOK: true, VerifyStreak: 3}})
+	w.c.Record(identity.Peer{Device: spare, Member: alice}, "udp", wire.Census{Roles: []string{"client"},
+		Backup: &wire.CensusBackup{LastVerify: when.Add(-time.Hour), VerifyOK: true, VerifyStreak: 1}})
+	st := w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "alice" && (m.LastVerified != "2026-11-02" || m.VerifyStreak != 3) {
+			t.Fatalf("alice: %+v", m)
+		}
+	}
+	rec := httptest.NewRecorder()
+	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if page := rec.Body.String(); !strings.Contains(page, "2026-11-02, 3 weeks in a row") {
+		t.Fatalf("page lacks the streak:\n%s", page)
+	}
+}

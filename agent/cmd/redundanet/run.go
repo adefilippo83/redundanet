@@ -564,6 +564,7 @@ func runAgent(args []string) error {
 			cb := &wire.CensusBackup{LastBackup: at, Partial: partial}
 			if v := runner.LastVerify(); v != nil {
 				cb.LastVerify, cb.VerifyOK = v.At, len(v.Failed) == 0 && v.Verified > 0
+				cb.VerifyStreak = runner.VerifyStreak()
 			}
 			if !at.IsZero() || !cb.LastVerify.IsZero() {
 				cs.Backup = cb

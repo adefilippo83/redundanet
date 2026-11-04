@@ -94,6 +94,9 @@ type CensusBackup struct {
 	Partial    bool      `cbor:"partial" json:"partial"`
 	LastVerify time.Time `cbor:"last_verify" json:"last_verify"`
 	VerifyOK   bool      `cbor:"verify_ok" json:"verify_ok"`
+	// VerifyStreak is how many weeks in a row, counting back from this
+	// one, had a passing restore test: what the G2 gate's month counts.
+	VerifyStreak int `cbor:"verify_streak,omitempty" json:"verify_streak,omitempty"`
 }
 
 // CensusStorage is the storage half of a heartbeat.

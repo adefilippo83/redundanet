@@ -28,18 +28,29 @@ import (
 
 // File is backup.yaml in the data directory.
 type File struct {
+	Version      int                `yaml:"version"` // of this file's defaults; 2 made the restore test weekly
 	Sets         []backup.Set       `yaml:"sets"`
 	Every        time.Duration      `yaml:"every"`         // between runs of each set; default 24h
-	VerifyEvery  time.Duration      `yaml:"verify_every"`  // between restore tests; default 30 days
+	VerifyEvery  time.Duration      `yaml:"verify_every"`  // between restore tests; default 7 days
 	CleanupEvery time.Duration      `yaml:"cleanup_every"` // between cleanups of unreferenced objects; default 7 days
 	Retention    snapshot.Retention `yaml:"retention"`
 }
 
 const fileName = "backup.yaml"
 
-// Load reads the configuration; a missing file is an empty one.
+// Defaults of the file.
+const (
+	fileVersion        = 2
+	defaultVerifyEvery = 7 * 24 * time.Hour
+	oldVerifyEvery     = 30 * 24 * time.Hour // the default files of version 1 were saved with
+)
+
+// Load reads the configuration; a missing file is an empty one. A file
+// saved by an earlier version with the monthly restore test it then
+// defaulted to moves to the weekly one: the month the G2 gate measures
+// is made of weekly tests.
 func Load(dir string) (*File, error) {
-	f := &File{Every: 24 * time.Hour, VerifyEvery: 30 * 24 * time.Hour, CleanupEvery: 7 * 24 * time.Hour, Retention: snapshot.DefaultRetention}
+	f := &File{Version: fileVersion, Every: 24 * time.Hour, VerifyEvery: defaultVerifyEvery, CleanupEvery: 7 * 24 * time.Hour, Retention: snapshot.DefaultRetention}
 	b, err := os.ReadFile(filepath.Join(dir, fileName))
 	if errors.Is(err, os.ErrNotExist) {
 		return f, nil
@@ -47,14 +58,19 @@ func Load(dir string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
+	f.Version = 0
 	if err := yaml.Unmarshal(b, f); err != nil {
 		return nil, fmt.Errorf("jobs: %s: %w", fileName, err)
 	}
+	if f.Version < 2 && f.VerifyEvery == oldVerifyEvery {
+		f.VerifyEvery = defaultVerifyEvery
+	}
+	f.Version = fileVersion
 	if f.Every <= 0 {
 		f.Every = 24 * time.Hour
 	}
 	if f.VerifyEvery <= 0 {
-		f.VerifyEvery = 30 * 24 * time.Hour
+		f.VerifyEvery = defaultVerifyEvery
 	}
 	if f.CleanupEvery <= 0 {
 		f.CleanupEvery = 7 * 24 * time.Hour
@@ -114,12 +130,18 @@ type RestoreStatus struct {
 type Status struct {
 	Sets        []backup.Set          `json:"sets"`
 	Every       string                `json:"every"`
+	VerifyEvery string                `json:"verify_every"`
 	Runs        []RunStatus           `json:"runs"`
 	LastVerify  *restore.Verification `json:"last_verify,omitempty"`
-	Restore     *RestoreStatus        `json:"restore,omitempty"`
-	LastCleanup *cleanup.Report       `json:"last_cleanup,omitempty"`
-	Cleaning    bool                  `json:"cleaning"`
-	Rebalance   *rebalance.Status     `json:"rebalance,omitempty"` // the conversion running or last run
+	// Verifications are the newest restore tests first, as the device
+	// kept them; VerifyStreak is how many weeks in a row had a passing
+	// one, counting back from this week.
+	Verifications []localdb.Verification `json:"verifications,omitempty"`
+	VerifyStreak  int                    `json:"verify_streak"`
+	Restore       *RestoreStatus         `json:"restore,omitempty"`
+	LastCleanup   *cleanup.Report        `json:"last_cleanup,omitempty"`
+	Cleaning      bool                   `json:"cleaning"`
+	Rebalance     *rebalance.Status      `json:"rebalance,omitempty"` // the conversion running or last run
 }
 
 // Config wires the runner.
@@ -173,14 +195,58 @@ func New(cfg Config) (*Runner, error) {
 		return nil, err
 	}
 	r := &Runner{cfg: cfg, log: cfg.Log.With("component", "jobs"), file: f, runs: map[string]*RunStatus{}, kick: make(chan string, 8)}
+	// The last restore test survives a restart: the census says when it
+	// was, and the page what it found.
+	if vs, err := cfg.DB.Verifications(1); err == nil && len(vs) == 1 {
+		r.lastVerify = fromRecord(vs[0])
+	}
 	return r, nil
+}
+
+func fromRecord(v localdb.Verification) *restore.Verification {
+	return &restore.Verification{At: v.At, Snapshot: v.Snapshot, Sampled: v.Sampled, Verified: v.Verified, Compared: v.Compared, Unchanged: v.Unchanged, Failed: v.Failed}
+}
+
+func toRecord(v *restore.Verification) localdb.Verification {
+	return localdb.Verification{At: v.At, Snapshot: v.Snapshot, Sampled: v.Sampled, Verified: v.Verified, Compared: v.Compared, Unchanged: v.Unchanged, Failed: v.Failed}
+}
+
+// streak counts the weeks in a row with a passing restore test, counting
+// back from the week of now. A week with no test yet, this one, does not
+// break the streak; the first week without one before it does.
+func streak(tests []localdb.Verification, now time.Time) int {
+	passed := map[[2]int]bool{}
+	for _, v := range tests {
+		if v.Passed() {
+			y, w := v.At.UTC().ISOWeek()
+			passed[[2]int{y, w}] = true
+		}
+	}
+	n := 0
+	t := now.UTC()
+	y, w := t.ISOWeek()
+	if !passed[[2]int{y, w}] {
+		t = t.AddDate(0, 0, -7) // this week has had no test yet
+	}
+	for {
+		y, w := t.ISOWeek()
+		if !passed[[2]int{y, w}] {
+			return n
+		}
+		n++
+		t = t.AddDate(0, 0, -7)
+	}
 }
 
 // Status snapshots the runner.
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning}
+	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), VerifyEvery: r.file.VerifyEvery.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning}
+	if vs, err := r.cfg.DB.Verifications(8); err == nil {
+		st.Verifications = vs
+	}
+	st.VerifyStreak = r.VerifyStreak()
 	if r.rebalance != nil {
 		cp := *r.rebalance
 		st.Rebalance = &cp
@@ -445,9 +511,22 @@ func (r *Runner) verify(ctx context.Context) {
 		r.lastVerify = v
 		r.mu.Unlock()
 		if v != nil {
-			r.log.Info("restore test", "sampled", v.Sampled, "verified", v.Verified, "compared", v.Compared, "failed", len(v.Failed))
+			if err := r.cfg.DB.RememberVerification(toRecord(v)); err != nil {
+				r.log.Warn("restore test not recorded", "err", err)
+			}
+			r.log.Info("restore test", "sampled", v.Sampled, "verified", v.Verified, "compared", v.Compared, "failed", len(v.Failed), "weeks_in_a_row", r.VerifyStreak())
 		}
 	}
+}
+
+// VerifyStreak is the weeks in a row with a passing restore test, for the
+// census and the page.
+func (r *Runner) VerifyStreak() int {
+	vs, err := r.cfg.DB.Verifications(60)
+	if err != nil {
+		return 0
+	}
+	return streak(vs, r.cfg.Now())
 }
 
 // Verify runs the restore test now.

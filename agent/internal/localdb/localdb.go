@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure Go
@@ -46,6 +47,8 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 		`CREATE INDEX IF NOT EXISTS scan_hashed ON scan(last_hashed)`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_version', 0)`,
+		`CREATE TABLE IF NOT EXISTS verifications (at INTEGER PRIMARY KEY, snapshot TEXT NOT NULL, sampled INTEGER NOT NULL,
+			verified INTEGER NOT NULL, compared INTEGER NOT NULL, unchanged INTEGER NOT NULL, failed TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			_ = db.Close()
@@ -331,4 +334,55 @@ func splitChunks(s string) []string {
 		}
 	}
 	return out
+}
+
+// Verification is one restore test as the device keeps it: the record
+// behind the weekly tests the G2 gate counts.
+type Verification struct {
+	At        time.Time `json:"at"`
+	Snapshot  string    `json:"snapshot"`
+	Sampled   int       `json:"sampled"`
+	Verified  int       `json:"verified"`
+	Compared  int       `json:"compared"`
+	Unchanged int       `json:"unchanged"`
+	Failed    []string  `json:"failed,omitempty"`
+}
+
+// Passed says the test read every sampled file back and none differed.
+func (v Verification) Passed() bool {
+	return v.Sampled > 0 && v.Verified == v.Sampled && len(v.Failed) == 0
+}
+
+// RememberVerification keeps a restore test; one per second at most.
+func (d *DB) RememberVerification(v Verification) error {
+	_, err := d.db.Exec(`INSERT OR REPLACE INTO verifications (at, snapshot, sampled, verified, compared, unchanged, failed) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		v.At.Unix(), v.Snapshot, v.Sampled, v.Verified, v.Compared, v.Unchanged, strings.Join(v.Failed, "\n"))
+	return err
+}
+
+// Verifications lists the newest restore tests first, up to limit.
+func (d *DB) Verifications(limit int) ([]Verification, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := d.db.Query(`SELECT at, snapshot, sampled, verified, compared, unchanged, failed FROM verifications ORDER BY at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Verification
+	for rows.Next() {
+		var v Verification
+		var at int64
+		var failed string
+		if err := rows.Scan(&at, &v.Snapshot, &v.Sampled, &v.Verified, &v.Compared, &v.Unchanged, &failed); err != nil {
+			return nil, err
+		}
+		v.At = time.Unix(at, 0)
+		if failed != "" {
+			v.Failed = strings.Split(failed, "\n")
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
