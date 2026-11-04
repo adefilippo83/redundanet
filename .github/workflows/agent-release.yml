@@ -90,8 +90,14 @@ jobs:
             os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "dist/redundanet-$version-$os-$arch/redundanet$ext" ./cmd/redundanet
           done
+          # The Windows binary moves to a fixed path: uploaded alone from
+          # there, the artifact holds redundanet.exe at its root, which is
+          # the layout the SignPath artifact configuration and the release
+          # job expect (a wildcard in the upload path would keep the
+          # directory).
+          mv "dist/redundanet-$version-windows-amd64" dist/windows
           # The resource made it into the executable: a .rsrc section.
-          python3 - "dist/redundanet-$version-windows-amd64/redundanet.exe" <<'PY'
+          python3 - dist/windows/redundanet.exe <<'PY'
           import struct, sys
           b = open(sys.argv[1], "rb").read()
           pe = struct.unpack_from("<I", b, 0x3C)[0]
@@ -113,7 +119,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-windows
-          path: agent/dist/redundanet-*-windows-amd64/redundanet.exe
+          path: agent/dist/windows/redundanet.exe
           if-no-files-found: error
 
   sign-windows:
