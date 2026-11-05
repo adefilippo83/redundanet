@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
@@ -96,6 +94,7 @@ type world struct {
 	st     *store.Store
 	server *member
 	srvEp  *transport.Endpoint
+	srv    *Server
 	log    *slog.Logger
 	clock  struct {
 		mu sync.Mutex
@@ -145,12 +144,12 @@ func newWorld(t *testing.T) *world {
 	w.server = newMember(t, 1, identity.RoleClient, identity.RoleStorage)
 	w.pol.active[w.server.key] = true
 	w.pol.self = w.server.dev.ID()
-	srv := NewServer(st, w.pol, w.log)
-	w.srvEp = w.endpoint(t, w.server, srv.Handle)
+	w.srv = NewServer(st, w.pol, w.log)
+	w.srvEp = w.endpoint(t, w.server, w.srv.Handle)
 	return w
 }
 
-func (w *world) endpoint(t *testing.T, m *member, onStream func(identity.Peer, string, *quic.Stream)) *transport.Endpoint {
+func (w *world) endpoint(t *testing.T, m *member, onStream func(identity.Peer, string, wire.Stream)) *transport.Endpoint {
 	t.Helper()
 	w.pol.mu.Lock()
 	w.pol.allowed[m.dev.ID()] = true
@@ -653,5 +652,77 @@ func TestTransitionAccountsTheOldEncodingAtZero(t *testing.T) {
 	w.pol.mu.Unlock()
 	if err := c.PutShare(ctx, peer, sd, 0, func(s int) ([]byte, error) { return blocks[s], nil }); err != nil {
 		t.Fatalf("over the cap during the transition: %v", err)
+	}
+}
+
+// TestLocalOpener is a device as a client of its own server: the same
+// requests over an in-process pair instead of the mesh, with the same
+// closing rules on both halves, so a put that fails half way leaves a
+// partial the next one resumes and nothing stays blocked.
+func TestLocalOpener(t *testing.T) {
+	w := newWorld(t)
+	self := identity.Peer{Device: w.server.dev.ID(), Member: w.server.key, Certificate: w.server.cert}
+	c := NewClient(LocalOpener(self, w.srv.Handle))
+	ctx, cancel := context.WithTimeout(w.ctx, 30*time.Second)
+	defer cancel()
+	peer := w.server.dev.ID()
+	o := encode(t, w.server, 3*8192+100, 1)
+	si := o.sd.Descriptor.StorageIndex
+	if err := c.PutShare(ctx, peer, o.sd, 1, func(s int) ([]byte, error) { return o.blocks[1][s], nil }); err != nil {
+		t.Fatal(err)
+	}
+	p, err := c.Has(ctx, peer, si)
+	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 1 {
+		t.Fatalf("has: %+v %v", p, err)
+	}
+	var got [][]byte
+	if _, err := c.GetShare(ctx, peer, si, 1, 0, 0, o.sd.Descriptor.Geometry(), func(_ int, b []byte) error { got = append(got, b); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(o.blocks[1]) {
+		t.Fatalf("got %d of %d blocks", len(got), len(o.blocks[1]))
+	}
+	for i := range got {
+		if !bytes.Equal(got[i], o.blocks[1][i]) {
+			t.Fatalf("block %d differs", i)
+		}
+	}
+	fail := errors.New("laptop closed")
+	err = c.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) {
+		if s == 2 {
+			return nil, fail
+		}
+		return o.blocks[2][s], nil
+	})
+	if !errors.Is(err, fail) {
+		t.Fatalf("failed put: %v", err)
+	}
+	calls := 0
+	if err := c.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) { calls++; return o.blocks[2][s], nil }); err != nil || calls == 0 || calls >= len(o.blocks[2]) {
+		t.Fatalf("resumed put: %v, %d of %d blocks sent", err, calls, len(o.blocks[2]))
+	}
+	if p, err := c.Has(ctx, peer, si); err != nil || p == nil || len(p.Complete) != 2 {
+		t.Fatalf("has after resume: %+v %v", p, err)
+	}
+	e1, err := SignRoot("testnet", w.server.dev, w.server.cert, 1, []byte("ciphertext v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.PutRoot(ctx, peer, e1); err != nil {
+		t.Fatal(err)
+	}
+	roots, err := c.GetRoots(ctx, peer, w.server.key)
+	if err != nil || len(roots) != 1 || roots[0].Version != 1 {
+		t.Fatalf("roots: %+v %v", roots, err)
+	}
+	// A refusal is a status, not a hang; a cancelled context opens nothing.
+	refused := NewClient(LocalOpener(self, RefuseAll))
+	if _, err := refused.Has(ctx, peer, si); err == nil {
+		t.Fatal("RefuseAll answered")
+	}
+	cctx, ccancel := context.WithCancel(ctx)
+	ccancel()
+	if _, err := c.Has(cctx, peer, si); err == nil {
+		t.Fatal("a stream opened on a cancelled context")
 	}
 }
