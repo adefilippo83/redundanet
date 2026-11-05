@@ -105,8 +105,8 @@ func TestTLSHandshakeBetweenTwoDevices(t *testing.T) {
 }
 
 // The extension's arc moved from a provisional one to the enterprise number;
-// until every device verifies the new arc, leaves present the old one, and
-// either verifies.
+// either verifies until 3.0.0, so a device still presenting the old arc
+// shakes hands with one on the new.
 func TestTLSExtensionArcs(t *testing.T) {
 	var seedB Seed
 	seedB[0] = 9
@@ -121,16 +121,16 @@ func TestTLSExtensionArcs(t *testing.T) {
 			t.Fatalf("leaf under %v: %v", oid, err)
 		}
 	}
-	// A device presenting the enterprise arc and one presenting the
-	// provisional arc shake hands both ways.
+	// A device presenting the provisional arc and one presenting the
+	// enterprise arc shake hands both ways.
 	defer func(oid asn1.ObjectIdentifier) { presentedExtensionOID = oid }(presentedExtensionOID)
-	presentedExtensionOID = CertificateExtensionOID
+	presentedExtensionOID = provisionalExtensionOID
 	b := newTestDevice(t, seedB, RoleClient)
 	if _, _, err := handshake(t, a.tls.ServerConfig(allowAll), b.tls.ClientConfig(a.dev.ID(), allowAll)); err != nil {
-		t.Fatalf("new client to old server: %v", err)
+		t.Fatalf("old client to new server: %v", err)
 	}
 	if _, _, err := handshake(t, b.tls.ServerConfig(allowAll), a.tls.ClientConfig(b.dev.ID(), allowAll)); err != nil {
-		t.Fatalf("old client to new server: %v", err)
+		t.Fatalf("new client to old server: %v", err)
 	}
 }
 

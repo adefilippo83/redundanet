@@ -29,12 +29,11 @@ var CertificateExtensionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 67508, 1, 
 // a time.
 var provisionalExtensionOID = asn1.ObjectIdentifier{2, 25, 1409274851}
 
-// presentedExtensionOID is the arc a leaf is built under. It is the
-// provisional one until every device verifies the enterprise arc, which is
-// the release after the one that introduced it (alpha.19); then it becomes
-// CertificateExtensionOID, and 3.0.0 drops the provisional arc from
-// verification.
-var presentedExtensionOID = provisionalExtensionOID
+// presentedExtensionOID is the arc a leaf is built under: the enterprise
+// arc since alpha.20, every device having verified it since alpha.19. A
+// variable so the tests build leaves under the provisional arc, which 3.0.0
+// drops from verification.
+var presentedExtensionOID = CertificateExtensionOID
 
 // Peer is what a verified connection tells the application about the other
 // side.
