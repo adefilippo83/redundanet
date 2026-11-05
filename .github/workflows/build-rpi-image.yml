@@ -26,7 +26,13 @@ env:
 jobs:
   build-arm64:
     name: Build ARM64 Image
-    runs-on: ubuntu-latest
+    # The image is RedundaNet 2's: a Python release (tag v*) builds it, an
+    # agent release (agent/v*) does not. 'release: published' fires for both,
+    # so the agent ones are filtered here.
+    if: ${{ github.event_name != 'release' || !startsWith(github.event.release.tag_name, 'agent/') }}
+    # Pinned: ubuntu-latest moved to 26.04, where the ARM runner action can
+    # no longer install qemu-user-static ("no installation candidate").
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
