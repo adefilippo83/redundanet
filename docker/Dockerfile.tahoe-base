@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
+# The package readme pyproject.toml names, which pip and poetry open.
+COPY docs/legacy/README.md docs/legacy/README.md
 
 # Poetry lives in its own venv so it does not end up in the image's
 # site-packages; it only resolves the lock into a requirements file for pip.

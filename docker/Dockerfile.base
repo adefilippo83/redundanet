@@ -34,6 +34,8 @@ WORKDIR /app
 
 # Copy dependency files
 COPY pyproject.toml poetry.lock* ./
+# The package readme pyproject.toml names, which pip and poetry open.
+COPY docs/legacy/README.md docs/legacy/README.md
 
 # Install dependencies via pip from the lock export (poetry only resolves the
 # locked versions).
