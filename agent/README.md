@@ -326,13 +326,20 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
     retires the stack. Refuses while the folder backup-sync pushed to the
     old grid is not held by a native set with a complete run and a passed
     restore test on this device, or while no hub is connected; --force
-    overrides, and the plan names what is lost. Then one `docker compose
-    down` through the installed compose file, its override and .env, every
-    container at once and tinc last by its dependencies, and a marker in
-    the data directory. The compose files, the .env and the Tahoe share
-    directories stay on disk; the shares go on the network's stop date,
-    not here. --rollback is `compose up` with the same files and removes
-    the marker. The agent is untouched throughout.
+    overrides, and the plan names what is lost. The plan lists the stack's
+    containers by service (asked of Docker itself, since compose does not
+    see a service whose profile is off) and every profile the compose file
+    defines. Then one `docker compose down` through the installed compose
+    file, its override and .env, with every profile named, so the Tahoe
+    services go too, every container at once and tinc last by its
+    dependencies; a container that survives puts the stack back and fails
+    the command, since it would run on tinc's dead network namespace.
+    Then a marker in the data directory. The compose files, the .env and
+    the Tahoe share directories stay on disk; the shares go on the
+    network's stop date, not here. --rollback is `compose up -d
+    --force-recreate` naming every service the marker recorded, tinc
+    first by its dependencies, and removes the marker: the stack is never
+    restarted one container at a time. The agent is untouched throughout.
 ```
 
 ## Encodings, fixed here

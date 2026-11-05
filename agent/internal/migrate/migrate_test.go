@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,15 +14,48 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 )
 
-type recorder struct{ calls [][]string }
+// recorder stands in for docker: it records every command, answers the
+// container listing and the profile listing, and plays the stack: a down
+// leaves whatever `survive` says (nothing, unless a test sets it), an up
+// brings the named services back.
+type recorder struct {
+	calls      [][]string
+	containers []string
+	profiles   string
+	survive    []string
+}
 
 func (r *recorder) run(name string, args ...string) (string, error) {
 	r.calls = append(r.calls, append([]string{name}, args...))
+	cmd := strings.Join(args, " ")
+	switch {
+	case name == "docker" && len(args) > 0 && args[0] == "ps":
+		return strings.Join(r.containers, "\n") + "\n", nil
+	case strings.HasSuffix(cmd, "config --profiles"):
+		return r.profiles, nil
+	case strings.Contains(cmd, " down "):
+		r.containers = r.survive
+	case strings.Contains(cmd, " up -d "):
+		r.containers = args[len(args)-3:]
+	}
 	return "", nil
 }
 
+// changes are the recorded commands that touch the stack, leaving out
+// the listings a plan makes.
+func (r *recorder) changes() []string {
+	var out []string
+	for _, c := range r.calls {
+		if s := strings.Join(c, " "); strings.Contains(s, " down ") || strings.Contains(s, " up ") {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // stack lays out a RedundaNet 2 installation: compose file, override, .env
-// with backup-sync on, and returns the config and the synced folder.
+// with backup-sync on, three containers behind two profiles, and returns
+// the config and the synced folder.
 func stack(t *testing.T, env string) (Config, *recorder, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -49,7 +83,7 @@ func stack(t *testing.T, env string) (Config, *recorder, string) {
 	if err := os.MkdirAll(data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	rec := &recorder{}
+	rec := &recorder{containers: []string{"tahoe-storage", "tinc", "tahoe-client"}, profiles: "storage\nintroducer\nclient\n"}
 	return Config{ComposeDir: composeDir, EnvFile: envFile, Project: "redundanet", DataDir: data, Run: rec.run,
 		Now: func() time.Time { return time.Date(2027, 8, 1, 12, 0, 0, 0, time.UTC) }}, rec, share
 }
@@ -76,21 +110,40 @@ func TestPlanStopsAndRollsBack(t *testing.T) {
 	}
 	want := []string{"docker", "compose", "-p", "redundanet", "-f", filepath.Join(cfg.ComposeDir, "docker-compose.yml"),
 		"-f", filepath.Join(cfg.ComposeDir, "docker-compose.override.yml"), "--env-file", cfg.EnvFile}
-	if strings.Join(p.Compose, " ") != strings.Join(want, " ") {
+	base := strings.Join(want, " ")
+	if strings.Join(p.Compose, " ") != base {
 		t.Fatalf("compose command: %v", p.Compose)
 	}
-	if !strings.Contains(p.String(), "plan:") || strings.Contains(p.String(), "not yet") {
-		t.Fatalf("plan text: %s", p)
+	// tinc first, the rest sorted; every profile the file defines, sorted.
+	if strings.Join(p.Services, ",") != "tinc,tahoe-client,tahoe-storage" || strings.Join(p.Profiles, ",") != "client,introducer,storage" {
+		t.Fatalf("services %v, profiles %v", p.Services, p.Profiles)
+	}
+	if s := p.String(); !strings.Contains(s, "plan:") || strings.Contains(s, "not yet") || !strings.Contains(s, "stop the stack (tinc, tahoe-client, tahoe-storage)") {
+		t.Fatalf("plan text: %s", s)
+	}
+	if len(rec.changes()) != 0 {
+		t.Fatalf("the plan touched the stack: %v", rec.changes())
 	}
 	if err := Apply(cfg, p, agent, false); err != nil {
 		t.Fatal(err)
 	}
-	if len(rec.calls) != 1 || strings.Join(rec.calls[0], " ") != strings.Join(want, " ")+" down --timeout 60" {
-		t.Fatalf("calls: %v", rec.calls)
+	down := base + " --profile client --profile introducer --profile storage down --timeout 60"
+	if ch := rec.changes(); len(ch) != 1 || ch[0] != down {
+		t.Fatalf("apply ran: %v", ch)
+	}
+	// The listing after the down is the check that nothing survived.
+	last := strings.Join(rec.calls[len(rec.calls)-1], " ")
+	if !strings.HasPrefix(last, "docker ps -a --filter label=com.docker.compose.project=redundanet") {
+		t.Fatalf("no check after the down: %s", last)
 	}
 	at, ok := Migrated(cfg.DataDir)
 	if !ok || at != cfg.Now() {
 		t.Fatalf("marker: %v %v", at, ok)
+	}
+	var m marker
+	data, _ := os.ReadFile(filepath.Join(cfg.DataDir, Marker))
+	if err := json.Unmarshal(data, &m); err != nil || strings.Join(m.Services, ",") != "tinc,tahoe-client,tahoe-storage" {
+		t.Fatalf("marker services: %s", data)
 	}
 	if err := Apply(cfg, p, agent, false); err == nil || !strings.Contains(err.Error(), "already marked") {
 		t.Fatalf("second apply: %v", err)
@@ -98,14 +151,74 @@ func TestPlanStopsAndRollsBack(t *testing.T) {
 	if err := Rollback(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if len(rec.calls) != 2 || strings.Join(rec.calls[1], " ") != strings.Join(want, " ")+" up -d" {
-		t.Fatalf("calls: %v", rec.calls)
+	// All of them together, tinc first, recreated: never tinc alone.
+	up := base + " up -d --force-recreate tinc tahoe-client tahoe-storage"
+	if ch := rec.changes(); len(ch) != 2 || ch[1] != up {
+		t.Fatalf("rollback ran: %v", ch)
 	}
 	if _, ok := Migrated(cfg.DataDir); ok {
 		t.Fatal("marker survived the rollback")
 	}
 	if err := Rollback(cfg); err == nil {
 		t.Fatal("rollback without a marker succeeded")
+	}
+}
+
+// TestSurvivorsPutTheStackBack is the first drill on falcon-1: a down
+// that misses the profiled services leaves the Tahoe containers on tinc's
+// dead network namespace. Now that is a failure that restores the stack
+// and writes no marker.
+func TestSurvivorsPutTheStackBack(t *testing.T) {
+	cfg, rec, share := stack(t, "")
+	rec.survive = []string{"tahoe-client", "tahoe-storage"}
+	agent := ready(share)
+	p, err := NewPlan(cfg, agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = Apply(cfg, p, agent, false)
+	if err == nil || !strings.Contains(err.Error(), "tahoe-client, tahoe-storage survived") || !strings.Contains(err.Error(), "nothing marked") {
+		t.Fatalf("apply with survivors: %v", err)
+	}
+	ch := rec.changes()
+	if len(ch) != 2 || !strings.Contains(ch[0], " down ") || !strings.HasSuffix(ch[1], " up -d --force-recreate tinc tahoe-client tahoe-storage") {
+		t.Fatalf("ran: %v", ch)
+	}
+	if _, ok := Migrated(cfg.DataDir); ok {
+		t.Fatal("a marker was written with the stack half down")
+	}
+}
+
+func TestNothingRunningIsNothingToStop(t *testing.T) {
+	cfg, rec, share := stack(t, "")
+	rec.containers = nil
+	agent := ready(share)
+	p, err := NewPlan(cfg, agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Services) != 0 || !strings.Contains(p.String(), "nothing for migrate-node to stop") {
+		t.Fatalf("plan: %s", p)
+	}
+	if err := Apply(cfg, p, agent, true); err == nil || !strings.Contains(err.Error(), "nothing to stop") {
+		t.Fatalf("apply with no containers: %v", err)
+	}
+	if len(rec.changes()) != 0 {
+		t.Fatalf("ran: %v", rec.changes())
+	}
+}
+
+func TestOldMarkerIsNotRolledBackBlind(t *testing.T) {
+	cfg, rec, _ := stack(t, "")
+	old := `{"at":"2026-11-05T15:00:00Z","device":"dev","compose":["docker","compose","-p","redundanet","-f","x.yml"]}`
+	if err := os.WriteFile(filepath.Join(cfg.DataDir, Marker), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Rollback(cfg); err == nil || !strings.Contains(err.Error(), "names no services") {
+		t.Fatalf("rollback of an old marker: %v", err)
+	}
+	if len(rec.changes()) != 0 {
+		t.Fatalf("ran: %v", rec.changes())
 	}
 }
 
@@ -144,8 +257,8 @@ func TestPlanRefuses(t *testing.T) {
 			if err := Apply(cfg, p, c.agent, false); err == nil {
 				t.Fatal("applied with refusals")
 			}
-			if len(rec.calls) != 0 {
-				t.Fatalf("the stack was touched: %v", rec.calls)
+			if len(rec.changes()) != 0 {
+				t.Fatalf("the stack was touched: %v", rec.changes())
 			}
 		})
 	}
@@ -155,8 +268,8 @@ func TestPlanRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(cfg.DataDir, Marker))
-	if !strings.Contains(string(data), `"forced": true`) || len(rec.calls) != 1 {
-		t.Fatalf("forced marker: %s %v", data, rec.calls)
+	if !strings.Contains(string(data), `"forced": true`) || len(rec.changes()) != 1 {
+		t.Fatalf("forced marker: %s %v", data, rec.changes())
 	}
 }
 

@@ -60,9 +60,13 @@ missing:
 ```bash
 sudo /var/lib/redundanet3/bin/redundanet migrate-node --dry-run   # the plan, and what is not yet on the native grid
 sudo /var/lib/redundanet3/bin/redundanet migrate-node             # stops and removes the containers; files and shares stay
-sudo /var/lib/redundanet3/bin/redundanet migrate-node --rollback  # the stack again, as it was
+sudo /var/lib/redundanet3/bin/redundanet migrate-node --rollback  # every service again, together, tinc first
 ```
 
 The agent keeps running through all of it and the node stays on the
-status page. A drill is `migrate-node` followed by `--rollback` within a
+status page. The Tahoe services sit behind compose profiles and share
+tinc's network namespace, so the stack is only ever stopped and started
+whole: the plan names every profile on the way down, fails and puts the
+stack back if any container survives, and the rollback recreates every
+recorded service in one `up`, never tinc alone. A drill is `migrate-node` followed by `--rollback` within a
 few minutes, inside the old grid's tolerance of two servers down.
