@@ -63,7 +63,7 @@ jobs:
             GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "dist/redundanet-$os-$arch$ext" ./cmd/redundanet
           done
           ls -la dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: redundanet-binaries
           path: agent/dist/
