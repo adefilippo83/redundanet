@@ -17,12 +17,24 @@ import (
 const ALPN = "redundanet/1"
 
 // CertificateExtensionOID marks the X.509 extension that carries the device
-// certificate. It is a provisional arc chosen at random under 2.25; a proper
-// UUID-based arc there has a 128-bit component, which Go's X.509 parser
-// cannot read, so the arc is short. It moves under an IANA private
-// enterprise number before 3.0.0, and the certificate inside is versioned by
-// its own encoding, not by the OID.
-var CertificateExtensionOID = asn1.ObjectIdentifier{2, 25, 1409274851}
+// certificate: 1.3.6.1.4.1.67508.1.1, under the project's IANA private
+// enterprise number 67508 (.1 is RedundaNet 3, .1.1 this extension). The
+// certificate inside is versioned by its own encoding, not by the OID.
+var CertificateExtensionOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 67508, 1, 1}
+
+// provisionalExtensionOID is the arc the extension lived under before the
+// enterprise number was assigned: chosen at random under 2.25, short because
+// a proper UUID-based arc there has a 128-bit component Go's X.509 parser
+// cannot read. Verification accepts both arcs so a fleet moves one device at
+// a time.
+var provisionalExtensionOID = asn1.ObjectIdentifier{2, 25, 1409274851}
+
+// presentedExtensionOID is the arc a leaf is built under. It is the
+// provisional one until every device verifies the enterprise arc, which is
+// the release after the one that introduced it (alpha.19); then it becomes
+// CertificateExtensionOID, and 3.0.0 drops the provisional arc from
+// verification.
+var presentedExtensionOID = provisionalExtensionOID
 
 // Peer is what a verified connection tells the application about the other
 // side.
@@ -68,7 +80,7 @@ func NewTLSIdentity(dev *DeviceKey, sc *SignedCertificate) (*TLSIdentity, error)
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		ExtraExtensions:       []pkix.Extension{{Id: CertificateExtensionOID, Critical: true, Value: ext}},
+		ExtraExtensions:       []pkix.Extension{{Id: presentedExtensionOID, Critical: true, Value: ext}},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, dev.Private().Public(), dev.Private())
 	if err != nil {
@@ -140,9 +152,11 @@ func PeerFromRaw(rawCerts [][]byte) (*Peer, error) {
 	if err := leaf.CheckSignature(leaf.SignatureAlgorithm, leaf.RawTBSCertificate, leaf.Signature); err != nil {
 		return nil, fmt.Errorf("leaf is not self-signed: %w", err)
 	}
+	// Either arc carries the certificate; the enterprise one wins if a leaf
+	// has both.
 	var raw []byte
 	for _, e := range leaf.Extensions {
-		if e.Id.Equal(CertificateExtensionOID) {
+		if e.Id.Equal(CertificateExtensionOID) || (raw == nil && e.Id.Equal(provisionalExtensionOID)) {
 			raw = e.Value
 		}
 	}
