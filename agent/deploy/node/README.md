@@ -40,7 +40,11 @@ Change the channel there and `systemctl restart redundanet-agent`.
 No inbound firewall rule is needed: the agent reaches the hub outbound and
 peers through hole punching or the relay. The local page is on
 `127.0.0.1:4470`; over SSH: `ssh -L 4470:127.0.0.1:4470 node`, then
-`sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet open --print --data-dir /var/lib/redundanet3`.
+`sudo /var/lib/redundanet3/bin/redundanet open --print`. As root, the
+commands that talk to the running agent (`status`, `backup`, `restore`,
+`open`, `logs`, `update`) find the node's data directory on their own;
+the identity and join commands run as the service user with `--data-dir`,
+as the installer does.
 
 After the node is up, the member asks the operator to list it under
 `storage:` in the manifest, which is what makes its contribution count.

@@ -106,7 +106,7 @@ finish() {
   sleep 3
   systemctl --no-pager --lines=5 status redundanet-agent || true
   echo
-  echo "local page: sudo -u redundanet3 $BIN status --data-dir $DATA"
+  echo "the agent as it sees itself: sudo $BIN status"
 }
 
 case "${1:-}" in
