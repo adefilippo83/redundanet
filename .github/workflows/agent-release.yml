@@ -221,6 +221,11 @@ jobs:
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-windows.result != 'failure' && needs.sign-macos.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
+      # The whole history and every tag, for the list of changes; first,
+      # since a checkout cleans the workspace the artifacts land in.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           name: unsigned-posix
@@ -261,7 +266,10 @@ jobs:
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME//\//%2F}"
           {
             echo "  - version: $version"
-            echo "    channel: early"
+            # A pre-release suffix (3.0.0-alpha.1) goes to the early channel; a
+            # plain version (3.0.0) is a stable release every device picks.
+            case "$version" in *-*) channel=early ;; *) channel=stable ;; esac
+            echo "    channel: $channel"
             echo "    notes: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME//\//%2F}"
             echo "    assets:"
             for f in dist/*.tar.gz dist/*.zip; do
@@ -269,12 +277,41 @@ jobs:
               echo "      ${t%-*}/${t##*-}: {url: $base/$n, sha256: $(sha256sum "$f" | cut -d' ' -f1), size: $(stat -c %s "$f")}"
             done
           } | tee dist/index-fragment.yaml
-      - name: release notes, starting with the code signing policy
+      - name: changes since the previous agent release
+        # Every commit on main between the previous agent/v* tag and this
+        # one: a pull request by its title and number, a direct commit by its
+        # subject; the index revision commits are left out.
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'agent/v*' --exclude "$GITHUB_REF_NAME" HEAD 2>/dev/null || true)
+          if [ -n "$prev" ]; then range="$prev..HEAD"; heading="## Changes since $prev"; else range="HEAD"; heading="## Changes"; fi
+          {
+            echo "$heading"
+            echo
+            git log --first-parent --format='%s%x1f%b%x1e' "$range" | python3 -c '
+          import re, sys
+          out = []
+          for rec in sys.stdin.read().split("\x1e"):
+              subject, _, body = rec.partition("\x1f")
+              subject = subject.strip()
+              if not subject or subject.startswith("releases: index revision"):
+                  continue
+              m = re.match(r"Merge pull request #(\d+) from ", subject)
+              if m:
+                  title = next((l.strip() for l in body.splitlines() if l.strip()), subject)
+                  out.append(f"- {title} (#{m.group(1)})")
+              else:
+                  out.append(f"- {subject}")
+          print("\n".join(out) if out else "- nothing recorded between the tags")
+          '
+            echo
+          } | tee "$RUNNER_TEMP/changes.md"
+      - name: release notes, the changes and then the code signing policy
         env:
           WINDOWS: ${{ needs.sign-windows.result }}
           MACOS: ${{ needs.sign-macos.result }}
         run: |
           {
+            cat "$RUNNER_TEMP/changes.md"
             echo "## Code signing policy"
             echo
             case "$WINDOWS" in

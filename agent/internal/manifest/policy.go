@@ -30,6 +30,9 @@ func NewPolicy(m *Manifest, revocations []*identity.SignedRevocation) *Policy {
 	for _, r := range revocations {
 		p.addRevocation(r)
 	}
+	for _, r := range m.SignedRevocations() {
+		p.addRevocation(r)
+	}
 	return p
 }
 
@@ -55,7 +58,8 @@ func (p *Policy) Manifest() *Manifest {
 }
 
 // Allow is the connection rule: the certificate is for this network and is
-// not revoked, and either the device is a listed hub or the member is
+// not revoked (by its serial, or by a revocation with serial 0 that covers
+// every certificate of the device), and either the device is a listed hub or the member is
 // active or leaving.
 func (p *Policy) Allow(peer identity.Peer) error {
 	p.mu.RLock()
@@ -64,7 +68,7 @@ func (p *Policy) Allow(peer identity.Peer) error {
 	if c.Network != p.m.Network.Name {
 		return fmt.Errorf("device %s belongs to network %q", peer.Device.Short(), c.Network)
 	}
-	if p.revoked[revocationKey{c.Member, c.Device, c.Serial}] {
+	if p.revoked[revocationKey{c.Member, c.Device, c.Serial}] || p.revoked[revocationKey{c.Member, c.Device, 0}] {
 		return fmt.Errorf("device %s is revoked", peer.Device.Short())
 	}
 	if p.m.HubByKey(peer.Device) != nil {

@@ -7,7 +7,7 @@ binary, one system user, one systemd unit, no Docker.
 
 What it needs before the first start, in this order:
 
-1. **A release that has the hub features**: `agent/v3.0.0-alpha.2` or later
+1. **A release that has the hub features**: `agent/v3.0.0` or later
    in `releases/index.yaml`.
 2. **The fly.io side**: the `REDUNDANET_V3_PUBLISH_TOKEN` secret set and the
    2.7.41 hub deployed (`docs/bootstrap-hub.md`, "RedundaNet 3 status").
@@ -28,7 +28,7 @@ install -d -m 0750 -g redundanet3 /etc/redundanet3
 install -m 0640 -g redundanet3 /dev/stdin /etc/redundanet3/publish.token <<< "$TOKEN"   # the fly secret's value
 
 # binary: the asset named in releases/index.yaml, hash checked against it
-version=3.0.0-alpha.2
+version=3.0.0
 curl -fsSL -o /tmp/rn.tgz "https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv$version/redundanet-$version-linux-amd64.tar.gz"
 echo "<sha256 from releases/index.yaml>  /tmp/rn.tgz" | sha256sum -c
 install -d -o redundanet3 -g redundanet3 -m 0750 /var/lib/redundanet3/bin

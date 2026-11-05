@@ -1,6 +1,5 @@
 // Command redundanet is the RedundaNet 3 binary: agent, hub and CLI in one
-// executable (RFC 0001). Phase 1 is being built; what exists today is the
-// identity commands.
+// executable (RFC 0001).
 package main
 
 import (
@@ -15,6 +14,7 @@ type command struct {
 
 var commands = []command{
 	{"identity", "member and device identity: init, show, device-key, certify, accept-certificate", runIdentity},
+	{"device", "this member's devices: revoke", runDevice},
 	{"operator", "the offline operator key: init", runOperator},
 	{"manifest", "sign a merged manifest, or verify a signature: sign, verify", runManifest},
 	{"validate", "check a manifest and print the allocations", runValidate},
