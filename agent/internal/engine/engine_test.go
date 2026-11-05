@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
@@ -21,6 +19,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/shareproto"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 type member struct {
@@ -110,6 +109,7 @@ type serverNode struct {
 	member *member
 	store  *store.Store
 	pol    *policy
+	srv    *shareproto.Server
 	ep     *transport.Endpoint
 }
 
@@ -128,7 +128,7 @@ func (g *grid) permit(k identity.Key) {
 	g.mu.Unlock()
 }
 
-func (g *grid) endpoint(t *testing.T, m *member, onStream func(identity.Peer, string, *quic.Stream)) *transport.Endpoint {
+func (g *grid) endpoint(t *testing.T, m *member, onStream func(identity.Peer, string, wire.Stream)) *transport.Endpoint {
 	t.Helper()
 	g.permit(m.dev.ID())
 	cfg := transport.Config{Identity: m.tls, Device: m.dev.ID(), Allow: g.allow, Hubs: []transport.HubAddr{{Key: g.hubKey, UDP: g.hub.UDPAddr().String()}},
@@ -175,7 +175,7 @@ func newGrid(t *testing.T) (*grid, *member, *member) {
 		t.Cleanup(func() { _ = st.Close() })
 		pol := &policy{m: g.m, self: m.dev.ID(), hubs: map[identity.Key]bool{g.hubKey: true}, caps: map[identity.Key]int64{}}
 		srv := shareproto.NewServer(st, pol, g.log)
-		node := &serverNode{member: m, store: st, pol: pol}
+		node := &serverNode{member: m, store: st, pol: pol, srv: srv}
 		node.ep = g.endpoint(t, m, srv.Handle)
 		g.servers[m.dev.ID()] = node
 	}
@@ -454,5 +454,44 @@ func TestCacheReuseIsProbedWhenStale(t *testing.T) {
 	}
 	if h, _ := e.Check(ctx, rc); !h.Placed || h.Tombstoned {
 		t.Fatalf("after the put: %+v", h)
+	}
+}
+
+// TestStorageNodeIsItsOwnClient is a storage node backing up to the grid
+// it is part of. Over the mesh a device cannot reach itself, so its own
+// key goes to the local opener and the rest to the endpoint; the root
+// then reaches both servers, and the mesh alone reaches only one.
+func TestStorageNodeIsItsOwnClient(t *testing.T) {
+	g, alice, bob := newGrid(t)
+	node := g.servers[alice.dev.ID()]
+	node.ep.Connect(bob.dev.ID())
+	self := identity.Peer{Device: alice.dev.ID(), Member: alice.key, Certificate: alice.cert}
+	local := shareproto.LocalOpener(self, node.srv.Handle)
+	open := func(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
+		if peer == alice.dev.ID() {
+			return local(ctx, peer)
+		}
+		return node.ep.OpenStream(ctx, peer)
+	}
+	engineWith := func(client *shareproto.Client) *Native {
+		db, err := localdb.Open(t.TempDir(), g.clock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		e, err := New(Config{Network: "testnet", Member: alice.key, Secret: alice.seed.Secret(), Device: alice.dev, Cert: alice.cert,
+			Manifest: func() *manifest.Manifest { return g.m }, Client: client, DB: db, SpoolDir: t.TempDir(), Timeout: 5 * time.Second, Now: g.clock, Log: g.log})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	contract(t, engineWith(shareproto.NewClient(open)), alice.key, bob.key)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	mesh := engineWith(shareproto.NewClient(node.ep.OpenStream))
+	if _, err := mesh.PutRoot(ctx, Root{Note: "mesh only"}); !errors.Is(err, ErrQuorum) {
+		t.Fatalf("root over the mesh alone: %v", err)
 	}
 }
