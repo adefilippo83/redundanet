@@ -44,3 +44,21 @@ peers through hole punching or the relay. The local page is on
 
 After the node is up, the member asks the operator to list it under
 `storage:` in the manifest, which is what makes its contribution count.
+
+## Leaving RedundaNet 2 (phase 3)
+
+Once the native grid holds what this node pushed to the old one, the
+Docker stack can go. Not before the network's stop date is announced: a
+node's Tahoe shares hold other members' data too, and the old grid is
+2-of-4. The agent does the retirement and refuses while anything is
+missing:
+
+```bash
+sudo /var/lib/redundanet3/bin/redundanet migrate-node --dry-run   # the plan, and what is not yet on the native grid
+sudo /var/lib/redundanet3/bin/redundanet migrate-node             # stops and removes the containers; files and shares stay
+sudo /var/lib/redundanet3/bin/redundanet migrate-node --rollback  # the stack again, as it was
+```
+
+The agent keeps running through all of it and the node stays on the
+status page. A drill is `migrate-node` followed by `--rollback` within a
+few minutes, inside the old grid's tolerance of two servers down.
