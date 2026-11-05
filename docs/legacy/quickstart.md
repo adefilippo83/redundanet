@@ -1,3 +1,5 @@
+> This page describes RedundaNet 2, the legacy product, which stays live until the announced stop date. RedundaNet 3 is the current product: see [../README.md](../README.md).
+
 # Quick Start Guide
 
 Get your RedundaNet node up and running in minutes.

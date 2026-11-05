@@ -253,3 +253,149 @@ class TestMember:
         assert process_join.valid_member("ok-1") == "ok-1"
         assert process_join.valid_member("-x") is None
         assert process_join.valid_member(None) is None
+
+
+# A manifest with the RedundaNet 3 half: header comment, a signed revision,
+# a member whose signature is a block scalar, then the v2 `nodes` at column 0.
+MIXED_MANIFEST = """# RedundaNet 3 keys live beside the RedundaNet 2 ones during the migration.
+schema: 3
+revision: 4
+network:
+  name: redundanet
+  encoding: {k: 2, n: 3}
+  version: 2.0.0
+  domain: redundanet.local
+  vpn_network: 10.100.0.0/16
+operators:
+  - name: adefilippo83
+    key: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q
+members:
+  - name: adefilippo83
+    key: wekrreaqlio4j3m4vzxo6hn5be2sa2gxxv7gx3mq54m4xffztv2a
+    contribution_gb: 1800
+    joined: 2026-11-02
+    status: active
+    legacy_pgp:
+      fingerprint: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
+      signature: |
+        -----BEGIN PGP SIGNATURE-----
+
+        iQIzBAABCgAdFiEEiY2fFtSERod98h8sGPjLfLrhuc0FAmronM0ACgkQGPjLfLrh
+        =ai+a
+        -----END PGP SIGNATURE-----
+storage:
+  - member: adefilippo83
+    device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
+    name: falcon
+introducer_furl: null
+nodes:
+- name: node-bae1b9cd
+  member: adefilippo83
+  internal_ip: 10.100.0.11
+  vpn_ip: 10.100.0.11
+  gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
+  region: europe
+  status: active
+  roles:
+  - tinc_vpn
+  - tahoe_storage
+  ports:
+    tinc: 655
+  storage_contribution: 900GB
+  is_publicly_accessible: false
+"""
+
+
+class TestTextualInsert:
+    """A v2 join must not disturb the v3 half: the file is edited, not re-serialised."""
+
+    def test_node_appended_and_revision_bumped(self, tmp_path: Path, real_key):
+        armored, fingerprint = real_key
+        manifest_path = tmp_path / "manifest.yaml"
+        manifest_path.write_text(MIXED_MANIFEST)
+        result = process_join.process(
+            issue_body(fingerprint), manifest_path, fetch_key=lambda _k: armored, member="Alice"
+        )
+        assert result.success, result.error
+        assert result.revision == 5
+
+        new_text = manifest_path.read_text()
+        data = yaml.safe_load(new_text)
+        assert data["revision"] == 5
+        node = data["nodes"][-1]
+        assert node["name"] == f"node-{fingerprint[-8:].lower()}"
+        assert node["vpn_ip"] == "10.100.0.10" and node["member"] == "Alice"
+        # The new node is the only addition, in the file's column-0 style.
+        rendered = "\n".join(process_join.render_node(node, "")) + "\n"
+        assert new_text.endswith(rendered)
+        assert new_text.replace(rendered, "") == MIXED_MANIFEST.replace(
+            "revision: 4", "revision: 5"
+        )
+        # The header comment and the signature block are exactly what they were.
+        assert new_text.startswith("# RedundaNet 3 keys live beside")
+        assert data["members"][0]["legacy_pgp"]["signature"] == (
+            "-----BEGIN PGP SIGNATURE-----\n\n"
+            "iQIzBAABCgAdFiEEiY2fFtSERod98h8sGPjLfLrhuc0FAmronM0ACgkQGPjLfLrh\n"
+            "=ai+a\n-----END PGP SIGNATURE-----\n"
+        )
+
+    def test_v2_only_manifest_has_no_revision_to_bump(self, tmp_path: Path, real_key):
+        armored, fingerprint = real_key
+        manifest_path = tmp_path / "manifest.yaml"
+        manifest_path.write_text(
+            "# plain v2\nnetwork:\n  name: n\n  vpn_network: 10.100.0.0/16\nnodes:\n"
+            "- name: a\n  internal_ip: 10.100.0.10\n  vpn_ip: 10.100.0.10\n  gpg_key_id: "
+            + "A" * 40
+            + "\n"
+        )
+        result = process_join.process(
+            issue_body(fingerprint), manifest_path, fetch_key=lambda _k: armored
+        )
+        assert result.success, result.error
+        assert result.revision is None
+        text = manifest_path.read_text()
+        assert text.startswith("# plain v2\n")
+        nodes = yaml.safe_load(text)["nodes"]
+        assert nodes[0]["name"] == "a" and nodes[-1]["vpn_ip"] == "10.100.0.11"
+
+    def test_insert_node_needs_the_nodes_list(self):
+        node = {"name": "n", "internal_ip": "10.100.0.10", "vpn_ip": "10.100.0.10"}
+        with pytest.raises(process_join.EditError, match="expected one top-level `nodes:`"):
+            process_join.insert_node("network:\n  name: n\n", node)
+
+    def test_duplicate_revision_lines_are_refused(self):
+        node = {"name": "n", "internal_ip": "10.100.0.10"}
+        with pytest.raises(process_join.EditError, match="revision"):
+            process_join.insert_node("revision: 1\nrevision: 2\nnodes:\n- name: a\n", node)
+
+
+class TestOutputs:
+    result = process_join.JoinResult(
+        success=True,
+        node_name="node-2680cd08",
+        vpn_ip="10.100.0.12",
+        gpg_key_id=FPR,
+        storage="100GB",
+        revision=5,
+    )
+
+    def test_pr_text(self):
+        pr = process_join.compose_pr(self.result, "42")
+        assert pr["pr_title"] == "Add node node-2680cd08 (Issue #42)"
+        assert pr["commit_message"] == "Add node node-2680cd08 to network manifest"
+        assert "Closes #42" in pr["pr_body"]
+        assert "`revision` to 5" in pr["pr_body"]
+        assert (
+            "manifest sign --key operator.key --manifest ../manifests/manifest.yaml"
+            in (pr["pr_body"])
+        )
+
+    def test_pr_text_without_revision(self):
+        result = process_join.JoinResult(success=True, node_name="n", vpn_ip="1", gpg_key_id=FPR)
+        assert "revision" not in process_join.compose_pr(result, "1")["pr_body"]
+
+    def test_next_steps_keep_the_docker_instructions(self):
+        text = process_join.compose_next_steps(self.result)
+        assert "{PR_URL}" in text
+        assert "redundanet init --name node-2680cd08" in text
+        assert "docker compose up -d" in text

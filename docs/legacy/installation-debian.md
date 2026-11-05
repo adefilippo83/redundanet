@@ -1,3 +1,5 @@
+> This page describes RedundaNet 2, the legacy product, which stays live until the announced stop date. RedundaNet 3 is the current product: see [../README.md](../README.md).
+
 # Installing a node on Debian 13 (Trixie) — from scratch
 
 A complete walkthrough from a fresh Debian 13 install to a running RedundaNet

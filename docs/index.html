@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RedundaNet - Distributed Encrypted Storage</title>
-    <meta name="description" content="RedundaNet is a distributed encrypted storage system built on a mesh VPN network. Self-hosted, secure, and resilient.">
+    <title>RedundaNet: community encrypted backup</title>
+    <meta name="description" content="RedundaNet 3 is community-run encrypted backup. Your backups are encrypted on your device, split with erasure coding and placed on other members' disks. One static binary, no containers.">
+    <link rel="canonical" href="https://redundanet.com/">
+    <link rel="alternate" type="application/rss+xml" title="RedundaNet news" href="/news/feed.xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
@@ -50,6 +52,7 @@
             justify-content: space-between;
             align-items: center;
             gap: 24px;
+            flex-wrap: wrap;
         }
 
         .logo {
@@ -77,6 +80,7 @@
             display: flex;
             gap: 22px;
             list-style: none;
+            flex-wrap: wrap;
         }
 
         .nav-links a {
@@ -156,7 +160,7 @@
         .hero p {
             font-size: 1.25rem;
             color: var(--text-muted);
-            max-width: 600px;
+            max-width: 640px;
             margin: 0 auto 40px;
         }
 
@@ -235,7 +239,7 @@
 
         .process-steps {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 32px;
             margin-top: 60px;
         }
@@ -347,6 +351,59 @@
             font-size: 0.875rem;
         }
 
+        /* Platform and limits */
+        .platform {
+            padding: 100px 0;
+        }
+
+        .statement {
+            background: var(--bg-card);
+            border: 1px solid var(--primary);
+            border-radius: 16px;
+            padding: 32px;
+            font-size: 1.125rem;
+            text-align: center;
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        .limits {
+            padding: 100px 0;
+            background: var(--bg-card);
+        }
+
+        .limits-card {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px 40px;
+            max-width: 860px;
+            margin: 0 auto;
+        }
+
+        .limits-card ul {
+            list-style: none;
+            color: var(--text-muted);
+        }
+
+        .limits-card li {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .limits-card li:last-child {
+            border-bottom: none;
+        }
+
+        .limits-card li::before {
+            content: "\25CB";
+            color: var(--primary);
+            flex-shrink: 0;
+        }
+
         /* Join Process */
         .join-process {
             padding: 100px 0;
@@ -354,15 +411,9 @@
 
         .join-steps {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 32px;
             margin-top: 40px;
-        }
-
-        @media (max-width: 768px) {
-            .join-steps {
-                grid-template-columns: 1fr;
-            }
         }
 
         .join-step {
@@ -388,6 +439,7 @@
             align-items: center;
             justify-content: center;
             font-weight: 700;
+            flex-shrink: 0;
         }
 
         .join-step h4 {
@@ -399,90 +451,53 @@
             margin-bottom: 16px;
         }
 
-        /* Architecture */
-        .architecture {
+        /* Status, legacy, signing, privacy */
+        .info {
             padding: 100px 0;
             background: var(--bg-card);
         }
 
-        .arch-diagram {
-            background: var(--bg-dark);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 40px;
-            margin-top: 40px;
-        }
-
-        .arch-nodes {
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            gap: 40px;
-        }
-
-        .arch-node {
-            text-align: center;
-        }
-
-        .arch-node-icon {
-            width: 80px;
-            height: 80px;
-            background: var(--bg-card);
-            border: 2px solid var(--primary);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 36px;
-            margin: 0 auto 16px;
-        }
-
-        .arch-node h4 {
-            font-size: 1rem;
-            margin-bottom: 8px;
-        }
-
-        .arch-node p {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-        }
-
-        .arch-connection {
-            text-align: center;
-            padding: 40px 0;
-            color: var(--text-muted);
-            font-size: 0.875rem;
-        }
-
-        /* Installation */
-        .installation {
-            padding: 100px 0;
-        }
-
-        .install-options {
+        .info-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 24px;
             margin-top: 40px;
         }
 
-        .install-card {
-            background: var(--bg-card);
+        .info-item {
+            background: var(--bg-dark);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 32px;
+            border-radius: 12px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
         }
 
-        .install-card h3 {
+        .info-item h4 {
             display: flex;
             align-items: center;
             gap: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
-        .install-card p {
+        .info-item p {
             color: var(--text-muted);
-            margin-bottom: 20px;
+            font-size: 0.9375rem;
+            margin-bottom: 16px;
+            flex: 1;
+        }
+
+        .info-item a.btn {
+            align-self: flex-start;
+        }
+
+        .info-item a:not(.btn) {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .info-item a:not(.btn):hover {
+            text-decoration: underline;
         }
 
         pre {
@@ -498,38 +513,6 @@
         code {
             font-family: 'JetBrains Mono', monospace;
             color: var(--secondary);
-        }
-
-        /* Security */
-        .security {
-            padding: 100px 0;
-            background: var(--bg-card);
-        }
-
-        .security-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 24px;
-            margin-top: 40px;
-        }
-
-        .security-item {
-            background: var(--bg-dark);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-        }
-
-        .security-item h4 {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-
-        .security-item p {
-            color: var(--text-muted);
-            font-size: 0.9375rem;
         }
 
         /* Footer */
@@ -569,11 +552,13 @@
             }
 
             .nav-links {
-                display: none;
+                gap: 12px 18px;
+                order: 3;
+                width: 100%;
             }
 
-            .arch-nodes {
-                flex-direction: column;
+            .data-flow, .limits-card {
+                padding: 24px;
             }
         }
     </style>
@@ -586,37 +571,37 @@
                 RedundaNet
             </a>
             <ul class="nav-links">
-                <li><a href="#features" data-i18n="nav.features">Features</a></li>
-                <li><a href="#how-it-works" data-i18n="nav.how">How It Works</a></li>
-                <li><a href="#join" data-i18n="nav.join">Join</a></li>
-                <li><a href="#installation" data-i18n="nav.install">Installation</a></li>
-                <li><a href="news/">News</a></li>
-                <li><a href="https://github.com/adefilippo83/redundanet">GitHub</a></li>
+                <li><a href="./" data-i18n="nav.home">Home</a></li>
+                <li><a href="download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
             </ul>
             <span data-lang-switcher class="lang-switcher"></span>
-            <a href="join.html" class="btn btn-primary" data-i18n="nav.joinBtn">
-                Join Network
-            </a>
         </div>
     </nav>
 
     <section class="hero">
         <div class="container">
-            <span class="hero-badge" data-i18n="hero.badge">Open Source &amp; Self-Hosted</span>
-            <h1 data-i18n="hero.title">Distributed Encrypted Storage</h1>
+            <span class="hero-badge" data-i18n="hero.badge">RedundaNet 3.0.0 is out</span>
+            <h1 data-i18n="hero.title">Community encrypted backup</h1>
             <p data-i18n="hero.subtitle">
-                Build your own resilient, encrypted storage network across multiple nodes.
-                Self-hosted, secure, and designed for communities and organizations.
+                Your backups are encrypted on your device, split with erasure coding and placed on other members' disks.
+                A weekly restore test proves they come back. Repair runs without you.
             </p>
             <div class="hero-buttons">
-                <a href="join.html" class="btn btn-primary" data-i18n="hero.joinBtn">
-                    Join the Network
+                <a href="download.html" class="btn btn-primary" data-i18n="hero.downloadBtn">
+                    Download 3.0.0
+                </a>
+                <a href="join.html" class="btn btn-secondary" data-i18n="hero.joinBtn">
+                    Join the network
                 </a>
                 <a href="#how-it-works" class="btn btn-secondary" data-i18n="hero.howBtn">
-                    How It Works
-                </a>
-                <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary" data-i18n="hero.githubBtn">
-                    View on GitHub
+                    How it works
                 </a>
             </div>
         </div>
@@ -625,39 +610,39 @@
     <section class="features" id="features">
         <div class="container">
             <div class="section-title">
-                <h2 data-i18n="features.title">Why RedundaNet?</h2>
-                <p data-i18n="features.subtitle">A complete solution for distributed, encrypted storage</p>
+                <h2 data-i18n="features.title">What you get</h2>
+                <p data-i18n="features.subtitle">Backup run by the people who use it, with the guarantees spelled out</p>
             </div>
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">&#128274;</div>
-                    <h3 data-i18n="features.e2e.title">End-to-End Encryption</h3>
-                    <p data-i18n="features.e2e.desc">Your data is encrypted before it leaves your device. Only you hold the keys. Storage nodes cannot read your files.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">&#127760;</div>
-                    <h3 data-i18n="features.mesh.title">Mesh VPN Network</h3>
-                    <p data-i18n="features.mesh.desc">Nodes connect securely via Tinc VPN mesh network. No central server required. Works across NATs and firewalls.</p>
+                    <h3 data-i18n="features.e2e.title">Encrypted on your device</h3>
+                    <p data-i18n="features.e2e.desc">Every object is encrypted with a key derived from your member secret and the content. Nobody else can read it, not the hub, not other members.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">&#128218;</div>
-                    <h3 data-i18n="features.erasure.title">Erasure Coding</h3>
-                    <p data-i18n="features.erasure.desc">By default, data is split into 10 encrypted shares and any 3 can reconstruct your file (surviving up to 7 node failures). The split is configurable per network.</p>
+                    <h3 data-i18n="features.erasure.title">Erasure coded across members</h3>
+                    <p data-i18n="features.erasure.desc">Each object is split k-of-n, today 2-of-3 on the live network, and the shares go to other members' storage servers. The split is set by the signed manifest and can change through a declared transition.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">&#128273;</div>
-                    <h3 data-i18n="features.gpg.title">GPG Authentication</h3>
-                    <p data-i18n="features.gpg.desc">Node identity verified via public GPG keyservers. Decentralized trust with no central authority.</p>
+                    <div class="feature-icon">&#128197;</div>
+                    <h3 data-i18n="features.daily.title">Daily backups, weekly restore tests</h3>
+                    <p data-i18n="features.daily.desc">A backup set is one or more folders. The agent scans them daily. Every week a restore test reads a sample back and compares it to the source.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">&#128051;</div>
-                    <h3 data-i18n="features.docker.title">Docker Native</h3>
-                    <p data-i18n="features.docker.desc">Fully containerized with Docker Compose. Easy deployment, updates, and management on any system.</p>
+                    <div class="feature-icon">&#128295;</div>
+                    <h3 data-i18n="features.repair.title">Repair without the owner</h3>
+                    <p data-i18n="features.repair.desc">Storage servers scrub their shares monthly. The hub schedules repair of under-placed objects without involving the owner, and the status page shows it.</p>
                 </div>
                 <div class="feature-card">
-                    <div class="feature-icon">&#128422;</div>
-                    <h3 data-i18n="features.rpi.title">Raspberry Pi Ready</h3>
-                    <p data-i18n="features.rpi.desc">Pre-built images for Raspberry Pi. Turn any Pi into a storage node in minutes.</p>
+                    <div class="feature-icon">&#9196;</div>
+                    <h3 data-i18n="features.restore.title">Restore a file, a folder or a snapshot</h3>
+                    <p data-i18n="features.restore.desc">Snapshots are kept by a retention policy. Deleted data stays recoverable for 30 days.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">&#9881;</div>
+                    <h3 data-i18n="features.binary.title">One static binary</h3>
+                    <p data-i18n="features.binary.desc">One program named <code>redundanet</code>, written in Go. No containers, no Python, no Docker. It updates itself from a signed release index.</p>
                 </div>
             </div>
         </div>
@@ -666,27 +651,27 @@
     <section class="how-it-works" id="how-it-works">
         <div class="container">
             <div class="section-title">
-                <h2 data-i18n="how.title">How It Works</h2>
-                <p data-i18n="how.subtitle">Your data is encrypted, split, and distributed across multiple nodes</p>
+                <h2 data-i18n="how.title">How it works</h2>
+                <p data-i18n="how.subtitle">Identity from a phrase, membership in a signed file, data on your peers' disks</p>
             </div>
 
             <div class="data-flow">
-                <h3 data-i18n="how.flow.title">Data Flow: Upload</h3>
+                <h3 data-i18n="how.flow.title">A backup, from your folder to the grid</h3>
                 <div class="flow-diagram">
                     <div class="flow-row">
                         <div class="flow-box">
-                            <h5 data-i18n="how.flow.file">Your File</h5>
-                            <p data-i18n="how.flow.fileDesc">Original data</p>
+                            <h5 data-i18n="how.flow.file">Your folder</h5>
+                            <p data-i18n="how.flow.fileDesc">Scanned daily</p>
                         </div>
                         <span class="flow-arrow">&#8594;</span>
                         <div class="flow-box highlight">
                             <h5 data-i18n="how.flow.encrypt">Encrypt</h5>
-                            <p>AES-128</p>
+                            <p data-i18n="how.flow.encryptDesc">On your device</p>
                         </div>
                         <span class="flow-arrow">&#8594;</span>
                         <div class="flow-box highlight">
                             <h5 data-i18n="how.flow.split">Split</h5>
-                            <p data-i18n="how.flow.splitDesc">Erasure coding</p>
+                            <p data-i18n="how.flow.splitDesc">Erasure coding, 2-of-3</p>
                         </div>
                     </div>
                     <div class="flow-row">
@@ -694,16 +679,13 @@
                     </div>
                     <div class="flow-row">
                         <div class="flow-nodes">
-                            <div class="flow-node">Share 1<br>Node A</div>
-                            <div class="flow-node">Share 2<br>Node B</div>
-                            <div class="flow-node">Share 3<br>Node C</div>
-                            <div class="flow-node">...</div>
-                            <div class="flow-node">Share 10<br>Node J</div>
+                            <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 1<br><span data-i18n="how.flow.member">Member</span> A</div>
+                            <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 2<br><span data-i18n="how.flow.member">Member</span> B</div>
+                            <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 3<br><span data-i18n="how.flow.member">Member</span> C</div>
                         </div>
                     </div>
                     <p style="text-align: center; margin-top: 24px; color: var(--text-muted);" data-i18n="how.flow.note">
-                        <strong>By default, any 3 of 10 shares</strong> can reconstruct your original file (the split is configurable per network).<br>
-                        Storage nodes only see encrypted blobs - they cannot read your data.
+                        <strong>Any 2 of the 3 shares rebuild the object.</strong> Storage servers hold ciphertext only; file names and folder structure are inside encrypted objects too.
                     </p>
                 </div>
             </div>
@@ -711,24 +693,64 @@
             <div class="process-steps">
                 <div class="process-step">
                     <div class="step-number">1</div>
-                    <h4 data-i18n="how.step1.title">Client-Side Encryption</h4>
-                    <p data-i18n="how.step1.desc">Your file is encrypted on your device using AES-128. The encryption key is embedded in the capability URL.</p>
+                    <h4 data-i18n="how.step1.title">Identity from a 12-word phrase</h4>
+                    <p data-i18n="how.step1.desc"><code>redundanet identity init</code> shows a twelve-word phrase once. Your member key (Ed25519) comes from it. Every device gets a certificate signed by the member key.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">2</div>
-                    <h4 data-i18n="how.step2.title">Erasure Coding</h4>
-                    <p data-i18n="how.step2.desc">By default, the encrypted file is split into 10 shares using Reed-Solomon coding, of which only 3 are needed to reconstruct. The k-of-n split is configurable per network.</p>
+                    <h4 data-i18n="how.step2.title">A signed manifest</h4>
+                    <p data-i18n="how.step2.desc">Member and storage lists live in a manifest in the GitHub repository, signed offline by the maintainer's operator key. Agents fetch it every five minutes and apply a newer signed revision at once.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">3</div>
-                    <h4 data-i18n="how.step3.title">Distributed Storage</h4>
-                    <p data-i18n="how.step3.desc">Each share is sent to a different storage node over the encrypted VPN mesh network.</p>
+                    <h4 data-i18n="how.step3.title">A hub for rendezvous and relay</h4>
+                    <p data-i18n="how.step3.desc">The agent reaches the hub outbound. Devices connect to each other directly through hole punching when they can, otherwise through the hub's relay. No inbound firewall rule needed.</p>
                 </div>
                 <div class="process-step">
                     <div class="step-number">4</div>
-                    <h4 data-i18n="how.step4.title">Capability URL</h4>
-                    <p data-i18n="how.step4.desc">You receive a capability URL containing the encryption key. Share it to grant access to the file.</p>
+                    <h4 data-i18n="how.step4.title">QUIC with TLS 1.3</h4>
+                    <p data-i18n="how.step4.desc">Devices authenticate each other over QUIC with TLS 1.3, by their device keys. A storage node may forward a UDP port to be reached directly more often.</p>
                 </div>
+                <div class="process-step">
+                    <div class="step-number">5</div>
+                    <h4 data-i18n="how.step5.title">Self-update with probation and rollback</h4>
+                    <p data-i18n="how.step5.desc">The agent checks the signed index hourly, downloads, verifies the hash, runs the new version in probation for up to two minutes, keeps the old binary as <code>redundanet.old</code>, and rolls back by itself if the new one does not reconnect.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="platform" id="platforms">
+        <div class="container">
+            <div class="section-title">
+                <h2 data-i18n="platform.title">Platforms</h2>
+                <p data-i18n="platform.subtitle">Linux, macOS and Windows, one static binary each</p>
+            </div>
+            <div class="statement" data-i18n="platform.statement">
+                Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
+            </div>
+        </div>
+    </section>
+
+    <section class="limits" id="limits">
+        <div class="container">
+            <div class="section-title">
+                <h2 data-i18n="limits.title">What is not there yet</h2>
+                <p data-i18n="limits.subtitle">The limits of 3.0.0, stated plainly</p>
+            </div>
+            <div class="limits-card">
+                <ul>
+                    <li data-i18n="limits.hub">One hub, on a bare IP address. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. The public status page is hosted on the fly.io app of the old product.</li>
+                    <li data-i18n="limits.bandwidth">No bandwidth caps yet.</li>
+                    <li data-i18n="limits.settings">No settings page: the retention policy is edited in <code>backup.yaml</code> by hand.</li>
+                    <li data-i18n="limits.phrase">No phrase check command.</li>
+                    <li data-i18n="limits.pairing">No device pairing: each device is certified from the phrase.</li>
+                    <li data-i18n="limits.keystore">No OS keystore.</li>
+                    <li data-i18n="limits.platforms">Windows and Intel Mac builds have not run on the live network yet. Raspberry Pi 4 is not measured.</li>
+                    <li data-i18n="limits.quota">Quota is enforced server-side as a bound with headroom; the exact budget is the client's.</li>
+                    <li data-i18n="limits.winddown">The RedundaNet 2 wind-down is manual.</li>
+                    <li data-i18n="limits.revocation">Device revocation travels through the signed manifest, which the maintainer merges, so it takes effect when the maintainer signs, not within seconds.</li>
+                </ul>
             </div>
         </div>
     </section>
@@ -736,176 +758,80 @@
     <section class="join-process" id="join">
         <div class="container">
             <div class="section-title">
-                <h2 data-i18n="joinp.title">Join the Network</h2>
-                <p data-i18n="joinp.subtitle">Contribute storage and become part of the distributed network</p>
+                <h2 data-i18n="joinp.title">Join in three steps</h2>
+                <p data-i18n="joinp.subtitle">You need a GitHub account. Contributing disk is welcome, not required.</p>
             </div>
 
             <div class="join-steps">
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">1</div>
-                        <h4 data-i18n="joinp.s1.title">Generate Your GPG Key</h4>
+                        <h4 data-i18n="joinp.s1.title">Install and create your identity</h4>
                     </div>
-                    <p data-i18n="joinp.s1.desc">Create a GPG key pair and publish it to a public keyserver. This is your node's identity.</p>
-                    <pre><code>pip install redundanet
-redundanet node keys generate \
-  --name my-node \
-  --email you@example.com
-redundanet node keys publish \
-  --key-id YOUR_KEY_ID</code></pre>
+                    <p data-i18n="joinp.s1.desc">Install the agent on your laptop. The phrase is shown once; write it down. Then join the network with the public descriptor from the install page.</p>
+                    <pre><code>redundanet identity init --network redundanet
+redundanet network join &lt;descriptor&gt;</code></pre>
                 </div>
 
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">2</div>
-                        <h4 data-i18n="joinp.s2.title">Submit Application</h4>
+                        <h4 data-i18n="joinp.s2.title">Prepare a storage node, if you contribute disk</h4>
                     </div>
-                    <p data-i18n="joinp.s2.desc">Fill out the join form with your GPG key ID and storage contribution. This creates a GitHub issue.</p>
-                    <a href="join.html" class="btn btn-primary" style="margin-top: 8px;" data-i18n="joinp.s2.btn">Join Form &#8594;</a>
+                    <p data-i18n="joinp.s2.desc">A Linux machine with at least 10 GiB free. Three commands, one of them on your laptop, give you the node's device key for the form.</p>
+                    <a href="installation.html#node" class="btn btn-secondary" data-i18n="joinp.s2.btn">Storage node setup &#8594;</a>
                 </div>
 
                 <div class="join-step">
                     <div class="join-step-header">
                         <div class="join-step-number">3</div>
-                        <h4 data-i18n="joinp.s3.title">Wait for Approval</h4>
+                        <h4 data-i18n="joinp.s3.title">Send the join request</h4>
                     </div>
-                    <p data-i18n="joinp.s3.desc">A maintainer reviews your application, verifies your GPG key, and merges the PR to add your node.</p>
-                </div>
-
-                <div class="join-step">
-                    <div class="join-step-header">
-                        <div class="join-step-number">4</div>
-                        <h4 data-i18n="joinp.s4.title">Set Up Your Node</h4>
-                    </div>
-                    <p data-i18n="joinp.s4.desc">Once approved, initialize your node and start the services.</p>
-                    <pre><code>redundanet init --name node-XXXXX
-redundanet network join \
-  --repo https://github.com/adefilippo83/redundanet.git \
-  --name node-XXXXX
-cd /opt/redundanet/docker
-docker compose --env-file /opt/redundanet/.env \
-  --profile storage up -d</code></pre>
+                    <p data-i18n="joinp.s3.desc">The form opens a GitHub issue. A workflow validates it and opens a pull request; the maintainer signs the manifest offline and merges. Every agent applies it within five minutes, and your devices are in.</p>
+                    <a href="join.html" class="btn btn-primary" data-i18n="joinp.s3.btn">Join form &#8594;</a>
                 </div>
             </div>
         </div>
     </section>
 
-    <section class="architecture" id="architecture">
+    <section class="info" id="more">
         <div class="container">
             <div class="section-title">
-                <h2 data-i18n="arch.title">Architecture</h2>
-                <p data-i18n="arch.subtitle">A decentralized architecture with no single point of failure</p>
+                <h2 data-i18n="info.title">Status, privacy and the rest</h2>
+                <p data-i18n="info.subtitle">Where to look while the network runs</p>
             </div>
-            <div class="arch-diagram">
-                <div class="arch-nodes">
-                    <div class="arch-node">
-                        <div class="arch-node-icon">&#128187;</div>
-                        <h4 data-i18n="arch.device">Your Device</h4>
-                        <p>Tahoe-LAFS Client</p>
-                    </div>
-                    <div class="arch-node">
-                        <div class="arch-node-icon">&#128268;</div>
-                        <h4 data-i18n="arch.introducer">Introducer</h4>
-                        <p data-i18n="arch.discovery">Node Discovery</p>
-                    </div>
-                    <div class="arch-node">
-                        <div class="arch-node-icon">&#128190;</div>
-                        <h4 data-i18n="arch.storage1">Storage Node 1</h4>
-                        <p data-i18n="arch.shares">Encrypted Shares</p>
-                    </div>
-                    <div class="arch-node">
-                        <div class="arch-node-icon">&#128190;</div>
-                        <h4 data-i18n="arch.storage2">Storage Node 2</h4>
-                        <p data-i18n="arch.shares">Encrypted Shares</p>
-                    </div>
-                    <div class="arch-node">
-                        <div class="arch-node-icon">&#128190;</div>
-                        <h4 data-i18n="arch.storageN">Storage Node N</h4>
-                        <p data-i18n="arch.shares">Encrypted Shares</p>
-                    </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <h4>&#128200; <span data-i18n="info.status.title">Public status page</span></h4>
+                    <p data-i18n="info.status.desc">Members, devices, grid health, repair, and per member the day of the last backup and the restore-test streak. No IP addresses.</p>
+                    <a href="https://redundanet-hub.fly.dev/v3/" class="btn btn-secondary" data-i18n="info.status.btn">Open the status page &#8594;</a>
                 </div>
-                <div class="arch-connection" data-i18n="arch.connection">
-                    All nodes connected via encrypted Tinc VPN mesh network
+                <div class="info-item">
+                    <h4>&#128065; <span data-i18n="info.privacy.title">Privacy</span></h4>
+                    <p data-i18n="info.privacy.desc">The project collects nothing: no accounts, no analytics, no telemetry. This site stores only your language choice in your browser. The policy lists exactly what the software sends, and to whom.</p>
+                    <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" class="btn btn-secondary" data-i18n="info.privacy.btn">Read the privacy policy &#8594;</a>
                 </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="security">
-        <div class="container">
-            <div class="section-title">
-                <h2 data-i18n="sec.title">Security Model</h2>
-                <p data-i18n="sec.subtitle">Multiple layers of encryption protect your data</p>
-            </div>
-            <div class="security-grid">
-                <div class="security-item">
-                    <h4>&#128274; <span data-i18n="sec.transport.title">Transport Encryption</span></h4>
-                    <p data-i18n="sec.transport.desc">All network traffic is encrypted via Tinc VPN using RSA key exchange and AES encryption.</p>
+                <div class="info-item">
+                    <h4>&#128273; <span data-i18n="info.signing.title">Code signing</span></h4>
+                    <p data-i18n="info.signing.desc">Windows signing through SignPath and macOS notarization are set up in the release workflow but not yet active (accounts pending); until then every binary is unsigned and the signed release index is the way to verify a download on every platform. Linux binaries are never code-signed; the index covers them.</p>
+                    <a href="https://github.com/adefilippo83/redundanet#code-signing-policy" data-i18n="info.signing.link">The code signing policy</a>
                 </div>
-                <div class="security-item">
-                    <h4>&#128272; <span data-i18n="sec.storage.title">Storage Encryption</span></h4>
-                    <p data-i18n="sec.storage.desc">Data is encrypted with AES-128 before upload. Storage nodes only see encrypted blobs.</p>
+                <div class="info-item">
+                    <h4>&#128451; <span data-i18n="info.legacy.title">RedundaNet 2, the legacy product</span></h4>
+                    <p data-i18n="info.legacy.desc">The previous grid (Python CLI, Docker Compose, tinc VPN, Tahoe-LAFS) stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. Existing members move at their own pace.</p>
+                    <a href="migration.html" class="btn btn-secondary" data-i18n="info.legacy.migrateBtn">Migration guide &#8594;</a>
+                    <p style="margin-top: 12px; margin-bottom: 0;"><a href="legacy.html" data-i18n="info.legacy.pageLink">About RedundaNet 2</a></p>
                 </div>
-                <div class="security-item">
-                    <h4>&#128273; <span data-i18n="sec.identity.title">Identity Verification</span></h4>
-                    <p data-i18n="sec.identity.desc">Node identities are verified via GPG keys published to public keyservers. No central authority.</p>
+                <div class="info-item">
+                    <h4>&#128214; <span data-i18n="info.docs.title">Documentation</span></h4>
+                    <p data-i18n="info.docs.desc">Install, join, backups, configuration, operators, security, architecture, every command and the FAQ, as Markdown in the repository.</p>
+                    <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" class="btn btn-secondary" data-i18n="info.docs.btn">Docs index &#8594;</a>
                 </div>
-                <div class="security-item">
-                    <h4>&#128736; <span data-i18n="sec.cap.title">Capability Security</span></h4>
-                    <p data-i18n="sec.cap.desc">Access is controlled by cryptographic capability URLs. Possession of the URL grants access.</p>
+                <div class="info-item">
+                    <h4>&#128187; <span data-i18n="info.source.title">Source</span></h4>
+                    <p data-i18n="info.source.desc">GPL-3.0, on GitHub. The agent is a Go module under <code>agent/</code>. Releases are built only from tags on main, and the maintainer reviews every change.</p>
+                    <a href="https://github.com/adefilippo83/redundanet" class="btn btn-secondary" data-i18n="info.source.btn">View the source &#8594;</a>
                 </div>
-                <div class="security-item">
-                    <h4>&#127856; <span data-i18n="sec.redundant.title">Redundant Storage</span></h4>
-                    <p data-i18n="sec.redundant.desc">Erasure coding ensures data survives up to 7 node failures out of 10.</p>
-                </div>
-                <div class="security-item">
-                    <h4>&#128065; <span data-i18n="sec.zk.title">Zero Knowledge</span></h4>
-                    <p data-i18n="sec.zk.desc">Storage nodes cannot see file contents, names, or metadata. Only encrypted shares.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="installation" id="installation">
-        <div class="container">
-            <div class="section-title">
-                <h2 data-i18n="install.title">Get Started</h2>
-                <p data-i18n="install.subtitle">Choose your preferred installation method</p>
-            </div>
-            <div class="install-options">
-                <div class="install-card">
-                    <h3>&#128051; <span data-i18n="install.docker.title">Docker (Recommended)</span></h3>
-                    <p data-i18n="install.docker.desc">Run RedundaNet using Docker Compose. Pulls prebuilt multi-arch images &mdash; no local build required.</p>
-                    <pre><code>git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet/docker
-
-# Pulls prebuilt images from GHCR
-docker compose --profile storage up -d</code></pre>
-                </div>
-                <div class="install-card">
-                    <h3>&#128013; PyPI</h3>
-                    <p data-i18n="install.pypi.desc">Install the RedundaNet CLI tool via pip for node management.</p>
-                    <pre><code>pip install redundanet
-
-redundanet node keys generate \
-  --name my-node \
-  --email you@example.com
-redundanet status</code></pre>
-                </div>
-                <div class="install-card">
-                    <h3>&#128422; Raspberry Pi</h3>
-                    <p data-i18n="install.rpi.desc">Download the latest pre-built image, flash it to an SD card, and boot &mdash; no setup required.</p>
-                    <pre><code># 1. Download the latest .img.xz for your Pi:
-#    64-bit Raspberry Pi OS (Pi 3/4/5): ...-arm64.img.xz
-# 2. Flash with Raspberry Pi Imager ("Use custom")
-# 3. Boot, then SSH in:
-ssh redundanet@redundanet.local
-# Password: redundanet  (change it!)</code></pre>
-                    <a href="https://github.com/adefilippo83/redundanet/releases/latest" class="btn btn-primary" style="margin-top: 8px;" target="_blank" rel="noopener" data-i18n="install.rpi.btn">Download latest image &#8594;</a>
-                </div>
-            </div>
-            <div style="text-align: center; margin-top: 40px;">
-                <a href="installation.html" class="btn btn-primary" data-i18n="install.guideBtn">Read the full installation guide &#8594;</a>
             </div>
         </div>
     </section>
@@ -913,14 +839,18 @@ ssh redundanet@redundanet.local
     <footer>
         <div class="container">
             <div class="footer-links">
-                <a href="join.html" data-i18n="footer.join">Join Network</a>
-                <a href="installation.html" data-i18n="footer.install">Installation</a>
-                <a href="news/">News</a>
-                <a href="https://github.com/adefilippo83/redundanet">GitHub</a>
-                <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">Privacy</a>
+                <a href="download.html" data-i18n="footer.download">Download</a>
+                <a href="installation.html" data-i18n="footer.install">Install</a>
+                <a href="join.html" data-i18n="footer.join">Join</a>
+                <a href="migration.html" data-i18n="footer.migrate">Migrate</a>
+                <a href="legacy.html" data-i18n="footer.legacy">RedundaNet 2</a>
+                <a href="news/" data-i18n="footer.news">News</a>
+                <a href="https://redundanet-hub.fly.dev/v3/" data-i18n="footer.status">Status</a>
+                <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="footer.docs">Docs</a>
+                <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
+                <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>
                 <a href="https://github.com/adefilippo83/redundanet/releases" data-i18n="footer.releases">Releases</a>
                 <a href="https://github.com/adefilippo83/redundanet/issues" data-i18n="footer.issues">Issues</a>
-                <a href="https://pypi.org/project/redundanet/">PyPI</a>
             </div>
             <p class="footer-copy" data-i18n="footer.copy">
                 RedundaNet is open source software licensed under GPL-3.0.

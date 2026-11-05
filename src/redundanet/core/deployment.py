@@ -291,7 +291,7 @@ class Deployment:
         Naming the services explicitly auto-enables their compose profiles, and
         depends_on ordering means tinc is recreated before the tahoe services —
         so those rejoin tinc's *new* network namespace instead of the dead one
-        (see docs/quickstart.md: '0 shares after an update').
+        (see docs/legacy/quickstart.md: '0 shares after an update').
         """
         return self.compose("up", "-d", "--force-recreate", *services, timeout=600)
 

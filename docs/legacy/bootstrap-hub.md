@@ -1,3 +1,5 @@
+> This page describes RedundaNet 2, the legacy product, which stays live until the announced stop date. RedundaNet 3 is the current product: see [../README.md](../README.md).
+
 # Bootstrapping the Network Hub (fly.io)
 
 The hub is the network's anchor: the **Tahoe introducer** and the public

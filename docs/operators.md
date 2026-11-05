@@ -1,0 +1,112 @@
+# Operating the network
+
+This page is for the operator of a RedundaNet 3 network: the person who holds the operator key and signs the manifest. On the live network that is the maintainer, Alessandro De Filippo ([@adefilippo83](https://github.com/adefilippo83)). How the network is governed is in [../COMMUNITY.md](../COMMUNITY.md); the keys and rules themselves are in [configuration.md](configuration.md).
+
+## The operator key
+
+```bash
+redundanet operator init --key operator.key
+```
+
+Makes the offline operator key and prints the public half for the manifest's `operators` list. The key never goes on a server or into CI. The operators list changes only through a manifest the current keys signed.
+
+## Editing the manifest
+
+Every change to membership is a pull request against `manifests/manifest.yaml`: a join request's workflow opens one; the operator edits by hand for everything else. The rules:
+
+1. Raise `revision` by one. An agent applies only a revision above the last one it applied, with a valid signature.
+2. Run the validator before and after:
+
+   ```bash
+   redundanet validate --manifest manifests/manifest.yaml
+   ```
+
+   It parses the v3 half (the RedundaNet 2 keys are set aside, anything else unknown is an error), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request, beside the legacy validator for the v2 half.
+3. Sign offline, with the merged file:
+
+   ```bash
+   redundanet manifest sign --key operator.key --manifest manifests/manifest.yaml
+   ```
+
+   It validates, then writes `manifests/manifest.sig`: the operator's signature over the network, the revision, the time and the file's hash. Commit the manifest and the signature together. CI shows the signature check red until the signature matches the file, which is why the operator signs the branch before merging.
+4. Every agent fetches the pair within five minutes and applies it at once; devices the new policy no longer admits are disconnected.
+
+Anyone can check a signature:
+
+```bash
+redundanet manifest verify --manifest manifests/manifest.yaml [--sig manifests/manifest.sig] [--trust KEY,...]
+```
+
+Without `--trust` it uses the operators listed in the manifest itself, which proves consistency, not authenticity; agents pin the keys from the descriptor they joined with. The output also says when the signature is past `signature_max_age_days`: known devices keep working, new ones wait for a re-sign.
+
+A manifest that is broken on main does not reach an agent: it keeps its last good copy until a valid signed revision appears.
+
+## Admitting a member
+
+The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution, and for a migrating RedundaNet 2 member the `legacy_pgp` signature, which the workflow verified against the fingerprint the manifest lists for their nodes. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
+
+## A member leaving
+
+Set `status: leaving` with `leaving_since: YYYY-MM-DD`, raise the revision, sign, merge. Servers note the time and purge that member's shares and roots once `grace_days` (30 by default) have run on their own clocks with the manifest still saying so; a member who reappears as active before that clears the note. Remove the entry after the grace period. The repository's history keeps every revision.
+
+## Revoking a device
+
+A member revokes a lost or stolen device from any other device of theirs:
+
+```bash
+redundanet device revoke --device KEY
+```
+
+It asks for the phrase and prints a signed revocation record. The operator adds the record to the manifest under `revocations:`, raises the revision, signs and merges; every agent and server refuses the device from then on, and the revocation survives every later manifest. Because it travels through the signed manifest, it takes effect when the operator signs, not within seconds. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
+
+## Changing k-of-n
+
+Declare the transition beside the new encoding:
+
+```yaml
+network:
+  encoding: {k: 2, n: 3}
+  encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2026-12-03}
+```
+
+`validate` refuses a transition whose `to` is not the encoding and warns once the deadline has passed. Until the deadline every server accounts shares under the old encoding at zero, so a member near budget converts without deleting first. Each device converts what its own snapshots reference, every six hours on its own and on `redundanet backup rebalance`; the status page shows the conversion as a bar, with the old encoding's bytes and whether they count yet, and per member the objects still to convert. Once every member has converted, remove the transition, raise the revision, sign. Encoding is per object at upload time: nothing is re-encoded except by the owner's devices.
+
+## Grace, minimum version, signature age
+
+- `grace_days`: how long servers keep a leaving member's data. Deletion waits for it on every server's own clock, which is also the time a signed manifest nobody merged would be noticed.
+- `min_version`: the lowest agent version admitted. The self-updater installs a release that satisfies it, so raise it only to a version the index already carries on the `stable` channel.
+- `signature_max_age_days` (90 by default): re-sign before it runs out, even with no change, or new devices wait.
+
+## Releases
+
+Releases are the maintainer's: tag `agent/vX.Y.Z`, paste the workflow's index fragment into `releases/index.yaml`, raise its `revision`, set the channel (`early` first, `stable` once the early members are fine), sign offline with `redundanet release sign --key release.key --index releases/index.yaml`, commit `index.yaml` and `index.sig` together, publish the draft release. To withdraw a release, set `withdrawn: true`, raise the revision, sign again. All of it: [../releases/README.md](../releases/README.md). Nothing in the manifest can name a release.
+
+## The hub
+
+The live network has one hub, `hub-hetzner` (relay `2.29.46.249:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a failed candidate is never retried until `redundanet update retry VERSION`.
+
+The hub has no domain of its own, so it publishes its status page and `status.json` every minute to the fly.io app of the old product, under <https://redundanet-hub.fly.dev/v3/>, with a bearer token (`--publish` and `--publish-token-file`). The fly side, the `REDUNDANET_V3_PUBLISH_TOKEN` secret and what the server does when the hub goes quiet are in the legacy hub runbook, [legacy/bootstrap-hub.md](legacy/bootstrap-hub.md), section "RedundaNet 3 status under /v3/". The hub also mirrors the RedundaNet 2 status page (`--legacy-status`) so today's nodes stay visible beside the new devices until the old grid stops.
+
+The network descriptor that new members join with is printed from the manifest:
+
+```bash
+redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/adefilippo83/redundanet/main
+```
+
+Print a new one whenever the hubs or the operator keys change, and publish it on the join page.
+
+## Repair, by hand
+
+The hub schedules repair of under-placed objects without the owner: a task signed by its device key goes to a storage node that volunteers, which fetches k shares, regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says. The status page shows objects per number of copies, under-placed, unreadable and due; "blocked: X short above the floors" means no live server has room, and the community needs to add disk.
+
+To drill it on a live network, drop one share on purpose, as the service user beside the running agent:
+
+```bash
+sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet storage drop --storage-path /mnt/storage STORAGE_INDEX SHARE_NUMBER
+```
+
+The census reports the loss within seconds and the hub issues a task at once. `redundanet object check --network redundanet CAP` from any device of the owner prints the storage index and the holders to pick from.
+
+## Diagnostics from a member
+
+Ask the member for `redundanet diagnostics`: a zip with versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with each folder as label plus hash, restore tests, error kinds and counts, a disk check and the last log lines with every path, URL and address redacted. It works with the agent down. Nothing is ever uploaded automatically; the member sends it by hand.

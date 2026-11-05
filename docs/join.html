@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Join the Network | RedundaNet</title>
-    <meta name="description" content="Apply to join the RedundaNet distributed storage network">
+    <title>Join the network | RedundaNet</title>
+    <meta name="description" content="Send a join request to the RedundaNet community backup network. The form opens a GitHub issue; the maintainer signs the manifest and your devices are admitted.">
+    <link rel="canonical" href="https://redundanet.com/join.html">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
@@ -42,18 +43,20 @@
         }
 
         /* Navigation */
-        nav {
+        nav.top {
             padding: 20px 0;
             border-bottom: 1px solid var(--border);
         }
 
-        nav .nav-container {
+        nav.top .nav-container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
         }
 
         .logo {
@@ -75,6 +78,26 @@
             align-items: center;
             justify-content: center;
             font-size: 20px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 22px;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
         }
 
         .btn {
@@ -137,6 +160,10 @@
             margin-bottom: 40px;
         }
 
+        .form-card h3 {
+            margin-bottom: 24px;
+        }
+
         .form-group {
             margin-bottom: 24px;
         }
@@ -167,6 +194,12 @@
             transition: border-color 0.2s;
         }
 
+        .form-group input.mono,
+        .form-group textarea.mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
         .form-group input:focus,
         .form-group select:focus,
         .form-group textarea:focus {
@@ -179,14 +212,20 @@
             color: var(--text-muted);
         }
 
-        .form-group.error input {
+        .form-group.error input,
+        .form-group.error textarea {
             border-color: var(--error);
         }
 
         .form-group .error-message {
+            display: none;
             color: var(--error);
             font-size: 0.875rem;
             margin-top: 6px;
+        }
+
+        .form-group.error .error-message {
+            display: block;
         }
 
         .form-row {
@@ -223,6 +262,33 @@
             font-size: 1.125rem;
         }
 
+        .form-error {
+            display: none;
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid var(--error);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 24px;
+            color: var(--text);
+        }
+
+        .form-error.show {
+            display: block;
+        }
+
+        fieldset {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 24px 0;
+            margin-bottom: 24px;
+        }
+
+        legend {
+            padding: 0 8px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
         /* Requirements */
         .requirements {
             background: var(--bg-card);
@@ -239,64 +305,51 @@
             gap: 10px;
         }
 
-        .requirements ul {
-            list-style: none;
+        .requirements p {
             color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .requirements ol,
+        .requirements ul {
+            color: var(--text-muted);
+            margin: 0 0 12px 22px;
         }
 
         .requirements li {
-            padding: 8px 0;
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
+            padding: 4px 0;
         }
 
-        .requirements li::before {
-            content: "✓";
-            color: var(--secondary);
-            font-weight: bold;
+        .requirements a {
+            color: var(--primary);
+            text-decoration: none;
         }
 
-        /* Steps */
-        .steps {
-            margin-bottom: 60px;
+        .requirements a:hover {
+            text-decoration: underline;
         }
 
-        .steps h3 {
-            text-align: center;
-            margin-bottom: 32px;
+        pre {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            overflow-x: auto;
+            margin: 8px 0 14px;
         }
 
-        .steps-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 24px;
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text);
+            line-height: 1.7;
         }
 
-        .step {
-            text-align: center;
-            padding: 24px;
-        }
-
-        .step-number {
-            width: 48px;
-            height: 48px;
-            background: var(--primary);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1.25rem;
-            margin: 0 auto 16px;
-        }
-
-        .step h4 {
-            margin-bottom: 8px;
-        }
-
-        .step p {
-            color: var(--text-muted);
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-dark);
+            padding: 2px 6px;
+            border-radius: 4px;
             font-size: 0.875rem;
         }
 
@@ -308,250 +361,291 @@
             color: var(--text-muted);
         }
 
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
         footer a {
             color: var(--primary);
             text-decoration: none;
         }
 
-        code {
-            font-family: 'JetBrains Mono', monospace;
-            background: var(--bg-dark);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 0.875rem;
+        @media (max-width: 768px) {
+            .page-header h1 { font-size: 2rem; }
+            .nav-links { gap: 12px 18px; order: 3; width: 100%; }
+            .form-card { padding: 24px; }
         }
     </style>
 </head>
 <body>
-    <nav>
+    <nav class="top">
         <div class="nav-container">
             <a href="./" class="logo">
                 <div class="logo-icon">R</div>
                 RedundaNet
             </a>
+            <ul class="nav-links">
+                <li><a href="./" data-i18n="nav.home">Home</a></li>
+                <li><a href="download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
+            </ul>
             <span data-lang-switcher class="lang-switcher"></span>
-            <a href="./" class="btn btn-secondary" data-i18n="join.nav.back">← Back to Home</a>
         </div>
     </nav>
 
     <main class="container">
         <div class="page-header">
-            <h1 data-i18n="join.header.title">Join the Network</h1>
-            <p data-i18n="join.header.subtitle">Apply to become a node in the RedundaNet distributed storage network. Contribute storage and help build a resilient, encrypted infrastructure.</p>
+            <h1 data-i18n="join.header.title">Join the network</h1>
+            <p data-i18n="join.header.subtitle">A join request is a GitHub issue. The form below builds it in your browser; nothing leaves this page until you open the issue on GitHub.</p>
         </div>
 
         <div class="requirements">
-            <h3>📋 <span data-i18n="join.req.title">Requirements</span></h3>
+            <h3>&#9881; <span data-i18n="join.before.title">Before you fill the form</span></h3>
+            <ol>
+                <li><span data-i18n="join.before.s1"><a href="installation.html">Install the agent</a> on your laptop and create your identity. The phrase is shown once; write it down. The command prints your <strong>member key</strong> (52 characters) and this device's key.</span>
+                    <pre><code>redundanet identity init --network redundanet</code></pre></li>
+                <li><span data-i18n="join.before.s2">Join the network with the public descriptor from the <a href="installation.html#before">install page</a>.</span>
+                    <pre><code>redundanet network join &lt;descriptor&gt;</code></pre></li>
+                <li data-i18n="join.before.s3">If you contribute disk, <a href="installation.html#node">prepare your storage node</a> first so you have its <strong>device key</strong>. Pick a name for it (lowercase letters, digits and hyphens).</li>
+                <li data-i18n="join.before.s4">You need a GitHub account. Your GitHub login, lowercased, is your member name unless you choose another lowercase name.</li>
+                <li data-i18n="join.before.s5">A RedundaNet 2 member also makes the legacy attestation; see the <a href="migration.html">migration guide</a>.</li>
+            </ol>
+        </div>
+
+        <div class="requirements">
+            <h3>&#128203; <span data-i18n="join.rules.title">Member rules</span></h3>
             <ul>
-                <li data-i18n="join.req.1">A GPG key pair published to a public keyserver (for node authentication)</li>
-                <li data-i18n="join.req.2">A device that can run Docker (Raspberry Pi, server, VM, etc.)</li>
-                <li data-i18n="join.req.3">Storage space you're willing to contribute (minimum 10GB recommended)</li>
-                <li data-i18n="join.req.4">Reliable internet connection</li>
-                <li data-i18n="join.req.5">A GitHub account (to submit your application)</li>
+                <li data-i18n="join.rules.name">Names are lowercase letters, digits and hyphens.</li>
+                <li data-i18n="join.rules.storage">A member who contributes disk lists at least one storage device. A storage node needs at least 10 GiB free above its floor.</li>
+                <li data-i18n="join.rules.sponsor">A member without a storage device needs <code>contribution_gb: 0</code> with an <code>allocation_gb</code> and a <code>sponsor</code> (another member or the reserve), which the maintainer sets.</li>
+                <li data-i18n="join.rules.allocation">Your allocation is derived from your contribution and the encoding overhead; <code>redundanet validate --manifest manifests/manifest.yaml</code> prints every member's allocation.</li>
+                <li data-i18n="join.rules.public">Your member name and member key become part of the public manifest and stay in the repository's history forever. See the <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">privacy policy</a>.</li>
             </ul>
         </div>
 
-        <div class="requirements" style="border-color: var(--primary); background: rgba(99, 102, 241, 0.05);">
-            <h3>🔑 <span data-i18n="join.gpg.title">GPG Key Setup</span></h3>
-            <p style="color: var(--text-muted); margin-bottom: 16px;" data-i18n="join.gpg.desc">Before applying, generate and publish your GPG key:</p>
-            <pre style="margin: 0;"><code># Install redundanet CLI
-pip install redundanet
-
-# Generate a new GPG key
-redundanet node keys generate --name my-node --email you@example.com
-
-# Publish your key to keyservers (use the FULL 40-char fingerprint)
-redundanet node keys publish --key-id YOUR_FULL_FINGERPRINT
-
-# Or use standard GPG commands:
-gpg --gen-key
-gpg --send-keys --keyserver keys.openpgp.org YOUR_KEY_ID</code></pre>
-        </div>
-
-        <div class="steps">
-            <h3 data-i18n="join.steps.title">How It Works</h3>
-            <div class="steps-grid">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <h4 data-i18n="join.step1.title">Submit Application</h4>
-                    <p data-i18n="join.step1.desc">Fill out the form below with your GPG key ID and storage contribution</p>
-                </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <h4 data-i18n="join.step2.title">Review</h4>
-                    <p data-i18n="join.step2.desc">Maintainers review your application and verify your GPG key</p>
-                </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <h4 data-i18n="join.step3.title">Approval</h4>
-                    <p data-i18n="join.step3.desc">Once approved, your node is added to the manifest with an assigned IP</p>
-                </div>
-                <div class="step">
-                    <div class="step-number">4</div>
-                    <h4 data-i18n="join.step4.title">Connect</h4>
-                    <p data-i18n="join.step4.desc">Download the manifest and start your node to join the network</p>
-                </div>
-            </div>
-        </div>
-
         <div class="form-card">
-            <form id="joinForm">
-                <div class="form-group">
-                    <label for="gpgKeyId" data-i18n="join.form.gpg.label">GPG Fingerprint *</label>
-                    <input type="text" id="gpgKeyId" name="gpgKeyId" placeholder="Full 40-character fingerprint, e.g. ABCD1234EF567890ABCD1234EF567890ABCD1234" data-i18n-placeholder="join.form.gpg.ph" required>
-                    <p class="hint" data-i18n="join.form.gpg.hint">Your GPG key's full 40-character fingerprint (must be published to a keyserver). Run <code>gpg --fingerprint</code> or <code>redundanet node keys list</code> to find it. Short key ids are not accepted.</p>
-                </div>
+            <h3 data-i18n="join.form.title">Join request</h3>
+            <form id="joinForm" novalidate>
+                <div class="form-error" id="formError" role="alert"></div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="storageContribution" data-i18n="join.form.storage.label">Storage Contribution *</label>
-                        <select id="storageContribution" name="storageContribution" required>
-                            <option value="" data-i18n="join.form.storage.select">Select amount...</option>
-                            <option value="10GB">10 GB</option>
-                            <option value="50GB">50 GB</option>
-                            <option value="100GB">100 GB</option>
-                            <option value="250GB">250 GB</option>
-                            <option value="500GB">500 GB</option>
-                            <option value="1TB">1 TB</option>
-                            <option value="2TB">2 TB</option>
-                            <option value="5TB">5 TB+</option>
-                        </select>
-                        <p class="hint" data-i18n="join.form.storage.hint">How much storage you'll contribute to the network</p>
+                <fieldset>
+                    <legend data-i18n="join.form.member.legend">Member</legend>
+
+                    <div class="form-group" id="g-memberName">
+                        <label for="memberName" data-i18n="join.form.name.label">Member name *</label>
+                        <input type="text" id="memberName" name="memberName" autocomplete="off" spellcheck="false" placeholder="your GitHub login, lowercased" data-i18n-placeholder="join.form.name.ph" required pattern="[a-z0-9][a-z0-9-]{0,62}">
+                        <p class="hint" data-i18n="join.form.name.hint">Lowercase letters, digits and hyphens, 1 to 63 characters, starting with a letter or digit.</p>
+                        <p class="error-message" data-i18n="join.form.name.err">Use lowercase letters, digits and hyphens only, starting with a letter or digit.</p>
                     </div>
 
-                    <div class="form-group">
-                        <label for="region" data-i18n="join.form.region.label">Region</label>
-                        <select id="region" name="region">
-                            <option value="" data-i18n="join.form.region.select">Select region...</option>
-                            <option value="north-america" data-i18n="join.form.region.na">North America</option>
-                            <option value="south-america" data-i18n="join.form.region.sa">South America</option>
-                            <option value="europe" data-i18n="join.form.region.eu">Europe</option>
-                            <option value="asia" data-i18n="join.form.region.as">Asia</option>
-                            <option value="africa" data-i18n="join.form.region.af">Africa</option>
-                            <option value="oceania" data-i18n="join.form.region.oc">Oceania</option>
-                        </select>
-                        <p class="hint" data-i18n="join.form.region.hint">Your approximate geographic location</p>
+                    <div class="form-group" id="g-memberKey">
+                        <label for="memberKey" data-i18n="join.form.key.label">Member key *</label>
+                        <input type="text" id="memberKey" name="memberKey" class="mono" autocomplete="off" spellcheck="false" placeholder="52 lowercase base32 characters" data-i18n-placeholder="join.form.key.ph" required pattern="[a-z2-7]{52}">
+                        <p class="hint" data-i18n="join.form.key.hint">Printed by <code>redundanet identity init</code>, and again by <code>redundanet identity show</code>.</p>
+                        <p class="error-message" data-i18n="join.form.key.err">A member key is exactly 52 characters from a-z and 2-7.</p>
                     </div>
+
+                    <div class="form-group" id="g-contributionGb">
+                        <label for="contributionGb" data-i18n="join.form.gb.label">Contribution, in GB *</label>
+                        <input type="number" id="contributionGb" name="contributionGb" min="0" step="1" inputmode="numeric" placeholder="0" required>
+                        <p class="hint" data-i18n="join.form.gb.hint">The disk you contribute on your storage node, as a whole number. 0 is allowed: a member without a storage device is sponsored by another member or by the reserve, and the maintainer sets the allocation.</p>
+                        <p class="error-message" data-i18n="join.form.gb.err">A whole number, 0 or more.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend data-i18n="join.form.device.legend">Storage node (required when the contribution is above 0)</legend>
+
+                    <div class="form-group" id="g-deviceKey">
+                        <label for="deviceKey" data-i18n="join.form.devkey.label">Device key</label>
+                        <input type="text" id="deviceKey" name="deviceKey" class="mono" autocomplete="off" spellcheck="false" placeholder="52 lowercase base32 characters" data-i18n-placeholder="join.form.key.ph" pattern="[a-z2-7]{52}">
+                        <p class="hint" data-i18n="join.form.devkey.hint">Printed by <code>install.sh prepare</code> on the node.</p>
+                        <p class="error-message" data-i18n="join.form.devkey.err">A device key is exactly 52 characters from a-z and 2-7, and is required when the contribution is above 0.</p>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group" id="g-deviceName">
+                            <label for="deviceName" data-i18n="join.form.devname.label">Device name</label>
+                            <input type="text" id="deviceName" name="deviceName" autocomplete="off" spellcheck="false" placeholder="for example nas-1" data-i18n-placeholder="join.form.devname.ph" pattern="[a-z0-9][a-z0-9-]{0,62}">
+                            <p class="hint" data-i18n="join.form.devname.hint">Same rule as the member name. Shown on the status page.</p>
+                            <p class="error-message" data-i18n="join.form.devname.err">Lowercase letters, digits and hyphens, and required when the contribution is above 0.</p>
+                        </div>
+
+                        <div class="form-group" id="g-udpPort">
+                            <label for="udpPort" data-i18n="join.form.port.label">UDP port (optional)</label>
+                            <input type="number" id="udpPort" name="udpPort" min="1024" max="65535" step="1" inputmode="numeric" placeholder="1024 to 65535">
+                            <p class="hint" data-i18n="join.form.port.hint">Only if you forwarded a UDP port to the node, to be reached directly more often. No inbound rule is needed otherwise.</p>
+                            <p class="error-message" data-i18n="join.form.port.err">A port is a whole number from 1024 to 65535.</p>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend data-i18n="join.form.legacy.legend">RedundaNet 2 members only</legend>
+
+                    <div class="form-group" id="g-legacyFingerprint">
+                        <label for="legacyFingerprint" data-i18n="join.form.fp.label">Legacy GPG fingerprint (optional)</label>
+                        <input type="text" id="legacyFingerprint" name="legacyFingerprint" class="mono" autocomplete="off" spellcheck="false" placeholder="40 hexadecimal characters" data-i18n-placeholder="join.form.fp.ph" pattern="[A-Fa-f0-9]{40}">
+                        <p class="hint" data-i18n="join.form.fp.hint">The full 40-character fingerprint of the GPG key of one of your RedundaNet 2 nodes, the one you signed with.</p>
+                        <p class="error-message" data-i18n="join.form.fp.err">A full fingerprint is 40 hexadecimal characters, and it needs the signature below.</p>
+                    </div>
+
+                    <div class="form-group" id="g-legacySignature">
+                        <label for="legacySignature" data-i18n="join.form.sig.label">Legacy signature (optional)</label>
+                        <textarea id="legacySignature" name="legacySignature" class="mono" rows="7" spellcheck="false" placeholder="-----BEGIN PGP SIGNATURE-----" data-i18n-placeholder="join.form.sig.ph"></textarea>
+                        <p class="hint" data-i18n="join.form.sig.hint">An armored detached signature over your member key string, made with that key: <code>printf '%s' &lt;member key&gt; | gpg --armor --detach-sign -u &lt;fingerprint&gt;</code>. Paste the whole block.</p>
+                        <p class="error-message" data-i18n="join.form.sig.err">Paste the whole armored block, from BEGIN PGP SIGNATURE to END PGP SIGNATURE, and give the fingerprint above.</p>
+                    </div>
+                </fieldset>
+
+                <div class="form-group" id="g-notes">
+                    <label for="notes" data-i18n="join.form.notes.label">Notes (optional)</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="Anything the maintainer should know" data-i18n-placeholder="join.form.notes.ph"></textarea>
                 </div>
 
-                <div class="form-group">
-                    <label for="deviceType" data-i18n="join.form.device.label">Device Type</label>
-                    <select id="deviceType" name="deviceType">
-                        <option value="" data-i18n="join.form.device.select">Select device...</option>
-                        <option value="raspberry-pi">Raspberry Pi</option>
-                        <option value="server" data-i18n="join.form.device.server">Dedicated Server</option>
-                        <option value="vps" data-i18n="join.form.device.vps">VPS / Cloud VM</option>
-                        <option value="desktop" data-i18n="join.form.device.desktop">Desktop / Workstation</option>
-                        <option value="other" data-i18n="join.form.device.other">Other</option>
-                    </select>
-                    <p class="hint" data-i18n="join.form.device.hint">What type of device will run your node?</p>
-                </div>
-
-                <div class="form-group">
-                    <label for="publicIp" data-i18n="join.form.ip.label">Public IP (optional)</label>
-                    <input type="text" id="publicIp" name="publicIp" placeholder="e.g., 203.0.113.50" data-i18n-placeholder="join.form.ip.ph">
-                    <p class="hint" data-i18n="join.form.ip.hint">If your node has a static public IP and can accept incoming connections</p>
-                </div>
-
-                <div class="form-group">
-                    <label for="notes" data-i18n="join.form.notes.label">Additional Notes</label>
-                    <textarea id="notes" name="notes" rows="3" placeholder="Any additional information about your setup..." data-i18n-placeholder="join.form.notes.ph"></textarea>
-                </div>
-
-                <div class="form-group">
+                <div class="form-group" id="g-acceptTerms">
                     <div class="checkbox-group">
                         <input type="checkbox" id="acceptTerms" name="acceptTerms" required>
                         <label for="acceptTerms" data-i18n="join.form.terms">
-                            I understand that my GPG key ID will be public in the network manifest, and I agree to contribute the specified storage to the network.
+                            I understand that my member name and member key are public in the repository's history forever. See <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">PRIVACY.md</a>.
                         </label>
                     </div>
+                    <p class="error-message" data-i18n="join.form.terms.err">The request cannot be sent without this.</p>
                 </div>
 
                 <button type="submit" class="btn btn-primary submit-btn" data-i18n="join.form.submit">
-                    Submit Application →
+                    Open the issue on GitHub &#8594;
                 </button>
+                <p class="hint" style="margin-top: 12px; text-align: center;" data-i18n="join.form.nojs">The button opens a prefilled issue on GitHub. If it does nothing, your browser has JavaScript off: open a new issue by hand with the title <code>[Join Request] Member: &lt;name&gt;</code> and the table described in <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/join.md">docs/join.md</a>.</p>
             </form>
+        </div>
+
+        <div class="requirements">
+            <h3>&#9203; <span data-i18n="join.after.title">What happens after</span></h3>
+            <ol>
+                <li data-i18n="join.after.s1">A workflow validates the request and opens a pull request adding you under <code>members:</code> (name, key, contribution, join date, status active, and the legacy PGP attestation when given) and your node under <code>storage:</code> (member, device, name, UDP port when given), raising the manifest revision by one.</li>
+                <li data-i18n="join.after.s2">The maintainer reviews, signs <code>manifest.sig</code> offline with the operator key, and merges.</li>
+                <li data-i18n="join.after.s3">Every agent applies the new revision within five minutes. Your devices are admitted from then on.</li>
+                <li><span data-i18n="join.after.s4">Install the service and add a backup set:</span>
+                    <pre><code>redundanet service install --network redundanet
+redundanet backup add NAME FOLDER</code></pre></li>
+            </ol>
+            <p data-i18n="join.after.more">The long form: <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/join.md">docs/join.md</a>. Your node appears on the <a href="https://redundanet-hub.fly.dev/v3/">status page</a> under your name.</p>
         </div>
     </main>
 
     <footer>
         <div class="container">
-            <p data-i18n="join.footer">Need help with GPG keys? Check out the <a href="https://docs.github.com/en/authentication/managing-commit-signature-verification/generating-a-new-gpg-key" target="_blank">GitHub GPG guide</a> or use <code>redundanet node keys generate</code>.</p>
+            <div class="footer-links">
+                <a href="./" data-i18n="nav.home">Home</a>
+                <a href="download.html" data-i18n="footer.download">Download</a>
+                <a href="installation.html" data-i18n="footer.install">Install</a>
+                <a href="https://redundanet-hub.fly.dev/v3/" data-i18n="footer.status">Status</a>
+                <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
+                <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>
+            </div>
+            <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
         </div>
     </footer>
 
     <script src="/i18n/i18n.js"></script>
     <script>
-        const GITHUB_REPO = 'adefilippo83/redundanet';
+    (function () {
+        "use strict";
+        var GITHUB_REPO = "adefilippo83/redundanet";
+        var NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
+        var KEY_RE = /^[a-z2-7]{52}$/;
+        var FP_RE = /^[A-Fa-f0-9]{40}$/;
 
-        document.getElementById('joinForm').addEventListener('submit', function(e) {
+        var form = document.getElementById("joinForm");
+        var formError = document.getElementById("formError");
+
+        function val(id) { return document.getElementById(id).value.trim(); }
+        function mark(id, bad) {
+            var g = document.getElementById("g-" + id);
+            if (g) g.classList.toggle("error", !!bad);
+            return !bad;
+        }
+        // A table cell cannot hold a pipe or a line break.
+        function cell(s) { return s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim(); }
+
+        form.addEventListener("submit", function (e) {
             e.preventDefault();
+            formError.classList.remove("show");
 
-            const gpgKeyId = document.getElementById('gpgKeyId').value.trim();
-            const storageContribution = document.getElementById('storageContribution').value;
-            const region = document.getElementById('region').value || 'Not specified';
-            const deviceType = document.getElementById('deviceType').value || 'Not specified';
-            const publicIp = document.getElementById('publicIp').value.trim() || 'None';
-            const notes = document.getElementById('notes').value.trim() || 'None';
+            var memberName = val("memberName");
+            var memberKey = val("memberKey");
+            var gbRaw = val("contributionGb");
+            var deviceKey = val("deviceKey");
+            var deviceName = val("deviceName");
+            var udpPort = val("udpPort");
+            var fp = val("legacyFingerprint").replace(/\s/g, "").replace(/^0x/i, "").toUpperCase();
+            var sig = document.getElementById("legacySignature").value.trim();
+            var notes = val("notes");
+            var terms = document.getElementById("acceptTerms").checked;
 
-            // Validate GPG key format. Must match what the join workflow
-            // accepts: the FULL 40-hex-character fingerprint (optional 0x).
-            // Short 8/16-char key ids are collision-prone and rejected.
-            if (!/^(0x)?[A-Fa-f0-9]{40}$/.test(gpgKeyId.replace(/\s/g, ''))) {
-                alert('Please enter your full 40-character GPG fingerprint (run: gpg --fingerprint). Short 8/16-character key ids are not accepted.');
+            var gb = /^\d+$/.test(gbRaw) ? parseInt(gbRaw, 10) : NaN;
+            var contributes = gb > 0;
+            var hasSig = sig.length > 0;
+            var sigOk = !hasSig || (/-----BEGIN PGP SIGNATURE-----/.test(sig) && /-----END PGP SIGNATURE-----/.test(sig));
+
+            var ok = true;
+            ok = mark("memberName", !NAME_RE.test(memberName)) && ok;
+            ok = mark("memberKey", !KEY_RE.test(memberKey)) && ok;
+            ok = mark("contributionGb", isNaN(gb)) && ok;
+            ok = mark("deviceKey", (contributes && !deviceKey) || (deviceKey && !KEY_RE.test(deviceKey))) && ok;
+            ok = mark("deviceName", (contributes && !deviceName) || (deviceName && !NAME_RE.test(deviceName))) && ok;
+            ok = mark("udpPort", udpPort && !(/^\d+$/.test(udpPort) && +udpPort >= 1024 && +udpPort <= 65535)) && ok;
+            ok = mark("legacyFingerprint", (fp && !FP_RE.test(fp)) || (fp && !hasSig)) && ok;
+            ok = mark("legacySignature", !sigOk || (hasSig && !fp)) && ok;
+            ok = mark("acceptTerms", !terms) && ok;
+
+            if (!ok) {
+                var errText = document.getElementById("formErrorText");
+                formError.textContent = errText ? errText.textContent : "Please correct the fields marked in red.";
+                formError.classList.add("show");
+                var first = form.querySelector(".form-group.error input, .form-group.error textarea");
+                if (first) first.focus();
                 return;
             }
 
-            // The join workflow only accepts a literal IP address here
-            // (hostnames are discarded server-side).
-            if (publicIp !== 'None'
-                && !/^\d{1,3}(\.\d{1,3}){3}$/.test(publicIp)
-                && !/^[0-9A-Fa-f:]+$/.test(publicIp)) {
-                alert('Public IP must be a literal IP address (e.g. 203.0.113.50), or leave it empty');
-                return;
+            var title = "[Join Request] Member: " + memberName;
+            var body =
+                "## RedundaNet 3 membership\n\n" +
+                "| Field | Value |\n" +
+                "|-------|-------|\n" +
+                "| Member name | " + cell(memberName) + " |\n" +
+                "| Member key | " + cell(memberKey) + " |\n" +
+                "| Contribution GB | " + gb + " |\n" +
+                "| Device key | " + cell(deviceKey) + " |\n" +
+                "| Device name | " + cell(deviceName) + " |\n" +
+                "| UDP port | " + cell(udpPort) + " |\n" +
+                "| Legacy GPG fingerprint | " + cell(fp) + " |\n" +
+                "| Notes | " + cell(notes) + " |\n";
+            if (hasSig) {
+                body += "\n## Legacy signature\n\n```\n" + sig + "\n```\n";
             }
 
-            // Create issue title
-            const title = `[Join Request] Node: ${gpgKeyId.slice(-8)}`;
-
-            // Create issue body
-            const body = `## New Node Application
-
-### Node Information
-| Field | Value |
-|-------|-------|
-| **GPG Key ID** | \`${gpgKeyId}\` |
-| **Storage Contribution** | ${storageContribution} |
-| **Region** | ${region} |
-| **Device Type** | ${deviceType} |
-| **Public IP** | ${publicIp} |
-
-### Additional Notes
-${notes}
-
----
-
-### Checklist for Reviewers
-- [ ] GPG key is valid and accessible on public keyservers
-- [ ] Storage contribution is reasonable
-- [ ] No duplicate node with same GPG key
-- [ ] Assign VPN IP address
-- [ ] Update manifest file
-
----
-*This issue was automatically generated from the [Join Network](https://redundanet.com/join.html) form.*
-`;
-
-            // Create GitHub issue URL
-            const issueUrl = `https://github.com/${GITHUB_REPO}/issues/new?` + new URLSearchParams({
+            var issueUrl = "https://github.com/" + GITHUB_REPO + "/issues/new?" + new URLSearchParams({
+                labels: "join-request",
                 title: title,
-                body: body,
-                labels: 'join-request'
+                body: body
             }).toString();
-
-            // Redirect to GitHub
             window.location.href = issueUrl;
         });
+    })();
     </script>
+    <!-- The error banner's text, translated with the page. -->
+    <span id="formErrorText" data-i18n="join.form.err" hidden>Please correct the fields marked in red.</span>
 </body>
 </html>

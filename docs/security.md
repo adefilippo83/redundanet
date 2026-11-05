@@ -1,0 +1,58 @@
+# Security
+
+A short version of the security section of [RFC 0001](../rfcs/0001-redundanet-3.md). What the software sends and to whom is in [../PRIVACY.md](../PRIVACY.md). Anonymity is not a goal: a network observer learns who talks to whom and how much.
+
+## Keys and the phrase
+
+A member is a 128-bit seed, shown once as a 12-word phrase by `redundanet identity init`. Everything else is derived from it or certified by it:
+
+| Key | Used for | Lives where |
+| --- | --- | --- |
+| Member signing key (Ed25519) | Certifies devices, revokes devices, signs the join request | Nowhere at rest: derived from the phrase when needed, then erased |
+| Member secret | Derives the per-object encryption keys and the key that seals root records | Every device of the member, in the identity file |
+| Device key (Ed25519) | Transport identity on the mesh; signs every storage request, descriptor, delete token and the device's own root | That device only |
+| Device certificate | Proves to servers and peers that the device acts for a listed member | Presented on connect; stored by servers beside what the device wrote |
+
+The split is the point: everything a device does every day is signed by its own key, so taking a device gives an attacker that device and nothing more. Certifying and revoking need the phrase in hand.
+
+The phrase appears only on the device itself: in the CLI or in the local page on `127.0.0.1`, and on a headless node through SSH. Nothing on the network ever asks for it; the weekly restore test never asks for it. There is no phrase check command in 3.0.0 and no OS keystore: the identity file is sealed with a passphrase when you ask for one (`--passphrase`), otherwise the file mode is its protection, as on a headless node.
+
+## What is encrypted, and by whom
+
+Each file is split into objects. Each object is encrypted on your device with a key derived from your member secret and the object's own content (AES-256-GCM per segment), erasure coded into shares, and only shares go to storage servers, each with a descriptor signed by your device. File names, folder structure and the snapshot index are themselves stored inside encrypted objects. A storage server, and the hub, learn that your member stores an object of a given size at a given time, and how much you store in all. They cannot read names or contents, alter a share undetected, forge a share's owner or inflate another member's usage. Every read verifies the hash tree before a byte is written.
+
+Devices talk over QUIC with TLS 1.3, authenticated by their device keys. A relayed connection goes through the hub as ciphertext the hub cannot read.
+
+## What the hub sees, and cannot do
+
+The hub introduces devices to each other, relays traffic when no direct path exists, collects the census and publishes the status page. It sees device keys, IP addresses, liveness, the share census (storage indexes, owners, sizes, encodings) and relayed volumes. A compromised hub can drop or delay traffic, publish a false page, hand out wrong addresses (after which connections fail rather than being misdirected), serve a stale manifest within its maximum age, and issue repair tasks that place surplus copies of real objects. It cannot admit a member, forge a manifest, a revocation or a release, read a share, impersonate a device or delete anything: manifests, revocations and releases carry signatures by keys the hub does not hold, revision numbers stop rollback, and devices authenticate each other end to end. Nothing on the hub is needed to recover any member's data.
+
+The live network has one hub, on a bare IP address. With it down: no new connections, no repair scheduling, no status page; existing direct connections continue.
+
+## The manifest and the repository
+
+Agents apply only a manifest signed by an operator key pinned at join, with a revision above the last one applied. A compromised repository account can change files on main and delay changes, but cannot admit a member, change k-of-n, install a binary or read data. A stolen operator key can sign a manifest, so it could admit a member or change allocations; it cannot install a binary, read data, or delete anything inside the grace period, which every server measures on its own clock. Recovery from a stolen operator key is a new network descriptor sent out of band. Releases are signed with a separate offline key that CI never holds; the index can withdraw a version.
+
+## Device revocation
+
+A member revokes a lost or stolen device from any other device of theirs with `redundanet device revoke --device KEY`: the command asks for the phrase and prints a signed revocation record. The operator adds it to the manifest under `revocations:`, signs and merges; every agent and server refuses the device from then on, and the revocation survives every later manifest. It takes effect when the operator signs, not within seconds. What the device wrote while it was trusted keeps verifying, so repair keeps working.
+
+## What a lost device can do
+
+Until it is revoked, the holder of your device can read everything your devices can read (the device holds the member secret), and write and delete as that device. It cannot certify a device, revoke your other devices, write another device's root, or act after revocation. Deletion is two-phase: anything it deletes stays recoverable for 30 days from any other device of yours, and nothing it deletes can be purged within that window. A stolen phrase is a different matter: it is a new identity, and the operator retires the old one.
+
+## Losing the phrase
+
+The data is unreadable to everyone, by design; there is no escrow and nobody can recover the phrase for you. `identity init` asks for three of the words back before writing anything. A member who loses the phrase starts over as a new member entry; what the old identity stored stays encrypted on the grid until the operator retires it and the grace period runs out.
+
+## The local page and the browser
+
+The agent serves its API and page on `127.0.0.1:4470` only, never on the LAN. A web page you visit could post to `127.0.0.1`, so: `redundanet open` prints a one-time link that works for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every change carries a CSRF token; the API answers only requests whose Host is loopback and, for changes, whose Origin is the page itself; no GET changes anything. Another user or process on the same machine can connect to the port but needs the bearer token, kept in a file only the agent's user can read. A headless node is reached over an SSH tunnel.
+
+## Self-update
+
+The agent checks the signed release index hourly, installs only what the index names after verifying hash and size, runs the candidate in probation for up to two minutes, keeps the old binary as `redundanet.old` and rolls back on its own. The release key rotates only through records in the index signed by the key being retired, so an old binary still verifies a newer index. Binaries themselves are unsigned at 3.0.0 (Windows signing and macOS notarization are set up in the workflow, not yet active); the index is the verification on every platform.
+
+## Reporting
+
+Report a security problem to the maintainer through the repository; for a problem on your own device, `redundanet diagnostics` writes a bundle with every path, URL and address redacted, which you send by hand. Nothing is uploaded automatically.

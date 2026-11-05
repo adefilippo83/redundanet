@@ -1,3 +1,5 @@
+> This page describes RedundaNet 2, the legacy product, which stays live until the announced stop date. RedundaNet 3 is the current product: see [../README.md](../README.md).
+
 # NAS share with async grid backup
 
 Turn a node (e.g. a Raspberry Pi) into a small NAS whose contents are

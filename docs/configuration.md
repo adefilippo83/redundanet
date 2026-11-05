@@ -1,522 +1,130 @@
-# Configuration Reference
+# Configuration
 
-RedundaNet configuration is managed through a YAML manifest file, environment variables, and the CLI.
+RedundaNet 3 has little to configure. The network's parameters are in the signed manifest; a device has a data directory, a `backup.yaml` and, on a storage node, `agent.env`. This page lists all of it. The legacy RedundaNet 2 configuration is in [legacy/configuration.md](legacy/configuration.md).
 
-## Manifest File
+## The manifest (schema 3)
 
-The manifest file defines the network configuration and node information. It's typically stored in a Git repository for version control and distribution.
+`manifests/manifest.yaml` in the repository is the source of truth for membership. The agent follows only a revision whose `manifests/manifest.sig` an operator key signed, fetches it every five minutes, and applies a newer signed revision at once. During the migration the same file also carries the RedundaNet 2 keys (`nodes`, `introducer_furl`, and `version`, `domain`, `vpn_network`, `tahoe`, `quota` under `network`); the agent sets exactly those aside and refuses any other key it does not know, so a typo is caught.
 
-### Location
+Top level:
 
-The manifest is stored at:
-- **Public network**: `manifests/manifest.yaml` in the main repository
-- **Private networks**: Your own Git repository
+| Key | Meaning |
+| --- | --- |
+| `schema` | `3`; the agent refuses any other value. |
+| `revision` | A whole number, at least 1, raised by one with every change; an agent applies only a revision above the last one it applied. |
+| `network` | The network's parameters, below. |
+| `operators` | The keys whose signature makes a manifest take effect: a list of `name` and `key`. |
+| `hubs` | The hubs: `name`, `key` (the hub's device key), `relay` (host:port of the QUIC relay), `tcp` (host:port of the TLS carrier; without it, port 443 on the relay's host), `status` and `join` (https URLs, optional). |
+| `members` | One entry per member, below. |
+| `storage` | One entry per storage device: `member`, `device` (its device key), `name`, and optionally `udp_port`, a port between 1024 and 65535 the member forwards on their router. |
+| `revocations` | Signed device revocation records, added by the operator from the output of `redundanet device revoke`; every agent and server refuses a revoked device from then on. New in 3.0.0. |
 
-### Full Schema
+`network`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `name` | required | The network name: lowercase letters, digits and dashes. Devices are certified for it. |
+| `encoding` | required | `{k: K, n: N}`: every object is split into N shares of which any K rebuild it. 2-of-3 on the live network today. Applies to new uploads. |
+| `encoding_transition` | none | `{from, to, deadline}`: a k-of-n change in progress. `to` must equal `encoding`; the deadline is a date. Until it, servers account shares under `from` at zero, so members convert without deleting first; `validate` warns once it has passed. |
+| `reserve_percent` | 15 | The share of contributions held back for repair, 0 to 50. Allocations come out of the rest. |
+| `grace_days` | 30 | How long servers keep a leaving or unlisted member's shares and roots, on their own clocks, before purging them. |
+| `min_version` | none | The lowest agent version admitted; the self-updater installs a release that satisfies it. MAJOR.MINOR.PATCH with an optional pre-release suffix. |
+| `signature_max_age_days` | 90 | Past this age of `manifest.sig`, a node keeps working for devices it already admitted and refuses new ones until an operator re-signs. |
+| `quota_headroom` | 2 | Servers refuse a member's writes past this multiple of the member's budget; the exact budget is the client's. |
+| `objects_per_gb` | 1000 | The object-count bound per GB of allocation. |
+| `repair_after_hours` | 72 | A server silent this long is dead: its shares count no more and repair is scheduled. Down is ten minutes without a heartbeat. |
+
+A member entry:
+
+| Key | Meaning |
+| --- | --- |
+| `name` | Lowercase letters, digits and dashes, unique. The GitHub login for members who joined through the form. |
+| `key` | The member key, 52 characters. |
+| `contribution_gb` | The disk the member contributes. A member above 0 lists at least one storage device; a member at 0 is client-only. |
+| `allocation_gb` | Client-only members: the allocation the community granted. A contributing member's allocation is computed, never declared. |
+| `sponsor` | Client-only members: `{member, gb}`, whose contribution pays for the allocation; `reserve` for the network's reserve. |
+| `vouched_by` | Invite and confirmation signatures, when a member was invited by another. |
+| `legacy_pgp` | RedundaNet 2 members: `fingerprint` (the full 40 characters) and `signature`, the PGP detached signature over the member key. |
+| `joined` | A date, YYYY-MM-DD. |
+| `status` | `active` or `leaving`. |
+| `leaving_since` | A date, required when leaving, forbidden when active. |
+
+The allocation of a contributing member is `contribution_gb` less the reserve, times k/n. `redundanet validate --manifest manifests/manifest.yaml` applies every rule, warns on capacity, and prints the allocation per member.
+
+## agent.env (storage node)
+
+A Linux storage node installed with `install.sh` reads `/etc/redundanet3/agent.env`:
+
+| Variable | Meaning |
+| --- | --- |
+| `NETWORK` | The network name, `redundanet`. |
+| `CHANNEL` | The release channel the self-updater follows: `stable` or `early`. |
+| `STORAGE_PATH` | The disk the node contributes. The share store lives in `STORAGE_PATH/redundanet3`. |
+
+Change a value and `systemctl restart redundanet-agent`. The unit runs the agent as the system user `redundanet3` with its data under `/var/lib/redundanet3`.
+
+## backup.yaml
+
+The agent's job file lives in the data directory. `backup add` and `backup remove` edit `sets`; the rest is edited by hand (there is no settings page in 3.0.0) and read when the agent starts:
 
 ```yaml
-# Network configuration
-network:
-  name: redundanet              # Network identifier
-  version: "2.0.0"              # Manifest version
-  domain: redundanet.local      # Domain for internal DNS
-  vpn_network: 10.100.0.0/16    # VPN address range
-
-  # Tahoe-LAFS settings
-  tahoe:
-    shares_needed: 3            # Minimum shares to reconstruct (k)
-    shares_happy: 7             # Minimum shares for upload success
-    shares_total: 10            # Total shares to create (n)
-    reserved_space: 1G          # Reserved space per storage node
-
-  # Contribution-based allocation (see quotas.md)
-  quota:
-    reserve: 0.15               # Kept back for GC lag and rebalancing
-    enforce: true               # Client-side refusal over the allocation
-
-# Introducer FURL (auto-populated by introducer node)
-introducer_furl: pb://...
-
-# Node definitions
-nodes:
-  - name: node-12345678         # Unique node name
-    internal_ip: 10.100.0.10    # VPN IP address
-    vpn_ip: 10.100.0.10         # Optional; defaults to internal_ip
-    public_ip: 1.2.3.4          # Public IP (optional)
-    # GPG key identifier: the full 40-character fingerprint, no 0x prefix
-    # (short 8/16-char ids are rejected).
-    gpg_key_id: 1234567890ABCDEF1234567890ABCDEF12345678
-    region: north-america       # Geographic region
-    status: active              # Node status (pending/active/inactive)
-    roles:                      # Node roles
-      - tinc_vpn
-      - tahoe_storage
-    ports:
-      tinc: 655
-      tahoe_storage: 3457
-      tahoe_client: 3456
-      tahoe_introducer: 3458
-    storage_contribution: 500GB # Storage offered to network
-    is_publicly_accessible: true # Can accept incoming connections
-    member: adefilippo83        # Owner; nodes of one member pool their contribution
-    # tahoe_introducer nodes only: the FURL of the introducer this node runs.
-    # Clients use every introducer in the manifest, so either can be down.
-    introducer_furl: pb://...
+version: 2
+sets:
+  - name: documents
+    folders:
+      - /home/me/Documents
+    excludes:
+      - "*.iso"
+every: 24h            # between runs of each set
+verify_every: 168h    # between restore tests; 7 days
+cleanup_every: 168h   # between cleanups of unreferenced objects; 7 days
+retention:
+  days: 7             # keep everything this long
+  daily: 30           # then one per day
+  weekly: 12          # then one per week
+  monthly: 12         # then one per month
 ```
 
-### Network Section
+`excludes` are base-name globs or relative path prefixes beside the defaults listed in [backups.md](backups.md). Durations are Go durations (`24h`, `168h`). A file saved by an earlier version with the old monthly restore test moves to weekly on load.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `name` | string | required | Network identifier |
-| `version` | string | required | Manifest version |
-| `domain` | string | `redundanet.local` | Internal DNS domain |
-| `vpn_network` | string | `10.100.0.0/16` | VPN CIDR range |
+## Data directories
 
-### Tahoe Section
+| Platform | Data directory |
+| --- | --- |
+| macOS | `~/Library/Application Support/redundanet` |
+| Linux | `~/.config/redundanet` |
+| Windows | `%AppData%\redundanet` |
+| Linux storage node | `/var/lib/redundanet3`, binary at `/var/lib/redundanet3/bin/redundanet` |
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `shares_needed` | int | `3` | Minimum shares for reconstruction (k) |
-| `shares_happy` | int | `7` | Minimum shares for successful upload |
-| `shares_total` | int | `10` | Total shares to create (n) |
-| `reserved_space` | string | `1G` | Reserved space per node |
+`--data-dir` or the `REDUNDANET_DATA_DIR` environment variable override it. On a node, root without an agent of its own talks to the node's agent without flags; the identity and join commands run as the service user with `--data-dir`, as the installer does.
 
-**Understanding Erasure Coding:**
-- With `shares_needed: 3` and `shares_total: 10`:
-  - Each file is split into 10 encrypted shares
-  - Any 3 shares can reconstruct the original file
-  - 7 nodes can fail and data is still recoverable
+What is in it:
 
-**Changing the encoding:** edit `network.tahoe` in the manifest and push. The
-manifest is the source of truth: every node syncs it within minutes, and the
-Tahoe containers read `shares_needed/happy/total` from it when they start
-(the `SHARES_*` values in `.env` are only a fallback for a node without a
-manifest). Nodes apply the change at their next recreate, i.e. the
-`redundanet update` of the next release; no per-node reconfiguration.
+| File | What |
+| --- | --- |
+| `identity` | The device key, the member secret and the device certificate. Sealed with XChaCha20-Poly1305 under an Argon2id key when made with `--passphrase`; otherwise the file mode is its protection, as on a headless node. The member signing key is never in it. |
+| `network.yaml` | The network descriptor the device joined with: the pinned operator keys, the hubs, where the manifest is served. |
+| `manifest.yaml`, `manifest.sig` | The last good signed manifest, for offline starts. |
+| `backup.yaml` | Above. |
+| `local.sqlite` | The device's local database: files by scan key and hash, capabilities, placement, restore tests. A cache, rebuilt when lost. |
+| `api.addr`, `api.token` | Where the local API listens and the bearer token the CLI uses, mode 0600. |
+| `service.log` | The service's output on macOS; Linux uses the journal. |
+| `spool/` | Staging for uploads. |
+| `versions/`, `updates/state.yaml` | Downloaded releases and the self-updater's record, including candidates that failed probation. |
+| `device-key.pending` | On a headless node between `identity device-key` and `identity accept-certificate` only. |
 
-Parameters are baked into each file at upload time, so the change affects new
-uploads immediately and existing files are converged by the rebalance loop
-every client node runs (enabled by default): it detects files carrying old
-parameters and re-encodes them from the grid itself, serially, rate-limited,
-resuming across cycles, and re-reads the target every cycle. Watch the status
-page: right after the change every old object shows as under-replicated
-against the new target, and the census climbs as nodes converge. Old shares
-stop being lease-renewed once replaced and are reclaimed by garbage
-collection.
+A storage node also has its store in `STORAGE_PATH/redundanet3`: share files, a SQLite index and a marker that ties the store to its disk. A hub keeps `census.json` and `placement.sqlite`.
 
-The rebalancer takes its target from the manifest but uploads with whatever
-the node's Tahoe client read from `tahoe.cfg` at startup, which only changes
-when the container is recreated. Between the manifest change and `redundanet
-update` it therefore waits, logging `manifest target is 2-of-4 but this node
-still uploads at 1-of-2 ... recreate the client`, instead of re-encoding
-everything at the old parameters. It also stops a cycle whose uploads come
-back at the wrong encoding.
+Removing the data directory removes everything the agent knows; `redundanet service uninstall` removes the service.
 
-Two kinds of files are not converged by the rebalancer: bare `URI:`
-capabilities not linked into any alias (re-upload them yourself), and files
-inside immutable backup snapshots (`tahoe backup`'s `Archives/`), because a
-re-encoded file cannot be relinked inside an immutable directory. The backup
-sync handles the second kind itself: before each run it forgets the backupdb
-rows recorded at another encoding than the node's, so that run re-uploads
-exactly those files at the new parameters (`SYNC_REENCODE=false` postpones
-it; see [nas-backup.md](nas-backup.md)). Old snapshots stay at the old
-encoding, which is still the durability they were made with.
+## Channels
 
-Tunables in `.env`: `REBALANCE_ENABLED` (default `true`), `REBALANCE_INTERVAL`
-(default 86400s). The rebalancer and the weekly repair sweep remember when
-they last ran (in the client volume), so a container recreate does not
-start a full walk of every alias again unless one is due.
+`stable` is the default and where 3.0.0 lives; `early` gets pre-releases first. A laptop chooses at `redundanet service install --network redundanet [--channel early]`; a node sets `CHANNEL` in `agent.env`. `redundanet update check|apply|status [--channel early]` query and drive the updater by hand.
 
-### Node Section
+## The local API
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | yes | Unique node identifier |
-| `internal_ip` | string | yes | VPN IP address |
-| `vpn_ip` | string | no | Defaults to `internal_ip` |
-| `public_ip` | string | no | Public IP for external access |
-| `gpg_key_id` | string | yes | The full 40-char hex fingerprint, no `0x` prefix (short 8/16-char ids are rejected) |
-| `region` | string | no | Geographic region |
-| `status` | string | no | `pending`, `active`, or `inactive` |
-| `roles` | list | no | `tinc_vpn`, `tahoe_storage`, `tahoe_introducer`, `tahoe_client` |
-| `storage_contribution` | string | no | Storage to contribute |
-| `is_publicly_accessible` | bool | no | Can accept incoming connections |
-| `member` | string | no | Who this node belongs to (the GitHub login, set by the join bot). Contribution and usage are pooled per member; see [Quotas](quotas.md) |
-| `introducer_furl` | string | no | `tahoe_introducer` nodes only: the FURL this introducer publishes. Storage nodes announce to, and clients learn servers from, every introducer in the manifest (the top-level `introducer_furl` plus these), so the grid survives losing one. See the bootstrap hub runbook for adding a second introducer. |
+The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 127.0.0.1:4470`), never on the LAN. The CLI reads `api.addr` and `api.token` from the data directory. A browser gets in only through `redundanet open`, whose link works once and for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every form carries a CSRF token; the API refuses any request whose Host is not loopback and any change whose Origin is not the page; no GET changes anything. A headless node is reached over an SSH tunnel: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
 
-## Environment Variables
+## Agent flags
 
-Environment variables override manifest settings and configure runtime behavior.
-
-### Core Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDUNDANET_NODE_NAME` | - | Node identifier |
-| `REDUNDANET_CONFIG_DIR` | `/etc/redundanet` | Config directory (holds the persisted `.env` written by `init`) |
-| `REDUNDANET_DATA_DIR` | `/var/lib/redundanet` | Data directory (synced manifest, repo clone) |
-| `REDUNDANET_SECRETS_DIR` | `/opt/redundanet/docker/secrets` | Where `node keys generate` exports the private key |
-| `REDUNDANET_DEBUG` | `false` | Enable debug mode |
-| `REDUNDANET_LOG_LEVEL` | `INFO` | Logging level |
-
-### Manifest Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDUNDANET_MANIFEST_REPO` | - | Git repository URL |
-| `REDUNDANET_MANIFEST_BRANCH` | `main` | Git branch |
-| `REDUNDANET_MANIFEST_FILENAME` | `manifest.yaml` | Manifest file name inside the repo's `manifests/` dir |
-| `REDUNDANET_SYNC_INTERVAL` | `300` | Seconds between manifest re-syncs in the tinc container (see below) |
-
-The tinc container runs a manifest-sync sidecar: every `REDUNDANET_SYNC_INTERVAL`
-seconds it re-syncs the manifest repository, refreshes the Tinc peer host files
-(adding newly joined nodes, removing revoked ones), and reloads tincd — so
-membership changes reach running nodes without a restart. Set it via
-`SYNC_INTERVAL` in the compose `.env`.
-
-### Storage protocol
-
-Both templates set `force_foolscap = true`: the client only speaks Foolscap
-to storage servers and the server does not advertise HTTPS. Tahoe 1.20's
-HTTP storage client re-fetches every announced server's version once per
-second as a liveness check, and retries an unreachable server (for example a
-stale identity of a node that recreated its volumes) every second with no
-backoff, which on a node showed as 180 connection log lines per minute and
-six TLS handshakes per second against one peer. Foolscap keeps one persistent
-connection per server and backs off exponentially. The port is the same
-(3457), so the storage traffic limits below apply either way.
-
-### Storage traffic limits
-
-| `.env` key | Default | Description |
-|------------|---------|-------------|
-| `STORAGE_RATE_IN` | unlimited | Cap on shares written into this node, e.g. `10mbit` |
-| `STORAGE_RATE_OUT` | unlimited | Cap on shares this node serves to others, e.g. `20mbit` |
-
-Both limit the **storage service only**: they are `tc` rules on the VPN
-interface matching the storage server's port (3457), applied by the
-generated `tinc-up` script every time the interface comes up. The node's own
-client (backups, restores, re-encoding), tinc, the census and the manifest
-sync are not limited. Values use tc's units: `500kbit`, `10mbit`, `1gbit`,
-bits per second. An invalid value is logged and ignored; a rule the kernel
-refuses is logged and the VPN still comes up.
-
-Why they exist: Tahoe and tinc have no bandwidth settings, and one member's
-large first backup writes its shares to almost every storage node at once.
-An upload completes at the pace of the slowest server it writes to, so the
-storage nodes' `STORAGE_RATE_IN` values are the grid's effective upload
-speed: a few nodes at `10mbit` hold any flood to roughly 1.25 MB/s of shares
-each. Inbound is policed (excess is dropped and the sender's TCP backs off),
-outbound is shaped (queued), which is the best Linux can do on the receiving
-side without extra virtual devices.
-
-Guidance: set `STORAGE_RATE_IN` to a quarter to a half of the line's
-download capacity and `STORAGE_RATE_OUT` to about two thirds of its upload
-capacity, so the household stays usable while the grid is busy. Apply with
-a recreate of the tinc stack (`redundanet update`, or the full force-recreate
-in the installation guide; tinc-up runs when the interface comes up). Check
-with `docker logs redundanet-tinc | grep STORAGE_RATE`.
-
-### Deployment Settings (host CLI)
-
-The `redundanet network`/`storage` commands drive the docker-compose stack;
-these tell the CLI where it is:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDUNDANET_COMPOSE_FILE` | pinned by `join` | Path to `docker-compose.yml` (see below) |
-| `REDUNDANET_COMPOSE_PROJECT` | `redundanet` | Compose project name |
-| `REDUNDANET_COMPOSE_ENV_FILE` | `/opt/redundanet/.env` | Compose env file |
-
-`network join` pins `REDUNDANET_COMPOSE_FILE` and `REDUNDANET_COMPOSE_ENV_FILE`
-in the persisted node config (`/etc/redundanet/.env`), so every later command
-drives the installed stack under `/opt/redundanet`. Without the pin the CLI
-searches, in this order: the installed file, `docker/docker-compose.yml` under
-the current directory, then the manifest repo clone that `update` maintains.
-The clone's directory has no override, so a recreate from it would detach a
-storage node's data disk: `update` refuses to run when the file it resolved is
-not the installed one while an installed override exists, and writes the pin
-itself when it is missing on a node joined before this existed.
-
-### Tahoe Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDUNDANET_SHARES_NEEDED` | `3` | k value |
-| `REDUNDANET_SHARES_HAPPY` | `7` | Happy threshold |
-| `REDUNDANET_SHARES_TOTAL` | `10` | n value |
-| `REDUNDANET_RESERVED_SPACE` | `1G` | Reserved space |
-| `REDUNDANET_INTRODUCER_FURL` | - | Introducer FURL |
-
-### VPN Settings
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TINC_PORT` | `655` | Tinc VPN port |
-
-## Docker Compose Configuration
-
-### Profiles
-
-RedundaNet uses Docker Compose profiles to enable different node configurations:
-
-```bash
-# Storage node (contributes storage)
-docker compose --profile storage up -d
-
-# Client node (uses storage)
-docker compose --profile client up -d
-
-# Introducer node (network coordinator)
-docker compose --profile introducer up -d
-
-# Multiple profiles (e.g., introducer that also stores)
-docker compose --profile introducer --profile storage up -d
-```
-
-### Volumes
-
-| Volume | Purpose |
-|--------|---------|
-| `tinc-config` | Tinc VPN configuration |
-| `tahoe-introducer` | Introducer state |
-| `tahoe-storage` | Storage node state: identity, leases, the record of its shares disk |
-| `tahoe-client` | Client state |
-| `storage-data` | The shares; a bind mount of the external disk via the override file, which carries the disk marker |
-| `manifest` | Manifest files (shared; also carries the introducer FURL) |
-| `logs` | Service logs |
-
-### Environment File
-
-`redundanet network join` generates `/opt/redundanet/.env` from your manifest
-entry — you normally never write it by hand. It looks like:
-
-```bash
-NODE_NAME=node-12345678
-VPN_IP=10.100.0.10
-PUBLIC_IP=auto
-GPG_KEY_ID=1234567890ABCDEF1234567890ABCDEF12345678
-GPG_KEY_FILE=/opt/redundanet/docker/secrets/gpg_private_key.asc
-MANIFEST_REPO=https://github.com/adefilippo83/redundanet.git
-MANIFEST_BRANCH=main
-TINC_PORT=655
-SHARES_NEEDED=3
-SHARES_HAPPY=7
-SHARES_TOTAL=10
-RESERVED_SPACE=1G
-```
-
-Pass it to every compose command:
-`docker compose --env-file /opt/redundanet/.env --profile storage up -d`.
-
-## CLI Configuration
-
-The CLI reads configuration from these sources, in decreasing precedence:
-
-1. Command-line arguments
-2. `REDUNDANET_*` environment variables
-3. The persisted node config `<config_dir>/.env` (default
-   `/etc/redundanet/.env`, written by `redundanet init`)
-4. A `.env` file in the current directory
-5. Built-in defaults
-
-There is no YAML config file — persistent settings live in the `.env` written
-by `init`, using the same `REDUNDANET_*` names as the environment variables.
-
-## GPG Key Configuration
-
-### Key Requirements
-
-- **Algorithm**: RSA (4096 bits recommended) — the GPG key doubles as the
-  node's Tinc transport key, and Tinc requires RSA
-- **No passphrase** on the node key (the raw RSA parameters are needed to
-  derive the Tinc key; `redundanet node keys generate` does this correctly)
-- **Publication**: Must be on a public keyserver
-- **Identity in the manifest**: use the full 40-character fingerprint as
-  `gpg_key_id` — peers verify fetched keys against it (fingerprint pinning),
-  and short ids are collision-prone
-- **Supported keyservers**:
-  - keys.openpgp.org (recommended)
-  - keyserver.ubuntu.com
-  - pgp.mit.edu
-
-### Managing Keys with CLI
-
-```bash
-# Generate a new key
-redundanet node keys generate --name my-node --email me@example.com
-
-# List all keys
-redundanet node keys list
-
-# Publish to keyservers
-redundanet node keys publish --key-id 0x12345678
-
-# Fetch a key from keyservers
-redundanet node keys fetch --key-id 0x12345678
-
-# Export public key to file
-redundanet node keys export --key-id 0x12345678 --output my-key.asc
-
-# Import a public key from file
-redundanet node keys import --input peer-key.asc
-```
-
-## Data Retention: Leases & Garbage Collection
-
-Every share on a storage node carries a **lease**. Storage nodes
-garbage-collect shares whose lease has not been renewed within the lease
-duration — that is how deleting data eventually frees disk space.
-
-| Variable (storage node) | Default | Meaning |
-|----------|---------|-------------|
-| `EXPIRE_ENABLED` | `true` | Collect shares with lapsed leases |
-| `LEASE_DURATION` | `90 days` | How long an unrenewed share survives |
-
-**Keeping data alive and healthy:**
-
-- The client container sweeps everything it keeps on the grid once a week
-  (the `lease-sweep` job): every file and directory reachable from its
-  aliases, each once however many snapshots link it, plus the files a
-  backup in progress has uploaded but not linked yet. Every object gets its
-  leases renewed, and any object with missing shares is repaired from the
-  surviving ones. Repair covers the cases where a storage node lost its disk
-  or a member left the network; it needs at least k surviving shares, below
-  that an object is unrecoverable. Objects are checked through the node's
-  web API, four at a time, and every result is recorded in the client
-  volume (`redundanet-sweep.sqlite`), so a sweep interrupted by a restart or
-  by its time budget (`LEASE_RENEW_TIMEOUT`, default 6 hours per run)
-  resumes where it stopped a minute later. Objects found healthy are also
-  marked as checked in the backup database, so `tahoe backup` does not
-  re-check them on its own runs. The summary (objects checked, healthy,
-  unhealthy, repaired, failed) is in the client's logs under
-  `lease-repair:`. Overrides in `.env`: `LEASE_RENEW_INTERVAL` (seconds,
-  default 604800), `REPAIR_ENABLED=false` to only renew.
-- Manual renewal: `redundanet storage renew` (all aliases) or
-  `redundanet storage renew URI:CHK:...` / `redundanet storage renew home:`.
-- **Bare capabilities that are not linked into an alias are not renewed
-  automatically** — keep long-lived data under an alias
-  (`redundanet storage mkdir`), or renew such caps yourself more often than
-  the lease duration.
-
-The 90-day default means a client can be offline for ~12 weekly renewal
-cycles before its data is at risk. The storage side runs Tahoe's lease
-crawler, which walks every share on the disk at a tenth of a CPU and takes
-days per cycle on a large node; the base image patches a Tahoe 1.20 bug
-that stopped the crawler for good after any restart mid-cycle (see
-`docker/patches/`).
-
-## Role Definitions
-
-### Introducer
-
-- Runs Tahoe-LAFS introducer service
-- Only one needed per network (can have backups)
-- Coordinates storage node discovery
-- Does not have access to stored data
-
-### Storage
-
-- Runs Tahoe-LAFS storage service
-- Contributes disk space to network
-- Stores encrypted data shares
-- Cannot decrypt the data it stores
-- Marks its shares disk on first start and refuses to run on any other filesystem
-  (a missing mount stops the node; see the installation guide)
-
-### Client
-
-- Runs Tahoe-LAFS client service
-- Can upload and download files
-- Encrypts data before sending to network
-
-## Network Topology
-
-### VPN Network
-
-By default, RedundaNet uses `10.100.0.0/16`:
-- First 10 IPs reserved for infrastructure
-- Nodes assigned sequentially from `.10`
-- Example: `10.100.0.10`, `10.100.0.11`, etc.
-
-### Node Discovery
-
-1. New node joins the Tinc mesh via existing nodes
-2. Node announces itself to the Tahoe introducer
-3. Introducer shares node list with clients
-4. Clients can now use the storage node
-
-## Security Considerations
-
-### Secrets Management
-
-- GPG private keys should never be committed to Git
-- Use Docker secrets or environment variables for sensitive data
-- Consider hardware security modules (HSM) for production
-
-### Key Backup (do this when you join)
-
-Your node's GPG key **is its identity** — the VPN transport key is derived
-from it. If the disk dies and you have no backup, the identity is gone and
-the only path back is rejoining as a new node.
-
-The private key lives in two places after `redundanet node keys generate`:
-
-- the exported file: `/opt/redundanet/docker/secrets/gpg_private_key.asc`
-- your GPG keyring (`gpg --list-secret-keys`)
-
-Back it up **off the node** (password manager or offline media):
-
-```bash
-gpg --armor --export-secret-keys YOUR_FINGERPRINT > redundanet-node-key.asc
-# store redundanet-node-key.asc somewhere safe, then shred the local copy
-```
-
-### Restore (new hardware, same identity)
-
-```bash
-redundanet init --name node-XXXXXXXX          # your existing node name
-gpg --import redundanet-node-key.asc
-mkdir -p /opt/redundanet/docker/secrets
-cp redundanet-node-key.asc /opt/redundanet/docker/secrets/gpg_private_key.asc
-chmod 600 /opt/redundanet/docker/secrets/gpg_private_key.asc
-redundanet network join --repo <manifest-repo> --name node-XXXXXXXX
-cd /opt/redundanet/docker && docker compose --env-file /opt/redundanet/.env --profile storage up -d
-```
-
-No manifest change is needed — the identity (and therefore the VPN key) is
-unchanged.
-
-### Key Rotation (compromise or precaution)
-
-1. Generate and publish a new key:
-   `redundanet node keys generate --name node-XXXXXXXX --email you@example.com`
-   then `redundanet node keys publish --key-id NEW_FINGERPRINT`
-   (publish verifies the key is actually fetchable before reporting success)
-2. Open a PR updating your node's `gpg_key_id` in the manifest to the new
-   **full 40-character fingerprint**
-3. Once merged, every running peer picks up the new key within
-   `SYNC_INTERVAL` (default 300s) via the manifest-sync sidecar — no peer
-   restarts needed
-4. Restart your own tinc container so it derives its transport key from the
-   new secret:
-   `docker compose --env-file /opt/redundanet/.env restart tinc`
-
-During the window between merge and your restart, peers expect the new key
-while your node still presents the old one — plan for a few minutes of VPN
-downtime for your node.
-
-### Revocation
-
-Removing a node's entry from the manifest revokes it: within `SYNC_INTERVAL`
-every peer deletes its Tinc host file and reloads, refusing further
-connections. Optionally also publish a GPG revocation certificate for the key
-itself.
-
-### Network Isolation
-
-The Tinc VPN provides:
-- Encrypted communication between all nodes
-- No direct access to storage without VPN membership
-- Protection from network eavesdropping
+The service passes `agent --network NAME --data-dir DIR [--channel early]`. The other flags of `redundanet agent` (`--storage-path`, `--storage-floor-gb`, `--portmap`, `--tcp-only`, `--no-update`, `--api`) are listed in [cli.md](cli.md); the node unit sets the storage ones from `agent.env`.

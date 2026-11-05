@@ -12,19 +12,22 @@ permissions:
 
 jobs:
   process-join-request:
-    name: Process Node Application
+    name: Process membership request
     runs-on: ubuntu-latest
     # GitHub drops the `labels=join-request` query param from the website's
     # "new issue" link for applicants without triage permission, so the label is
     # usually absent on `opened`. Process when a maintainer has applied the
     # label, OR when the issue both carries the title the join form sets AND
-    # contains the form's body marker — requiring both narrows the
-    # attacker-controlled trigger surface to genuine submissions. (The issue
-    # body is still untrusted; it is strictly validated in the parse step.)
+    # contains one of the form's body markers (`## RedundaNet 3 membership`
+    # for a RedundaNet 3 member, `## New Node Application` for a RedundaNet 2
+    # node); requiring both narrows the attacker-controlled trigger surface to
+    # genuine submissions. (The issue body is still untrusted; it is strictly
+    # validated in the parse step.)
     if: >-
       contains(github.event.issue.labels.*.name, 'join-request') ||
       (startsWith(github.event.issue.title, '[Join Request]') &&
-       contains(github.event.issue.body, 'New Node Application'))
+       (contains(github.event.issue.body, 'RedundaNet 3 membership') ||
+        contains(github.event.issue.body, 'New Node Application')))
 
     steps:
       - name: Ensure join-request label
@@ -40,7 +43,7 @@ jobs:
               if (e.status === 404) {
                 await github.rest.issues.createLabel({
                   owner, repo, name: 'join-request',
-                  color: '0e8a16', description: 'Node join application',
+                  color: '0e8a16', description: 'Membership or node join application',
                 });
               } else {
                 throw e;
@@ -60,6 +63,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # Dispatch on the body marker. The RedundaNet 3 marker wins when both
+      # are present. A bash `case` on an environment variable never evaluates
+      # the (untrusted) body.
+      - name: Detect the request kind
+        id: kind
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          case "$ISSUE_BODY" in
+            *"## RedundaNet 3 membership"*) kind=v3 ;;
+            *"## New Node Application"*) kind=v2 ;;
+            *) kind=unknown ;;
+          esac
+          echo "Request kind: $kind"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -69,19 +88,66 @@ jobs:
         run: |
           pip install pyyaml httpx pgpy
 
-      # The parsing/allocation logic lives in .github/scripts/process_join.py so
-      # it is unit-tested (tests/unit/test_process_join.py). It strictly
-      # validates every attacker-controlled value before use, requires the full
-      # 40-char fingerprint and FAILS CLOSED unless the key is fetchable from
-      # the keyservers with an exactly matching fingerprint, and writes outputs
-      # with random-delimiter heredocs.
-      - name: Parse issue and update manifest
-        id: process
+      # The agent's validator (`go run ./cmd/redundanet validate`) runs inline
+      # below, the same way validate.yml runs it on pull requests.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      # The parsing, checks and manifest edit live in .github/scripts so they
+      # are unit-tested (tests/unit/test_process_join*.py). Both scripts
+      # strictly validate every attacker-controlled value before use, edit
+      # the manifest textually (the v3 half and manifest.sig's revision
+      # survive), write outputs with random-delimiter heredocs, and exit
+      # non-zero with `success=false` and an `error` on any failure; the
+      # steps continue so the applicant gets the reason as a comment.
+      - name: Parse the issue and update the manifest (RedundaNet 3)
+        id: v3
+        if: steps.kind.outputs.kind == 'v3'
+        continue-on-error: true
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: python .github/scripts/process_join_v3.py
+
+      - name: Parse the issue and update the manifest (RedundaNet 2)
+        id: v2
+        if: steps.kind.outputs.kind == 'v2'
+        continue-on-error: true
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
         run: python .github/scripts/process_join.py
+
+      # One set of outputs for the steps below, whichever script ran:
+      # success, error, pr_title, pr_body, commit_message, next_steps.
+      - name: Collect the result
+        id: process
+        uses: actions/github-script@v9
+        env:
+          KIND: ${{ steps.kind.outputs.kind }}
+          V3_OUTPUTS: ${{ toJSON(steps.v3.outputs) }}
+          V2_OUTPUTS: ${{ toJSON(steps.v2.outputs) }}
+        with:
+          script: |
+            const kind = process.env.KIND;
+            const raw = kind === 'v3' ? process.env.V3_OUTPUTS : process.env.V2_OUTPUTS;
+            const outputs = JSON.parse(raw || '{}') || {};
+            if (kind === 'unknown') {
+              outputs.success = 'false';
+              outputs.error = 'The issue has neither the `## RedundaNet 3 membership` heading nor the `## New Node Application` heading. Please use the form at https://redundanet.com/join.html.';
+            } else if (outputs.success !== 'true' && outputs.success !== 'false') {
+              outputs.success = 'false';
+              outputs.error = outputs.error || 'The processing step stopped before reporting a result; see the workflow log.';
+            }
+            for (const [name, value] of Object.entries(outputs)) {
+              core.setOutput(name, value);
+            }
+            core.setOutput('kind', kind);
 
       - name: Create Pull Request
         if: steps.process.outputs.success == 'true'
@@ -97,29 +163,9 @@ jobs:
           # than require a PAT, the steps below validate the manifest inline and
           # report the "validate" check directly onto this PR's head commit.
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "Add node ${{ steps.process.outputs.node_name }} to network manifest"
-          title: "Add node ${{ steps.process.outputs.node_name }} (Issue #${{ github.event.issue.number }})"
-          body: |
-            ## New Node Addition
-
-            This PR adds a new node to the RedundaNet network manifest.
-
-            | Field | Value |
-            |-------|-------|
-            | **Node Name** | `${{ steps.process.outputs.node_name }}` |
-            | **VPN IP** | `${{ steps.process.outputs.vpn_ip }}` |
-            | **GPG Key ID** | `${{ steps.process.outputs.gpg_key_id }}` |
-            | **Storage** | ${{ steps.process.outputs.storage }} |
-
-            ### Checklist
-            - [ ] Verify GPG key is valid
-            - [ ] Confirm storage allocation
-            - [ ] Review node configuration
-
-            Closes #${{ github.event.issue.number }}
-
-            ---
-            *Auto-generated from join request*
+          commit-message: ${{ steps.process.outputs.commit_message }}
+          title: ${{ steps.process.outputs.pr_title }}
+          body: ${{ steps.process.outputs.pr_body }}
           branch: join-request/${{ github.event.issue.number }}
           delete-branch: true
           labels: |
@@ -127,19 +173,53 @@ jobs:
             automated
 
       # validate.yml (pull_request) does not run on this bot-created PR, so the
-      # required "validate" check is reported from here instead: run the real
-      # validation, then publish a check run named "validate" on the PR head.
-      - name: Validate generated manifest
+      # required "validate" check is reported from here instead: run the same
+      # checks validate.yml runs, all of them even when one fails, then publish
+      # a check run named "validate" on the PR head.
+      - name: Validate the generated manifest
         if: steps.process.outputs.success == 'true'
         id: validate
         continue-on-error: true
         run: |
           pip install . --quiet
+          failed=""
+          check() {
+            local name="$1"
+            shift
+            echo "== $name =="
+            if ! "$@"; then
+              failed="$failed, $name"
+            fi
+          }
           for m in manifests/*.yaml; do
-            echo "== Validating $m =="
-            redundanet validate "$m"
-            python .github/scripts/validate_pr.py "$m"
+            check "redundanet validate $m" redundanet validate "$m"
+            check "validate_pr.py $m" python .github/scripts/validate_pr.py "$m"
+            check "validate_v3_members.py $m" python .github/scripts/validate_v3_members.py "$m"
           done
+          cd agent
+          for m in ../manifests/*.yaml; do
+            grep -q '^schema: 3' "$m" || continue
+            check "agent validate $m" go run ./cmd/redundanet validate --manifest "$m"
+          done
+          echo "failed=${failed#, }" >> "$GITHUB_OUTPUT"
+          [ -z "$failed" ]
+
+      # Informational: the maintainer signs the manifest on the PR branch, so
+      # manifest.sig cannot match yet. REDUNDANET_OPERATOR_KEY pins the key
+      # when it is set, as in validate.yml.
+      - name: Check the manifest signature (informational)
+        if: steps.process.outputs.success == 'true'
+        id: signature
+        continue-on-error: true
+        env:
+          OPERATOR_KEY: ${{ vars.REDUNDANET_OPERATOR_KEY }}
+        run: |
+          cd agent
+          if [ -n "$OPERATOR_KEY" ]; then
+            go run ./cmd/redundanet manifest verify --manifest ../manifests/manifest.yaml --trust "$OPERATOR_KEY"
+          else
+            go run ./cmd/redundanet manifest verify --manifest ../manifests/manifest.yaml
+          fi
 
       - name: Report the required "validate" check on the PR
         if: steps.process.outputs.success == 'true'
@@ -147,6 +227,8 @@ jobs:
         env:
           HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          FAILED_CHECKS: ${{ steps.validate.outputs.failed }}
+          SIGNATURE_OUTCOME: ${{ steps.signature.outcome }}
         with:
           script: |
             const sha = process.env.HEAD_SHA;
@@ -155,6 +237,11 @@ jobs:
               return;
             }
             const ok = process.env.VALIDATE_OUTCOME === 'success';
+            const signed = process.env.SIGNATURE_OUTCOME === 'success';
+            const signature = signed
+              ? 'manifest.sig verifies against this manifest.'
+              : 'manifest.sig does not match this manifest yet; expected until the maintainer signs the revision on this branch.';
+            const checks = 'redundanet validate, validate_pr.py, validate_v3_members.py and the agent\'s `validate`';
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -165,8 +252,8 @@ jobs:
               output: {
                 title: ok ? 'Manifest valid' : 'Manifest validation failed',
                 summary: ok
-                  ? 'Validated inline by the join workflow; validate.yml (pull_request) does not run on bot-created PRs.'
-                  : 'redundanet validate reported errors on the network manifest. See the "Validate generated manifest" step log.',
+                  ? `${checks} passed on every manifest. Validated inline by the join workflow; validate.yml (pull_request) does not run on bot-created PRs. ${signature}`
+                  : `Failed: ${process.env.FAILED_CHECKS || 'see the step log'}. See the "Validate the generated manifest" step log. ${signature}`,
               },
             });
             if (!ok) {
@@ -178,47 +265,17 @@ jobs:
         uses: actions/github-script@v9
         # Pass values through env and read them with process.env rather than
         # interpolating ${{ … }} into the script body, so a value can never be
-        # parsed as JavaScript.
+        # parsed as JavaScript. The comment text comes from the script that
+        # processed the request (next steps for the member) with the PR link
+        # filled in here.
         env:
-          NODE_NAME: ${{ steps.process.outputs.node_name }}
-          VPN_IP: ${{ steps.process.outputs.vpn_ip }}
+          NEXT_STEPS: ${{ steps.process.outputs.next_steps }}
           PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         with:
           script: |
-            const nodeName = process.env.NODE_NAME;
-            const vpnIp = process.env.VPN_IP;
-            const prUrl = process.env.PR_URL;
+            const comment = process.env.NEXT_STEPS.replace('{PR_URL}', process.env.PR_URL);
             const issueNumber = Number(process.env.ISSUE_NUMBER);
-
-            const comment = `✅ **Application processed successfully!**
-
-            Your node \`${nodeName}\` has been assigned IP \`${vpnIp}\`.
-
-            📎 **Pull Request**: ${prUrl}
-
-            This issue is being closed. The PR will be reviewed by a maintainer. Once merged, you can configure your node with:
-
-            \`\`\`bash
-            # Clone the repository
-            git clone https://github.com/adefilippo83/redundanet.git
-            cd redundanet
-
-            # Initialize your node
-            pip install redundanet
-            redundanet init --name ${nodeName}
-
-            # Pull the latest manifest
-            redundanet sync
-
-            # Start services with Docker
-            docker compose up -d
-
-            # Check status
-            redundanet status
-            \`\`\`
-
-            *Thank you for contributing to RedundaNet!*`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -235,7 +292,7 @@ jobs:
             });
 
       - name: Comment on issue - Failure
-        if: steps.process.outputs.success == 'false'
+        if: steps.process.outputs.success != 'true'
         uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.issue.number }}
@@ -252,7 +309,7 @@ jobs:
             *If you believe this is an error, please comment below.*
 
       - name: Add failure label
-        if: steps.process.outputs.success == 'false'
+        if: steps.process.outputs.success != 'true'
         uses: actions/github-script@v9
         with:
           script: |
@@ -262,3 +319,9 @@ jobs:
               issue_number: ${{ github.event.issue.number }},
               labels: ['needs-attention']
             })
+
+      - name: Fail the run
+        if: steps.process.outputs.success != 'true'
+        run: |
+          echo "::error::The request could not be processed; the reason is in the comment on the issue."
+          exit 1

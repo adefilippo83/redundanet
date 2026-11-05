@@ -1,3 +1,5 @@
+> This page describes RedundaNet 2, the legacy product, which stays live until the announced stop date. RedundaNet 3 is the current product: see [../README.md](../README.md).
+
 # Project Earthgrid: Distributed Storage System Design Document
 
 > **Historical note:** this is the original design document for the project
@@ -7,7 +9,7 @@
 > there is no node-manager or web-interface container, FUSE mounting was
 > removed with Tahoe-LAFS 1.20, and storage quotas / the 300GB-per-1TB
 > exchange are not enforced. For the current architecture see
-> [docs/architecture.md](docs/architecture.md).
+> [docs/architecture.md](architecture.md).
 
 ## 1. Executive Summary
 

@@ -44,18 +44,40 @@
         }
 
         /* Navigation */
-        nav {
+        nav.top {
             padding: 20px 0;
             border-bottom: 1px solid var(--border);
         }
 
-        nav .nav-container {
+        nav.top .nav-container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 22px;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
         }
 
         .logo {
@@ -300,8 +322,9 @@
             text-decoration: none;
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             .page-header h1 { font-size: 2rem; }
+            .nav-links { gap: 12px 18px; order: 3; width: 100%; }
         }
     </style>
     
@@ -326,16 +349,24 @@
 </style>
 </head>
 <body>
-    <nav>
+    <nav class="top">
         <div class="nav-container">
             <a href="../" class="logo">
                 <div class="logo-icon">R</div>
                 RedundaNet
             </a>
-            <span class="nav-right">
-                <span data-lang-switcher class="lang-switcher"></span>
-                <a href="../" class="btn btn-secondary">← Back to Home</a>
-            </span>
+            <ul class="nav-links">
+                <li><a href="../" data-i18n="nav.home">Home</a></li>
+                <li><a href="../download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="../installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="../join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="../migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
+            </ul>
+            <span data-lang-switcher class="lang-switcher"></span>
         </div>
     </nav>
 
@@ -346,10 +377,17 @@
         </div>
 
         <div class="news-card">
+            <h2><a href="redundanet-3-0-0.html">RedundaNet 3.0.0</a></h2>
+            <div class="article-meta"><time datetime="2026-11-06">6 November 2026</time></div>
+            <p>One static binary, identity from a phrase, backups erasure coded across members, weekly restore tests, repair without the owner, self-update with rollback. What changed for members, what is not there yet, and what happens to RedundaNet 2.</p>
+            <a class="more" href="redundanet-3-0-0.html">Read the post &#8594;</a>
+        </div>
+
+        <div class="news-card">
             <h2><a href="your-backup-is-someone-elses-computer.html">Your backup is someone else&#x27;s computer. What if it were everyone&#x27;s?</a></h2>
             <div class="article-meta"><time datetime="2026-08-30">30 August 2026</time></div>
             <p>Every guide to backups repeats the same rule: three copies, two media, one somewhere else. But what did you actually buy from a cloud provider? Seven principles for storage worth trusting, the story behind a community-run network, and why any organization sitting on idle disks can fork it.</p>
-            <a class="more" href="your-backup-is-someone-elses-computer.html">Read the article →</a>
+            <a class="more" href="your-backup-is-someone-elses-computer.html">Read the article &#8594;</a>
         </div>
     </main>
 

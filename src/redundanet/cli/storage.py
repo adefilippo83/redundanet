@@ -142,7 +142,7 @@ def storage_quota(
 
     Allocation = the member's contributed storage x k/n, minus the network's
     reserve; usage is what the member's files occupy on the grid (each file
-    weighted by its own erasure coding). See docs/quotas.md.
+    weighted by its own erasure coding). See docs/legacy/quotas.md.
     """
     deployment, settings = _deployment()
     report = _usage_report(deployment, settings, fresh=fresh)

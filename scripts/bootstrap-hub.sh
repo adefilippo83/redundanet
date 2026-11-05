@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Bootstrap the RedundaNet hub identity (local half of docs/bootstrap-hub.md).
+# Bootstrap the RedundaNet hub identity (local half of docs/legacy/bootstrap-hub.md).
 #
 #   1. Generate the hub's GPG identity key (RSA-4096, no passphrase)
 #   2. Publish it to the public keyservers and VERIFY it is fetchable
@@ -99,7 +99,7 @@ ok "Manifest patched and valid (fingerprint $FPR)"
 # ----------------------------------------------------------------------------
 cat <<EOF
 
-Local half done. Now the fly.io half (see docs/bootstrap-hub.md for details):
+Local half done. Now the fly.io half (see docs/legacy/bootstrap-hub.md for details):
 
   fly apps create redundanet-hub
   fly ips allocate-v4                              # note the dedicated IPv4

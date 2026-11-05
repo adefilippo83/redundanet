@@ -37,7 +37,7 @@ link one more identical snapshot. The share is fingerprinted with one walk
 Symlinks and special files are skipped by tahoe backup itself (it has no
 option to follow them); the run still succeeds and the skipped paths are
 logged. Anything a symlink points at outside the sync directory is invisible
-in the container anyway: mount it (docs/nas-backup.md).
+in the container anyway: mount it (docs/legacy/nas-backup.md).
 
 Snapshots accumulate on purpose (oops/ransomware protection); pruning old
 Archives/ is a deliberate future feature tied to the lease/GC policy work.

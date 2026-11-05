@@ -19,7 +19,7 @@
         }
         h1 { font-size: 6rem; margin-bottom: 16px; color: #6366f1; }
         p { font-size: 1.25rem; color: #94a3b8; margin-bottom: 32px; }
-        a {
+        a.home {
             display: inline-block;
             padding: 12px 24px;
             background: #6366f1;
@@ -28,14 +28,27 @@
             border-radius: 8px;
             font-weight: 600;
         }
-        a:hover { background: #4f46e5; }
+        a.home:hover { background: #4f46e5; }
+        .links { margin-top: 32px; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .links a { color: #94a3b8; text-decoration: none; font-weight: 500; }
+        .links a:hover { color: #f8fafc; }
     </style>
 </head>
 <body>
     <div>
         <h1>404</h1>
         <p data-i18n="e404.msg">This page seems to have been distributed across too many nodes.</p>
-        <a href="/" data-i18n="e404.home">Go Home</a>
+        <a href="/" class="home" data-i18n="e404.home">Go Home</a>
+        <div class="links">
+            <a href="/download.html" data-i18n="nav.download">Download</a>
+            <a href="/installation.html" data-i18n="nav.install">Install</a>
+            <a href="/join.html" data-i18n="nav.join">Join</a>
+            <a href="/migration.html" data-i18n="nav.migrate">Migrate</a>
+            <a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a>
+            <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a>
+            <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a>
+            <a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a>
+        </div>
     </div>
     <script src="/i18n/i18n.js"></script>
 </body>

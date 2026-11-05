@@ -7,6 +7,13 @@
   <language>en</language>
   <atom:link href="https://redundanet.com/news/feed.xml" rel="self" type="application/rss+xml"/>
   <item>
+    <title>RedundaNet 3.0.0</title>
+    <link>https://redundanet.com/news/redundanet-3-0-0.html</link>
+    <guid>https://redundanet.com/news/redundanet-3-0-0.html</guid>
+    <pubDate>Fri, 06 Nov 2026 09:00:00 GMT</pubDate>
+    <description>RedundaNet 3.0.0 is out: one static binary, identity from a phrase, backups erasure coded across members, weekly restore tests, repair without the owner, self-update with rollback. What changed for members, what is not there yet, and what happens to RedundaNet 2.</description>
+  </item>
+  <item>
     <title>Your backup is someone else&#x27;s computer. What if it were everyone&#x27;s?</title>
     <link>https://redundanet.com/news/your-backup-is-someone-elses-computer.html</link>
     <guid>https://redundanet.com/news/your-backup-is-someone-elses-computer.html</guid>

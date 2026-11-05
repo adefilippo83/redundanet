@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install poetry==1.7.1
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
+# The package readme pyproject.toml names, which pip and poetry open.
+COPY docs/legacy/README.md docs/legacy/README.md
 # Install deps via pip from the lock export (poetry only resolves the locked
 # versions into a requirements file).
 RUN poetry config virtualenvs.create false \
