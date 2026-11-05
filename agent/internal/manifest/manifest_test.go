@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -458,5 +459,59 @@ func TestEncodingTransition(t *testing.T) {
 	}
 	if !warned {
 		t.Fatalf("no warning for a past deadline: %v", ps)
+	}
+}
+
+// TestRevocationsInTheManifest: a member's signed revocation travels in the
+// manifest, so the operator's signature distributes it. Serial 0 covers
+// every certificate of the device; a bad signature or an unknown member is
+// a blocking problem; a revoked storage device is a warning.
+func TestRevocationsInTheManifest(t *testing.T) {
+	f := newFixture(t)
+	rv, err := identity.Revoke(f.alice, identity.Revocation{Network: "testnet", Device: f.storage1.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := func(member, sig string) string {
+		return fmt.Sprintf("revocations:\n  - member: %s\n    device: %s\n    serial: 0\n    revoked_at: %s\n    signature: %s\n",
+			member, f.storage1.ID(), rv.Revocation.RevokedAt.Format(time.RFC3339), sig)
+	}
+	good := base64.StdEncoding.EncodeToString(rv.Signature)
+	m := mustParse(t, f.yaml(t)+block(f.alice.MemberKey().String(), good))
+	ps := m.Validate()
+	if errs := ps.Errors(); len(errs) != 0 {
+		t.Fatalf("valid revocation refused: %v", errs)
+	}
+	warned := false
+	for _, pr := range ps {
+		warned = warned || strings.Contains(pr.Msg, "storage device \"falcon\"")
+	}
+	if !warned {
+		t.Fatalf("no warning for a revoked storage device: %+v", ps)
+	}
+	if got := m.SignedRevocations(); len(got) != 1 || got[0].Verify() != nil || got[0].Revocation.Member != f.alice.MemberKey() {
+		t.Fatalf("signed revocations: %+v", got)
+	}
+	// The policy built from the manifest refuses the device at any serial.
+	p := NewPolicy(m, nil)
+	for _, serial := range []uint64{1, 7} {
+		cert, _ := identity.Issue(f.alice, identity.Certificate{Network: "testnet", Device: f.storage1.ID(), Roles: []string{identity.RoleStorage}, IssuedAt: time.Now(), Serial: serial})
+		if err := p.Allow(identity.Peer{Device: f.storage1.ID(), Member: f.alice.MemberKey(), Certificate: cert}); err == nil {
+			t.Fatalf("revoked device with serial %d connected", serial)
+		}
+	}
+	if err := p.Allow(peerFor(t, f.alice, "testnet", 5)); err != nil {
+		t.Fatalf("another device of the member refused: %v", err)
+	}
+	// Tampered signature, unknown member, bad timestamp.
+	bad := base64.StdEncoding.EncodeToString(append([]byte{}, rv.Signature[:len(rv.Signature)-1]...))
+	if errs := mustParse(t, f.yaml(t)+block(f.alice.MemberKey().String(), bad)).Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "revocations[0]") {
+		t.Fatalf("tampered signature: %v", errs)
+	}
+	if errs := mustParse(t, f.yaml(t)+block(seed(9).MemberKey().String(), good)).Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "not in the manifest") {
+		t.Fatalf("unknown member: %v", errs)
+	}
+	if _, err := Parse([]byte(strings.Replace(f.yaml(t)+block(f.alice.MemberKey().String(), good), rv.Revocation.RevokedAt.Format(time.RFC3339), "yesterday", 1))); err == nil || !strings.Contains(err.Error(), "revoked_at") {
+		t.Fatalf("bad timestamp: %v", err)
 	}
 }

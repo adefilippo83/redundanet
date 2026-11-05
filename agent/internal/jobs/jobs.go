@@ -5,11 +5,13 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -37,6 +39,11 @@ type File struct {
 }
 
 const fileName = "backup.yaml"
+
+// runsFile keeps the last run of every set across restarts, so a
+// self-update does not read as sets that never ran, on the page, in
+// `backup list` and in migrate-node's checks.
+const runsFile = "runs.json"
 
 // Defaults of the file.
 const (
@@ -197,7 +204,7 @@ func New(cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Runner{cfg: cfg, log: cfg.Log.With("component", "jobs"), file: f, runs: map[string]*RunStatus{}, kick: make(chan string, 8)}
+	r := &Runner{cfg: cfg, log: cfg.Log.With("component", "jobs"), file: f, runs: loadRuns(cfg.DataDir), kick: make(chan string, 8)}
 	// The last restore test survives a restart: the census says when it
 	// was, and the page what it found.
 	if vs, err := cfg.DB.Verifications(1); err == nil && len(vs) == 1 {
@@ -498,7 +505,55 @@ func (r *Runner) RunSet(ctx context.Context, s backup.Set, retention snapshot.Re
 		rs.LastErr = err.Error()
 		r.log.Warn("backup failed", "set", s.Name, "err", err)
 	}
+	if err := saveRuns(r.cfg.DataDir, r.runs); err != nil {
+		r.log.Warn("last run not saved", "err", err)
+	}
 	return rs
+}
+
+// savedRun is one set's last run as runsFile keeps it.
+type savedRun struct {
+	Set     string         `json:"set"`
+	LastAt  time.Time      `json:"last_at"`
+	Last    *backup.Result `json:"last,omitempty"`
+	LastErr string         `json:"last_error,omitempty"`
+}
+
+func loadRuns(dir string) map[string]*RunStatus {
+	runs := map[string]*RunStatus{}
+	b, err := os.ReadFile(filepath.Join(dir, runsFile))
+	if err != nil {
+		return runs
+	}
+	var saved []savedRun
+	if json.Unmarshal(b, &saved) != nil {
+		return runs
+	}
+	for _, sr := range saved {
+		if sr.Set != "" {
+			runs[sr.Set] = &RunStatus{Set: sr.Set, LastAt: sr.LastAt, Last: sr.Last, LastErr: sr.LastErr}
+		}
+	}
+	return runs
+}
+
+func saveRuns(dir string, runs map[string]*RunStatus) error {
+	var saved []savedRun
+	for _, rs := range runs {
+		if !rs.LastAt.IsZero() {
+			saved = append(saved, savedRun{Set: rs.Set, LastAt: rs.LastAt, Last: rs.Last, LastErr: rs.LastErr})
+		}
+	}
+	sort.Slice(saved, func(i, j int) bool { return saved[i].Set < saved[j].Set })
+	b, err := json.MarshalIndent(saved, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, runsFile+".tmp")
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, runsFile))
 }
 
 // verify is the unattended restore test on this device's latest snapshot.

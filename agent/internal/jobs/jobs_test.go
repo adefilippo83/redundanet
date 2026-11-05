@@ -241,3 +241,41 @@ func TestSetsReportFoldersTheServiceCannotRead(t *testing.T) {
 		t.Fatalf("a folder that became unreadable: %+v", st.Runs)
 	}
 }
+
+// TestLastRunSurvivesARestart: the last run of a set is kept on disk, so
+// a restart, a self-update most often, does not read as a set that never
+// ran.
+func TestLastRunSurvivesARestart(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	now := time.Date(2026, 11, 6, 9, 0, 0, 0, time.UTC)
+	fake := engine.NewFake(member, device, 2, 4)
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	src := filepath.Join(t.TempDir(), "docs")
+	_ = os.MkdirAll(src, 0o755)
+	_ = os.WriteFile(filepath.Join(src, "a.bin"), make([]byte, 5000), 0o644)
+	clock := func() time.Time { return now }
+	r, err := New(Config{DataDir: dir, Engine: fake, DB: db, Member: member, Device: device, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddSet(backup.Set{Name: "docs", Folders: []string{src}}); err != nil {
+		t.Fatal(err)
+	}
+	if rs := r.RunSet(context.Background(), backup.Set{Name: "docs", Folders: []string{src}}, snapshot.DefaultRetention); rs == nil || rs.LastErr != "" {
+		t.Fatalf("run: %+v", rs)
+	}
+	r2, err := New(Config{DataDir: dir, Engine: fake, DB: db, Member: member, Device: device, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := r2.Status()
+	if len(st.Runs) != 1 || st.Runs[0].Set != "docs" || !st.Runs[0].LastAt.Equal(now) || st.Runs[0].Last == nil || st.Runs[0].Last.Snapshot.Files != 1 || st.Runs[0].LastErr != "" || st.Runs[0].Running {
+		t.Fatalf("after a restart: %+v", st.Runs)
+	}
+}

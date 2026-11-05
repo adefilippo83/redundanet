@@ -11,6 +11,7 @@
 package manifest
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"regexp"
@@ -35,13 +36,40 @@ const (
 
 // Manifest is the parsed v3 content.
 type Manifest struct {
-	Schema    int
-	Revision  uint64
-	Network   Network
-	Operators []Operator
-	Hubs      []Hub
-	Members   []Member
-	Storage   []StorageDevice
+	Schema      int
+	Revision    uint64
+	Network     Network
+	Operators   []Operator
+	Hubs        []Hub
+	Members     []Member
+	Storage     []StorageDevice
+	Revocations []RevocationRecord
+}
+
+// RevocationRecord is a device revocation the manifest carries: the
+// member's own signed record, which the operator's signature distributes
+// and every agent and server applies with the revision. Serial 0 covers
+// every certificate of the device, the case of a lost one.
+type RevocationRecord struct {
+	Member    identity.Key
+	Device    identity.Key
+	Serial    uint64
+	RevokedAt time.Time
+	Signature []byte
+}
+
+func (r RevocationRecord) signed(network string) *identity.SignedRevocation {
+	return &identity.SignedRevocation{Revocation: identity.Revocation{Network: network, Member: r.Member, Device: r.Device, Serial: r.Serial, RevokedAt: r.RevokedAt}, Signature: r.Signature}
+}
+
+// SignedRevocations is every revocation the manifest carries, as the
+// records agents and servers apply.
+func (m *Manifest) SignedRevocations() []*identity.SignedRevocation {
+	var out []*identity.SignedRevocation
+	for _, r := range m.Revocations {
+		out = append(out, r.signed(m.Network.Name))
+	}
+	return out
 }
 
 // Network is the `network` section.
@@ -175,14 +203,15 @@ type StorageDevice struct {
 // them with the keys parsed and the v2 keys set aside.
 
 type rawFile struct {
-	Schema    *int           `yaml:"schema"`
-	Revision  *uint64        `yaml:"revision"`
-	Network   *rawNetwork    `yaml:"network"`
-	Operators []rawOperator  `yaml:"operators"`
-	Hubs      []rawHub       `yaml:"hubs"`
-	Members   []rawMember    `yaml:"members"`
-	Storage   []rawStorage   `yaml:"storage"`
-	Rest      map[string]any `yaml:",inline"`
+	Schema      *int            `yaml:"schema"`
+	Revision    *uint64         `yaml:"revision"`
+	Network     *rawNetwork     `yaml:"network"`
+	Operators   []rawOperator   `yaml:"operators"`
+	Hubs        []rawHub        `yaml:"hubs"`
+	Members     []rawMember     `yaml:"members"`
+	Storage     []rawStorage    `yaml:"storage"`
+	Revocations []rawRevocation `yaml:"revocations"`
+	Rest        map[string]any  `yaml:",inline"`
 }
 
 type rawNetwork struct {
@@ -231,6 +260,14 @@ type rawStorage struct {
 	Device  string `yaml:"device"`
 	Name    string `yaml:"name"`
 	UDPPort int    `yaml:"udp_port"`
+}
+
+type rawRevocation struct {
+	Member    string `yaml:"member"` // the member key
+	Device    string `yaml:"device"`
+	Serial    uint64 `yaml:"serial"`
+	RevokedAt string `yaml:"revoked_at"` // RFC 3339, as `device revoke` printed it
+	Signature string `yaml:"signature"`  // base64, by the member key
 }
 
 // v2Keys are the RedundaNet 2 keys a transitional manifest carries beside
@@ -317,6 +354,25 @@ func Parse(data []byte) (*Manifest, error) {
 			return nil, fmt.Errorf("manifest: storage[%d] %q: %w", i, s.Name, err)
 		}
 		m.Storage = append(m.Storage, StorageDevice{Member: s.Member, Device: k, Name: s.Name, UDPPort: s.UDPPort})
+	}
+	for i, r := range raw.Revocations {
+		mk, err := identity.ParseKey(r.Member)
+		if err != nil {
+			return nil, fmt.Errorf("manifest: revocations[%d] member: %w", i, err)
+		}
+		dk, err := identity.ParseKey(r.Device)
+		if err != nil {
+			return nil, fmt.Errorf("manifest: revocations[%d] device: %w", i, err)
+		}
+		at, err := time.Parse(time.RFC3339, r.RevokedAt)
+		if err != nil {
+			return nil, fmt.Errorf("manifest: revocations[%d] revoked_at: %w", i, err)
+		}
+		sig, err := base64.StdEncoding.DecodeString(r.Signature)
+		if err != nil {
+			return nil, fmt.Errorf("manifest: revocations[%d] signature: %w", i, err)
+		}
+		m.Revocations = append(m.Revocations, RevocationRecord{Member: mk, Device: dk, Serial: r.Serial, RevokedAt: at.UTC(), Signature: sig})
 	}
 	return m, nil
 }
@@ -525,6 +581,22 @@ func (m *Manifest) Validate() Problems {
 			}
 			if err := v.Verify(m.Network.Name, inviter, &mem); err != nil {
 				ps.errorf("members: %q: vouch by %q: %v", mem.Name, v.Member, err)
+			}
+		}
+	}
+
+	for i, r := range m.Revocations {
+		mem := m.MemberByKey(r.Member)
+		if mem == nil {
+			ps.errorf("revocations[%d]: member %s is not in the manifest", i, r.Member.Short())
+			continue
+		}
+		if err := r.signed(n.Name).Verify(); err != nil {
+			ps.errorf("revocations[%d]: device %s of %q: %v", i, r.Device.Short(), mem.Name, err)
+		}
+		for _, s := range m.Storage {
+			if s.Device == r.Device && s.Member == mem.Name {
+				ps.warnf("revocations[%d]: storage device %q of %q is revoked; drop it from storage once its shares are repaired elsewhere", i, s.Name, mem.Name)
 			}
 		}
 	}
