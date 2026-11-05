@@ -24,9 +24,15 @@ var commands = []command{
 	{"service", "install the agent as a user service: install, uninstall, status", runService},
 	{"update", "self-update from the signed release index: check, apply, status", runUpdate},
 	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},
+	{"object", "store, fetch or look up one object on the grid: put, get, has, check, repair, delete", runObject},
+	{"storage", "this node's own share store, beside the running agent: has, drop", runStorage},
+	{"backup", "backup sets of the running agent: add, remove, list, run, verify", runBackup},
+	{"restore", "restore from the running agent: list, browse, start, status", runRestore},
 	{"status", "what the running agent sees", runStatus},
 	{"open", "open the local page in the browser, with a one-time link", runOpen},
 	{"logs", "the running agent's recent log lines", runLogs},
+	{"diagnostics", "write the bundle to send when something is wrong; works with the agent down", runDiagnostics},
+	{"migrate-node", "retire the RedundaNet 2 stack on this node, as root: --dry-run, --force, --rollback", runMigrateNode},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 

@@ -29,7 +29,11 @@ type Config struct {
 	TCP      string // TLS listener for UDP-blocked devices, "" for none
 	// OnCensus receives each device's heartbeat; the collector keeps them.
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
-	Log      *slog.Logger
+	// OnShares receives a storage node's share census chunks.
+	OnShares func(peer identity.Peer, c *wire.ShareCensus)
+	// OnTaskReport receives a repair worker's word on a task.
+	OnTaskReport func(peer identity.Peer, r *wire.TaskReport)
+	Log          *slog.Logger
 }
 
 var quicConfig = &quic.Config{
@@ -116,13 +120,28 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// Close stops the listeners.
+// Close tells every device to reconnect now and stops the listeners. Closing
+// the listeners alone would leave established connections to die at the
+// idle timeout, half a minute a self-update's candidate cannot wait.
 func (s *Server) Close() error {
+	s.mu.Lock()
+	clients := make([]*client, 0, len(s.clients))
+	for _, c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+	for _, c := range clients {
+		c.close()
+	}
 	if s.tcpLn != nil {
 		_ = s.tcpLn.Close()
 	}
 	_ = s.ln.Close()
-	return s.tr.Close()
+	err := s.tr.Close()
+	// quic-go closes only sockets it opened itself; this one is ours, and a
+	// self-update's candidate binds the same port right after.
+	_ = s.udp.Close()
+	return err
 }
 
 // UDPAddr is the QUIC listener's address.
@@ -223,7 +242,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		return
 	}
 	var hello wire.Hello
-	if err := identity.Unmarshal(payload, &hello); err != nil {
+	if err := identity.UnmarshalLenient(payload, &hello); err != nil {
 		return
 	}
 	c.mu.Lock()
@@ -264,7 +283,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		case wire.FrameHello:
 			// A second Hello refreshes the candidates.
 			var hello wire.Hello
-			if err := identity.Unmarshal(payload, &hello); err != nil {
+			if err := identity.UnmarshalLenient(payload, &hello); err != nil {
 				return
 			}
 			c.mu.Lock()
@@ -272,7 +291,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			c.mu.Unlock()
 		case wire.FrameConnect:
 			var req wire.Connect
-			if err := identity.Unmarshal(payload, &req); err != nil {
+			if err := identity.UnmarshalLenient(payload, &req); err != nil {
 				return
 			}
 			s.rendezvous(c, req.Peer)
@@ -282,17 +301,48 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 		case wire.FrameCensus:
 			var cs wire.Census
-			if err := identity.Unmarshal(payload, &cs); err != nil {
+			if err := identity.UnmarshalLenient(payload, &cs); err != nil {
 				return
 			}
 			if s.cfg.OnCensus != nil {
 				s.cfg.OnCensus(c.peer, c.carrier, cs)
+			}
+		case wire.FrameShares:
+			var sc wire.ShareCensus
+			if err := identity.UnmarshalLenient(payload, &sc); err != nil {
+				return
+			}
+			if s.cfg.OnShares != nil {
+				s.cfg.OnShares(c.peer, &sc)
+			}
+		case wire.FrameTaskReport:
+			var r wire.TaskReport
+			if err := identity.UnmarshalLenient(payload, &r); err != nil {
+				return
+			}
+			if s.cfg.OnTaskReport != nil {
+				s.cfg.OnTaskReport(c.peer, &r)
 			}
 		case wire.FramePing:
 			_ = c.w.Frame(wire.FramePong, nil)
 		case wire.FramePong:
 		}
 	}
+}
+
+// ErrNoChannel is Send's answer for a device without a channel right now.
+var ErrNoChannel = errors.New("hub: the device has no channel")
+
+// Send writes a control frame to a device on its channel: how the
+// collector hands a repair task or a release hint to a storage node.
+func (s *Server) Send(device identity.Key, typ byte, v any) error {
+	s.mu.Lock()
+	c := s.clients[device]
+	s.mu.Unlock()
+	if c == nil {
+		return ErrNoChannel
+	}
+	return c.w.Message(typ, v)
 }
 
 func (c *client) candidates() []string {

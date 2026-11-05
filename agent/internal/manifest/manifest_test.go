@@ -162,8 +162,14 @@ func TestTransitionalManifestKeepsV2Keys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Schema != 3 || m.Network.Name != "redundanet" || m.Network.Encoding != (Encoding{K: 2, N: 4}) || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
+	e := m.Network.Encoding
+	if m.Schema != 3 || m.Network.Name != "redundanet" || e.K < 1 || e.N < e.K || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
 		t.Fatalf("transitional parse: %+v", m.Network)
+	}
+	// The encoding changes with the community's decisions; what holds is
+	// that a declared transition targets the encoding in force.
+	if tr := m.Network.EncodingTransition; tr != nil && tr.To != e {
+		t.Fatalf("transition %+v does not target the encoding %+v", tr, e)
 	}
 	for _, p := range m.Validate().Errors() {
 		t.Errorf("live manifest: %s", p.Msg)
@@ -395,5 +401,62 @@ func TestHubTCPAddr(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("a tcp entry without a port was accepted")
+	}
+}
+
+func TestEncodingTransition(t *testing.T) {
+	f := newFixture(t)
+	withTransition := func(from, to, deadline string) func(*string) {
+		return func(s *string) {
+			*s = strings.Replace(*s, "  encoding: {k: 2, n: 4}\n", "  encoding: "+to+"\n  encoding_transition: {from: "+from+", to: "+to+", deadline: "+deadline+"}\n", 1)
+		}
+	}
+	m := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 4}", "{k: 2, n: 3}", "2030-01-01")))
+	if errs := m.Validate().Errors(); len(errs) != 0 {
+		t.Fatalf("a valid transition: %v", errs)
+	}
+	tr := m.Network.EncodingTransition
+	if tr == nil || tr.From != (Encoding{2, 4}) || tr.To != (Encoding{2, 3}) || m.Network.Encoding != (Encoding{2, 3}) {
+		t.Fatalf("parsed: %+v", tr)
+	}
+	d, err := tr.DeadlineTime()
+	if err != nil || !d.Equal(time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("deadline time: %v %v", d, err)
+	}
+	if from, ok := m.Converting(time.Date(2029, 12, 31, 12, 0, 0, 0, time.UTC)); !ok || from != (Encoding{2, 4}) {
+		t.Fatalf("converting before the deadline: %v %v", from, ok)
+	}
+	if _, ok := m.Converting(time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)); !ok {
+		t.Fatal("the deadline day still converts")
+	}
+	if _, ok := m.Converting(time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)); ok {
+		t.Fatal("past the deadline still converts")
+	}
+	plain := mustParse(t, f.yaml(t))
+	if _, ok := plain.Converting(time.Now()); ok {
+		t.Fatal("converting without a transition")
+	}
+	// Refusals and the warning.
+	same := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 3}", "{k: 2, n: 3}", "2030-01-01")))
+	if errs := same.Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "same encoding") {
+		t.Fatalf("same from and to: %v", errs)
+	}
+	mismatch := mustParse(t, f.yaml(t, func(s *string) {
+		*s = strings.Replace(*s, "  encoding: {k: 2, n: 4}\n", "  encoding: {k: 2, n: 4}\n  encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2030-01-01}\n", 1)
+	}))
+	if errs := mismatch.Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "must equal") {
+		t.Fatalf("to not the encoding: %v", errs)
+	}
+	past := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 4}", "{k: 2, n: 3}", "2020-01-01")))
+	ps := past.Validate()
+	if len(ps.Errors()) != 0 {
+		t.Fatalf("a past deadline is not an error: %v", ps.Errors())
+	}
+	warned := false
+	for _, p := range ps {
+		warned = warned || (p.Level == "warning" && strings.Contains(p.Msg, "has passed"))
+	}
+	if !warned {
+		t.Fatalf("no warning for a past deadline: %v", ps)
 	}
 }

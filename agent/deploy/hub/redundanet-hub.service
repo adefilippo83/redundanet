@@ -1,5 +1,7 @@
 # RedundaNet 3 hub on hub-hetzner: relay, census collector, status publisher.
 # Installed at /etc/systemd/system/redundanet-hub.service; see README.md.
+# The binary lives under the service user's directory so the hub can update
+# itself (download, probation, rename); systemd restarts it afterwards.
 [Unit]
 Description=RedundaNet 3 hub
 Documentation=https://github.com/adefilippo83/redundanet/tree/main/agent/deploy/hub
@@ -9,9 +11,10 @@ Wants=network-online.target
 [Service]
 User=redundanet3
 Group=redundanet3
-ExecStart=/usr/local/bin/redundanet hub \
+ExecStart=/var/lib/redundanet3/bin/redundanet hub \
   --network redundanet \
   --data-dir /var/lib/redundanet3 \
+  --channel early \
   --udp :8443 --tcp :8443 \
   --status 127.0.0.1:4480 \
   --legacy-status https://redundanet-hub.fly.dev/status.json \

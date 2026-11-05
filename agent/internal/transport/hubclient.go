@@ -32,6 +32,7 @@ type hubClient struct {
 	mu       sync.Mutex
 	w        *wire.Writer
 	conn     *quic.Conn // the QUIC carrier, nil over TCP
+	stop     func()     // closes the current carrier, telling the hub goodbye
 	out      chan []byte
 	up       bool
 	carrier  string
@@ -76,6 +77,18 @@ func (c *hubClient) status() HubStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return HubStatus{Hub: c.hub.Key.Short(), Up: c.up, Carrier: c.carrier, Observed: c.observed, Since: c.since, Reconnects: c.reconns, LastError: c.lastErr, RelayDrops: c.dropped}
+}
+
+// goodbye closes the carrier now, so the hub sees the device go instead
+// of waiting out the idle timeout: closing the transport alone destroys
+// the connection without a word to the other side.
+func (c *hubClient) goodbye() {
+	c.mu.Lock()
+	stop := c.stop
+	c.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
 }
 
 func (c *hubClient) sendMessage(typ byte, v any) error {
@@ -174,7 +187,7 @@ func (c *hubClient) session(ctx context.Context) error {
 			return fmt.Errorf("welcome: %w", err)
 		}
 		if typ == wire.FrameWelcome {
-			if err := identity.Unmarshal(payload, &welcome); err != nil {
+			if err := identity.UnmarshalLenient(payload, &welcome); err != nil {
 				return err
 			}
 			break
@@ -188,12 +201,12 @@ func (c *hubClient) session(ctx context.Context) error {
 	done := make(chan struct{})
 	defer close(done)
 	c.mu.Lock()
-	c.w, c.conn, c.out = w, car.conn, out
+	c.w, c.conn, c.out, c.stop = w, car.conn, out, car.stop
 	c.up, c.carrier, c.observed, c.since = true, car.name, welcome.Observed, time.Now()
 	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
-		c.w, c.conn, c.out = nil, nil, nil
+		c.w, c.conn, c.out, c.stop = nil, nil, nil, nil
 		c.mu.Unlock()
 	}()
 	go c.writeRelay(car, w, out, done)
@@ -247,7 +260,7 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 	switch typ {
 	case wire.FrameCandidates:
 		var cand wire.Candidates
-		if err := identity.Unmarshal(payload, &cand); err != nil {
+		if err := identity.UnmarshalLenient(payload, &cand); err != nil {
 			c.ep.log.Warn("hub sent bad candidates", "err", err)
 			return
 		}
@@ -258,8 +271,28 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 		}
 	case wire.FrameError:
 		var e wire.Error
-		_ = identity.Unmarshal(payload, &e)
+		_ = identity.UnmarshalLenient(payload, &e)
 		c.ep.log.Warn("hub error", "hub", c.hub.Key.Short(), "msg", e.Msg)
+	case wire.FrameTask:
+		if c.ep.cfg.OnTask == nil {
+			return
+		}
+		var t wire.RepairTask
+		if err := identity.UnmarshalLenient(payload, &t); err != nil {
+			c.ep.log.Warn("hub sent a bad repair task", "err", err)
+			return
+		}
+		c.ep.cfg.OnTask(&t, func(r *wire.TaskReport) error { return c.sendMessage(wire.FrameTaskReport, r) })
+	case wire.FrameRelease:
+		if c.ep.cfg.OnRelease == nil {
+			return
+		}
+		var h wire.ReleaseHint
+		if err := identity.UnmarshalLenient(payload, &h); err != nil {
+			c.ep.log.Warn("hub sent a bad release hint", "err", err)
+			return
+		}
+		c.ep.cfg.OnRelease(&h)
 	case wire.FramePing:
 		_ = w.Frame(wire.FramePong, nil)
 	case wire.FramePong:

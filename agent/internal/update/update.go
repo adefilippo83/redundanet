@@ -98,21 +98,36 @@ func New(cfg Config) *Updater {
 		cfg.Fetch = release.FetchBytes
 	}
 	u := &Updater{cfg: cfg, log: cfg.Log.With("component", "update")}
-	u.st.Failed = map[string]string{}
-	u.st.Installed = map[string]string{}
-	if b, err := os.ReadFile(u.statePath()); err == nil {
-		_ = yaml.Unmarshal(b, &u.st)
-		if u.st.Failed == nil {
-			u.st.Failed = map[string]string{}
-		}
-		if u.st.Installed == nil {
-			u.st.Installed = map[string]string{}
-		}
-	}
+	u.st = u.load()
 	return u
 }
 
 func (u *Updater) statePath() string { return filepath.Join(u.cfg.DataDir, "updates", "state.yaml") }
+
+// load reads the state on disk; an unreadable file is an empty state.
+func (u *Updater) load() state {
+	st := state{Failed: map[string]string{}, Installed: map[string]string{}}
+	if b, err := os.ReadFile(u.statePath()); err == nil {
+		_ = yaml.Unmarshal(b, &st)
+		if st.Failed == nil {
+			st.Failed = map[string]string{}
+		}
+		if st.Installed == nil {
+			st.Installed = map[string]string{}
+		}
+	}
+	return st
+}
+
+// reload takes the state on disk over the one in memory, so a change made
+// by another process, the CLI's `update retry`, counts without a restart.
+// Everything this updater changes is saved as it happens, so nothing of
+// its own is lost.
+func (u *Updater) reload() {
+	u.mu.Lock()
+	u.st = u.load()
+	u.mu.Unlock()
+}
 
 func (u *Updater) save() {
 	_ = os.MkdirAll(filepath.Dir(u.statePath()), 0o700)
@@ -133,6 +148,19 @@ func (u *Updater) MinVersionFrom(f func() string) {
 func (u *Updater) Enabled() bool { return !u.cfg.Embedded.IsZero() && u.cfg.Version != "dev" }
 
 // Status snapshots the updater.
+// Retry forgets that a version failed probation, so the next check may
+// install it again; for the operator, after the cause is fixed.
+func (u *Updater) Retry(version string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if _, ok := u.st.Failed[version]; !ok {
+		return fmt.Errorf("%s is not marked as failed", version)
+	}
+	delete(u.st.Failed, version)
+	u.save()
+	return nil
+}
+
 func (u *Updater) Status() Status {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -157,6 +185,7 @@ func (u *Updater) Check(ctx context.Context) (*release.Release, error) {
 	if !u.Enabled() {
 		return nil, errors.New("self-update is disabled: no release key in this build")
 	}
+	u.reload()
 	rel, err := u.check(ctx)
 	u.mu.Lock()
 	u.st.LastCheck = time.Now()

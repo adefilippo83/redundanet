@@ -132,10 +132,18 @@ func (s *session) wantsRendezvous() bool {
 }
 
 // setConn files a connection, direct or relayed, replacing one of the same
-// kind, and serves its streams until it ends.
+// kind, and serves its streams until it ends. The handshake checked the
+// policy when it began; the manifest may have changed since, and a Recheck
+// that ran meanwhile closed only the connections that existed then, so
+// the policy is asked once more here before the connection counts.
 func (s *session) setConn(conn *quic.Conn, path string) {
 	if p, err := identity.PeerFromConnectionState(conn.ConnectionState().TLS); err == nil {
 		s.setPeer(*p)
+		if err := s.ep.cfg.Allow(*p); err != nil {
+			s.event("%s connection refused after the handshake: %v", path, err)
+			_ = conn.CloseWithError(4, "no longer admitted")
+			return
+		}
 	}
 	s.mu.Lock()
 	var old *quic.Conn

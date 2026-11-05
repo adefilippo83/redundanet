@@ -64,11 +64,36 @@ type Encoding struct {
 	N int `yaml:"n"`
 }
 
-// Transition is a k-of-n change in progress.
+// Transition is a k-of-n change in progress: until the deadline, servers
+// account shares under From at zero, so members convert without first
+// deleting anything; after it they count again.
 type Transition struct {
 	From     Encoding `yaml:"from"`
 	To       Encoding `yaml:"to"`
 	Deadline string   `yaml:"deadline"`
+}
+
+// DeadlineTime is the deadline as the end of that day, UTC.
+func (t *Transition) DeadlineTime() (time.Time, error) {
+	d, err := time.Parse("2006-01-02", t.Deadline)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return d.Add(24 * time.Hour), nil
+}
+
+// Converting reports the encoding whose shares servers account at zero
+// right now: the transition's From, while the deadline has not passed.
+func (m *Manifest) Converting(now time.Time) (Encoding, bool) {
+	t := m.Network.EncodingTransition
+	if t == nil {
+		return Encoding{}, false
+	}
+	deadline, err := t.DeadlineTime()
+	if err != nil || !now.Before(deadline) {
+		return Encoding{}, false
+	}
+	return t.From, true
 }
 
 // Operator is a key whose signature makes a manifest take effect.
@@ -375,6 +400,11 @@ func (m *Manifest) Validate() Problems {
 		}
 		if !dateRe.MatchString(t.Deadline) {
 			ps.errorf("network.encoding_transition.deadline must be a date (YYYY-MM-DD)")
+		} else if d, err := t.DeadlineTime(); err == nil && !time.Now().Before(d) {
+			ps.warnf("network.encoding_transition.deadline %s has passed: shares under %d-of-%d count again; remove the transition once every member has converted", t.Deadline, t.From.K, t.From.N)
+		}
+		if t.From == t.To {
+			ps.errorf("network.encoding_transition: from and to are the same encoding")
 		}
 	}
 	if n.ReservePercent < 0 || n.ReservePercent > 50 {

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,8 +20,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/diag"
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/repair"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
@@ -39,6 +45,8 @@ type Snapshot struct {
 	Transport  *transport.Status  `json:"transport,omitempty"`
 	Membership *membership.Status `json:"membership,omitempty"`
 	Update     *update.Status     `json:"update,omitempty"`
+	Jobs       *jobs.Status       `json:"jobs,omitempty"`
+	Repair     *repair.Status     `json:"repair,omitempty"` // a storage node's repair worker
 	Service    *service.Status    `json:"service,omitempty"`
 	Generated  time.Time          `json:"generated"`
 }
@@ -47,6 +55,7 @@ type Snapshot struct {
 type Actions struct {
 	CheckUpdate func(ctx context.Context) (string, error) // returns the available version, "" for none
 	ApplyUpdate func(ctx context.Context) error
+	RetryUpdate func(ctx context.Context, version string) error // forgets a failed probation
 }
 
 // Config wires the server.
@@ -55,6 +64,7 @@ type Config struct {
 	DataDir  string
 	Snapshot func() Snapshot
 	Actions  Actions
+	Jobs     *jobs.Runner // backup, restore test and restore; nil on a hub
 	Logs     *logbuf.Buffer
 	Log      *slog.Logger
 }
@@ -107,6 +117,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
+	mux.HandleFunc("GET /diagnostics.zip", s.diagnostics)
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /action/{name}", s.pageAction)
 	mux.HandleFunc("GET /api/status", s.apiStatus)
@@ -114,6 +125,17 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/login-link", s.apiLoginLink)
 	mux.HandleFunc("POST /api/update/check", s.apiUpdateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.apiUpdateApply)
+	mux.HandleFunc("POST /api/update/retry", s.apiUpdateRetry)
+	mux.HandleFunc("GET /api/backups", s.apiBackups)
+	mux.HandleFunc("POST /api/backup/add", s.apiBackupAdd)
+	mux.HandleFunc("POST /api/backup/remove", s.apiBackupRemove)
+	mux.HandleFunc("POST /api/backup/run", s.apiBackupRun)
+	mux.HandleFunc("POST /api/backup/verify", s.apiBackupVerify)
+	mux.HandleFunc("POST /api/backup/cleanup", s.apiBackupCleanup)
+	mux.HandleFunc("POST /api/backup/rebalance", s.apiBackupRebalance)
+	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
+	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
+	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
 	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -244,6 +266,188 @@ func (s *Server) apiUpdateApply(w http.ResponseWriter, r *http.Request) {
 }
 
 // login redeems a one-time link for a session cookie and shows the page.
+func (s *Server) apiUpdateRetry(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAPI(w, r) {
+		return
+	}
+	if s.cfg.Actions.RetryUpdate == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	v := r.FormValue("version")
+	if v == "" {
+		http.Error(w, "version is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Actions.RetryUpdate(r.Context(), v); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]string{"result": v + " may be installed again at the next check"})
+}
+
+func (s *Server) needJobs(w http.ResponseWriter, r *http.Request) bool {
+	if !s.requireAPI(w, r) {
+		return false
+	}
+	if s.cfg.Jobs == nil {
+		http.Error(w, "this device runs no backup jobs", http.StatusNotImplemented)
+		return false
+	}
+	return true
+}
+
+func (s *Server) apiBackups(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	writeJSON(w, s.cfg.Jobs.Status())
+}
+
+func (s *Server) apiBackupAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var set backup.Set
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&set); err != nil {
+		http.Error(w, "bad set: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.AddSet(set); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "set " + set.Name + " saved"})
+}
+
+func (s *Server) apiBackupRemove(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	if err := s.cfg.Jobs.RemoveSet(r.FormValue("set")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "set removed"})
+}
+
+func (s *Server) apiBackupRun(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	s.cfg.Jobs.RunNow(r.FormValue("set"))
+	writeJSON(w, map[string]string{"result": "backup requested"})
+}
+
+func (s *Server) apiBackupVerify(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	s.cfg.Jobs.RunNow("verify")
+	writeJSON(w, map[string]string{"result": "restore test requested"})
+}
+
+// CleanupRequest asks for the owner's cleanup: a dry run counts and
+// deletes nothing; force lifts the bound on how much one run may delete.
+type CleanupRequest struct {
+	DryRun bool `json:"dry_run"`
+	Force  bool `json:"force"`
+}
+
+func (s *Server) apiBackupCleanup(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var req CleanupRequest
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	rep, err := s.cfg.Jobs.RunCleanup(r.Context(), req.DryRun, req.Force)
+	if err != nil && rep == nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, rep)
+}
+
+func (s *Server) apiBackupRebalance(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	st, err := s.cfg.Jobs.RunRebalance(r.Context())
+	if err != nil && st == nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, st)
+}
+
+func (s *Server) apiRestoreList(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	l, err := s.cfg.Jobs.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, l)
+}
+
+func (s *Server) apiRestoreBrowse(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	dev, err := identity.ParseKey(r.FormValue("device"))
+	if err != nil {
+		http.Error(w, "bad device key", http.StatusBadRequest)
+		return
+	}
+	entry, dir, err := s.cfg.Jobs.Browse(r.Context(), dev, r.FormValue("snapshot"), r.FormValue("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]any{"entry": entry, "directory": dir})
+}
+
+// RestoreRequest starts a restore.
+type RestoreRequest struct {
+	Device    string `json:"device"`
+	Snapshot  string `json:"snapshot"`
+	Path      string `json:"path"`
+	Target    string `json:"target"`
+	Overwrite bool   `json:"overwrite"`
+}
+
+func (s *Server) apiRestoreStart(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var req RestoreRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	dev, err := identity.ParseKey(req.Device)
+	if err != nil {
+		http.Error(w, "bad device key", http.StatusBadRequest)
+		return
+	}
+	if req.Target == "" {
+		http.Error(w, "a target directory is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.StartRestore(dev, req.Snapshot, req.Path, req.Target, req.Overwrite); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "restore started"})
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.auth.redeem(r.URL.Query().Get("t"))
 	if !ok {
@@ -289,6 +493,30 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 
 // pageAction handles the page's forms: same checks as the API, then back
 // to the page with a message.
+// diagnostics is the page's button: the bundle built from what the agent
+// holds, downloaded to the member's own machine. It changes nothing and
+// needs the page's session.
+func (s *Server) diagnostics(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.auth.sessionOf(r); !ok {
+		http.Error(w, "open the page with redundanet open first", http.StatusUnauthorized)
+		return
+	}
+	snap := s.cfg.Snapshot()
+	in := diag.Input{Now: time.Now(), Version: snap.Version, Network: snap.Network, DataDir: s.cfg.DataDir, Device: snap.Device, Member: snap.Member, Roles: snap.Roles,
+		AgentUp: true, Uptime: snap.Uptime, Service: snap.Service, Transport: snap.Transport, Membership: snap.Membership, Update: snap.Update, Jobs: snap.Jobs, Repair: snap.Repair}
+	if s.cfg.Logs != nil {
+		in.Lines = s.cfg.Logs.Last(2000)
+	}
+	if text, err := diag.TailFile(filepath.Join(s.cfg.DataDir, "service.log"), 1<<20); err == nil {
+		in.LogText = text
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="redundanet-diagnostics-%s.zip"`, in.Now.UTC().Format("20060102-150405")))
+	if err := diag.Write(w, in); err != nil {
+		s.cfg.Log.Warn("diagnostics bundle not written", "err", err)
+	}
+}
+
 func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 	sess, ok := s.auth.sessionOf(r)
 	if !ok {
@@ -324,6 +552,31 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 			msg = "update failed: " + err.Error()
 		} else {
 			msg = "update started: the agent restarts when the new version passes probation"
+		}
+	case "backup-run":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		s.cfg.Jobs.RunNow(r.FormValue("set"))
+		msg = "backup requested; progress shows below"
+	case "backup-verify":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		s.cfg.Jobs.RunNow("verify")
+		msg = "restore test requested"
+	case "update-retry":
+		if s.cfg.Actions.RetryUpdate == nil {
+			msg = "updates are not configured in this build"
+			break
+		}
+		v := r.FormValue("version")
+		if err := s.cfg.Actions.RetryUpdate(r.Context(), v); err != nil {
+			msg = "retry failed: " + err.Error()
+		} else {
+			msg = v + " may be installed again at the next check"
 		}
 	default:
 		http.NotFound(w, r)

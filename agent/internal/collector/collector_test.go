@@ -65,15 +65,20 @@ func demoManifest() *manifest.Manifest {
 
 func newWorld(t *testing.T, path, legacyURL string) *world {
 	t.Helper()
+	return newWorldWith(t, demoManifest(), path, "", legacyURL)
+}
+
+func newWorldWith(t *testing.T, m *manifest.Manifest, path, placement, legacyURL string) *world {
+	t.Helper()
 	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
-	m := demoManifest()
-	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Legacy: legacyURL,
+	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Placement: placement, Legacy: legacyURL,
 		Started: w.now.Add(-time.Hour), Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.SetLive(func() hub.Status { w.mu.Lock(); defer w.mu.Unlock(); return w.live })
 	w.c = c
+	t.Cleanup(func() { _ = c.Close() })
 	return w
 }
 
@@ -266,5 +271,63 @@ func TestLegacyKeepsTheLastGoodNodes(t *testing.T) {
 	}
 	if err := parseLegacy([]byte(`{"nodes": 5}`), &Legacy{}); err == nil {
 		t.Fatal("nodes of the wrong shape accepted")
+	}
+}
+
+func TestShareCensusMakesMemberUsage(t *testing.T) {
+	w := newWorld(t, "", "")
+	entry := func(si byte, n uint8, owner identity.Key, size int64) wire.ShareEntry {
+		var e wire.ShareEntry
+		e.StorageIndex[0], e.Number, e.Owner, e.Size = si, n, owner, size
+		return e
+	}
+	// falcon reports in two chunks, then a delta that removes one share.
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 3, Added: []wire.ShareEntry{entry(1, 0, alice, 4096), entry(1, 1, alice, 4096)}, More: true})
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 3, Added: []wire.ShareEntry{entry(2, 0, bob, 8192)}})
+	w.c.RecordShares(identity.Peer{Device: spare, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 1, Added: []wire.ShareEntry{entry(2, 1, bob, 8192)}})
+	st := w.c.Status()
+	byName := map[string]Member{}
+	for _, m := range st.Members {
+		byName[m.Name] = m
+	}
+	if byName["alice"].StoredBytes != 8192 || byName["alice"].Objects != 1 || byName["bob"].StoredBytes != 16384 || byName["bob"].Objects != 1 {
+		t.Fatalf("usage: %+v", st.Members)
+	}
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 3, Generation: 4, Removed: []wire.ShareKey{{StorageIndex: [16]byte{1}, Number: 1}}})
+	st = w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "alice" && m.StoredBytes != 4096 {
+			t.Fatalf("after removal: %+v", m)
+		}
+	}
+	// A census from zero replaces the table: the node was rebuilt.
+	w.c.RecordShares(identity.Peer{Device: falcon, Member: alice}, &wire.ShareCensus{Since: 0, Generation: 1, Added: []wire.ShareEntry{entry(9, 0, alice, 4096)}})
+	st = w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "bob" && m.StoredBytes != 8192 {
+			t.Fatalf("after a reset: %+v", m)
+		}
+	}
+}
+
+// The restore test streak travels in the heartbeat and the member row
+// shows it beside the last verified restore.
+func TestVerifyStreakOnTheMemberRow(t *testing.T) {
+	w := newWorld(t, "", "")
+	when := w.now.Add(-2 * time.Hour)
+	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Roles: []string{"client"},
+		Backup: &wire.CensusBackup{LastBackup: when, LastVerify: when, VerifyOK: true, VerifyStreak: 3}})
+	w.c.Record(identity.Peer{Device: spare, Member: alice}, "udp", wire.Census{Roles: []string{"client"},
+		Backup: &wire.CensusBackup{LastVerify: when.Add(-time.Hour), VerifyOK: true, VerifyStreak: 1}})
+	st := w.c.Status()
+	for _, m := range st.Members {
+		if m.Name == "alice" && (m.LastVerified != "2026-11-02" || m.VerifyStreak != 3) {
+			t.Fatalf("alice: %+v", m)
+		}
+	}
+	rec := httptest.NewRecorder()
+	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if page := rec.Body.String(); !strings.Contains(page, "2026-11-02, 3 weeks in a row") {
+		t.Fatalf("page lacks the streak:\n%s", page)
 	}
 }

@@ -14,7 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/jobs"
+	"github.com/adefilippo83/redundanet/agent/internal/localdb"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
+	"github.com/adefilippo83/redundanet/agent/internal/repair"
+	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
 )
@@ -25,6 +30,7 @@ type harness struct {
 	token   string
 	checks  int
 	applies int
+	retries int
 }
 
 func newHarness(t *testing.T) *harness {
@@ -40,12 +46,22 @@ func newHarness(t *testing.T) *harness {
 		Snapshot: func() Snapshot {
 			return Snapshot{Version: "3.0.0-test", Network: "testnet", Device: "dev", Member: "mem", Roles: []string{"client"},
 				Transport: &transport.Status{Sessions: []transport.SessionStatus{{Peer: "peerpeerpeer", Relay: true, Events: []transport.Event{{Time: time.Now(), What: "relay connection up"}}}}},
-				Update:    &update.Status{Enabled: true, Running: "3.0.0-test", Channel: "stable", Available: "3.0.1"},
+				Update:    &update.Status{Enabled: true, Running: "3.0.0-test", Channel: "stable", Available: "3.0.1", Failed: []string{"3.0.1"}},
+				Repair:    &repair.Status{Running: "abcdefgh", Done: 2, Failed: 1, Released: 3, Last: "task 7 for abcdefgh: stored 1 shares", LastAt: time.Now()},
+				Jobs: &jobs.Status{Sets: []backup.Set{{Name: "home", Folders: []string{"/home/x"}}}, Runs: []jobs.RunStatus{{Set: "home", Needs: []string{"/home/x/Documents: macOS denies the service access to this folder: grant Full Disk Access"}, LastAt: time.Now(), Last: &backup.Result{Snapshot: snapshot.Snapshot{Files: 3, Skipped: 1}, RootVersion: 2, Reasons: map[string]int64{"not on this computer": 1}}}}, Every: "24h0m0s", VerifyEvery: "168h0m0s", VerifyStreak: 2,
+					Verifications: []localdb.Verification{{At: time.Now(), Snapshot: "2026-11-04T09:00:00Z", Sampled: 20, Verified: 20, Compared: 18}, {At: time.Now().AddDate(0, 0, -7), Snapshot: "s0", Sampled: 20, Verified: 19, Failed: []string{"x"}}}},
 				Generated: time.Now()}
 		},
 		Actions: Actions{
 			CheckUpdate: func(context.Context) (string, error) { h.checks++; return "3.0.1", nil },
 			ApplyUpdate: func(context.Context) error { h.applies++; return errors.New("probation failed (test)") },
+			RetryUpdate: func(_ context.Context, v string) error {
+				if v != "3.0.1" {
+					return errors.New(v + " is not marked as failed")
+				}
+				h.retries++
+				return nil
+			},
 		},
 	})
 	if err != nil {
@@ -134,7 +150,10 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "testnet") || !strings.Contains(string(page), "Install 3.0.1") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "testnet") || !strings.Contains(string(page), "Install 3.0.1") ||
+		!strings.Contains(string(page), "repairing abcdefgh") || !strings.Contains(string(page), "3 surplus shares released") || strings.Contains(string(page), "%!") ||
+		!strings.Contains(string(page), "2 weeks in a row passing") || !strings.Contains(string(page), "20 of 20") || !strings.Contains(string(page), "1 failed") ||
+		!strings.Contains(string(page), "grant Full Disk Access") || !strings.Contains(string(page), "1 skipped (1 not on this computer)") {
 		t.Fatalf("page after login: %d %s", resp.StatusCode, firstLines(string(page)))
 	}
 	// The link is single use.
@@ -177,6 +196,12 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 	if r, _ := browser.Do(req); r.StatusCode != http.StatusBadGateway || h.applies != 1 {
 		t.Fatalf("api post with csrf header: %d applies=%d", r.StatusCode, h.applies)
 	}
+	// The page's retry form carries the version and the CSRF token.
+	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/update-retry", url.Values{"csrf": {csrf}, "version": {"3.0.1"}})
+	body, _ = io.ReadAll(r.Body)
+	if r.StatusCode != http.StatusOK || h.retries != 1 || !strings.Contains(string(body), "may be installed again") {
+		t.Fatalf("retry form: %d retries=%d", r.StatusCode, h.retries)
+	}
 	// GET never changes anything.
 	before := h.checks
 	browser.Get("http://" + h.srv.Addr() + "/action/update-check")
@@ -195,6 +220,12 @@ func TestClient(t *testing.T) {
 	v, err := c.UpdateCheck(context.Background())
 	if err != nil || v != "3.0.1" {
 		t.Fatalf("check: %v %q", err, v)
+	}
+	if err := c.UpdateRetry(context.Background(), "3.0.2"); err == nil || !strings.Contains(err.Error(), "not marked as failed") {
+		t.Fatalf("retry of a version that did not fail: %v", err)
+	}
+	if err := c.UpdateRetry(context.Background(), "3.0.1"); err != nil || h.retries != 1 {
+		t.Fatalf("retry: %v retries=%d", err, h.retries)
 	}
 	if err := c.UpdateApply(context.Background()); err == nil || !strings.Contains(err.Error(), "probation failed") {
 		t.Fatalf("apply: %v", err)

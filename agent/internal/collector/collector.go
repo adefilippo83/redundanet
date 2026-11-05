@@ -52,6 +52,12 @@ type Config struct {
 	Path     string                                                // the census file kept across restarts; "" keeps it in memory
 	Legacy   string                                                // the RedundaNet 2 status.json to mirror; "" for none
 	Fetch    func(ctx context.Context, url string) ([]byte, error) // defaults to an HTTP GET with a timeout
+	// Placement is the SQLite file of the placement table; "" keeps it in
+	// memory, for tests.
+	Placement string
+	// Signer is the hub's device key, which signs repair tasks; nil means
+	// this hub never schedules repair.
+	Signer *identity.DeviceKey
 	// Publish is a base URL the page and status.json are PUT under every
 	// minute, with PublishToken as the bearer token; "" publishes nothing.
 	Publish      string
@@ -78,6 +84,9 @@ type Collector struct {
 
 	mu          sync.Mutex
 	entries     map[identity.Key]*entry
+	pl          *placement // the placement table, from the share census
+	send        func(device identity.Key, typ byte, v any) error
+	rep         repairState
 	dirty       bool
 	legacy      *Legacy
 	publishedAt time.Time
@@ -115,19 +124,32 @@ func New(cfg Config) (*Collector, error) {
 			return nil, errors.New("collector: publishing needs a token")
 		}
 	}
-	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}}
-	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum}
+	pl, err := openPlacement(cfg.Placement)
+	if err != nil {
+		return nil, err
+	}
+	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
+	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum, "pct": pct, "plural": plural}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
+		_ = pl.close()
 		return nil, err
 	}
 	c.tmpl = tmpl
 	if cfg.Path != "" {
 		if err := c.load(); err != nil {
+			_ = pl.close()
 			return nil, err
 		}
 	}
 	return c, nil
+}
+
+// Close releases the placement table; Save first.
+func (c *Collector) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pl.close()
 }
 
 // SetLive gives the collector the hub's live view once the hub exists.
@@ -137,12 +159,88 @@ func (c *Collector) SetLive(live func() hub.Status) {
 	c.mu.Unlock()
 }
 
+// SetSend gives the collector the hub's channel writer, for repair tasks
+// and release hints; the hub's Send fits.
+func (c *Collector) SetSend(send func(device identity.Key, typ byte, v any) error) {
+	c.mu.Lock()
+	c.send = send
+	c.mu.Unlock()
+}
+
 // Record keeps a device's heartbeat; the hub calls it.
 func (c *Collector) Record(peer identity.Peer, carrier string, cs wire.Census) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.entries[peer.Device] = &entry{Member: peer.Member, Carrier: carrier, LastSeen: c.cfg.Now(), Census: cs}
 	c.dirty = true
+}
+
+// RecordShares applies a chunk of a storage node's share census to the
+// placement table. A chunk since generation zero under a new generation
+// replaces what the table held for the device.
+func (c *Collector) RecordShares(peer identity.Peer, sc *wire.ShareCensus) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.pl.apply(peer.Device, sc, c.cfg.Now()); err != nil {
+		c.log.Warn("share census not recorded", "device", peer.Device.Short(), "err", err)
+	}
+}
+
+// Objects classifies every object the placement table knows, with the
+// grid summary: what the repair scheduler and the page work from.
+func (c *Collector) Objects() ([]Object, *Grid, error) {
+	now := c.cfg.Now()
+	m := c.cfg.Manifest()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	alive, servers := c.aliveServers(now, m)
+	enc, conv := encodingOfManifest(m)
+	return c.pl.compute(now, alive, servers, enc, conv)
+}
+
+// encodingOfManifest is the manifest's encoding and transition, zero
+// values without a manifest.
+func encodingOfManifest(m *manifest.Manifest) (manifest.Encoding, *manifest.Transition) {
+	if m == nil {
+		return manifest.Encoding{}, nil
+	}
+	return m.Network.Encoding, m.Network.EncodingTransition
+}
+
+// aliveServers lists the manifest's storage servers whose shares count:
+// seen within the dead threshold, or on a channel now. A server the
+// manifest retired is forgotten with its shares. Called with the lock.
+func (c *Collector) aliveServers(now time.Time, m *manifest.Manifest) (map[identity.Key]bool, int) {
+	alive := map[identity.Key]bool{}
+	if m == nil {
+		return alive, 0
+	}
+	deadAfter := defaultDeadAfter
+	if m.Network.RepairAfterHours > 0 {
+		deadAfter = time.Duration(m.Network.RepairAfterHours) * time.Hour
+	}
+	listed := map[identity.Key]bool{}
+	for _, s := range m.Storage {
+		listed[s.Device] = true
+		if e, ok := c.entries[s.Device]; ok && now.Sub(e.LastSeen) <= deadAfter {
+			alive[s.Device] = true
+		}
+	}
+	if c.cfg.Live != nil {
+		for _, cl := range c.cfg.Live().Clients {
+			if k, err := identity.ParseKey(cl.Device); err == nil && listed[k] {
+				alive[k] = true
+			}
+		}
+	}
+	for _, dev := range c.pl.devices() {
+		if !listed[dev] {
+			if err := c.pl.forget(dev); err == nil {
+				c.log.Info("storage device retired from the manifest; its shares no longer count", "device", dev.Short())
+			}
+		}
+	}
+	return alive, len(alive)
 }
 
 // Run refreshes the legacy mirror, publishes and saves the census until ctx
@@ -157,9 +255,11 @@ func (c *Collector) Run(ctx context.Context) {
 	legacy := time.NewTicker(legacyEvery)
 	publish := time.NewTicker(publishEvery)
 	save := time.NewTicker(saveEvery)
+	schedule := time.NewTicker(scheduleEvery)
 	defer legacy.Stop()
 	defer publish.Stop()
 	defer save.Stop()
+	defer schedule.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -167,6 +267,8 @@ func (c *Collector) Run(ctx context.Context) {
 				c.log.Warn("census not saved", "err", err)
 			}
 			return
+		case <-schedule.C:
+			c.Schedule(ctx)
 		case <-legacy.C:
 			if c.cfg.Legacy != "" {
 				c.refreshLegacy(ctx)
@@ -314,6 +416,7 @@ type Status struct {
 	GeneratedAt      time.Time `json:"generated_at"`
 	Devices          []Device  `json:"devices"`
 	Members          []Member  `json:"members"`
+	Grid             *Grid     `json:"grid,omitempty"`
 	Legacy           *Legacy   `json:"redundanet2,omitempty"`
 }
 
@@ -333,6 +436,10 @@ type Device struct {
 	Manifest   uint64     `json:"manifest,omitempty"`
 	FreeBytes  *uint64    `json:"free_bytes,omitempty"`
 	TotalBytes *uint64    `json:"total_bytes,omitempty"`
+	Storage    string     `json:"storage,omitempty"`  // the store's state: "ok" or why it is not serving
+	Shares     uint64     `json:"shares"`             // complete shares the node holds
+	Stored     uint64     `json:"stored_bytes"`       // their bytes as accounted
+	Verified   string     `json:"verified,omitempty"` // day the oldest integrity check of a share dates from: every share was read back since
 	Direct     int        `json:"peers_direct"`
 	Relayed    int        `json:"peers_relayed"`
 	RelayIn    uint64     `json:"relay_bytes_in"`
@@ -340,7 +447,8 @@ type Device struct {
 	Update     string     `json:"update,omitempty"`
 }
 
-// Member is one member with the count of its devices.
+// Member is one member with the count of its devices and the usage the
+// storage nodes account to it.
 type Member struct {
 	Name           string `json:"name"`
 	Status         string `json:"status"`
@@ -348,6 +456,15 @@ type Member struct {
 	AllocationGB   int    `json:"allocation_gb"`
 	Devices        int    `json:"devices"`
 	Online         int    `json:"online"`
+	StoredBytes    int64  `json:"stored_bytes"`                    // bytes of shares servers account to the member
+	Objects        int    `json:"objects"`                         // distinct objects with at least one complete share
+	LastBackup     string `json:"last_backup,omitempty"`           // day of the newest backup of any device, "" when none
+	LastVerified   string `json:"last_verified_restore,omitempty"` // day of the newest passing restore test
+	VerifyStreak   int    `json:"verify_streak"`                   // the longest run of weeks in a row with a passing restore test among the member's devices
+	UnderPlaced    int    `json:"under_placed"`                    // the member's objects short of a share or of spread
+	Unreadable     int    `json:"unreadable"`                      // the member's objects below k shares
+	OldEncoding    int    `json:"old_encoding,omitempty"`          // objects still under the encoding a transition retires
+	OldBytes       int64  `json:"old_encoding_bytes,omitempty"`    // their bytes, accounted at zero until the deadline
 }
 
 // Status computes the projection now.
@@ -361,6 +478,31 @@ func (c *Collector) Status() Status {
 		entries[k] = *e
 	}
 	legacy := c.legacy
+	enc, conv := encodingOfManifest(m)
+	var old *manifest.Encoding
+	counting := false
+	if conv != nil {
+		from := conv.From
+		old = &from
+		if d, err := conv.DeadlineTime(); err == nil && !now.Before(d) {
+			counting = true
+		}
+	}
+	usedBytes, oldBytes, usedObjects, oldObjects, err := c.pl.usage(old, counting)
+	if err != nil {
+		c.log.Warn("usage not computed", "err", err)
+	}
+	alive, servers := c.aliveServers(now, m)
+	objects, grid, err := c.pl.compute(now, alive, servers, enc, conv)
+	if err != nil {
+		c.log.Warn("placement not computed", "err", err)
+	}
+	if grid != nil && m != nil {
+		grid.RepairRunning, grid.RepairDone, grid.RepairFailed = c.taskCounts(now)
+		out := plan(c.planInput(now, m, objects, servers))
+		grid.RepairBlocked, grid.RepairShort = out.blocked, out.short
+		grid.Scheduler = c.rep.scheduler
+	}
 	c.mu.Unlock()
 
 	st := Status{Hub: c.cfg.Device.String(), HubUptime: now.Sub(c.cfg.Started).Round(time.Second).String(), GeneratedAt: now, Legacy: legacy}
@@ -401,6 +543,8 @@ func (c *Collector) Status() Status {
 		known[k] = true
 	}
 	perMember := map[string]*Member{}
+	lastBackup, lastVerify := map[string]time.Time{}, map[string]time.Time{}
+	streaks := map[string]int{}
 	for k := range known {
 		d := Device{Device: k.String(), State: "never"}
 		var memberKey identity.Key
@@ -418,6 +562,10 @@ func (c *Collector) Status() Status {
 			if s := e.Census.Storage; s != nil {
 				free, total := s.FreeBytes, s.TotalBytes
 				d.FreeBytes, d.TotalBytes = &free, &total
+				d.Storage, d.Shares, d.Stored = s.State, s.Shares, s.Bytes
+				if !s.Verified.IsZero() {
+					d.Verified = s.Verified.UTC().Format("2006-01-02")
+				}
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {
@@ -454,6 +602,18 @@ func (c *Collector) Status() Status {
 			d.Roles = []string{}
 		}
 		st.Devices = append(st.Devices, d)
+		if e, ok := entries[k]; ok && e.Census.Backup != nil {
+			b := e.Census.Backup
+			if !b.Partial && b.LastBackup.After(lastBackup[d.Member]) {
+				lastBackup[d.Member] = b.LastBackup
+			}
+			if b.VerifyOK && b.LastVerify.After(lastVerify[d.Member]) {
+				lastVerify[d.Member] = b.LastVerify
+			}
+			if b.VerifyStreak > streaks[d.Member] {
+				streaks[d.Member] = b.VerifyStreak
+			}
+		}
 		if pm := perMember[d.Member]; pm != nil {
 			pm.Devices++
 			if d.State == "online" {
@@ -477,9 +637,31 @@ func (c *Collector) Status() Status {
 		}
 		return a.Device < b.Device
 	})
+	underPlaced, unreadable := map[identity.Key]int{}, map[identity.Key]int{}
+	for _, o := range objects {
+		if o.Tombstoned {
+			continue
+		}
+		if !o.Placed {
+			underPlaced[o.Owner]++
+		}
+		if !o.Readable {
+			unreadable[o.Owner]++
+		}
+	}
+	st.Grid = grid
 	if m != nil {
 		for _, mem := range m.Members {
-			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name)}
+			mm := Member{Name: mem.Name, Status: mem.Status, ContributionGB: mem.ContributionGB, AllocationGB: m.Allocation(mem.Name),
+				StoredBytes: usedBytes[mem.Key], Objects: usedObjects[mem.Key], UnderPlaced: underPlaced[mem.Key], Unreadable: unreadable[mem.Key],
+				OldEncoding: oldObjects[mem.Key], OldBytes: oldBytes[mem.Key]}
+			if t := lastBackup[mem.Name]; !t.IsZero() {
+				mm.LastBackup = t.UTC().Format("2006-01-02")
+			}
+			if t := lastVerify[mem.Name]; !t.IsZero() {
+				mm.LastVerified = t.UTC().Format("2006-01-02")
+				mm.VerifyStreak = streaks[mem.Name]
+			}
 			if pm := perMember[mem.Name]; pm != nil {
 				mm.Devices, mm.Online = pm.Devices, pm.Online
 			}
@@ -493,6 +675,22 @@ func (c *Collector) Status() Status {
 		st.Members = []Member{}
 	}
 	return st
+}
+
+// plural gives a word its plural when the count is not one.
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
+}
+
+// pct is a percentage for the page's bars.
+func pct(part, whole int) int {
+	if whole <= 0 {
+		return 100
+	}
+	return part * 100 / whole
 }
 
 func boolInt(b bool) int {
@@ -645,22 +843,31 @@ func (c *Collector) headers(w http.ResponseWriter) {
 	h.Set("Cache-Control", "public, max-age=30")
 }
 
-// Serve listens on addr and serves until ctx ends.
-func (c *Collector) Serve(ctx context.Context, addr string) (net.Addr, error) {
+// Serve listens on addr and serves until ctx ends or stop is called; stop
+// returns once the port is released, which a self-update's candidate
+// needs before it binds the same address.
+func (c *Collector) Serve(ctx context.Context, addr string) (net.Addr, func(), error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	srv := &http.Server{Handler: c.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(sctx)
+			_ = ln.Close()
+		})
+	}
 	go func() {
 		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(sctx)
+		stop()
 	}()
 	c.log.Info("status page up", "addr", ln.Addr())
-	return ln.Addr(), nil
+	return ln.Addr(), stop, nil
 }
 
 type page struct {
@@ -729,8 +936,25 @@ func gb(b *uint64) string {
 	return size(*b)
 }
 
-func size(b uint64) string {
-	v := float64(b)
+func size(v any) string {
+	var b uint64
+	switch x := v.(type) {
+	case uint64:
+		b = x
+	case int64:
+		if x > 0 {
+			b = uint64(x)
+		}
+	case int:
+		if x > 0 {
+			b = uint64(x)
+		}
+	}
+	v2 := float64(b)
+	return sizeOf(b, v2)
+}
+
+func sizeOf(b uint64, v float64) string {
 	switch {
 	case b >= 1<<40:
 		return fmt.Sprintf("%.1f TB", v/(1<<40))

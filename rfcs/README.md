@@ -19,4 +19,4 @@ the RFC's next version carries the consequences and links the record.
 
 | Number | Title | Status |
 | --- | --- | --- |
-| [0001](0001-redundanet-3.md) | RedundaNet 3: one binary on Windows, macOS and Linux, with a native storage engine | Draft, version 4; [G0 passed](0001-g0-decision.md) |
+| [0001](0001-redundanet-3.md) | RedundaNet 3: one binary on Windows, macOS and Linux, with a native storage engine | Draft, version 4; [G0 passed](0001-g0-decision.md); [phase 2 plan](0001-phase-2-plan.md) |

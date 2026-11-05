@@ -404,10 +404,11 @@ this section reflects: no phase on Tahoe.
 identity, signed manifest sync, the mesh with its path layer, hub mode (relay,
 directory, status collector, join endpoint), the user service, self-update
 with rollback, and a local page with status and settings. It runs beside the
-Docker stack on every live node, packaged as a container there because that
-is what today's update path installs, and never touches Tahoe or tinc; new
-devices, including the first macOS or Windows ones, join the mesh as client
-devices through the app's join flow and store nothing yet. Exit: G1, every
+Docker stack on every live node as one static binary under a system unit,
+installed once by the member and updating itself from then on, and never
+touches Tahoe or tinc; new devices, including the first macOS or Windows
+ones, join the mesh as client devices through the app's join flow and store
+nothing yet. Exit: G1, every
 live node runs the agent under the signed manifest, a signed update with
 rollback has rolled across the fleet, and a macOS or Windows device is on
 the status page.
@@ -808,8 +809,9 @@ AAAA records, and IPv6 candidates are gathered and tried like IPv4 ones.
 **Wire identity.** Every connection is mutual TLS 1.3 with ALPN
 `redundanet/1` and 0-RTT disabled. Each side presents an X.509 leaf whose
 public key is its device key, self-signed, with the member-signed device
-certificate in a critical extension under the project's OID, the encoding
-libp2p uses for the same problem. Each side checks, in one verification
+certificate in a critical extension under the project's OID
+(1.3.6.1.4.1.67508.1.1, below its IANA private enterprise number), the
+encoding libp2p uses for the same problem. Each side checks, in one verification
 function with its own test suite: the leaf key equals the device key in the
 certificate, the member signature on the certificate is valid, the member is
 `active` or `leaving` in the signed manifest or the device key is a listed hub,
@@ -1735,16 +1737,20 @@ of steps 0, 1 and 3 is the members', because they run on members' machines.
    status page counts down and lists, per member, what still lives only on
    the old grid. A member whose native backups have passed a restore test
    runs `redundanet migrate-node` on each of their nodes, which is privileged
-   because the storage disk is a root-owned bind mount. In order, it stops
-   the stack in the order the stack requires, tinc last; hands the storage
-   directory to the agent's user; installs the agent as a host service with
-   self-update enabled and waits for the status page to show the same device
-   with the same native server; and removes the container build of the
-   agent. It refuses to run while the member's roots on the old grid hold
-   anything not yet on the native grid, unless told so. `migrate-node
-   --rollback` returns ownership and starts the stack, which stays on disk
-   until the member deletes it. The Python CLI leaves with the stack, and the
-   `redundanet` binary replaces it on that host. The operator may extend the
+   because it drives Docker and the stack's files under `/opt/redundanet`.
+   The agent is a host service beside the stack already (no container build
+   of it ever shipped), so the command is small: it refuses while the folder
+   backup-sync pushed to the old grid is not held by a native backup set
+   with a complete run and a passed restore test on that device, or while
+   the agent has no hub, unless told `--force`, in which case the plan names
+   what is lost; then it stops and removes the containers with one `compose
+   down` through the installed compose file, its override and `.env`, every
+   container at once and tinc last by its dependencies, and marks the node
+   in the agent's data directory. The compose files, the `.env` and the
+   Tahoe share directories stay on disk. `migrate-node --rollback` is
+   `compose up` with the same files. The Python CLI stays installed but
+   idle until the member removes it; the `redundanet` binary is the one
+   that matters on that host from then on. The operator may extend the
    date once, by 60 days, for the whole network. On the date the remaining
    Tahoe servers stop, the share directories are deleted and the space
    returns to the native grid. What a member never moved is lost from the
