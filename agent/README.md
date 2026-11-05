@@ -344,6 +344,5 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
   project's OID 1.3.6.1.4.1.67508.1.1 (IANA private enterprise number
   67508, arc .1 for RedundaNet 3, .1.1 for this extension). Verification
   also accepts the provisional arc 2.25.1409274851 the extension lived
-  under before the number was assigned; leaves present the provisional arc
-  until every device verifies the new one, then switch, and 3.0.0 drops
-  the provisional arc (see `tls.go`).
+  under before the number was assigned (presented until alpha.19, verified
+  until 3.0.0; see `tls.go`).
