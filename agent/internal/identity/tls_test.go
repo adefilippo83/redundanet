@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"errors"
 	"math/big"
 	"net"
@@ -100,6 +101,36 @@ func TestTLSHandshakeBetweenTwoDevices(t *testing.T) {
 	}
 	if seenByServer.Device != b.dev.ID() {
 		t.Fatal("allow was not called with the client")
+	}
+}
+
+// The extension's arc moved from a provisional one to the enterprise number;
+// until every device verifies the new arc, leaves present the old one, and
+// either verifies.
+func TestTLSExtensionArcs(t *testing.T) {
+	var seedB Seed
+	seedB[0] = 9
+	a := newTestDevice(t, testSeed(), RoleStorage)
+	for _, oid := range []asn1.ObjectIdentifier{CertificateExtensionOID, provisionalExtensionOID} {
+		ext, _ := a.cert.Encode()
+		tmpl := &x509.Certificate{SerialNumber: big.NewInt(4), NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour),
+			ExtraExtensions: []pkix.Extension{{Id: oid, Critical: true, Value: ext}}}
+		der, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, a.dev.Private().Public(), a.dev.Private())
+		p, err := PeerFromRaw([][]byte{der})
+		if err != nil || p.Device != a.dev.ID() {
+			t.Fatalf("leaf under %v: %v", oid, err)
+		}
+	}
+	// A device presenting the enterprise arc and one presenting the
+	// provisional arc shake hands both ways.
+	defer func(oid asn1.ObjectIdentifier) { presentedExtensionOID = oid }(presentedExtensionOID)
+	presentedExtensionOID = CertificateExtensionOID
+	b := newTestDevice(t, seedB, RoleClient)
+	if _, _, err := handshake(t, a.tls.ServerConfig(allowAll), b.tls.ClientConfig(a.dev.ID(), allowAll)); err != nil {
+		t.Fatalf("new client to old server: %v", err)
+	}
+	if _, _, err := handshake(t, b.tls.ServerConfig(allowAll), a.tls.ClientConfig(b.dev.ID(), allowAll)); err != nil {
+		t.Fatalf("old client to new server: %v", err)
 	}
 }
 

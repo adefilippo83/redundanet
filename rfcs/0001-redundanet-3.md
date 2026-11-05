@@ -809,8 +809,9 @@ AAAA records, and IPv6 candidates are gathered and tried like IPv4 ones.
 **Wire identity.** Every connection is mutual TLS 1.3 with ALPN
 `redundanet/1` and 0-RTT disabled. Each side presents an X.509 leaf whose
 public key is its device key, self-signed, with the member-signed device
-certificate in a critical extension under the project's OID, the encoding
-libp2p uses for the same problem. Each side checks, in one verification
+certificate in a critical extension under the project's OID
+(1.3.6.1.4.1.67508.1.1, below its IANA private enterprise number), the
+encoding libp2p uses for the same problem. Each side checks, in one verification
 function with its own test suite: the leaf key equals the device key in the
 certificate, the member signature on the certificate is valid, the member is
 `active` or `leaving` in the signed manifest or the device key is a listed hub,
