@@ -17,8 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/api"
 	"github.com/adefilippo83/redundanet/agent/internal/collector"
 	"github.com/adefilippo83/redundanet/agent/internal/diskfree"
@@ -487,7 +485,13 @@ func runAgent(args []string) error {
 	}
 	spoolDir := filepath.Join(rc.dataDir, "spool")
 	_ = os.MkdirAll(spoolDir, 0o700)
-	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
+	// This device's own server is reached in process, whatever the mesh is
+	// doing: a storage node never dials itself.
+	local := shareproto.LocalOpener(identity.Peer{Device: rc.device, Member: rc.state.Member, Certificate: &rc.state.Certificate}, onStream)
+	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
+		if peer == rc.device {
+			return local(ctx, peer)
+		}
 		e := current()
 		if e == nil {
 			return nil, "", errors.New("the endpoint is handing over")

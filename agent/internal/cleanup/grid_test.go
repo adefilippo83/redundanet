@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
@@ -24,6 +22,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // The exit test of M5's third slice, in process: a real grid of two
@@ -113,7 +112,7 @@ func (g *grid) advance(d time.Duration) {
 	g.mu.Unlock()
 }
 
-func (g *grid) endpoint(m *member, onStream func(identity.Peer, string, *quic.Stream)) *transport.Endpoint {
+func (g *grid) endpoint(m *member, onStream func(identity.Peer, string, wire.Stream)) *transport.Endpoint {
 	t := g.t
 	t.Helper()
 	g.permit(m.dev.ID())

@@ -7,11 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
+	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // Policy is what the server asks the manifest.
@@ -58,7 +57,7 @@ func NewServer(st *store.Store, pol Policy, log *slog.Logger) *Server {
 // counts against the peer's stream limit until the connection ends; the
 // first long backup hit that limit after about a thousand requests and
 // every further request waited for a stream that never came.
-func (s *Server) Handle(peer identity.Peer, _ string, st *quic.Stream) {
+func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 	defer st.Close()
 	defer st.CancelRead(0)
 	var req Request
@@ -135,7 +134,7 @@ func presenceOf(p *store.Presence) *Presence {
 // delete applies a delete token: the first phase of deletion, from any
 // device of the member whose token it is, so a late token queued on one
 // device may be delivered by another.
-func (s *Server) delete(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) delete(peer identity.Peer, st wire.Stream, req *Request) error {
 	t := req.Token
 	if t == nil {
 		return refuse(st, StatusBad, "delete without a token")
@@ -162,7 +161,7 @@ func (s *Server) delete(peer identity.Peer, st *quic.Stream, req *Request) error
 
 // undelete clears a tombstone the member's own token placed, within the
 // window.
-func (s *Server) undelete(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) undelete(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
@@ -175,7 +174,7 @@ func (s *Server) undelete(peer identity.Peer, st *quic.Stream, req *Request) err
 
 // list pages through the objects held for the asking member: the grid's
 // side of the owner's cleanup, never a local cache.
-func (s *Server) list(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) list(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
@@ -191,7 +190,7 @@ func (s *Server) list(peer identity.Peer, st *quic.Stream, req *Request) error {
 }
 
 // put receives one share: the checks of "Who may store what", in order.
-func (s *Server) put(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) put(peer identity.Peer, st wire.Stream, req *Request) error {
 	sd := req.Descriptor
 	if sd == nil {
 		return refuse(st, StatusBad, "put without a descriptor")
@@ -293,7 +292,7 @@ func (s *Server) put(peer identity.Peer, st *quic.Stream, req *Request) error {
 }
 
 // get serves a complete share's hashes and a range of its blocks.
-func (s *Server) get(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) get(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
@@ -340,7 +339,7 @@ func (s *Server) get(peer identity.Peer, st *quic.Stream, req *Request) error {
 
 // has answers what the server holds; a hit by the owner's device touches
 // the object's clock.
-func (s *Server) has(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) has(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
@@ -358,7 +357,7 @@ func (s *Server) has(peer identity.Peer, st *quic.Stream, req *Request) error {
 }
 
 // putRoot stores a device's root, from that device only.
-func (s *Server) putRoot(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) putRoot(peer identity.Peer, st wire.Stream, req *Request) error {
 	e := req.Root
 	if e == nil {
 		return refuse(st, StatusBad, "put-root without a root")
@@ -384,7 +383,7 @@ func (s *Server) putRoot(peer identity.Peer, st *quic.Stream, req *Request) erro
 }
 
 // getRoots lists a member's roots to that member's devices.
-func (s *Server) getRoots(peer identity.Peer, st *quic.Stream, req *Request) error {
+func (s *Server) getRoots(peer identity.Peer, st wire.Stream, req *Request) error {
 	if req.Member != peer.Member {
 		return refuse(st, StatusRefused, "roots are listed to the member's own devices")
 	}
@@ -405,7 +404,7 @@ func (s *Server) getRoots(peer identity.Peer, st *quic.Stream, req *Request) err
 
 // RefuseAll is the stream handler of a device that stores nothing: every
 // request gets a refusal, so a caller learns why instead of hanging.
-func RefuseAll(_ identity.Peer, _ string, st *quic.Stream) {
+func RefuseAll(_ identity.Peer, _ string, st wire.Stream) {
 	defer st.Close()
 	var req Request
 	if err := readMsg(st, &req); err != nil {

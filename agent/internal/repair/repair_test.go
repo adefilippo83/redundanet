@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/collector"
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
@@ -171,7 +169,7 @@ func (g *grid) startNode(m *member, st *store.Store) *node {
 	srv := shareproto.NewServer(st, pol, g.log)
 	var epMu sync.Mutex
 	var ep *transport.Endpoint
-	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
+	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
 		epMu.Lock()
 		e := ep
 		epMu.Unlock()

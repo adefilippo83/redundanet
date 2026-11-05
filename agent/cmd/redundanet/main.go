@@ -32,6 +32,7 @@ var commands = []command{
 	{"open", "open the local page in the browser, with a one-time link", runOpen},
 	{"logs", "the running agent's recent log lines", runLogs},
 	{"diagnostics", "write the bundle to send when something is wrong; works with the agent down", runDiagnostics},
+	{"migrate-node", "retire the RedundaNet 2 stack on this node, as root: --dry-run, --force, --rollback", runMigrateNode},
 	{"version", "print the version", func([]string) error { fmt.Println(versionString()); return nil }},
 }
 
