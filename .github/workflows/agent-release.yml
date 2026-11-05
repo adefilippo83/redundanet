@@ -47,8 +47,8 @@ jobs:
       sign-macos: ${{ steps.gate.outputs.macos }}
       windows-artifact-id: ${{ steps.unsigned-windows.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
@@ -288,7 +288,7 @@ jobs:
             echo "Every binary is listed with its hash in the signed release index, which the agent verifies before installing. The policy and the team are in the [README](https://github.com/${GITHUB_REPOSITORY}#code-signing-policy)."
           } | tee "$RUNNER_TEMP/notes.md"
       - name: draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: "agent ${{ github.ref_name }}"
