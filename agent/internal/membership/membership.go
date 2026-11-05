@@ -207,11 +207,16 @@ func (m *Membership) AddRevocation(r *identity.SignedRevocation) error {
 	return nil
 }
 
-// Revocations is the current list.
+// Revocations is the current list: what arrived directly, plus what the
+// applied manifest carries.
 func (m *Membership) Revocations() []*identity.SignedRevocation {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return append([]*identity.SignedRevocation(nil), m.revocations...)
+	out := append([]*identity.SignedRevocation(nil), m.revocations...)
+	if m.manifest != nil {
+		out = append(out, m.manifest.SignedRevocations()...)
+	}
+	return out
 }
 
 // Status snapshots the membership.
@@ -224,6 +229,7 @@ func (m *Membership) Status() Status {
 		st.SignedAt = m.signature.IssuedAt
 		st.Members = len(m.manifest.Members)
 		st.Hubs = len(m.manifest.Hubs)
+		st.Revocations += len(m.manifest.Revocations)
 		if v := m.manifest.Network.MinVersion; v != "" && m.cfg.Version != "" && m.cfg.Version != "dev" && semver.Less(m.cfg.Version, v) {
 			st.NeedsUpdate = v
 		}

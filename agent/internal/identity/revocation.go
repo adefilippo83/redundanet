@@ -54,10 +54,12 @@ func (s *SignedRevocation) Verify() error {
 	return verifyMessage(s.Revocation.Member, domainRevocation, body, s.Signature)
 }
 
-// Covers reports whether the revocation retires the given certificate.
+// Covers reports whether the revocation retires the given certificate: the
+// one with its serial, or every certificate of the device when the serial
+// is 0, which is what a lost device gets.
 func (s *SignedRevocation) Covers(c *SignedCertificate) bool {
 	r, cc := s.Revocation, c.Certificate
-	return r.Network == cc.Network && r.Member == cc.Member && r.Device == cc.Device && r.Serial == cc.Serial
+	return r.Network == cc.Network && r.Member == cc.Member && r.Device == cc.Device && (r.Serial == 0 || r.Serial == cc.Serial)
 }
 
 // Encode is the wire and at-rest form.

@@ -6,7 +6,7 @@ beside the RedundaNet 2 Python code that keeps running the live network until
 the migration ends. The spike that preceded it is under `../spike/` and is
 reference material, not this code's ancestor.
 
-Phase 1, the control plane, is under construction. What exists:
+The binary, package by package:
 
 | Package | What it does | Status |
 | --- | --- | --- |
@@ -39,11 +39,11 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
 | `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair, delete), `storage` (has, drop), `backup` (add, remove, list, run, verify, cleanup, rebalance), `restore` (list, browse, start, status), `status`, `open`, `logs`, `diagnostics`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `device` (revoke), `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair, delete), `storage` (has, drop), `backup` (add, remove, list, run, verify, cleanup, rebalance), `restore` (list, browse, start, status), `status`, `open`, `logs`, `diagnostics`, `version` | Growing |
 
-Next, in order: the census heartbeat and the hub's status collector, the
-hub's manifest mirror and the join endpoint, the container build for
-today's nodes.
+Not built: the hub's manifest mirror and join endpoint (the issue form on
+the website is the join path), bandwidth caps, a settings page, device
+pairing. No container was ever shipped; the agent is a host service.
 
 ## Running it today
 
@@ -51,6 +51,13 @@ today's nodes.
 redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/OWNER/REPO/main
     An operator prints the network descriptor: name, hubs, operator keys,
     where the signed manifest is served. It goes into invite links.
+
+redundanet device revoke --network NAME --device KEY [--serial N]
+    Any device of the member, with the phrase: prints a signed revocation
+    record for `revocations:` in the manifest. Serial 0, the default,
+    covers every certificate of the device, the case of a lost one. The
+    operator appends it, raises the revision and signs; every agent and
+    server refuses the device from then on.
 
 redundanet network join <descriptor>
     A device pins the descriptor's operator keys, fetches the manifest and
@@ -193,9 +200,8 @@ A hub entry in the manifest names its QUIC relay as `relay: host:port` and,
 when its TLS carrier is not on port 443 of the same host, `tcp: host:port`.
 `--manifest FILE` runs them from a signed file
 instead, trusting the operators that file lists, for tests and for the hub
-that serves the repository it is listed in. The agent answers every stream
-with its own bytes, since nothing speaks over the mesh yet, and logs a
-status snapshot every minute.
+that serves the repository it is listed in. The agent serves the storage
+protocol on the mesh and logs a status snapshot every minute.
 
 ```
 redundanet status [--json]      # what the running agent sees, through its local API
@@ -340,6 +346,12 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
     --force-recreate` naming every service the marker recorded, tinc
     first by its dependencies, and removes the marker: the stack is never
     restarted one container at a time. The agent is untouched throughout.
+
+A device revocation travels in the manifest: the member's `device revoke`
+prints the record, the operator appends it under `revocations:` (member
+key, device key, serial, revoked_at, signature), raises the revision and
+signs; `validate` checks every record's signature against the member's
+key and warns when one names a listed storage device.
 ```
 
 ## Encodings, fixed here
@@ -362,7 +374,6 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
 - TLS: 1.3 only, ALPN `redundanet/1`, no resumption, a self-signed Ed25519
   leaf with the device certificate in a critical extension under the
   project's OID 1.3.6.1.4.1.67508.1.1 (IANA private enterprise number
-  67508, arc .1 for RedundaNet 3, .1.1 for this extension). Verification
-  also accepts the provisional arc 2.25.1409274851 the extension lived
-  under before the number was assigned (presented until alpha.19, verified
-  until 3.0.0; see `tls.go`).
+  67508, arc .1 for RedundaNet 3, .1.1 for this extension). Since 3.0.0 only
+  that arc is read; the provisional arc 2.25.1409274851 of the alphas is
+  refused (`tls.go`).

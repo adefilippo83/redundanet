@@ -3,7 +3,8 @@
 One static binary under a system unit, no container: the agent runs beside
 the RedundaNet 2 stack on the host's network, reports the census, keeps its
 sessions, and updates itself from the signed release index with probation
-and rollback. Nothing is stored under RedundaNet 3 until phase 2.
+and rollback. A storage node also serves shares of the native grid from
+`STORAGE_PATH/redundanet3`.
 
 Three steps, the middle one on the member's laptop because that is where the
 phrase lives (the RFC's headless flow):
@@ -12,7 +13,7 @@ phrase lives (the RFC's headless flow):
 # 1. on the node, as root: user, directories, binary, unit; prints the device key
 curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
 curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/redundanet-agent.service
-sudo STORAGE_PATH=/mnt/storage CHANNEL=stable bash install.sh prepare 3.0.0-alpha.2
+sudo STORAGE_PATH=/mnt/storage CHANNEL=stable bash install.sh prepare 3.0.0
 
 # 2. on the laptop: certify the node's device key with the member key
 redundanet identity certify --network redundanet --device <KEY> --storage > node.cert
