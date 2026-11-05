@@ -320,6 +320,7 @@ def render_html(status: NetworkStatus) -> str:
 {_members_table(status)}
 <footer>
   <a href="/status.json">status.json</a> ·
+  <a href="/v3/">RedundaNet 3</a> ·
   <a href="https://github.com/adefilippo83/redundanet">source &amp; join</a> ·
   measured from the network hub
 </footer>

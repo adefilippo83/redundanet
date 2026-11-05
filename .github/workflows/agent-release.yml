@@ -1,9 +1,31 @@
 # Release of the RedundaNet 3 binary: a tag agent/vX.Y.Z builds the five
-# targets, writes checksums, prints the fragment to paste into
-# releases/index.yaml (which the maintainer then signs offline with
-# `redundanet release sign`) and opens a draft GitHub release. Developer ID
-# and Authenticode signing are added before the first release reaches a
-# member on macOS or Windows.
+# targets, signs what it has credentials for, writes checksums, prints the
+# fragment to paste into releases/index.yaml (which the maintainer then
+# signs offline with `redundanet release sign`) and opens a draft GitHub
+# release whose notes start with the code signing policy, as SignPath
+# Foundation's conditions ask of every release page.
+#
+# Signing is in place behind secrets and does nothing until they exist:
+#
+#   Windows, Authenticode through SignPath Foundation: the secret
+#   SIGNPATH_API_TOKEN and the variables SIGNPATH_ORGANIZATION_ID,
+#   SIGNPATH_PROJECT_SLUG and SIGNPATH_SIGNING_POLICY_SLUG (release-signing
+#   when unset). SignPath signs the unsigned binary uploaded as a workflow
+#   artifact, after the maintainer approves the request there; the job waits
+#   up to an hour, and a release that missed the window is finished with
+#   "Re-run failed jobs". The artifact configuration on SignPath's side is a
+#   zip-file holding the pe-file redundanet.exe.
+#
+#   macOS, Developer ID and notarization: the secrets APPLE_CERTIFICATE_P12
+#   (the Developer ID Application certificate with its key, base64),
+#   APPLE_CERTIFICATE_PASSWORD, APPLE_NOTARY_KEY_P8 (an App Store Connect
+#   API key, base64), APPLE_NOTARY_KEY_ID and APPLE_NOTARY_ISSUER_ID. A bare
+#   executable cannot be stapled, so Gatekeeper checks the notarization
+#   online on first run.
+#
+# The jobs: build (tests, the Windows version resource, the binaries),
+# sign-windows and sign-macos (each skipped without its secret), release
+# (archives, checksums, fragment, draft).
 name: agent release
 
 on:
@@ -20,13 +42,36 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      sign-windows: ${{ steps.gate.outputs.windows }}
+      sign-macos: ${{ steps.gate.outputs.macos }}
+      windows-artifact-id: ${{ steps.unsigned-windows.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
       - run: go test -race -count=1 ./...
+      - name: which signing credentials exist
+        id: gate
+        env:
+          SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN }}
+          APPLE: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          echo "windows=$([ -n "$SIGNPATH" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "macos=$([ -n "$APPLE" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: version resource for the Windows binary
+        # Product name and version in the executable's properties, which
+        # Windows shows and SignPath requires. The strings are in
+        # cmd/redundanet/versioninfo.json, the version comes from the tag,
+        # and the object is named for windows/amd64 so the other targets
+        # ignore it.
+        run: |
+          version="${GITHUB_REF_NAME#agent/v}"
+          go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0 -64 \
+            -file-version "$version" -product-version "$version" \
+            -o cmd/redundanet/resource_windows_amd64.syso cmd/redundanet/versioninfo.json
       - name: build every target
         env:
           CGO_ENABLED: "0"
@@ -44,10 +89,170 @@ jobs:
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
             os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
-            name="redundanet-$version-$os-$arch"
-            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "dist/$name/redundanet$ext" ./cmd/redundanet
-            if [ "$os" = windows ]; then (cd dist && zip -qr "$name.zip" "$name"); else (cd dist && tar -czf "$name.tar.gz" "$name"); fi
-            rm -r "dist/$name"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "dist/redundanet-$version-$os-$arch/redundanet$ext" ./cmd/redundanet
+          done
+          # The Windows binary moves to a fixed path: uploaded alone from
+          # there, the artifact holds redundanet.exe at its root, which is
+          # the layout the SignPath artifact configuration and the release
+          # job expect (a wildcard in the upload path would keep the
+          # directory).
+          mv "dist/redundanet-$version-windows-amd64" dist/windows
+          # The resource made it into the executable: a .rsrc section.
+          python3 - dist/windows/redundanet.exe <<'PY'
+          import struct, sys
+          b = open(sys.argv[1], "rb").read()
+          pe = struct.unpack_from("<I", b, 0x3C)[0]
+          sections = struct.unpack_from("<H", b, pe + 6)[0]
+          off = pe + 24 + struct.unpack_from("<H", b, pe + 20)[0]
+          names = [b[off + 40 * i:off + 40 * i + 8].rstrip(b"\0").decode() for i in range(sections)]
+          sys.exit(0 if ".rsrc" in names else "the Windows binary carries no version resource: " + ", ".join(names))
+          PY
+      - name: keep the Linux and macOS binaries for signing and packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-posix
+          path: |
+            agent/dist/redundanet-*-linux-*/redundanet
+            agent/dist/redundanet-*-darwin-*/redundanet
+          if-no-files-found: error
+      - name: keep the Windows binary, the one SignPath signs
+        id: unsigned-windows
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows
+          path: agent/dist/windows/redundanet.exe
+          if-no-files-found: error
+
+  sign-windows:
+    needs: build
+    if: needs.build.outputs.sign-windows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Authenticode through SignPath Foundation
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ needs.build.outputs.windows-artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: ${{ github.workspace }}/signed
+      - name: the signed binary, for packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-windows
+          path: signed/redundanet.exe
+          if-no-files-found: error
+          overwrite: true
+
+  sign-macos:
+    needs: build
+    if: needs.build.outputs.sign-macos == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-posix
+          path: agent/dist
+      - name: Developer ID signature and notarization
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -e
+          # The certificate goes into a keychain of its own, deleted below.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          [ -n "$identity" ] || { echo "the certificate holds no Developer ID Application identity"; exit 1; }
+          echo "signing as $identity"
+          rm -f "$RUNNER_TEMP/submit.zip"
+          for bin in dist/redundanet-*-darwin-*/redundanet; do
+            chmod +x "$bin"
+            codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$identity" "$bin"
+            codesign --verify --strict --verbose=2 "$bin"
+            zip -q "$RUNNER_TEMP/submit.zip" "$bin"
+          done
+          echo "$APPLE_NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          notary="--key $RUNNER_TEMP/notary.p8 --key-id $APPLE_NOTARY_KEY_ID --issuer $APPLE_NOTARY_ISSUER_ID"
+          xcrun notarytool submit "$RUNNER_TEMP/submit.zip" $notary --wait --timeout 30m --output-format json > "$RUNNER_TEMP/notary.json"
+          cat "$RUNNER_TEMP/notary.json"
+          status=$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))' < "$RUNNER_TEMP/notary.json")
+          if [ "$status" != Accepted ]; then
+            id=$(python3 -c 'import json, sys; print(json.load(sys.stdin).get("id", ""))' < "$RUNNER_TEMP/notary.json")
+            [ -n "$id" ] && xcrun notarytool log "$id" $notary || true
+            echo "notarization ended as '$status'"; exit 1
+          fi
+      - name: forget the certificate and the key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/certificate.p12"
+      - name: the signed binaries, for packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-darwin
+          path: agent/dist/redundanet-*-darwin-*/redundanet
+          if-no-files-found: error
+          overwrite: true
+
+  release:
+    needs: [build, sign-windows, sign-macos]
+    # Runs after the signing jobs whether they ran or were skipped for want
+    # of credentials; a failed signing stops the release.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-windows.result != 'failure' && needs.sign-macos.result != 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-posix
+          path: agent/dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-windows
+          path: agent/dist/windows
+      - name: the signed macOS binaries replace the unsigned ones
+        if: needs.sign-macos.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: signed-darwin
+          path: agent/dist
+      - name: the signed Windows binary replaces the unsigned one
+        if: needs.sign-windows.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: signed-windows
+          path: agent/dist/windows
+      - name: archives and checksums
+        run: |
+          set -e
+          version="${GITHUB_REF_NAME#agent/v}"
+          mv dist/windows "dist/redundanet-$version-windows-amd64"
+          for dir in dist/redundanet-*/; do
+            name=$(basename "$dir")
+            case "$name" in
+              *-windows-*) (cd dist && zip -qr "$name.zip" "$name") ;;
+              *) chmod +x "$dir/redundanet"; (cd dist && tar -czf "$name.tar.gz" "$name") ;;
+            esac
+            rm -r "$dir"
           done
           (cd dist && sha256sum * > sha256sums.txt && cat sha256sums.txt)
       - name: index fragment for releases/index.yaml
@@ -64,9 +269,28 @@ jobs:
               echo "      ${t%-*}/${t##*-}: {url: $base/$n, sha256: $(sha256sum "$f" | cut -d' ' -f1), size: $(stat -c %s "$f")}"
             done
           } | tee dist/index-fragment.yaml
+      - name: release notes, starting with the code signing policy
+        env:
+          WINDOWS: ${{ needs.sign-windows.result }}
+          MACOS: ${{ needs.sign-macos.result }}
+        run: |
+          {
+            echo "## Code signing policy"
+            echo
+            case "$WINDOWS" in
+              success) echo "The Windows binary is signed by [SignPath Foundation](https://signpath.org); free code signing provided by [SignPath.io](https://about.signpath.io)." ;;
+              *) echo "The Windows binary is not signed." ;;
+            esac
+            case "$MACOS" in
+              success) echo "The macOS binaries are signed with the maintainer's Apple Developer ID and notarized by Apple." ;;
+              *) echo "The macOS binaries are not signed." ;;
+            esac
+            echo "Every binary is listed with its hash in the signed release index, which the agent verifies before installing. The policy and the team are in the [README](https://github.com/${GITHUB_REPOSITORY}#code-signing-policy)."
+          } | tee "$RUNNER_TEMP/notes.md"
       - name: draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: "agent ${{ github.ref_name }}"
+          body_path: ${{ runner.temp }}/notes.md
           files: agent/dist/*

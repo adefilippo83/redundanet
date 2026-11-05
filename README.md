@@ -220,6 +220,7 @@ graph TD
 - [Quick Start Guide](docs/quickstart.md)
 - [Configuration Reference](docs/configuration.md)
 - [Quotas and allocation](docs/quotas.md)
+- [Joining RedundaNet 3 as an existing member](docs/redundanet3-join.md)
 - [Architecture Overview](docs/architecture.md)
 - [Design RFCs](rfcs/) (plans under discussion; `docs/` describes what runs today)
 
@@ -269,6 +270,26 @@ you review, test, and own what you submit.
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+## Privacy
+
+RedundaNet collects nothing: no accounts, no analytics, no telemetry. What the software sends to hubs, storage servers and GitHub, and what stays on your device, is spelled out in [PRIVACY.md](PRIVACY.md).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+The Windows binary of a release is signed by SignPath Foundation after the maintainer approves the request. The signature says the binary was built by the release workflow of this repository, from the tagged source, on GitHub's runners, and has not changed since; the certificate names SignPath Foundation as the publisher, not RedundaNet. The macOS binaries are signed with the maintainer's Apple Developer ID and notarized by Apple. Linux binaries carry no signature of their own. On every platform the agent installs only what the [release index](releases/README.md) names, after verifying the maintainer's signature on the index, so a self-update never rests on the platform's signing alone. Each release page states whether its binaries are signed.
+
+Team:
+
+- Authors, who commit without a further review: Alessandro De Filippo ([@adefilippo83](https://github.com/adefilippo83)).
+- Reviewers, who review every change proposed by anyone else before it is merged: the same.
+- Approvers, who approve each signing request: the same.
+
+Team members use two-factor authentication on GitHub and SignPath. Every change, AI-assisted ones included, is reviewed by the maintainer before it reaches `main`, and releases are built only from tags on `main`.
+
+Privacy: RedundaNet collects nothing; see [PRIVACY.md](PRIVACY.md). The agent installs a service only when asked (launchd on macOS, systemd on Linux, a scheduled task at logon on Windows) and says what it did; `redundanet service uninstall` removes it.
 
 ## Acknowledgments
 

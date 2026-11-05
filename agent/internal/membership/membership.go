@@ -15,6 +15,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 // Files kept in the data directory.
@@ -223,7 +224,7 @@ func (m *Membership) Status() Status {
 		st.SignedAt = m.signature.IssuedAt
 		st.Members = len(m.manifest.Members)
 		st.Hubs = len(m.manifest.Hubs)
-		if v := m.manifest.Network.MinVersion; v != "" && m.cfg.Version != "" && m.cfg.Version != "dev" && versionLess(m.cfg.Version, v) {
+		if v := m.manifest.Network.MinVersion; v != "" && m.cfg.Version != "" && m.cfg.Version != "dev" && semver.Less(m.cfg.Version, v) {
 			st.NeedsUpdate = v
 		}
 	}
@@ -363,17 +364,4 @@ func httpFetch(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-}
-
-// versionLess compares MAJOR.MINOR.PATCH strings.
-func versionLess(a, b string) bool {
-	var pa, pb [3]int
-	_, _ = fmt.Sscanf(a, "%d.%d.%d", &pa[0], &pa[1], &pa[2])
-	_, _ = fmt.Sscanf(b, "%d.%d.%d", &pb[0], &pb[1], &pb[2])
-	for i := range pa {
-		if pa[i] != pb[i] {
-			return pa[i] < pb[i]
-		}
-	}
-	return false
 }
