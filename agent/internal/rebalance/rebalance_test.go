@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/collector"
@@ -147,7 +145,7 @@ func shareCensus(st *store.Store) func(since uint64) (*wire.ShareCensus, error) 
 	}
 }
 
-func (g *grid) endpoint(m *member, onStream func(identity.Peer, string, *quic.Stream), st *store.Store) *transport.Endpoint {
+func (g *grid) endpoint(m *member, onStream func(identity.Peer, string, wire.Stream), st *store.Store) *transport.Endpoint {
 	t := g.t
 	t.Helper()
 	g.permit(m.dev.ID())

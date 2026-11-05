@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -9,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/quic-go/quic-go"
 
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
@@ -123,7 +122,7 @@ type notAllowed struct{}
 func (*notAllowed) Error() string { return "not in the manifest" }
 
 // echo answers every stream with its own bytes.
-func echo(_ identity.Peer, _ string, s *quic.Stream) {
+func echo(_ identity.Peer, _ string, s wire.Stream) {
 	_, _ = io.Copy(s, s)
 	_ = s.Close()
 }
@@ -402,5 +401,21 @@ func TestShareCensusReachesTheHubInChunks(t *testing.T) {
 	time.Sleep(700 * time.Millisecond)
 	if len(n.shareCensuses(ak)) != before {
 		t.Fatal("an unchanged generation must send nothing")
+	}
+}
+
+func TestNoStreamToOneself(t *testing.T) {
+	n := newTestNet(t, false)
+	ep, id := n.endpoint(seed(1), true, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, err := ep.OpenStream(ctx, id); !errors.Is(err, ErrSelf) {
+		t.Fatalf("stream to oneself: %v", err)
+	}
+	if p := ep.Connect(id).Best(); p != "" {
+		t.Fatalf("a path to oneself: %q", p)
+	}
+	if st := ep.Status(); len(st.Sessions) != 0 {
+		t.Fatalf("a session with oneself: %+v", st.Sessions)
 	}
 }

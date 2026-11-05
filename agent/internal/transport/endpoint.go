@@ -57,7 +57,7 @@ type Config struct {
 	// LoopbackCandidates advertises 127.0.0.1 too, for tests on one machine.
 	LoopbackCandidates bool
 	// OnStream handles a stream a peer opened.
-	OnStream func(peer identity.Peer, path string, s *quic.Stream)
+	OnStream func(peer identity.Peer, path string, s wire.Stream)
 	// Census, when set, supplies the device-level fields of the heartbeat
 	// sent to each hub; the endpoint adds the peers itself.
 	Census func() wire.Census
@@ -175,7 +175,18 @@ func (e *Endpoint) Close() error {
 func (e *Endpoint) LocalAddr() *net.UDPAddr { return e.udp.LocalAddr().(*net.UDPAddr) }
 
 // Connect starts, or returns, the session with a peer and marks it wanted.
+// ErrSelf answers OpenStream for this device's own key. A device does not
+// dial itself: a session to oneself files both ends of the same connection
+// and replaces one with the other for ever. Its own server is reached in
+// process by the caller (the share protocol's LocalOpener).
+var ErrSelf = errors.New("transport: this device does not open streams to itself")
+
 func (e *Endpoint) Connect(peer identity.Key) *Session {
+	if peer == e.cfg.Device {
+		// No session and no rendezvous with oneself; a handle that reports
+		// no path, for callers that connect to every server in a manifest.
+		return &Session{&session{ep: e, peer: peer, ctx: e.ctx, stop: func() {}, seen: map[string]bool{}, dialing: map[string]bool{}, created: time.Now()}}
+	}
 	s := e.session(peer, true)
 	s.mu.Lock()
 	s.wanted = true
@@ -185,7 +196,10 @@ func (e *Endpoint) Connect(peer identity.Key) *Session {
 
 // OpenStream opens a stream to peer on the best live path, waiting for a
 // connection first.
-func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (*quic.Stream, string, error) {
+func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
+	if peer == e.cfg.Device {
+		return nil, "", ErrSelf
+	}
 	s := e.Connect(peer).session
 	for {
 		if conn, path := s.best(); conn != nil {

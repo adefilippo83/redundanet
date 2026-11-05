@@ -2,7 +2,8 @@
 # targets, signs what it has credentials for, writes checksums, prints the
 # fragment to paste into releases/index.yaml (which the maintainer then
 # signs offline with `redundanet release sign`) and opens a draft GitHub
-# release.
+# release whose notes start with the code signing policy, as SignPath
+# Foundation's conditions ask of every release page.
 #
 # Signing is in place behind secrets and does nothing until they exist:
 #
@@ -47,7 +48,7 @@ jobs:
       windows-artifact-id: ${{ steps.unsigned-windows.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
@@ -268,9 +269,28 @@ jobs:
               echo "      ${t%-*}/${t##*-}: {url: $base/$n, sha256: $(sha256sum "$f" | cut -d' ' -f1), size: $(stat -c %s "$f")}"
             done
           } | tee dist/index-fragment.yaml
+      - name: release notes, starting with the code signing policy
+        env:
+          WINDOWS: ${{ needs.sign-windows.result }}
+          MACOS: ${{ needs.sign-macos.result }}
+        run: |
+          {
+            echo "## Code signing policy"
+            echo
+            case "$WINDOWS" in
+              success) echo "The Windows binary is signed by [SignPath Foundation](https://signpath.org); free code signing provided by [SignPath.io](https://about.signpath.io)." ;;
+              *) echo "The Windows binary is not signed." ;;
+            esac
+            case "$MACOS" in
+              success) echo "The macOS binaries are signed with the maintainer's Apple Developer ID and notarized by Apple." ;;
+              *) echo "The macOS binaries are not signed." ;;
+            esac
+            echo "Every binary is listed with its hash in the signed release index, which the agent verifies before installing. The policy and the team are in the [README](https://github.com/${GITHUB_REPOSITORY}#code-signing-policy)."
+          } | tee "$RUNNER_TEMP/notes.md"
       - name: draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: "agent ${{ github.ref_name }}"
+          body_path: ${{ runner.temp }}/notes.md
           files: agent/dist/*

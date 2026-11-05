@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/quic-go/quic-go"
-
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
 
 // Opener opens a stream to a peer; the endpoint's OpenStream fits.
-type Opener func(ctx context.Context, peer identity.Key) (*quic.Stream, string, error)
+type Opener func(ctx context.Context, peer identity.Key) (wire.Stream, string, error)
 
 // Client speaks the protocol to storage servers.
 type Client struct{ open Opener }
@@ -21,16 +19,35 @@ type Client struct{ open Opener }
 // NewClient wraps an opener.
 func NewClient(open Opener) *Client { return &Client{open: open} }
 
+// PathLocal is the path to this device's own server: in process.
+const PathLocal = "local"
+
+// LocalOpener opens streams to this device's own server without the
+// network: each is an in-process pair whose far end goes to handle, as the
+// endpoint hands it a peer's stream. A storage node is a server of its own
+// backups; dialled over the mesh it would be both ends of one connection,
+// which a session cannot hold, so the engine routes its own key here.
+func LocalOpener(self identity.Peer, handle func(identity.Peer, string, wire.Stream)) Opener {
+	return func(ctx context.Context, _ identity.Key) (wire.Stream, string, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
+		near, far := wire.Loopback()
+		go handle(self, PathLocal, far)
+		return near, PathLocal, nil
+	}
+}
+
 // done releases a stream whose last byte has been read: the read half is
 // cancelled with code 0 and the write half closed, so quic-go frees the
 // stream on both ends and the server's stream limit gets its credit back.
 // Without it a client leaks one half-open stream per request.
-func done(st *quic.Stream) {
+func done(st wire.Stream) {
 	st.CancelRead(0)
 	_ = st.Close()
 }
 
-func (c *Client) exchange(ctx context.Context, peer identity.Key, req *Request) (*quic.Stream, *Response, error) {
+func (c *Client) exchange(ctx context.Context, peer identity.Key, req *Request) (wire.Stream, *Response, error) {
 	st, _, err := c.open(ctx, peer)
 	if err != nil {
 		return nil, nil, err
@@ -103,7 +120,7 @@ func (c *Client) PutShare(ctx context.Context, peer identity.Key, sd *object.Sig
 // PutStream is a share being sent block by block: what one encoding pass
 // over the spool feeds, one stream per share, all at once.
 type PutStream struct {
-	st       *quic.Stream
+	st       wire.Stream
 	geom     object.Geometry
 	resume   int
 	complete bool

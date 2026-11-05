@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -19,6 +20,17 @@ func localClient(dir string) (*api.Client, error) {
 	d, err := dataDir(dir)
 	if err != nil {
 		return nil, err
+	}
+	// On a node set up by the node installer the agent's data lives under
+	// /var/lib/redundanet3. Root with no agent of its own talks to that
+	// one, so `sudo redundanet backup list` works without the flags the
+	// service user needs.
+	if dir == "" && os.Getenv("REDUNDANET_DATA_DIR") == "" && runtime.GOOS == "linux" && os.Geteuid() == 0 {
+		if _, err := os.Stat(filepath.Join(d, "api.addr")); err != nil {
+			if _, err := os.Stat(filepath.Join(nodeDataDir, "api.addr")); err == nil {
+				d = nodeDataDir
+			}
+		}
 	}
 	addr, token, err := api.ReadClientConfig(d)
 	if err != nil {
