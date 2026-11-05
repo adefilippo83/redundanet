@@ -16,16 +16,34 @@ Phase 1, the control plane, is under construction. What exists:
 | `internal/release` | The signed release index: versions, channels, withdrawn flags, per-target assets with hashes, and the release key's rotation chain; download with hash and size checks and extraction of the executable from tar.gz or zip | Done, with tests |
 | `internal/update` | The two-stage self-update: fetch and verify the index, pick a release (channel, `min_version`, failed ones never retried), download, run the candidate on probation, rename it into place keeping the old binary, ask to be restarted | Done, with tests |
 | `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
-| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the synthetic relay address | Done |
-| `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one | Done, with end-to-end tests |
-| `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, status | Done, tested through the transport |
+| `internal/api` | The local HTTP API and page on 127.0.0.1: bearer token in `api.token` for the CLI, a session cookie (HttpOnly, SameSite=Strict) that a one-time link from `redundanet open` starts for the browser, a CSRF token on every change, Host and Origin checks on every request, no GET that changes anything; update check, apply and retry as actions | Done, with tests |
+| `internal/logbuf` | The last 500 log records in memory, for the page and `redundanet logs` | Done, with tests |
+| `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the hub-signed repair task with the worker's report and the surplus release hint, the synthetic relay address, and the stream interface the protocols speak with its in-process loopback pair | Done, with tests |
+| `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one; no session with oneself, that path is refused | Done, with end-to-end tests |
+| `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, the census hook, status | Done, tested through the transport |
+| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules, the repair scheduler (phase 2, M5: signed tasks to volunteering nodes, the one-scheduler rule between hubs, expiry and retry, blocked when the live servers lack room above their floors, surplus hints), joins them with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement and repair counts; never an address, a path or a storage index | Done, with tests |
+| `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
+| `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
+| `internal/store` | A storage node's share store (phase 2, M2): share files in the object format, the SQLite index, partial and complete states with resume, usage per owner, the free-space floor, root records, the census delta, the scrub, the marker that ties the store to its disk, and the server's half of deletion (M5): delete tokens applied past the 7-day immunity on the server's own clock, tombstones purged after the 30-day window with the record kept, undelete within it, the per-owner listing, and membership-driven deletion after the grace period | Done, with tests |
+| `internal/repair` | The node side of repair without the owner (phase 2, M5): a worker that takes the hub's signed task, fetches the descriptor and k shares from the holders (its own store for shares it holds), regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says (its own store when the task names it), then reports; and the surplus release, given up only after confirming with the other holders directly that every share number stays complete | Done, with tests |
+| `internal/shareproto` | The storage protocol between devices: one stream per request, CBOR messages, blocks streamed; the server applies the RFC's checks in order, the client resumes a share from where the server stopped; roots travel as signed envelopes; a device reaches its own server over the local opener, in process, so a storage node never dials itself | Done, with tests through a real hub |
+| `internal/engine` | The client engine (phase 2, M3): the RFC's `Engine` interface, its native implementation over the storage protocol (spool and dedup, one encoding pass feeding a stream per share, placement across members with the small-network doubling and a retry on a refusal, verified reads and ranges, check and the owner's repair, roots sealed under the member's root key and confirmed by a majority of servers, delete tokens to every server, the per-member listing, reads of a tombstoned object within the window, and a cache whose word is probed on the servers once it is six days old) and a fake with the same contract for the jobs' tests | Done, with tests |
+| `internal/rebalance` | The owner's side of a k-of-n change (phase 2, M5): with a transition in the manifest, each device walks its snapshots, reads every object still under the old encoding, stores it again under the new one, rewrites the directories up to the top and the index, updates the scan rows before anything is published, and publishes the root after each snapshot; a stopped run resumes where it was | Done, with tests |
+| `internal/diag` | The diagnostics bundle (phase 2, M6): one zip the member sends by hand, built from the running agent when it answers and from the data directory and the service log when it does not; an allowlist of versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with folders as label plus hash, restore tests, cleanup, error kinds and counts, a disk check, and the last log lines with every path, URL and address redacted | Done, with tests |
+| `internal/cleanup` | The owner's cleanup job (phase 2, M5): the reachable set over every root of the member, walked on the grid, against what the servers hold for the member; a delete token for each object nothing references; refused without the root quorum, when any root or directory cannot be read, and when a run would delete more than half of what the grid holds unless forced; roots of devices revoked longer ago than the window no longer count | Done, with tests |
+| `internal/localdb` | The device's local database: objects by plaintext hash and encoding, placement, the root version counter; a cache, rebuilt when lost | Done, with tests |
+| `internal/snapshot` | The snapshot format (phase 2, M4): directory objects with versioned entries (file, directory, symlink, skipped; inline bytes under 256 B; chunk capabilities above 64 MiB), the index object listing a device's snapshots, and retention | Done, with tests |
+| `internal/backup` | The backup job against the engine interface: scan with the per-platform change key and the rolling re-hash, default excludes, per-file failures counted and listed, dedup through the local database and the engine, chunking, directory and index objects bottom-up, the root published even after an interruption as a partial snapshot; the change-detection key with the file id and change time on every platform (a handle per file on Windows), cloud placeholders skipped and counted (iCloud's evicted files on macOS, OneDrive's online-only files on Windows), the privacy probe that reports a folder the service cannot read with the setting to change before a run, and default excludes for macOS, Windows and Linux | Done, with tests on the fake engine |
+| `internal/restore` | List a member's device roots and indexes, browse a snapshot without fetching what is not asked for, restore with temporary names and renames, mtime and mode after the data, name mapping and a report that is complete with exceptions, and the unattended restore test | Done, with tests |
+| `internal/jobs` | The agent's job runner: `backup.yaml` with the sets, the schedule (daily runs, monthly restore test), one run at a time, restore in the background, and the status the page and the census show | Done, with tests |
+| `internal/semver` | Version strings: MAJOR.MINOR.PATCH with an optional pre-release suffix such as `-alpha.1`, ordered as Semantic Versioning orders them, shared by the release index, the manifest's `min_version` and the running-version check | Done, with tests |
 | `internal/version` | The build's version string | Done |
-| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update`, `release`, `version` | Growing |
+| `cmd/redundanet` | The binary. Today: `identity`, `operator`, `manifest`, `validate`, `network`, `agent`, `hub`, `service`, `update` (check, apply, status, retry), `release`, `object` (put, get, has, check, repair, delete), `storage` (has, drop), `backup` (add, remove, list, run, verify, cleanup, rebalance), `restore` (list, browse, start, status), `status`, `open`, `logs`, `diagnostics`, `version` | Growing |
 
-Next, in order: the local page and API, the census heartbeat and the
-hub's status collector, the hub's manifest mirror and the join endpoint,
-the container build for today's nodes.
+Next, in order: the census heartbeat and the hub's status collector, the
+hub's manifest mirror and the join endpoint, the container build for
+today's nodes.
 
 ## Running it today
 
@@ -40,27 +58,167 @@ redundanet network join <descriptor>
 
 redundanet network status [--refresh]
 
-redundanet hub   --network NAME [--udp :4433] [--tcp :4443]
-redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only]
+redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
+                 [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
+redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
+redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
+redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
+redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
+redundanet diagnostics [--out FILE]
+redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
 
 Both long-lived commands need this device's identity file and a joined
 network; they refresh the manifest every five minutes, apply a newer
 signed revision on the spot, and close connections to devices the new
-policy no longer admits. `--manifest FILE` runs them from a signed file
+policy no longer admits. Every agent sends each hub a census heartbeat when
+the channel comes up and every minute after: version, uptime, platform,
+roles, the manifest revision it applied, free space on `--storage-path` for
+a storage device, and which peers it reaches directly or through a relay.
+A storage device also opens its store in the `redundanet3` directory of
+`--storage-path`, serves the storage protocol on the mesh, scrubs its shares
+at a rate that covers them monthly, and sends each hub its share census as
+deltas since the generation that hub last received, with the date its
+oldest integrity check dates from and its free-space floor.
+The agent runs the backup sets in `backup.yaml` of its data directory
+(daily by default, two minutes after start first, and on `backup run`),
+the restore test weekly (a file saved by an earlier version with the
+monthly default it then had moves to weekly on load), the cleanup
+weekly, and restores in the background; `backup` and `restore` are thin
+clients of its API. Every restore test is kept in the local database and
+listed on the local page and by `backup list`, and the last one survives
+a restart. The heartbeat carries the day of the last backup, the day of
+the last passing restore test and how many weeks in a row had a passing
+one, which the hub page shows per member: the month the G2 gate measures
+reads as "4 weeks in a row" there.
+On macOS a service reading Documents, Desktop or Downloads needs Full
+Disk Access, and the agent says so: `backup add` probes each folder as
+the service and refuses one the system guards, with the setting to
+change, and the local page and `backup list` show the same line for a
+folder that becomes unreadable later. A OneDrive online-only file on
+Windows and an evicted iCloud file on macOS are listed as skipped, "not
+on this computer", never pulled down; the local page and `backup list`
+count the skipped files by reason, and `restore browse` shows each one's. The change-detection key carries
+the file id and change time on Windows too, through a handle per file.
+When something is wrong, `redundanet diagnostics` writes a bundle to send
+by hand, and the local page has a button for it. It works with the agent
+down, from the data directory and the service log, and holds only what
+the RFC allows: versions, the manifest revision, the service state, hubs
+and peers as counts, the backup sets with each folder as the set's label
+plus a hash, the restore tests, the cleanup, warnings and errors by kind
+and count, a disk check, and the last log lines with every path, URL and
+address replaced. Nothing is uploaded.
+Deletion follows the RFC's two phases and its one invariant. The cleanup
+job (`backup cleanup`, weekly on its own) reads every root of the member
+under the quorum rule, walks the indexes, snapshots and directories on
+the grid to the reachable set, lists what every server holds for the
+member, and sends a delete token signed by the device for each object
+nothing references; it refuses to run when a root or a directory cannot
+be read, and refuses to delete more than half of what the grid holds
+unless forced. A server tombstones the object only when the owner has
+not touched it for 7 days on the server's own clock and the token is
+newer than the last touch; within the 30-day window the owner's devices
+still read it, `undelete` brings it back, and a new upload clears it;
+after the window the shares go and the record stays, so repair never
+fills a deleted object in. Pruning a snapshot drops it from the index and
+leaves the deletion of what it alone referenced to the next cleanup. Two
+checks on the device keep a root from pointing at a deleted object: a
+file that comes back after a run away is probed on the servers before its
+cached capability is reused, and an object the cache has not confirmed
+for six days is probed too; both touch the object on every server. A
+server that finds a member leaving or unlisted notes the time and purges
+their shares and roots only once the manifest's `grace_days` have run on
+its own clock with the manifest still saying so; a member who reappears
+clears the note.
+A k-of-n change is declared in the manifest as `encoding_transition:
+{from, to, deadline}` beside the new `encoding`; `validate` refuses a
+transition whose `to` is not the encoding and warns once the deadline
+has passed. Until the deadline every server accounts shares under the
+old encoding at zero, so a member near budget converts without deleting
+first; the hub page shows the conversion as a bar, converted of all
+objects, with the old encoding's bytes and whether they count yet, and
+per member the objects still to convert. Each device converts what its
+own root references (`backup rebalance`, and on its own every six hours
+while a transition is declared): fetch, decode, store under the new
+encoding, rewrite the directories and the index, publish the root after
+each snapshot. The old objects fall to the cleanup. Once every member
+has converted, the operators remove the transition.
+No address and no path travel in it. The hub's collector keeps the
+heartbeats in `census.json` and the share census in `placement.sqlite`,
+the grid-wide placement table of the RFC's "Health" section: per object
+the distinct shares held on servers that are not dead (a server is down
+after ten minutes without a heartbeat and still counts; dead after
+`repair_after_hours`, 72 by default, and counts no more), the spread over
+servers against min(n, servers not dead), surplus, tombstones, and
+whether it needs repair at once (it had been fully placed) or after the
+24-hour quiescence window (it never was). The page and `status.json`
+carry the counts only: objects per number of copies, under-placed,
+unreadable, due for repair, and per member its under-placed objects.
+Every minute the hub that schedules repair (the first in manifest order
+whose status page is fresh; the others take over when it has been gone
+ten minutes) turns each object due into a task signed by its device key:
+the missing share numbers, where each goes (a live server with room above
+its floor that does not hold it, servers holding nothing of the object
+first, at most ceil(n / servers not dead) per server, never a plan that
+leaves the object on fewer than k servers), the holders to fetch from,
+and an expiry. A storage node volunteers as a worker in its heartbeat;
+the task goes to one that is not a target when there is one, at most two
+tasks at a time each. The worker fetches the descriptor and k shares,
+regenerates the missing numbers without the key, checks them against the
+signed share roots and stores them; the receiving server checks the task
+before it accepts a share from a device that is not the owner's, lets a
+repair write pass the owner's cap but never its own floor, and never
+crosses a tombstone. The task closes when the share census shows the
+object placed, when the worker reports, or at its expiry, after which the
+object waits ten minutes before another task. When no live server has
+room for a share the page says "blocked: X short above the floors", which
+tells the community to add disk. When a server returns from the dead and
+an object has more complete shares than n, the hub hints at the holder
+with the most shares; that holder asks the other holders itself and gives
+its copy up only once every share number stays complete without it.
+Tasks live in `placement.sqlite` with the table, so a hub restart neither
+loses nor doubles them. `storage drop`, run on a node as the service user
+beside the running agent, removes one share on purpose: the census
+reports the loss within seconds and, since the object had been fully
+placed, the hub issues a task at once. That is how repair is drilled on
+a live network, and `object check CAP` from any device of the owner
+prints the storage index and the holders to pick from.
+The collector serves the status page and `status.json` on
+`--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
+so today's nodes stay visible beside the new devices until G3. With
+`--publish` it also PUTs `status.json` and `index.html` under that URL every
+minute with the bearer token from `--publish-token-file`, which is how the
+fly.io page serves the new network under `/v3/` while the hub has no domain.
+A hub entry in the manifest names its QUIC relay as `relay: host:port` and,
+when its TLS carrier is not on port 443 of the same host, `tcp: host:port`.
+`--manifest FILE` runs them from a signed file
 instead, trusting the operators that file lists, for tests and for the hub
 that serves the repository it is listed in. The agent answers every stream
 with its own bytes, since nothing speaks over the mesh yet, and logs a
 status snapshot every minute.
 
 ```
-redundanet service install --network NAME     # this binary, as a user service that starts at login
+redundanet status [--json]      # what the running agent sees, through its local API
+redundanet open                 # the local page, through a one-time link that logs the browser in
+redundanet logs [-n 100]
+
+redundanet service install --network NAME [--channel early]  # this binary, as a user service that starts at login
 redundanet service status | uninstall
 
 redundanet update check | apply | status [--channel early]
 redundanet release keygen --key release.key                 # maintainer, once, offline
 redundanet release sign --key release.key --index releases/index.yaml
 ```
+
+The agent serves its API and page on `127.0.0.1:4470` (`--api`), never on
+the LAN; a headless node is reached over an SSH tunnel. The CLI finds the
+address and the bearer token in the data directory (`api.addr`,
+`api.token`, mode 0600). A browser gets in only through `redundanet open`,
+whose link works once and for two minutes and sets a session cookie; every
+form on the page carries a CSRF token, the API refuses any request whose
+Host is not loopback and any change whose Origin is not the page, and no
+GET changes anything. These are the guards the RFC's Browser safety
+section lists.
 
 Self-update needs a release key embedded at build time (`-X
 .../version.ReleaseKey=`); a plain build has none and says so. The running
@@ -102,9 +260,18 @@ go test -race ./...
 go build ./cmd/redundanet
 ```
 
+`deploy/hub/` holds the systemd unit and the install runbook for the hub on
+hub-hetzner; `deploy/node/` the unit, installer and runbook for a storage node.
+
 Go 1.27 or later, no cgo. `.github/workflows/agent.yml` runs the tests on
-Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`
-builds a draft release with checksums (`agent-release.yml`).
+Linux, macOS and Windows and cross-compiles every target; a tag `agent/vX.Y.Z`,
+or `agent/vX.Y.Z-alpha.N` for a pre-release, builds a draft release with
+checksums (`agent-release.yml`). The Windows binary carries a version
+resource (product name and version in its properties) generated at release
+time from `cmd/redundanet/versioninfo.json`. The workflow signs the Windows
+binary through SignPath Foundation and signs and notarizes the macOS
+binaries with a Developer ID as soon as the secrets its header names exist;
+until then those jobs are skipped and the binaries ship unsigned.
 
 ## Identity commands
 
@@ -153,6 +320,26 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
     operators listed in the manifest itself, which proves consistency, not
     authenticity; agents pin the keys from the network descriptor they
     joined with.
+
+sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
+    Phase 3, on a node that runs the agent beside the RedundaNet 2 stack:
+    retires the stack. Refuses while the folder backup-sync pushed to the
+    old grid is not held by a native set with a complete run and a passed
+    restore test on this device, or while no hub is connected; --force
+    overrides, and the plan names what is lost. The plan lists the stack's
+    containers by service (asked of Docker itself, since compose does not
+    see a service whose profile is off) and every profile the compose file
+    defines. Then one `docker compose down` through the installed compose
+    file, its override and .env, with every profile named, so the Tahoe
+    services go too, every container at once and tinc last by its
+    dependencies; a container that survives puts the stack back and fails
+    the command, since it would run on tinc's dead network namespace.
+    Then a marker in the data directory. The compose files, the .env and
+    the Tahoe share directories stay on disk; the shares go on the
+    network's stop date, not here. --rollback is `compose up -d
+    --force-recreate` naming every service the marker recorded, tinc
+    first by its dependencies, and removes the marker: the stack is never
+    restarted one container at a time. The agent is untouched throughout.
 ```
 
 ## Encodings, fixed here
@@ -160,6 +347,9 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
 - Keys and device IDs: 32 bytes as 52 lowercase base32 characters.
 - Signed records: deterministic CBOR (RFC 8949 core), signature by Ed25519
   over `"redundanet/3/<domain>\0" || record`, one domain per record kind.
+- Protocol messages (channel frames, share messages): the same CBOR, but
+  a receiver skips fields it does not know, so devices and hubs may run
+  different versions; signed records stay strict.
 - Key derivation: HKDF-SHA256 from the seed with the labels in
   `internal/identity/member.go`; the test `TestKnownAnswers` pins them.
 - Display code: ten groups of four base32 characters of a hash of the key.
@@ -170,6 +360,9 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
   inviter's device under the domains `invite` and `invite-confirmation`; the
   manifest keeps the nonce, the expiry and both signatures in `vouched_by`.
 - TLS: 1.3 only, ALPN `redundanet/1`, no resumption, a self-signed Ed25519
-  leaf with the device certificate in a critical extension under a
-  provisional OID (see `tls.go`; it moves under an IANA enterprise number
-  before 3.0.0).
+  leaf with the device certificate in a critical extension under the
+  project's OID 1.3.6.1.4.1.67508.1.1 (IANA private enterprise number
+  67508, arc .1 for RedundaNet 3, .1.1 for this extension). Verification
+  also accepts the provisional arc 2.25.1409274851 the extension lived
+  under before the number was assigned (presented until alpha.19, verified
+  until 3.0.0; see `tls.go`).

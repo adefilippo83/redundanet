@@ -150,31 +150,33 @@ func TestParseAndValidateFixture(t *testing.T) {
 }
 
 func TestTransitionalManifestKeepsV2Keys(t *testing.T) {
-	// The live RedundaNet 2 manifest, with the v3 keys appended: what main
-	// carries during the migration.
+	// The live manifest: RedundaNet 2 keys with the v3 keys beside them,
+	// what main carries during the migration. It must parse with the v2
+	// keys set aside and validate without errors.
 	live, err := os.ReadFile("../../../manifests/manifest.yaml")
 	if err != nil {
 		t.Skip("live manifest not beside the module")
 	}
 	live = []byte(strings.ReplaceAll(string(live), "\r\n", "\n")) // a Windows checkout has CRLF
-	f := newFixture(t)
-	v3 := f.yaml(t)
-	// Merge: the v3 fixture's network section lines go under the live one.
-	v3 = strings.Replace(v3, "network:\n  name: testnet\n", "", 1)
-	v3 = strings.Replace(v3, "  encoding: {k: 2, n: 4}\n  reserve_percent: 15\n  grace_days: 30\n  min_version: 3.0.0\n  signature_max_age_days: 90\n  quota_headroom: 2\n  objects_per_gb: 1000\n  repair_after_hours: 72\n", "", 1)
-	liveStr := strings.Replace(string(live), "network:\n  name: redundanet\n", "network:\n  name: redundanet\n  encoding: {k: 2, n: 4}\n  reserve_percent: 15\n  grace_days: 30\n  min_version: 3.0.0\n  signature_max_age_days: 90\n  quota_headroom: 2\n  objects_per_gb: 1000\n  repair_after_hours: 72\n", 1)
-	m, err := Parse([]byte(liveStr + v3))
+	m, err := Parse(live)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Network.Name != "redundanet" || len(m.Members) != 2 {
+	e := m.Network.Encoding
+	if m.Schema != 3 || m.Network.Name != "redundanet" || e.K < 1 || e.N < e.K || len(m.Operators) == 0 || len(m.Hubs) == 0 || len(m.Members) == 0 {
 		t.Fatalf("transitional parse: %+v", m.Network)
 	}
-	// The vouch is for network testnet, so it fails here; everything else must pass.
+	// The encoding changes with the community's decisions; what holds is
+	// that a declared transition targets the encoding in force.
+	if tr := m.Network.EncodingTransition; tr != nil && tr.To != e {
+		t.Fatalf("transition %+v does not target the encoding %+v", tr, e)
+	}
 	for _, p := range m.Validate().Errors() {
-		if !strings.Contains(p.Msg, "vouch") {
-			t.Errorf("unexpected error: %s", p.Msg)
-		}
+		t.Errorf("live manifest: %s", p.Msg)
+	}
+	// A v2-only file is refused, not misread.
+	if _, err := Parse([]byte("network:\n  name: redundanet\nnodes: []\n")); err == nil {
+		t.Fatal("a manifest without schema parsed")
 	}
 }
 
@@ -377,5 +379,84 @@ func TestPolicy(t *testing.T) {
 	p.AddRevocation(rv2)
 	if err := p.Allow(other); err != nil {
 		t.Fatal("a revocation for another network was applied")
+	}
+}
+
+func TestHubTCPAddr(t *testing.T) {
+	h := Hub{Relay: "hub.example.org:4433"}
+	if h.TCPAddr() != "hub.example.org:443" {
+		t.Fatalf("default: %s", h.TCPAddr())
+	}
+	h = Hub{Relay: "[2001:db8::1]:8443", TCP: "[2001:db8::1]:8443"}
+	if h.TCPAddr() != "[2001:db8::1]:8443" {
+		t.Fatalf("explicit: %s", h.TCPAddr())
+	}
+	if h = (Hub{Relay: "[2001:db8::1]:4433"}); h.TCPAddr() != "[2001:db8::1]:443" {
+		t.Fatalf("ipv6 default: %s", h.TCPAddr())
+	}
+	m := &Manifest{Hubs: []Hub{{Name: "hub", Relay: "h:4433", TCP: "nocolon"}}}
+	var found bool
+	for _, p := range m.Validate() {
+		found = found || strings.Contains(p.Msg, "tcp must be host:port")
+	}
+	if !found {
+		t.Fatal("a tcp entry without a port was accepted")
+	}
+}
+
+func TestEncodingTransition(t *testing.T) {
+	f := newFixture(t)
+	withTransition := func(from, to, deadline string) func(*string) {
+		return func(s *string) {
+			*s = strings.Replace(*s, "  encoding: {k: 2, n: 4}\n", "  encoding: "+to+"\n  encoding_transition: {from: "+from+", to: "+to+", deadline: "+deadline+"}\n", 1)
+		}
+	}
+	m := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 4}", "{k: 2, n: 3}", "2030-01-01")))
+	if errs := m.Validate().Errors(); len(errs) != 0 {
+		t.Fatalf("a valid transition: %v", errs)
+	}
+	tr := m.Network.EncodingTransition
+	if tr == nil || tr.From != (Encoding{2, 4}) || tr.To != (Encoding{2, 3}) || m.Network.Encoding != (Encoding{2, 3}) {
+		t.Fatalf("parsed: %+v", tr)
+	}
+	d, err := tr.DeadlineTime()
+	if err != nil || !d.Equal(time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("deadline time: %v %v", d, err)
+	}
+	if from, ok := m.Converting(time.Date(2029, 12, 31, 12, 0, 0, 0, time.UTC)); !ok || from != (Encoding{2, 4}) {
+		t.Fatalf("converting before the deadline: %v %v", from, ok)
+	}
+	if _, ok := m.Converting(time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)); !ok {
+		t.Fatal("the deadline day still converts")
+	}
+	if _, ok := m.Converting(time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)); ok {
+		t.Fatal("past the deadline still converts")
+	}
+	plain := mustParse(t, f.yaml(t))
+	if _, ok := plain.Converting(time.Now()); ok {
+		t.Fatal("converting without a transition")
+	}
+	// Refusals and the warning.
+	same := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 3}", "{k: 2, n: 3}", "2030-01-01")))
+	if errs := same.Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "same encoding") {
+		t.Fatalf("same from and to: %v", errs)
+	}
+	mismatch := mustParse(t, f.yaml(t, func(s *string) {
+		*s = strings.Replace(*s, "  encoding: {k: 2, n: 4}\n", "  encoding: {k: 2, n: 4}\n  encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2030-01-01}\n", 1)
+	}))
+	if errs := mismatch.Validate().Errors(); len(errs) != 1 || !strings.Contains(errs[0].Msg, "must equal") {
+		t.Fatalf("to not the encoding: %v", errs)
+	}
+	past := mustParse(t, f.yaml(t, withTransition("{k: 2, n: 4}", "{k: 2, n: 3}", "2020-01-01")))
+	ps := past.Validate()
+	if len(ps.Errors()) != 0 {
+		t.Fatalf("a past deadline is not an error: %v", ps.Errors())
+	}
+	warned := false
+	for _, p := range ps {
+		warned = warned || (p.Level == "warning" && strings.Contains(p.Msg, "has passed"))
+	}
+	if !warned {
+		t.Fatalf("no warning for a past deadline: %v", ps)
 	}
 }

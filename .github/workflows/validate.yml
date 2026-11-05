@@ -45,4 +45,36 @@ jobs:
             echo "== Validating $m =="
             poetry run redundanet validate "$m"
             poetry run python .github/scripts/validate_pr.py "$m"
+            poetry run python .github/scripts/validate_v3_members.py "$m"
+          done
+
+      # The RedundaNet 3 half: the agent's strict parser and the RFC's rules,
+      # then manifest.sig against the operator key. REDUNDANET_OPERATOR_KEY
+      # pins that key; without the variable the check only proves the file
+      # is signed by a key it lists itself.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Validate and verify the RedundaNet 3 manifest
+        env:
+          OPERATOR_KEY: ${{ vars.REDUNDANET_OPERATOR_KEY }}
+        run: |
+          cd agent
+          for m in ../manifests/*.yaml; do
+            grep -q '^schema: 3' "$m" || continue
+            echo "== RedundaNet 3: $m =="
+            go run ./cmd/redundanet validate --manifest "$m"
+            sig="$(dirname "$m")/manifest.sig"
+            if [ -f "$sig" ]; then
+              if [ -n "$OPERATOR_KEY" ]; then
+                go run ./cmd/redundanet manifest verify --manifest "$m" --sig "$sig" --trust "$OPERATOR_KEY"
+              else
+                go run ./cmd/redundanet manifest verify --manifest "$m" --sig "$sig"
+              fi
+            else
+              echo "no manifest.sig beside $m: agents will not follow it until it is signed"
+            fi
           done

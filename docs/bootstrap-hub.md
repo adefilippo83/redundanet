@@ -205,3 +205,23 @@ services manually, recreate them as a group, not individually.
 - **Growing the fleet**: nothing else to configure — the join pipeline adds
   nodes to the manifest, and every node's manifest-sync sidecar (the hub
   included) picks up changes within `SYNC_INTERVAL` (300s).
+
+
+## RedundaNet 3 status under /v3/
+
+The RedundaNet 3 hub on hub-hetzner has no domain of its own, so the fly.io
+page serves its status page and `status.json` under
+`https://redundanet-hub.fly.dev/v3/`. The Hetzner hub PUTs both files there
+every minute with a bearer token; the fly server stores them on the volume
+and keeps serving the last copy if the hub goes quiet (the page carries a
+`<!-- stale since ... -->` marker after five minutes, and every response has
+an `X-Published-At` header).
+
+```bash
+token=$(openssl rand -hex 32)
+fly secrets set REDUNDANET_V3_PUBLISH_TOKEN="$token"   # restarts the machine
+# the same token goes to hub-hetzner, root-only, for the hub's --publish-token-file
+```
+
+Without the secret, PUTs are refused with 503 and `/v3/` answers 404 until
+something has been published.

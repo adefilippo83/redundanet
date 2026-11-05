@@ -8,8 +8,10 @@ a key the index's rotation chain hands over to.
 
 To publish a release:
 
-1. Tag `agent/vX.Y.Z`; the `agent release` workflow builds the assets,
-   opens a draft release and prints the index fragment for them.
+1. Tag `agent/vX.Y.Z`, or `agent/vX.Y.Z-alpha.N`, `-beta.N`, `-rc.N` for a
+   pre-release, which sorts before the release it precedes; the `agent
+   release` workflow builds the assets, opens a draft release and prints the
+   index fragment for them.
 2. Paste the fragment into `index.yaml`, raise `revision` by one, set the
    channel (`early` first, `stable` once the early members are fine).
 3. Sign offline: `redundanet release sign --key release.key --index releases/index.yaml`.

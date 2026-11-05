@@ -193,3 +193,66 @@ func TestSigURL(t *testing.T) {
 		t.Fatal(sigURL("https://x/releases/index.yaml"))
 	}
 }
+
+func TestStatusReportsTheServiceChannel(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	u, _ := newUpdater(t, r, dir, nil)
+	u.cfg.Channel = release.ChannelEarly
+	if _, err := u.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Another process, such as the CLI's `update status`, opens the same
+	// state with the default channel and must see the one the service uses.
+	other, _ := newUpdater(t, r, dir, nil)
+	if got := other.Status().Channel; got != release.ChannelEarly {
+		t.Fatalf("channel reported: %q", got)
+	}
+}
+
+func TestRetryForgetsAFailure(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	u, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("candidate crashed") })
+	rel, err := u.Check(context.Background())
+	if err != nil || rel == nil {
+		t.Fatalf("check: %v %v", rel, err)
+	}
+	if err := u.Apply(context.Background(), rel); err == nil {
+		t.Fatal("a failed probation must fail the apply")
+	}
+	if st := u.Status(); len(st.Failed) != 1 || st.Failed[0] != "3.0.1" {
+		t.Fatalf("failed list: %v", st.Failed)
+	}
+	if err := u.Retry("3.0.2"); err == nil {
+		t.Fatal("retrying a version that did not fail must be refused")
+	}
+	if err := u.Retry("3.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := newUpdater(t, r, dir, nil)
+	if st := again.Status(); len(st.Failed) != 0 {
+		t.Fatalf("the retry was not persisted: %v", st.Failed)
+	}
+}
+
+func TestCheckSeesARetryFromAnotherProcess(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	service, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("candidate crashed") })
+	rel, _ := service.Check(context.Background())
+	if err := service.Apply(context.Background(), rel); err == nil {
+		t.Fatal("a failed probation must fail the apply")
+	}
+	if rel, _ := service.Check(context.Background()); rel != nil {
+		t.Fatal("a failed version must not be offered again")
+	}
+	// The CLI, another process over the same state, forgets the failure.
+	cli, _ := newUpdater(t, r, dir, nil)
+	if err := cli.Retry("3.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if rel, err := service.Check(context.Background()); err != nil || rel == nil || rel.Version != "3.0.1" {
+		t.Fatalf("the service did not see the retry without a restart: %v %v", rel, err)
+	}
+}

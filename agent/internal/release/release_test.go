@@ -191,3 +191,27 @@ func TestDownloadAndExtract(t *testing.T) {
 		t.Fatal("zip extraction")
 	}
 }
+
+func TestPreReleases(t *testing.T) {
+	idx, err := Parse([]byte(indexYAML(1, "3.0.0-alpha.1 early", "3.0.0-alpha.2 early", "3.0.0-rc.1 early")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := idx.Versions(); strings.Join(v, " ") != "3.0.0-rc.1 3.0.0-alpha.2 3.0.0-alpha.1" {
+		t.Fatalf("versions: %v", v)
+	}
+	// An early member on alpha.1 moves to the newest pre-release.
+	if r := idx.Pick("3.0.0-alpha.1", ChannelEarly, "", Target()); r == nil || r.Version != "3.0.0-rc.1" {
+		t.Fatalf("pick from alpha.1: %+v", r)
+	}
+	// A stable member sees no pre-release; the release is above every pre-release.
+	if r := idx.Pick("3.0.0-alpha.1", ChannelStable, "", Target()); r != nil {
+		t.Fatalf("stable member picked a pre-release: %+v", r)
+	}
+	if r := idx.Pick("3.0.0", ChannelEarly, "", Target()); r != nil {
+		t.Fatalf("3.0.0 picked a pre-release: %+v", r)
+	}
+	if _, err := Parse([]byte(indexYAML(1, "3.0.0+build stable"))); err == nil {
+		t.Fatal("build metadata accepted")
+	}
+}

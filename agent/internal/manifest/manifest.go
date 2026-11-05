@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 // Schema is the manifest schema this package reads.
@@ -63,11 +64,36 @@ type Encoding struct {
 	N int `yaml:"n"`
 }
 
-// Transition is a k-of-n change in progress.
+// Transition is a k-of-n change in progress: until the deadline, servers
+// account shares under From at zero, so members convert without first
+// deleting anything; after it they count again.
 type Transition struct {
 	From     Encoding `yaml:"from"`
 	To       Encoding `yaml:"to"`
 	Deadline string   `yaml:"deadline"`
+}
+
+// DeadlineTime is the deadline as the end of that day, UTC.
+func (t *Transition) DeadlineTime() (time.Time, error) {
+	d, err := time.Parse("2006-01-02", t.Deadline)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return d.Add(24 * time.Hour), nil
+}
+
+// Converting reports the encoding whose shares servers account at zero
+// right now: the transition's From, while the deadline has not passed.
+func (m *Manifest) Converting(now time.Time) (Encoding, bool) {
+	t := m.Network.EncodingTransition
+	if t == nil {
+		return Encoding{}, false
+	}
+	deadline, err := t.DeadlineTime()
+	if err != nil || !now.Before(deadline) {
+		return Encoding{}, false
+	}
+	return t.From, true
 }
 
 // Operator is a key whose signature makes a manifest take effect.
@@ -80,9 +106,23 @@ type Operator struct {
 type Hub struct {
 	Name   string
 	Relay  string // host:port of the QUIC relay
+	TCP    string // host:port of the TLS carrier; empty means port 443 on the relay's host
 	Status string // URL of the status page
 	Join   string // URL of the join endpoint
 	Key    identity.Key
+}
+
+// TCPAddr is where the hub's TLS carrier listens: the `tcp` entry, or the
+// RFC's rule, port 443 on the relay's host.
+func (h Hub) TCPAddr() string {
+	if h.TCP != "" {
+		return h.TCP
+	}
+	host := h.Relay
+	if i := strings.LastIndex(h.Relay, ":"); i > 0 {
+		host = h.Relay[:i]
+	}
+	return host + ":443"
 }
 
 // Member is one entry of the `members` list.
@@ -167,6 +207,7 @@ type rawOperator struct {
 type rawHub struct {
 	Name   string `yaml:"name"`
 	Relay  string `yaml:"relay"`
+	TCP    string `yaml:"tcp"`
 	Status string `yaml:"status"`
 	Join   string `yaml:"join"`
 	Key    string `yaml:"key"`
@@ -256,7 +297,7 @@ func Parse(data []byte) (*Manifest, error) {
 		if err != nil {
 			return nil, fmt.Errorf("manifest: hubs[%d] %q: %w", i, h.Name, err)
 		}
-		m.Hubs = append(m.Hubs, Hub{Name: h.Name, Relay: h.Relay, Status: h.Status, Join: h.Join, Key: k})
+		m.Hubs = append(m.Hubs, Hub{Name: h.Name, Relay: h.Relay, TCP: h.TCP, Status: h.Status, Join: h.Join, Key: k})
 	}
 	for i, r := range raw.Members {
 		k, err := identity.ParseKey(r.Key)
@@ -332,9 +373,8 @@ func (ps *Problems) warnf(format string, args ...any) {
 }
 
 var (
-	nameRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
-	versionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	dateRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
 // Validate applies the rules of the RFC's Membership section. Errors make
@@ -360,6 +400,11 @@ func (m *Manifest) Validate() Problems {
 		}
 		if !dateRe.MatchString(t.Deadline) {
 			ps.errorf("network.encoding_transition.deadline must be a date (YYYY-MM-DD)")
+		} else if d, err := t.DeadlineTime(); err == nil && !time.Now().Before(d) {
+			ps.warnf("network.encoding_transition.deadline %s has passed: shares under %d-of-%d count again; remove the transition once every member has converted", t.Deadline, t.From.K, t.From.N)
+		}
+		if t.From == t.To {
+			ps.errorf("network.encoding_transition: from and to are the same encoding")
 		}
 	}
 	if n.ReservePercent < 0 || n.ReservePercent > 50 {
@@ -368,8 +413,8 @@ func (m *Manifest) Validate() Problems {
 	if n.GraceDays < 1 {
 		ps.errorf("network.grace_days must be at least 1")
 	}
-	if n.MinVersion != "" && !versionRe.MatchString(n.MinVersion) {
-		ps.errorf("network.min_version %q is not MAJOR.MINOR.PATCH", n.MinVersion)
+	if n.MinVersion != "" && !semver.Valid(n.MinVersion) {
+		ps.errorf("network.min_version %q is not MAJOR.MINOR.PATCH with an optional pre-release suffix", n.MinVersion)
 	}
 	if n.SignatureMaxAgeDays < 1 {
 		ps.errorf("network.signature_max_age_days must be at least 1")
@@ -405,6 +450,9 @@ func (m *Manifest) Validate() Problems {
 		seenNames["hub:"+h.Name] = true
 		if !strings.Contains(h.Relay, ":") {
 			ps.errorf("hubs: %q: relay must be host:port", h.Name)
+		}
+		if h.TCP != "" && !strings.Contains(h.TCP, ":") {
+			ps.errorf("hubs: %q: tcp must be host:port", h.Name)
 		}
 		for _, u := range []string{h.Status, h.Join} {
 			if u != "" && !strings.HasPrefix(u, "https://") {

@@ -22,6 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 // Channels.
@@ -154,8 +155,8 @@ func Parse(data []byte) (*Index, error) {
 		return nil, errors.New("release index: revision is required")
 	}
 	for i, r := range idx.Releases {
-		if r.Version == "" || !versionRe.MatchString(r.Version) {
-			return nil, fmt.Errorf("release index: releases[%d]: version %q is not MAJOR.MINOR.PATCH", i, r.Version)
+		if _, err := semver.Parse(r.Version); err != nil {
+			return nil, fmt.Errorf("release index: releases[%d]: %w", i, err)
 		}
 		if r.Channel != ChannelStable && r.Channel != ChannelEarly {
 			return nil, fmt.Errorf("release index: %s: channel must be stable or early", r.Version)
@@ -282,18 +283,9 @@ func (idx *Index) Pick(running, channel, minVersion, target string) *Release {
 	return best
 }
 
-// Less compares MAJOR.MINOR.PATCH strings.
-func Less(a, b string) bool {
-	var pa, pb [3]int
-	_, _ = fmt.Sscanf(a, "%d.%d.%d", &pa[0], &pa[1], &pa[2])
-	_, _ = fmt.Sscanf(b, "%d.%d.%d", &pb[0], &pb[1], &pb[2])
-	for i := range pa {
-		if pa[i] != pb[i] {
-			return pa[i] < pb[i]
-		}
-	}
-	return false
-}
+// Less reports whether version a sorts before version b, pre-releases
+// before the release they precede (see package semver).
+func Less(a, b string) bool { return semver.Less(a, b) }
 
 // Versions lists the index's versions, highest first.
 func (idx *Index) Versions() []string {
