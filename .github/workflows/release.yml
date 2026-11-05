@@ -161,6 +161,6 @@ jobs:
             docker pull ghcr.io/${{ github.repository_owner }}/redundanet-tahoe-client:latest
             ```
 
-            See the [documentation](https://github.com/${{ github.repository }}/blob/main/docs/installation.md) for full installation instructions.
+            See the [documentation](https://github.com/${{ github.repository }}/blob/main/docs/legacy/installation.md) for full installation instructions.
           draft: false
           prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}

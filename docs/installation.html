@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Installation Guide | RedundaNet</title>
-    <meta name="description" content="Install and deploy RedundaNet: PyPI, Poetry, Docker (prebuilt multi-arch images), and Raspberry Pi.">
+    <title>Install | RedundaNet</title>
+    <meta name="description" content="Install the RedundaNet 3 agent on macOS, Windows and Linux, set up a Linux storage node, make your first backup and restore from it.">
+    <link rel="canonical" href="https://redundanet.com/installation.html">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
@@ -42,18 +43,20 @@
         }
 
         /* Navigation */
-        nav {
+        nav.top {
             padding: 20px 0;
             border-bottom: 1px solid var(--border);
         }
 
-        nav .nav-container {
+        nav.top .nav-container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 0 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
         }
 
         .logo {
@@ -77,10 +80,24 @@
             font-size: 20px;
         }
 
-        .nav-right {
+        .nav-links {
             display: flex;
-            align-items: center;
-            gap: 4px;
+            gap: 22px;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
         }
 
         .btn {
@@ -237,6 +254,11 @@
             line-height: 1.7;
         }
 
+        pre.wrap code {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
         code {
             font-family: 'JetBrains Mono', monospace;
             background: var(--bg-card);
@@ -256,6 +278,7 @@
             text-align: left;
             padding: 10px 14px;
             border-bottom: 1px solid var(--border);
+            vertical-align: top;
         }
 
         th {
@@ -285,6 +308,28 @@
             color: var(--text);
         }
 
+        .descriptor {
+            position: relative;
+        }
+
+        .copy-btn {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-dark);
+            color: var(--text);
+            cursor: pointer;
+        }
+
+        .copy-btn:hover {
+            border-color: var(--primary);
+        }
+
         /* Footer */
         footer {
             padding: 40px 0;
@@ -293,287 +338,217 @@
             color: var(--text-muted);
         }
 
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
         footer a {
             color: var(--primary);
             text-decoration: none;
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             .page-header h1 { font-size: 2rem; }
+            .nav-links { gap: 12px 18px; order: 3; width: 100%; }
         }
     </style>
 </head>
 <body>
-    <nav>
+    <nav class="top">
         <div class="nav-container">
             <a href="./" class="logo">
                 <div class="logo-icon">R</div>
                 RedundaNet
             </a>
-            <span class="nav-right">
-                <span data-lang-switcher class="lang-switcher"></span>
-                <a href="./" class="btn btn-secondary" data-i18n="ig.nav.back">← Back to Home</a>
-            </span>
+            <ul class="nav-links">
+                <li><a href="./" data-i18n="nav.home">Home</a></li>
+                <li><a href="download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
+            </ul>
+            <span data-lang-switcher class="lang-switcher"></span>
         </div>
     </nav>
 
     <main class="container">
         <div class="page-header">
-            <h1 data-i18n="ig.header.title">Installation Guide</h1>
-            <p data-i18n="ig.header.subtitle">Everything you need to install and deploy RedundaNet — from a one-line CLI install to a full multi-arch Docker stack on a Raspberry Pi.</p>
+            <h1 data-i18n="ig.header.title">Install</h1>
+            <p data-i18n="ig.header.subtitle">One binary, four commands, and the agent runs as a service at login. A Linux storage node takes three more. Then your first backup set.</p>
         </div>
 
         <nav class="toc" aria-label="On this page">
             <h2 data-i18n="ig.toc.title">On this page</h2>
             <ul>
-                <li><a href="#prerequisites" data-i18n="ig.toc.prereq">Prerequisites</a></li>
-                <li><a href="#methods" data-i18n="ig.toc.methods">Installation methods</a></li>
-                <li><a href="#requirements" data-i18n="ig.toc.requirements">System requirements</a></li>
-                <li><a href="#platforms" data-i18n="ig.toc.platforms">Platform support</a></li>
-                <li><a href="#network" data-i18n="ig.toc.network">Network requirements</a></li>
-                <li><a href="#gpg" data-i18n="ig.toc.gpg">GPG key setup</a></li>
-                <li><a href="#verification" data-i18n="ig.toc.verify">Verification</a></li>
+                <li><a href="#before" data-i18n="ig.toc.before">Before you start</a></li>
+                <li><a href="#macos">macOS</a></li>
+                <li><a href="#windows">Windows</a></li>
+                <li><a href="#linux" data-i18n="ig.toc.linux">Linux laptop or desktop</a></li>
+                <li><a href="#node" data-i18n="ig.toc.node">Linux storage node</a></li>
+                <li><a href="#backup" data-i18n="ig.toc.backup">First backup</a></li>
+                <li><a href="#restore" data-i18n="ig.toc.restore">Restore</a></li>
+                <li><a href="#everyday" data-i18n="ig.toc.everyday">Everyday commands</a></li>
+                <li><a href="#paths" data-i18n="ig.toc.paths">Where things live</a></li>
             </ul>
         </nav>
 
         <div class="guide">
-            <section id="prerequisites">
-                <h2 data-i18n="ig.prereq.title">Prerequisites</h2>
-                <p data-i18n="ig.prereq.intro">Before installing RedundaNet, make sure you have:</p>
+            <section id="before">
+                <h2 data-i18n="ig.before.title">Before you start</h2>
+                <ol>
+                    <li data-i18n="ig.before.s1">Get the archive for your platform from the <a href="download.html">download page</a> and check its sha256 against the signed release index, as that page shows.</li>
+                    <li data-i18n="ig.before.s2">Every device joins the network with the same public descriptor. It is public data: the network name, the hub, the operator keys and where the signed manifest is served. Copy it from here when a command below says <code>&lt;descriptor&gt;</code>.</li>
+                </ol>
+                <div class="descriptor">
+                    <button type="button" class="copy-btn" data-copy="descriptor" data-i18n="ig.before.copy">Copy</button>
+                    <pre class="wrap"><code id="descriptor">rn3:net:pGRodWJzgaJja2V5WCALOLHwmTWbWj-e7yw_Sp8-0D0_janLDwPqi3cCmLIqmmVyZWxheXAyLjI5LjQ2LjI0OTo4NDQzZ25ldHdvcmtqcmVkdW5kYW5ldGlvcGVyYXRvcnOBWCCC5I2B84PJ_b6cZwPgHWAHQ2kTTn_Z86TZrcnx3M_6NWpyZXBvc2l0b3J5eD5odHRwczovL3Jhdy5naXRodWJ1c2VyY29udGVudC5jb20vYWRlZmlsaXBwbzgzL3JlZHVuZGFuZXQvbWFpbg</code></pre>
+                </div>
+                <div class="note" data-i18n="ig.before.phrase"><strong>The phrase.</strong> <code>redundanet identity init</code> shows a twelve-word phrase once and never again. Write it down and keep it like a password: your member key comes from it, and so does every device you certify. There is no reset. <code>--passphrase</code> seals the identity file on disk.</div>
+                <p data-i18n="ig.before.long">This page is the short form. The long one, with every option, is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.md">docs/install.md</a> on GitHub.</p>
+            </section>
+
+            <section id="macos">
+                <h2>macOS</h2>
+                <p data-i18n="ig.mac.intro">Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. Unpack the archive, put the binary on your PATH, and run the four commands.</p>
+                <pre><code>tar -xzf redundanet-3.0.0-darwin-arm64.tar.gz
+sudo mv redundanet-3.0.0-darwin-arm64/redundanet /usr/local/bin/redundanet
+
+redundanet identity init --network redundanet      # the phrase, shown once
+redundanet network join &lt;descriptor&gt;
+redundanet service install --network redundanet    # a launchd agent, starts at login
+redundanet open                                    # the local page in your browser</code></pre>
                 <ul>
-                    <li><strong>Python 3.11+</strong> <span data-i18n="ig.prereq.python">(for the CLI and development)</span></li>
-                    <li><strong>Docker</strong> &amp; <strong>Docker Compose</strong> <span data-i18n="ig.prereq.docker">(for containerized deployment)</span></li>
-                    <li><strong>GPG</strong> <span data-i18n="ig.prereq.gpg">(for node authentication)</span></li>
-                    <li><strong>Git</strong> <span data-i18n="ig.prereq.git">(for manifest synchronization)</span></li>
+                    <li data-i18n="ig.mac.fda"><strong>Full Disk Access.</strong> A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent. <code>backup add</code> says so when a folder is guarded: grant it to <code>redundanet</code> in System Settings, Privacy &amp; Security, then run the backup again.</li>
+                    <li data-i18n="ig.mac.gatekeeper">Notarization is not active yet, so macOS may ask you to allow the binary under Privacy &amp; Security on first run. Check the sha256 against the signed index first.</li>
+                    <li data-i18n="ig.mac.data">Data directory: <code>~/Library/Application Support/redundanet</code>.</li>
                 </ul>
             </section>
 
-            <section id="methods">
-                <h2 data-i18n="ig.methods.title">Installation methods</h2>
+            <section id="windows">
+                <h2>Windows</h2>
+                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. The zip holds <code>redundanet-3.0.0-windows-amd64\redundanet.exe</code>. Unpack it, add that folder to your PATH or run from it, then the same four commands in a terminal.</p>
+                <pre><code>redundanet identity init --network redundanet
+redundanet network join &lt;descriptor&gt;
+redundanet service install --network redundanet    # a logon task, restarts on failure
+redundanet open</code></pre>
+                <ul>
+                    <li data-i18n="ig.win.unsigned">The binary is not code-signed yet, so Windows may warn before it runs. Check the sha256 against the signed index first.</li>
+                    <li data-i18n="ig.win.onedrive">A OneDrive online-only file is listed as skipped, "not on this computer", never pulled down.</li>
+                    <li data-i18n="ig.win.data">Data directory: <code>%AppData%\redundanet</code>.</li>
+                </ul>
+            </section>
 
-                <h3 data-i18n="ig.pypi.title">1. PyPI (recommended)</h3>
-                <p data-i18n="ig.pypi.desc">The simplest way to install the RedundaNet CLI:</p>
-                <pre><code>pip install redundanet
+            <section id="linux">
+                <h2 data-i18n="ig.linux.title">Linux laptop or desktop</h2>
+                <p data-i18n="ig.linux.intro">x86-64 and ARM64 are tested on the live network, including Raspberry Pi 5. For a machine you sit at: unpack, place on PATH, the four commands. The service is a systemd user unit that starts at login.</p>
+                <pre><code>tar -xzf redundanet-3.0.0-linux-amd64.tar.gz
+sudo mv redundanet-3.0.0-linux-amd64/redundanet /usr/local/bin/redundanet
 
-# Verify
-redundanet --version</code></pre>
+redundanet identity init --network redundanet
+redundanet network join &lt;descriptor&gt;
+redundanet service install --network redundanet    # a systemd user unit
+redundanet open</code></pre>
+                <ul>
+                    <li data-i18n="ig.linux.data">Data directory: <code>~/.config/redundanet</code>.</li>
+                    <li data-i18n="ig.linux.node">For a headless machine that contributes disk, use the storage node flow below instead.</li>
+                </ul>
+            </section>
 
-                <h3 data-i18n="ig.poetry.title">2. Poetry (for development)</h3>
-                <p data-i18n="ig.poetry.desc">Clone the repository and install with Poetry:</p>
-                <pre><code>git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet
+            <section id="node">
+                <h2 data-i18n="ig.node.title">Linux storage node</h2>
+                <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: the node's device key is certified on your laptop. Three steps, as root on the node for the first and the last.</p>
+                <h3 data-i18n="ig.node.s1">1. On the node: prepare</h3>
+                <pre><code>curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
+curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/redundanet-agent.service
+sudo STORAGE_PATH=/mnt/storage bash install.sh prepare 3.0.0</code></pre>
+                <p data-i18n="ig.node.s1.desc"><code>prepare</code> creates the service user, the directories and the unit, downloads the release and checks it against the sha256 in the signed index, and prints the node's <strong>device key</strong>. <code>STORAGE_PATH</code> is the disk you contribute; the share store goes in <code>STORAGE_PATH/redundanet3</code>. A storage node needs at least 10 GiB free above its floor.</p>
+                <h3 data-i18n="ig.node.s2">2. On your laptop: certify the device key</h3>
+                <pre><code>redundanet identity certify --network redundanet --device &lt;KEY&gt; --storage &gt; node.cert
+scp node.cert node:</code></pre>
+                <h3 data-i18n="ig.node.s3">3. On the node: finish</h3>
+                <pre><code>sudo bash install.sh finish node.cert</code></pre>
+                <p data-i18n="ig.node.s3.desc"><code>finish</code> accepts the certificate, joins the network, starts the service and destroys the certificate file. The node's device key and the name you give it go into your <a href="join.html">join request</a> as the storage entry; the node counts once the maintainer has signed the manifest with it.</p>
+                <ul>
+                    <li data-i18n="ig.node.layout">Layout: data in <code>/var/lib/redundanet3</code>, the binary at <code>/var/lib/redundanet3/bin/redundanet</code>, service user <code>redundanet3</code>, unit <code>redundanet-agent</code>, settings in <code>/etc/redundanet3/agent.env</code> (<code>NETWORK</code>, <code>CHANNEL</code>, <code>STORAGE_PATH</code>).</li>
+                    <li data-i18n="ig.node.fullpath">Use the full path <code>/var/lib/redundanet3/bin/redundanet</code> in commands on a node. On a RedundaNet 2 node the Python <code>redundanet</code> on PATH is the legacy tool.</li>
+                    <li data-i18n="ig.node.firewall">No inbound firewall rule is needed. A node may forward a UDP port and list it in the join request as <code>udp_port</code> to be reached directly more often.</li>
+                    <li data-i18n="ig.node.page">The local page over SSH: <code>ssh -L 4470:127.0.0.1:4470 node</code>, then <code>sudo /var/lib/redundanet3/bin/redundanet open --print</code>.</li>
+                    <li data-i18n="ig.node.runbook">The runbook: <a href="https://github.com/adefilippo83/redundanet/blob/main/agent/deploy/node/README.md">agent/deploy/node/README.md</a>.</li>
+                </ul>
+            </section>
 
-# Install Poetry if you don't have it
-curl -sSL https://install.python-poetry.org | python3 -
+            <section id="backup">
+                <h2 data-i18n="ig.backup.title">First backup</h2>
+                <p data-i18n="ig.backup.intro">Once your devices are admitted (the maintainer has merged your join request), add a backup set: a name and one or more folders. The agent scans it daily and runs a restore test weekly.</p>
+                <pre><code>redundanet backup add NAME FOLDER [FOLDER...] [--exclude a,b]
+redundanet backup list        # sets, last runs, skipped files by reason, restore tests
+redundanet backup run [NAME]  # a run now, instead of waiting for the daily one
+redundanet backup verify      # a restore test now; the result shows in backup list</code></pre>
+                <ul>
+                    <li data-i18n="ig.backup.retention">Snapshots are kept by the retention policy in <code>backup.yaml</code> in the data directory, edited by hand. Deleted data stays recoverable for 30 days.</li>
+                    <li data-i18n="ig.backup.remove"><code>backup remove NAME</code> drops a set. <code>backup cleanup [--dry-run] [--force]</code> runs the cleanup now; it also runs weekly on its own.</li>
+                    <li data-i18n="ig.backup.guide">The member guide: <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/backups.md">docs/backups.md</a>.</li>
+                </ul>
+            </section>
 
-poetry install
-poetry shell
-redundanet --version</code></pre>
+            <section id="restore">
+                <h2 data-i18n="ig.restore.title">Restore</h2>
+                <p data-i18n="ig.restore.intro">Restores are per file, folder or snapshot, from any device of yours, into a directory you name.</p>
+                <pre><code>redundanet restore list                                   # your devices and their snapshots
+redundanet restore browse DEVICE SNAPSHOT [PATH]          # look inside without fetching
+redundanet restore start DEVICE SNAPSHOT [PATH] --to DIR [--overwrite]
+redundanet restore status</code></pre>
+            </section>
 
-                <h3 data-i18n="ig.docker.title">3. Docker deployment (for running services)</h3>
-                <p data-i18n="ig.docker.desc">Clone the repository and start the services from the <code>docker/</code> directory:</p>
-                <pre><code>git clone https://github.com/adefilippo83/redundanet.git
-cd redundanet/docker
+            <section id="everyday">
+                <h2 data-i18n="ig.everyday.title">Everyday commands</h2>
+                <pre><code>redundanet status [--json]          # what the running agent sees
+redundanet open                     # the local page, 127.0.0.1:4470, through a one-time link
+redundanet logs [-n 100]
+redundanet network status [--refresh]
+redundanet service status | uninstall
+redundanet update check | apply | status
+redundanet diagnostics [--out FILE] # a bundle with no paths, URLs or addresses, to send by hand
+redundanet device revoke --device KEY   # a lost device: prints a signed revocation for the manifest
+redundanet version</code></pre>
+                <ul>
+                    <li data-i18n="ig.everyday.revoke"><code>device revoke</code> runs on any device of the member and asks for the phrase. The record goes into the manifest under <code>revocations:</code>; the operator signs and merges, and every agent and server refuses the device from then on.</li>
+                    <li data-i18n="ig.everyday.cli">Every command: <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/cli.md">docs/cli.md</a>.</li>
+                </ul>
+            </section>
 
-# As a storage node
-docker compose --env-file /opt/redundanet/.env --profile storage up -d
-
-# As a client
-docker compose --env-file /opt/redundanet/.env --profile client up -d</code></pre>
-                <p>The containers need the node's environment file (<code>/opt/redundanet/.env</code> — node name, VPN IP, GPG key path…), which is generated by <code>redundanet network join</code>. See the <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/quickstart.md">Quick Start Guide</a> for the full join flow.</p>
-                <div class="note">
-                    <span data-i18n="ig.docker.note">By default this <strong>pulls prebuilt images</strong> from the GitHub Container Registry (<code>ghcr.io/adefilippo83/redundanet-*</code>) — no local build, so it works on low-powered hardware like a Raspberry Pi. The images are multi-arch (<code>linux/amd64</code> and <code>linux/arm64</code>), so the right architecture is selected automatically; 32-bit ARM is not published, use a 64-bit OS.</span>
-                </div>
-                <p data-i18n="ig.docker.refresh">To explicitly refresh to the latest published images:</p>
-                <pre><code>docker compose pull
-docker compose up -d</code></pre>
-
-                <h4 data-i18n="ig.docker.src.title">Choosing the image source and version</h4>
-                <p data-i18n="ig.docker.src.desc">Two environment variables override which images are used:</p>
+            <section id="paths">
+                <h2 data-i18n="ig.paths.title">Where things live</h2>
                 <div class="table-wrap">
                 <table>
                     <thead>
-                        <tr>
-                            <th data-i18n="ig.docker.src.col1">Variable</th>
-                            <th data-i18n="ig.docker.src.col2">Default</th>
-                            <th data-i18n="ig.docker.src.col3">Purpose</th>
-                        </tr>
+                        <tr><th data-i18n="ig.paths.col.where">Where</th><th data-i18n="ig.paths.col.what">Data directory</th></tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td><code>REGISTRY_OWNER</code></td>
-                            <td><code>adefilippo83</code></td>
-                            <td data-i18n="ig.docker.src.owner">GHCR namespace to pull from</td>
-                        </tr>
-                        <tr>
-                            <td><code>VERSION</code></td>
-                            <td><code>latest</code></td>
-                            <td data-i18n="ig.docker.src.version">Image tag (e.g. a release like <code>2.3.0</code>)</td>
-                        </tr>
+                        <tr><td>macOS</td><td><code>~/Library/Application Support/redundanet</code></td></tr>
+                        <tr><td>Linux</td><td><code>~/.config/redundanet</code></td></tr>
+                        <tr><td>Windows</td><td><code>%AppData%\redundanet</code></td></tr>
+                        <tr><td data-i18n="ig.paths.node">Linux storage node</td><td><code>/var/lib/redundanet3</code>, <span data-i18n="ig.paths.nodeStore">share store in</span> <code>STORAGE_PATH/redundanet3</code></td></tr>
                     </tbody>
                 </table>
                 </div>
-                <pre><code># Pin to a released version
-VERSION=2.3.0 docker compose --profile storage up -d</code></pre>
-
-                <h4 data-i18n="ig.docker.build.title">Building the images from source</h4>
-                <p data-i18n="ig.docker.build.desc">To build locally instead of pulling (for development, an unsupported architecture, or air-gapped hosts), overlay <code>docker-compose.build.yml</code>:</p>
-                <pre><code>docker compose -f docker-compose.yml -f docker-compose.build.yml build
-docker compose -f docker-compose.yml -f docker-compose.build.yml --profile storage up -d</code></pre>
-                <p data-i18n="ig.docker.build.note">The locally built images are tagged with the same names as the pulled ones, so a later <code>docker compose up -d</code> (without the overlay) reuses them. For live-reload development, use <code>docker-compose.dev.yml</code> instead.</p>
-
-                <h3 data-i18n="ig.rpi.title">4. Raspberry Pi image</h3>
-                <p data-i18n="ig.rpi.desc">On first boot the Pi pulls the prebuilt <code>arm64</code> container images straight from GHCR, so it never has to compile anything locally. The image is 64-bit Raspberry Pi OS; 32-bit is not supported.</p>
-                <ol>
-                    <li data-i18n="ig.rpi.s1">Download the pre-built image from <a href="https://github.com/adefilippo83/redundanet/releases" target="_blank" rel="noopener">GitHub Releases</a>.</li>
-                    <li data-i18n="ig.rpi.s2">Flash it to an SD card with <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener">Raspberry Pi Imager</a>.</li>
-                    <li data-i18n="ig.rpi.s3">Boot the Pi and SSH in: <code>ssh redundanet@redundanet.local</code> (password: <code>redundanet</code>).</li>
-                    <li data-i18n="ig.rpi.s4">Change the password immediately: <code>passwd</code>.</li>
-                    <li data-i18n="ig.rpi.s5">Configure the node: <code>redundanet init</code>.</li>
-                </ol>
-                <p>
-                    <a href="https://github.com/adefilippo83/redundanet/releases/latest" class="btn btn-primary" target="_blank" rel="noopener" data-i18n="ig.rpi.btn">Download latest image →</a>
-                </p>
-            </section>
-
-            <section id="requirements">
-                <h2 data-i18n="ig.req.title">System requirements</h2>
-                <h3 data-i18n="ig.req.min.title">Minimum</h3>
-                <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr><th data-i18n="ig.req.col.res">Resource</th><th data-i18n="ig.req.col.req">Requirement</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td data-i18n="ig.req.cpu">CPU</td><td data-i18n="ig.req.min.cpu">1 core</td></tr>
-                        <tr><td data-i18n="ig.req.ram">RAM</td><td>1 GB</td></tr>
-                        <tr><td data-i18n="ig.req.storage">Storage</td><td data-i18n="ig.req.min.storage">10 GB (+ contributed storage)</td></tr>
-                        <tr><td data-i18n="ig.req.net">Network</td><td>1 Mbps</td></tr>
-                    </tbody>
-                </table>
-                </div>
-                <h3 data-i18n="ig.req.rec.title">Recommended</h3>
-                <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr><th data-i18n="ig.req.col.res">Resource</th><th data-i18n="ig.req.col.req">Requirement</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td data-i18n="ig.req.cpu">CPU</td><td data-i18n="ig.req.rec.cpu">2+ cores</td></tr>
-                        <tr><td data-i18n="ig.req.ram">RAM</td><td>2+ GB</td></tr>
-                        <tr><td data-i18n="ig.req.storage">Storage</td><td data-i18n="ig.req.rec.storage">50+ GB SSD</td></tr>
-                        <tr><td data-i18n="ig.req.net">Network</td><td>10+ Mbps</td></tr>
-                    </tbody>
-                </table>
-                </div>
-            </section>
-
-            <section id="platforms">
-                <h2 data-i18n="ig.plat.title">Platform support</h2>
-                <h3 data-i18n="ig.plat.linux.title">Linux (primary)</h3>
-                <p data-i18n="ig.plat.linux.desc">Fully supported on Ubuntu 20.04+, Debian 11+, Raspberry Pi OS, CentOS 8+, Fedora 35+, and Arch Linux.</p>
-                <h3 data-i18n="ig.plat.mac.title">macOS</h3>
-                <p data-i18n="ig.plat.mac.desc">Supported for development and CLI usage. Docker Desktop is required for containerized deployment.</p>
-                <h3 data-i18n="ig.plat.win.title">Windows</h3>
-                <p data-i18n="ig.plat.win.desc">Supported via WSL2. Native Windows support is experimental.</p>
-
-                <h3 data-i18n="ig.arch.title">Container image architectures</h3>
-                <p data-i18n="ig.arch.desc">The published images (<code>ghcr.io/adefilippo83/redundanet-*</code>) are multi-arch, so <code>docker compose pull</code> selects the correct one automatically:</p>
-                <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th data-i18n="ig.arch.col1">Architecture</th>
-                            <th data-i18n="ig.arch.col2">Platform</th>
-                            <th data-i18n="ig.arch.col3">Typical hardware</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td><code>linux/amd64</code></td><td data-i18n="ig.arch.amd">x86-64</td><td data-i18n="ig.arch.amd.hw">Most servers, desktops, cloud VMs</td></tr>
-                        <tr><td><code>linux/arm64</code></td><td data-i18n="ig.arch.a64">ARM 64-bit</td><td data-i18n="ig.arch.a64.hw">Raspberry Pi 3/4/5 (64-bit OS), Apple Silicon</td></tr>
-                    </tbody>
-                </table>
-                </div>
-                <p data-i18n="ig.arch.other">For any other architecture, build the images from source with the <code>docker-compose.build.yml</code> overlay (see above).</p>
-            </section>
-
-            <section id="network">
-                <h2 data-i18n="ig.net.title">Network requirements</h2>
-                <h3 data-i18n="ig.net.ports.title">Ports</h3>
-                <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th data-i18n="ig.net.col.port">Port</th>
-                            <th data-i18n="ig.net.col.proto">Protocol</th>
-                            <th data-i18n="ig.net.col.purpose">Purpose</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>655</td><td>TCP/UDP</td><td data-i18n="ig.net.tinc">Tinc VPN</td></tr>
-                        <tr><td>3456</td><td>TCP</td><td data-i18n="ig.net.client">Tahoe-LAFS Client</td></tr>
-                        <tr><td>3457</td><td>TCP</td><td data-i18n="ig.net.storage">Tahoe-LAFS Storage</td></tr>
-                        <tr><td>3458</td><td>TCP</td><td data-i18n="ig.net.introducer">Tahoe-LAFS Introducer</td></tr>
-                    </tbody>
-                </table>
-                </div>
-                <h3 data-i18n="ig.net.fw.title">Firewall configuration</h3>
-                <p data-i18n="ig.net.fw.desc">For publicly accessible nodes, open port 655:</p>
-                <pre><code># UFW (Ubuntu)
-sudo ufw allow 655/tcp
-sudo ufw allow 655/udp
-
-# firewalld (CentOS/Fedora)
-sudo firewall-cmd --permanent --add-port=655/tcp
-sudo firewall-cmd --permanent --add-port=655/udp
-sudo firewall-cmd --reload</code></pre>
-            </section>
-
-            <section id="gpg">
-                <h2 data-i18n="ig.gpg.title">GPG key setup</h2>
-                <p data-i18n="ig.gpg.desc">GPG keys authenticate nodes and must be published to a public keyserver. The key must be <strong>RSA</strong> — it doubles as the node's Tinc transport key.</p>
-                <h3 data-i18n="ig.gpg.cli.title">Using the RedundaNet CLI (recommended)</h3>
-                <pre><code># Generate a new GPG key
-redundanet node keys generate --name my-node --email you@example.com
-
-# List your keys to get the key ID
-redundanet node keys list
-
-# Publish to keyservers
-redundanet node keys publish --key-id YOUR_KEY_ID</code></pre>
-                <h3 data-i18n="ig.gpg.std.title">Using standard GPG commands</h3>
-                <pre><code># Generate a new key — choose RSA and RSA, 4096 bits
-gpg --full-generate-key
-
-# List keys to get your key ID
-gpg --list-keys --keyid-format long
-
-# Export to a keyserver
-gpg --keyserver keys.openpgp.org --send-keys YOUR_KEY_ID</code></pre>
-            </section>
-
-            <section id="verification">
-                <h2 data-i18n="ig.verify.title">Verification</h2>
-                <p data-i18n="ig.verify.desc">After installation, confirm everything works:</p>
-                <pre><code># Check the CLI
-redundanet --version
-
-# Check GPG keys
-redundanet node keys list
-
-# Check Docker (run from the docker/ directory)
-docker compose config
-
-# Check node status
-redundanet status</code></pre>
+                <p data-i18n="ig.paths.local">The local page and the command line talk only to the agent on the same computer, on 127.0.0.1:4470, never on the LAN. Nothing is uploaded anywhere by itself. See the <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">privacy policy</a> and <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/configuration.md">docs/configuration.md</a>.</p>
             </section>
 
             <section id="next">
                 <h2 data-i18n="ig.next.title">Next steps</h2>
                 <ul>
-                    <li><a href="join.html" data-i18n="ig.next.join">Join the network</a></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet" target="_blank" rel="noopener" data-i18n="ig.next.repo">Source &amp; documentation on GitHub</a></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/releases" target="_blank" rel="noopener" data-i18n="ig.next.releases">Releases</a></li>
+                    <li><a href="join.html" data-i18n="ig.next.join">Send your join request</a></li>
+                    <li><a href="migration.html" data-i18n="ig.next.migrate">RedundaNet 2 member? The migration guide</a></li>
+                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="ig.next.docs">The documentation index on GitHub</a></li>
                 </ul>
             </section>
         </div>
@@ -581,10 +556,37 @@ redundanet status</code></pre>
 
     <footer>
         <div class="container">
+            <div class="footer-links">
+                <a href="./" data-i18n="nav.home">Home</a>
+                <a href="download.html" data-i18n="footer.download">Download</a>
+                <a href="join.html" data-i18n="footer.join">Join</a>
+                <a href="https://redundanet-hub.fly.dev/v3/" data-i18n="footer.status">Status</a>
+                <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
+                <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>
+            </div>
             <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
         </div>
     </footer>
 
     <script src="/i18n/i18n.js"></script>
+    <script>
+    // The copy button only appears when the clipboard is available; the
+    // descriptor is plain text in the page without it.
+    (function () {
+        if (!navigator.clipboard) return;
+        document.querySelectorAll("[data-copy]").forEach(function (btn) {
+            var target = document.getElementById(btn.getAttribute("data-copy"));
+            if (!target) return;
+            btn.style.display = "inline-block";
+            btn.addEventListener("click", function () {
+                navigator.clipboard.writeText(target.textContent.trim()).then(function () {
+                    var was = btn.innerHTML;
+                    btn.textContent = "✓";
+                    setTimeout(function () { btn.innerHTML = was; }, 1500);
+                });
+            });
+        });
+    })();
+    </script>
 </body>
 </html>

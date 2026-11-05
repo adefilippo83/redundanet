@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedundaNet 3.0.0 | RedundaNet</title>
+    <meta name="description" content="RedundaNet 3.0.0 is out: one static binary, identity from a phrase, erasure-coded backups across members, weekly restore tests, repair without the owner, self-update with rollback. What changed for members, what is not there yet, and what happens to RedundaNet 2.">
+    <link rel="canonical" href="https://redundanet.com/news/redundanet-3-0-0.html">
+    <link rel="alternate" type="application/rss+xml" title="RedundaNet news" href="/news/feed.xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav.top {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav.top .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 22px;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        /* Header */
+        .page-header {
+            text-align: center;
+            padding: 60px 0 32px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .page-header a { color: var(--primary); text-decoration: none; }
+        .page-header a:hover { text-decoration: underline; }
+        .article-meta { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.75rem; }
+
+        /* Article */
+        .guide article > h2 { font-size: 1.6rem; margin: 2.6rem 0 1rem; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+        .guide article p { color: var(--text-muted); margin: 0 0 1.1rem; }
+        .guide article ul { color: var(--text-muted); margin: 0 0 1.2rem 1.4rem; }
+        .guide article li { margin-bottom: 6px; }
+        .guide article strong { color: var(--text); }
+        .guide article a { color: var(--primary); text-decoration: none; }
+        .guide article a:hover { text-decoration: underline; }
+        .guide article blockquote {
+            background: var(--bg-card);
+            border: 1px solid var(--primary);
+            border-radius: 12px;
+            padding: 18px 22px;
+            margin: 0 0 1.2rem;
+            color: var(--text);
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+
+        .article-links { margin-top: 2.5rem; padding-top: 1.4rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.95rem; }
+        .article-links a { color: var(--primary); text-decoration: none; }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            .page-header h1 { font-size: 2rem; }
+            .nav-links { gap: 12px 18px; order: 3; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="top">
+        <div class="nav-container">
+            <a href="../" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <ul class="nav-links">
+                <li><a href="../" data-i18n="nav.home">Home</a></li>
+                <li><a href="../download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="../installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="../join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="../migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
+            </ul>
+            <span data-lang-switcher class="lang-switcher"></span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1>RedundaNet 3.0.0</h1>
+            <p>One static binary, identity from a phrase, backups erasure coded across members, weekly restore tests, repair without the owner, self-update with rollback.</p>
+            <div class="article-meta"><time datetime="2026-11-06">6 November 2026</time> &middot; <a href="./">All news</a></div>
+        </div>
+
+        <div class="guide">
+            <article>
+                <p>RedundaNet 3.0.0 is released today from the tag <code>agent/v3.0.0</code>, on the <code>stable</code> channel. Twenty-four alpha builds on the <code>early</code> channel came before it, each one rolled to the live hub and nodes by the agent's own self-update.</p>
+
+                <h2>What it is</h2>
+                <p>RedundaNet is community-run encrypted backup. Each member runs the agent on their devices. A backup set is one or more folders; the agent scans them daily, encrypts every object on the device with a key derived from the member's secret and the content, splits it with erasure coding, today 2-of-3 on the live network, and places the shares on other members' storage servers. Nobody else can read the data, not the hub, not other members. A weekly restore test reads a sample back and compares it to the source. Storage servers scrub their shares monthly, and the hub schedules repair of under-placed objects without involving the owner. Deleted data stays recoverable for 30 days.</p>
+                <p>It is one static binary named <code>redundanet</code>, written in Go. No containers, no Python, no Docker. Builds for Linux (x86-64 and ARM64), macOS (Apple silicon and Intel) and Windows are on the <a href="../download.html">download page</a>, each listed with its sha256 in the signed release index.</p>
+
+                <h2>What changed for members</h2>
+                <ul>
+                    <li><strong>Identity.</strong> A member key comes from a twelve-word phrase shown once at <code>redundanet identity init</code>. Every device gets a certificate signed by the member key. No GPG keys on keyservers.</li>
+                    <li><strong>Membership.</strong> Member and storage lists live in a manifest in the repository, signed offline by the maintainer's operator key. Agents fetch it every five minutes and apply a newer signed revision at once. Joining is a <a href="../join.html">form</a> that opens a GitHub issue; a workflow validates it and opens the pull request.</li>
+                    <li><strong>Network.</strong> No VPN. The agent reaches the hub outbound; devices connect directly through hole punching when they can, otherwise through the hub's relay, over QUIC with TLS 1.3. No inbound firewall rule is needed.</li>
+                    <li><strong>Backups.</strong> Native backup sets, daily runs, snapshots under a retention policy, restores per file, folder or snapshot, and a weekly restore test whose streak shows on the <a href="https://redundanet-hub.fly.dev/v3/">status page</a>.</li>
+                    <li><strong>Updates.</strong> The agent checks the signed release index hourly, verifies the hash, runs the new version in probation for up to two minutes, keeps the old binary as <code>redundanet.old</code>, and rolls back by itself if the new one does not reconnect.</li>
+                    <li><strong>Lost devices.</strong> <code>redundanet device revoke --device KEY</code> on any device of the member prints a signed revocation record for the manifest; once the operator signs and merges, every agent and server refuses that device.</li>
+                    <li><strong>Diagnostics.</strong> <code>redundanet diagnostics</code> writes a bundle with no paths, URLs or addresses, to send by hand. Nothing is ever uploaded automatically. The <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">privacy policy</a> lists every exchange the software makes.</li>
+                </ul>
+
+                <h2>Platforms</h2>
+                <blockquote>Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.</blockquote>
+                <p>Windows signing through SignPath and macOS notarization are set up in the release workflow but not yet active (accounts pending); until then every binary is unsigned and the signed release index is the way to verify a download on every platform. Linux binaries are never code-signed; the index covers them.</p>
+
+                <h2>What is not there yet</h2>
+                <ul>
+                    <li>One hub, on a bare IP address. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. The public status page is hosted on the fly.io app of the old product.</li>
+                    <li>No bandwidth caps yet.</li>
+                    <li>No settings page: the retention policy is edited in <code>backup.yaml</code> by hand.</li>
+                    <li>No phrase check command.</li>
+                    <li>No device pairing: each device is certified from the phrase.</li>
+                    <li>No OS keystore.</li>
+                    <li>Windows and Intel Mac untested on the live network. Raspberry Pi 4 not measured.</li>
+                    <li>Quota is enforced server-side as a bound with headroom; the exact budget is the client's.</li>
+                    <li>The RedundaNet 2 wind-down is manual.</li>
+                    <li>Device revocation travels through the signed manifest, which the maintainer merges, so it takes effect when the maintainer signs, not within seconds.</li>
+                </ul>
+
+                <h2>RedundaNet 2</h2>
+                <p>The old grid, the Python CLI with Docker Compose, tinc and Tahoe-LAFS, stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. Six members and eight storage nodes are on it today; one member and two nodes also run RedundaNet 3. Existing members migrate at their own pace: identity on the laptop, the join request with the legacy GPG attestation, the agent on each node, native backup sets for the folders the old grid held, a passed restore test, then <code>migrate-node</code> retires the Docker stack, with a dry run first and a rollback. The <a href="../migration.html">migration guide</a> has the steps; the old documentation is under <a href="../legacy.html">docs/legacy</a>.</p>
+
+                <h2>Get it</h2>
+                <ul>
+                    <li><a href="../download.html">Download 3.0.0</a> and verify it against the signed index.</li>
+                    <li><a href="../installation.html">Install</a> on macOS, Windows or Linux, or set up a Linux storage node.</li>
+                    <li><a href="../join.html">Join</a> the network.</li>
+                    <li>Release page: <a href="https://github.com/adefilippo83/redundanet/releases/tag/agent%2Fv3.0.0">agent/v3.0.0 on GitHub</a>.</li>
+                </ul>
+
+                <div class="article-links">
+                    Questions and problems go to the <a href="https://github.com/adefilippo83/redundanet/issues">issue tracker</a>. The <a href="feed.xml">RSS feed</a> carries future posts.
+                </div>
+            </article>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
+        </div>
+    </footer>
+
+    <script src="/i18n/i18n.js"></script>
+</body>
+</html>

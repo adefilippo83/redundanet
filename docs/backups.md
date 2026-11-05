@@ -1,0 +1,72 @@
+# Backups and restores
+
+The agent does the work; `backup` and `restore` ask it through the local API, so the service must be running. On a laptop the command is `redundanet`; on a storage node it is `sudo /var/lib/redundanet3/bin/redundanet`, which finds the node's data directory on its own.
+
+## Backup sets
+
+A backup set is a name and one or more folders:
+
+```bash
+redundanet backup add NAME FOLDER [FOLDER...] [--exclude a,b]
+redundanet backup list
+redundanet backup remove NAME
+```
+
+`--exclude` adds base-name globs or relative path prefixes beside the defaults. The defaults are caches, the systems' own folders and the cloud providers' databases, on every platform at once: `.DS_Store`, `.Trash`, `.Trashes`, `Library/Caches`, `.Spotlight-V100`, `.fseventsd`, `.TemporaryItems`, `.DocumentRevisions-V100`, `Thumbs.db`, `desktop.ini`, `$RECYCLE.BIN`, `System Volume Information`, `pagefile.sys`, `hiberfil.sys`, `swapfile.sys`, `~$*`, `AppData/Local/Temp`, `AppData/Local/Microsoft/Windows/INetCache`, `.cache`, `.dropbox.cache`, `*.partial`, `*.crdownload`.
+
+On macOS, `backup add` probes each folder as the service and refuses one the system guards (Documents, Desktop, Downloads) until the agent has Full Disk Access; it names the setting to change. A folder that becomes unreadable later shows the same line in `backup list` and on the local page.
+
+## Schedule
+
+Each set runs daily, the first time two minutes after the agent starts. `redundanet backup run [NAME]` starts a run now; `backup list` follows it. The interval is `every` in `backup.yaml` ([configuration.md](configuration.md)). One run at a time.
+
+## What a run does
+
+The agent walks the folders, honouring the excludes. A file it has seen (same path, size, modification time, change time and file id) costs nothing; a changed or new file is hashed, and content the member already stored on any device costs no upload. Each run also re-hashes a rolling share of unchanged files, so a file that defeats every timestamp is still caught. Every object is encrypted on the device, erasure coded and sent as shares to storage servers across members. The run ends by publishing a signed root that names the new snapshot.
+
+A run that is interrupted still publishes what it had as a partial snapshot, marked as such, and continues next time.
+
+## Skipped files
+
+A file that cannot be read (locked, permission denied, vanished mid-read) is skipped, counted, listed with the reason and retried next run; it never fails the snapshot. Cloud placeholders are skipped and counted, never pulled down: OneDrive online-only files on Windows and evicted iCloud Drive files on macOS are listed as "not on this computer". Devices, sockets and FIFOs are skipped too. Symlinks are stored as their target text and never followed. `backup list` counts skipped files by reason, the local page shows the same, and `restore browse` shows each one's reason.
+
+## Snapshots and retention
+
+Every complete run is a snapshot of the set. Retention keeps everything for 7 days, one per day for 30 days, one per week for 12 weeks and one per month for 12 months. A partial snapshot is kept like any other until a complete one of the same set and day exists. The policy is edited in `backup.yaml` under `retention`; there is no settings page in 3.0.0. Pruning drops a snapshot from the index; the objects only it referenced go with the next cleanup.
+
+## Restores
+
+From any device of the member, including a fresh one certified from the phrase:
+
+```bash
+redundanet restore list                                   # every device's snapshots, from the servers' roots
+redundanet restore browse DEVICE SNAPSHOT [PATH]          # a directory listing, fetching only what is asked
+redundanet restore start DEVICE SNAPSHOT [PATH] --to DIR [--overwrite]
+redundanet restore status
+```
+
+A restore runs in the background. Files are written under temporary names and renamed when complete, with modification time and mode set after the data. Without `--overwrite`, files that exist are left alone. Names the target cannot hold (invalid UTF-8 on Windows, reserved names, forbidden characters) are mapped to an escaped form and each one is reported; a restore ends "complete with exceptions" when something could not be restored as it was, and `restore status` lists each exception. Restores read any k shares of each object and verify them before writing.
+
+## Restore tests
+
+Every week the agent restores a sample of a snapshot to a scratch location, verifies it, and compares what it read with sources that have not changed since. `redundanet backup verify` asks for one now. `backup list` shows the last verified restore, every test kept, and how many weeks in a row have passed; the status page shows the streak per member. The test never asks for the phrase.
+
+## Cleanup and the 30-day window
+
+Deleting a file from a folder does not delete it from the grid: the snapshots that hold it keep it, under retention. What nothing references any more is removed by the cleanup job, weekly on its own or by hand:
+
+```bash
+redundanet backup cleanup [--dry-run] [--force]
+```
+
+Cleanup reads every root of the member, walks the snapshots on the grid to the set of reachable objects, lists what every server holds for the member, and sends a signed delete token for each object nothing references. It refuses to run when a root or a directory cannot be read, and refuses to delete more than half of what the grid holds unless `--force`.
+
+A server tombstones an object only when the owner has not touched it for 7 days on the server's own clock. Within the 30-day window after that the owner's devices still read the object and a new upload of the same content clears the tombstone. After the window the shares go and the record stays, so repair never fills a deleted object back in. So anything deleted stays recoverable for 30 days, from any device of the member.
+
+## Encoding changes
+
+When the manifest declares a k-of-n transition, each device converts the objects its own snapshots reference, on its own every six hours and on `redundanet backup rebalance`, and publishes the root after each snapshot. Until the deadline the old shares do not count against your allocation, so you convert without deleting first. The status page shows the conversion as a bar.
+
+## The local page
+
+`redundanet open` opens the local page on `127.0.0.1:4470` in the browser through a one-time link that works for two minutes. It shows the device's state, the backup sets with their last run, the restore tests, and has the diagnostics button. It is never on the LAN; a headless node is reached over an SSH tunnel.

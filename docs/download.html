@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-title="dl.meta.title">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download | RedundaNet</title>
+    <meta name="description" content="Download RedundaNet 3.0.0: one static binary for Linux, macOS and Windows, verified against the signed release index.">
+    <link rel="canonical" href="https://redundanet.com/download.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #22c55e;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav.top {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav.top .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 22px;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* Header */
+        .page-header {
+            text-align: center;
+            padding: 60px 0 32px;
+        }
+
+        .page-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 16px;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 1.125rem;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        /* Table of contents */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 28px;
+            margin-bottom: 48px;
+        }
+
+        .toc h2 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .toc ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 6px 24px;
+        }
+
+        .toc a {
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .toc a:hover {
+            color: var(--primary);
+        }
+
+        /* Guide sections */
+        .guide section {
+            margin-bottom: 48px;
+            scroll-margin-top: 24px;
+        }
+
+        .guide h2 {
+            font-size: 1.6rem;
+            margin-bottom: 18px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .guide h3 {
+            font-size: 1.2rem;
+            margin: 28px 0 12px;
+        }
+
+        .guide p {
+            color: var(--text-muted);
+            margin-bottom: 14px;
+        }
+
+        .guide ul,
+        .guide ol {
+            color: var(--text-muted);
+            margin: 0 0 16px 22px;
+        }
+
+        .guide li {
+            margin-bottom: 6px;
+        }
+
+        .guide strong {
+            color: var(--text);
+        }
+
+        .guide a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .guide a:hover {
+            text-decoration: underline;
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 18px;
+            font-size: 0.95rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        td {
+            color: var(--text-muted);
+        }
+
+        td code {
+            white-space: nowrap;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        .sha {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+        }
+
+        /* Callout */
+        .note {
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid var(--primary);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 0 0 18px;
+            color: var(--text-muted);
+        }
+
+        .note strong {
+            color: var(--text);
+        }
+
+        .statement {
+            background: var(--bg-card);
+            border: 1px solid var(--primary);
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin: 0 0 18px;
+            color: var(--text);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        @media (max-width: 768px) {
+            .page-header h1 { font-size: 2rem; }
+            .nav-links { gap: 12px 18px; order: 3; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="top">
+        <div class="nav-container">
+            <a href="./" class="logo">
+                <div class="logo-icon">R</div>
+                RedundaNet
+            </a>
+            <ul class="nav-links">
+                <li><a href="./" data-i18n="nav.home">Home</a></li>
+                <li><a href="download.html" data-i18n="nav.download">Download</a></li>
+                <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
+                <li><a href="join.html" data-i18n="nav.join">Join</a></li>
+                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
+                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
+                <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
+            </ul>
+            <span data-lang-switcher class="lang-switcher"></span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="page-header">
+            <h1><span data-i18n="dl.header.title">Download RedundaNet</span> <span data-rn-version>3.0.0</span></h1>
+            <p data-i18n="dl.header.subtitle">One static binary per platform. No installer, no containers, no runtime to add. Verify it against the signed release index, then let it update itself.</p>
+        </div>
+
+        <nav class="toc" aria-label="On this page">
+            <h2 data-i18n="dl.toc.title">On this page</h2>
+            <ul>
+                <li><a href="#builds" data-i18n="dl.toc.builds">Builds</a></li>
+                <li><a href="#verify" data-i18n="dl.toc.verify">Verify a download</a></li>
+                <li><a href="#channels" data-i18n="dl.toc.channels">Channels</a></li>
+                <li><a href="#signing" data-i18n="dl.toc.signing">Code signing</a></li>
+                <li><a href="#updates" data-i18n="dl.toc.updates">Self-update</a></li>
+            </ul>
+        </nav>
+
+        <div class="guide">
+            <section id="builds">
+                <h2 data-i18n="dl.builds.title">Builds</h2>
+                <p data-i18n="dl.builds.intro">Release <code>agent/v3.0.0</code> on GitHub carries five archives and a <code>sha256sums.txt</code>. Each archive holds one folder with the <code>redundanet</code> binary (<code>redundanet.exe</code> on Windows).</p>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="dl.builds.col.platform">Platform</th>
+                            <th data-i18n="dl.builds.col.archive">Archive</th>
+                            <th data-i18n="dl.builds.col.sha">SHA-256</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td data-i18n="dl.builds.linuxAmd">Linux x86-64</td>
+                            <td><a data-rn-asset="linux/amd64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-linux-amd64.tar.gz"><code>redundanet-3.0.0-linux-amd64.tar.gz</code></a></td>
+                            <td class="sha" data-rn-sha="linux/amd64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="dl.builds.linuxArm">Linux ARM64 (including Raspberry Pi 5)</td>
+                            <td><a data-rn-asset="linux/arm64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-linux-arm64.tar.gz"><code>redundanet-3.0.0-linux-arm64.tar.gz</code></a></td>
+                            <td class="sha" data-rn-sha="linux/arm64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="dl.builds.macArm">macOS, Apple silicon</td>
+                            <td><a data-rn-asset="darwin/arm64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-darwin-arm64.tar.gz"><code>redundanet-3.0.0-darwin-arm64.tar.gz</code></a></td>
+                            <td class="sha" data-rn-sha="darwin/arm64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="dl.builds.macIntel">macOS, Intel</td>
+                            <td><a data-rn-asset="darwin/amd64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-darwin-amd64.tar.gz"><code>redundanet-3.0.0-darwin-amd64.tar.gz</code></a></td>
+                            <td class="sha" data-rn-sha="darwin/amd64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
+                        <tr>
+                            <td data-i18n="dl.builds.windows">Windows x86-64</td>
+                            <td><a data-rn-asset="windows/amd64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-windows-amd64.zip"><code>redundanet-3.0.0-windows-amd64.zip</code></a></td>
+                            <td class="sha" data-rn-sha="windows/amd64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                <p>
+                    <a data-rn-sums href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/sha256sums.txt"><code>sha256sums.txt</code></a>
+                    &middot;
+                    <a data-rn-release href="https://github.com/adefilippo83/redundanet/releases/tag/agent%2Fv3.0.0" data-i18n="dl.builds.releasePage">Release page on GitHub</a>
+                    &middot;
+                    <a href="https://github.com/adefilippo83/redundanet/releases" data-i18n="dl.builds.allReleases">All releases</a>
+                </p>
+                <div class="statement" data-i18n="platform.statement">
+                    Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
+                </div>
+                <p data-i18n="dl.builds.next">Downloaded? The <a href="installation.html">install page</a> takes it from here: put the binary on your PATH, create your identity, join the network, install the service.</p>
+            </section>
+
+            <section id="verify">
+                <h2 data-i18n="dl.verify.title">Verify a download</h2>
+                <p data-i18n="dl.verify.intro">Every release's sha256 and size are in the signed release index, <code>releases/index.yaml</code> on the main branch, with the maintainer's signature in <code>releases/index.sig</code>. The index is signed offline with the maintainer's release key. The agent verifies that signature itself, with the key embedded in every build, and installs only what the index names.</p>
+                <p data-i18n="dl.verify.manual">To check a download by hand, compute the archive's sha256 and compare it with the index entry for your version and platform:</p>
+                <pre><code># Linux
+sha256sum redundanet-3.0.0-linux-amd64.tar.gz
+
+# macOS
+shasum -a 256 redundanet-3.0.0-darwin-arm64.tar.gz
+
+# Windows (PowerShell)
+Get-FileHash redundanet-3.0.0-windows-amd64.zip -Algorithm SHA256
+
+# the signed index, entry "version: 3.0.0", key "linux/amd64" and so on
+curl -fsSL https://raw.githubusercontent.com/adefilippo83/redundanet/main/releases/index.yaml</code></pre>
+                <ul>
+                    <li data-i18n="dl.verify.l1"><a href="https://github.com/adefilippo83/redundanet/blob/main/releases/index.yaml">releases/index.yaml</a> and <a href="https://github.com/adefilippo83/redundanet/blob/main/releases/index.sig">releases/index.sig</a> on GitHub.</li>
+                    <li data-i18n="dl.verify.l2"><a href="https://github.com/adefilippo83/redundanet/blob/main/releases/README.md">releases/README.md</a>: how the index is written, signed and withdrawn.</li>
+                    <li data-i18n="dl.verify.l3">The <code>sha256sums.txt</code> beside the archives is written by the release workflow; the index is the signed word.</li>
+                </ul>
+            </section>
+
+            <section id="channels">
+                <h2 data-i18n="dl.channels.title">Channels</h2>
+                <p data-i18n="dl.channels.intro">Each release in the index belongs to a channel. The agent follows the channel it was installed with.</p>
+                <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-i18n="dl.channels.col.channel">Channel</th>
+                            <th data-i18n="dl.channels.col.what">What it gets</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>stable</code></td>
+                            <td data-i18n="dl.channels.stable">The default. 3.0.0 is on it.</td>
+                        </tr>
+                        <tr>
+                            <td><code>early</code></td>
+                            <td data-i18n="dl.channels.early">Pre-releases before they reach stable. 3.0.0-alpha.1 to 3.0.0-alpha.24 were on it.</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                <pre><code># a laptop, on the early channel
+redundanet service install --network redundanet --channel early
+
+# a Linux storage node: CHANNEL in /etc/redundanet3/agent.env, then
+sudo systemctl restart redundanet-agent</code></pre>
+            </section>
+
+            <section id="signing">
+                <h2 data-i18n="dl.signing.title">Code signing</h2>
+                <p data-i18n="info.signing.desc">Windows signing through SignPath and macOS notarization are set up in the release workflow but not yet active (accounts pending); until then every binary is unsigned and the signed release index is the way to verify a download on every platform. Linux binaries are never code-signed; the index covers them.</p>
+                <p data-i18n="dl.signing.policy">The policy, the team and what a signature would say are in the <a href="https://github.com/adefilippo83/redundanet#code-signing-policy">code signing policy</a> of the README. Each release page states whether its binaries are signed.</p>
+            </section>
+
+            <section id="updates">
+                <h2 data-i18n="dl.updates.title">The agent updates itself afterwards</h2>
+                <p data-i18n="dl.updates.desc">You download once. From then on the agent checks the signed index hourly, downloads a newer release of its channel, verifies the hash, runs the new version in probation for up to two minutes, keeps the old binary as <code>redundanet.old</code>, and rolls back by itself if the new one does not reconnect. <code>redundanet update check</code>, <code>update apply</code> and <code>update status</code> drive it by hand.</p>
+                <div class="note" data-i18n="dl.updates.note">This page reads the release index from GitHub to show the current stable version when JavaScript is on. Without it, the links above point at 3.0.0.</div>
+            </section>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="./" data-i18n="nav.home">Home</a>
+                <a href="installation.html" data-i18n="footer.install">Install</a>
+                <a href="join.html" data-i18n="footer.join">Join</a>
+                <a href="https://redundanet-hub.fly.dev/v3/" data-i18n="footer.status">Status</a>
+                <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
+                <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>
+            </div>
+            <p data-i18n="ig.footer">RedundaNet is open source software licensed under GPL-3.0. Questions? <a href="https://github.com/adefilippo83/redundanet/issues" target="_blank" rel="noopener">Open an issue</a>.</p>
+        </div>
+    </footer>
+
+    <script src="/i18n/i18n.js"></script>
+    <script>
+    // Reads the signed release index from the repository and shows the
+    // newest stable release that is not withdrawn. Any failure leaves the
+    // static 3.0.0 links in place. The index's signature is checked by the
+    // agent, not here: this only picks the links to show.
+    (function () {
+        "use strict";
+        var INDEX = "https://raw.githubusercontent.com/adefilippo83/redundanet/main/releases/index.yaml";
+        var TARGETS = ["linux/amd64", "linux/arm64", "darwin/arm64", "darwin/amd64", "windows/amd64"];
+
+        function parse(text) {
+            var releases = [], cur = null;
+            text.split("\n").forEach(function (line) {
+                var m = line.match(/^\s*-\s+version:\s*(\S+)/);
+                if (m) { cur = { version: m[1], assets: {} }; releases.push(cur); return; }
+                if (!cur) return;
+                m = line.match(/^\s+channel:\s*(\S+)/);
+                if (m) { cur.channel = m[1]; return; }
+                m = line.match(/^\s+withdrawn:\s*(\S+)/);
+                if (m) { cur.withdrawn = m[1] === "true"; return; }
+                m = line.match(/^\s+notes:\s*(\S+)/);
+                if (m) { cur.notes = m[1]; return; }
+                m = line.match(/^\s+(linux|darwin|windows)\/(amd64|arm64):\s*\{(.*)\}/);
+                if (m) {
+                    var url = (m[3].match(/url:\s*([^,\s}]+)/) || [])[1];
+                    var sha = (m[3].match(/sha256:\s*([0-9a-f]{64})/) || [])[1];
+                    cur.assets[m[1] + "/" + m[2]] = { url: url, sha256: sha };
+                }
+            });
+            return releases;
+        }
+
+        function pick(releases) {
+            for (var i = 0; i < releases.length; i++) {
+                var r = releases[i];
+                if (r.channel !== "stable" || r.withdrawn) continue;
+                var complete = TARGETS.every(function (t) { return r.assets[t] && r.assets[t].url; });
+                if (complete) return r;
+            }
+            return null;
+        }
+
+        function show(r) {
+            var tag = "agent%2Fv" + r.version;
+            var base = "https://github.com/adefilippo83/redundanet/releases/";
+            document.querySelectorAll("[data-rn-version]").forEach(function (el) { el.textContent = r.version; });
+            TARGETS.forEach(function (t) {
+                var a = document.querySelector('[data-rn-asset="' + t + '"]');
+                var s = document.querySelector('[data-rn-sha="' + t + '"]');
+                var asset = r.assets[t];
+                if (a && asset.url) {
+                    a.href = asset.url;
+                    var code = a.querySelector("code");
+                    if (code) code.textContent = asset.url.split("/").pop();
+                }
+                if (s && asset.sha256) s.textContent = asset.sha256;
+            });
+            var sums = document.querySelector("[data-rn-sums]");
+            if (sums) sums.href = base + "download/" + tag + "/sha256sums.txt";
+            var rel = document.querySelector("[data-rn-release]");
+            if (rel) rel.href = r.notes || (base + "tag/" + tag);
+        }
+
+        if (!window.fetch) return;
+        fetch(INDEX, { cache: "no-store" })
+            .then(function (res) { if (!res.ok) throw new Error("index"); return res.text(); })
+            .then(function (text) { var r = pick(parse(text)); if (r) show(r); })
+            .catch(function () { /* keep the static links */ });
+    })();
+    </script>
+</body>
+</html>

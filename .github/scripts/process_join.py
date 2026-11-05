@@ -17,6 +17,14 @@ The key MUST be fetchable from the public keyservers and its fingerprint MUST
 exactly match the submitted one, or the join fails — peers authenticate the
 node by fetching exactly this key, so an unverifiable key would either brick
 the node or, worse, let an attacker-uploaded key take its place. Fail closed.
+
+The manifest also carries the RedundaNet 3 half (schema 3: a signed revision,
+members, storage devices). The node is appended to `nodes:` textually and
+`revision` is raised by one, with the editor the v3 script
+(process_join_v3.py) uses: re-serialising the whole file would drop the
+header comment and reflow the members' signature blocks, and any change to
+the file invalidates manifest.sig, so the agents only follow a higher,
+re-signed revision.
 """
 
 from __future__ import annotations
@@ -24,13 +32,14 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
-import secrets
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+from process_join_v3 import EditError, append_items, bump_revision, set_output
 
 KEYSERVERS = [
     "keys.openpgp.org",
@@ -52,19 +61,8 @@ class JoinResult:
     vpn_ip: str = ""
     gpg_key_id: str = ""
     storage: str = ""
+    revision: int | None = None  # the manifest's new revision, when it has one
     warnings: list[str] = field(default_factory=list)
-
-
-def set_output(**kwargs: str) -> None:
-    """Write step outputs with the random-delimiter heredoc form so a value can
-    never inject extra output lines, even if it somehow contained newlines."""
-    output_path = os.environ.get("GITHUB_OUTPUT")
-    if not output_path:
-        return
-    with Path(output_path).open("a") as f:
-        for name, value in kwargs.items():
-            delim = f"__EOF_{secrets.token_hex(16)}__"
-            f.write(f"{name}<<{delim}\n{value}\n{delim}\n")
 
 
 def parse_gpg_key_id(issue_body: str) -> str | None:
@@ -218,7 +216,7 @@ def process(
     """Parse a join-request body and add the node to the manifest on disk.
 
     ``member`` groups this node with the applicant's other nodes for the
-    contribution-based allocation (docs/quotas.md).
+    contribution-based allocation (docs/legacy/quotas.md).
     """
     key_id = parse_gpg_key_id(issue_body)
     if key_id is None:
@@ -268,9 +266,10 @@ def process(
     region = parse_region(issue_body)
     public_ip = parse_public_ip(issue_body)
 
+    text: str | None = None
     if manifest_path.exists():
-        with manifest_path.open() as f:
-            manifest = yaml.safe_load(f) or default_manifest()
+        text = manifest_path.read_text()
+        manifest = yaml.safe_load(text) or default_manifest()
     else:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest = default_manifest()
@@ -308,9 +307,16 @@ def process(
     if valid_member(member):
         new_node["member"] = valid_member(member)
 
-    manifest.setdefault("nodes", []).append(new_node)
-    with manifest_path.open("w") as f:
-        yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
+    try:
+        if text is None or not text.strip():
+            # A fresh file: nothing to preserve, serialise the default shape.
+            manifest.setdefault("nodes", []).append(new_node)
+            new_text = yaml.dump(manifest, default_flow_style=False, sort_keys=False)
+        else:
+            new_text, result.revision = insert_node(text, new_node)
+    except (EditError, yaml.YAMLError) as err:
+        return JoinResult(success=False, error=f"could not update the manifest: {err}")
+    manifest_path.write_text(new_text)
 
     result.node_name = node_name
     result.vpn_ip = next_ip
@@ -318,7 +324,100 @@ def process(
     return result
 
 
-def main() -> None:
+def render_node(node: dict[str, Any], indent: str) -> list[str]:
+    """The node as YAML list-item lines at the list's indentation."""
+    dumped = yaml.dump([node], default_flow_style=False, sort_keys=False).rstrip("\n")
+    return [indent + line if line else line for line in dumped.split("\n")]
+
+
+def insert_node(text: str, node: dict[str, Any]) -> tuple[str, int | None]:
+    """Append the node to `nodes:` textually and raise `revision` when there is one.
+
+    Returns (new text, new revision or None for a manifest without one). The
+    result must read back with the node as the last entry; otherwise EditError.
+    """
+    new_text = append_items(text, "nodes", lambda indent: render_node(node, indent), "")
+    revision: int | None = None
+    if re.search(r"^revision:", new_text, re.MULTILINE):
+        new_text, revision = bump_revision(new_text)
+    data = yaml.safe_load(new_text)
+    nodes = data.get("nodes") if isinstance(data, dict) else None
+    if not isinstance(nodes, list) or not nodes or nodes[-1] != node:
+        raise EditError("the node did not read back as the last entry of `nodes`")
+    if revision is not None and data.get("revision") != revision:
+        raise EditError(f"revision read back as {data.get('revision')!r}, not {revision}")
+    return new_text, revision
+
+
+def compose_pr(result: JoinResult, issue_number: str) -> dict[str, str]:
+    """Title, body and commit message of the pull request."""
+    revision = (
+        f" and raises the RedundaNet 3 `revision` to {result.revision}, which the maintainer re-signs"
+        if result.revision is not None
+        else ""
+    )
+    body = f"""## New Node Addition
+
+This PR adds a new node to the RedundaNet network manifest{revision}.
+
+| Field | Value |
+|-------|-------|
+| **Node Name** | `{result.node_name}` |
+| **VPN IP** | `{result.vpn_ip}` |
+| **GPG Key ID** | `{result.gpg_key_id}` |
+| **Storage** | {result.storage} |
+
+### Checklist
+- [ ] Verify GPG key is valid
+- [ ] Confirm storage allocation
+- [ ] Review node configuration
+- [ ] Sign the manifest: `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml`, commit `manifests/manifest.sig`, push
+
+Closes #{issue_number}
+
+---
+*Auto-generated from join request*
+"""
+    return {
+        "pr_title": f"Add node {result.node_name} (Issue #{issue_number})",
+        "pr_body": body,
+        "commit_message": f"Add node {result.node_name} to network manifest",
+    }
+
+
+def compose_next_steps(result: JoinResult) -> str:
+    """The closing comment on the issue; the workflow fills in {PR_URL}."""
+    return f"""**Application processed successfully!**
+
+Your node `{result.node_name}` has been assigned IP `{result.vpn_ip}`.
+
+**Pull Request**: {{PR_URL}}
+
+This issue is being closed. The PR will be reviewed by a maintainer. Once merged, you can configure your node with:
+
+```bash
+# Clone the repository
+git clone https://github.com/adefilippo83/redundanet.git
+cd redundanet
+
+# Initialize your node
+pip install redundanet
+redundanet init --name {result.node_name}
+
+# Pull the latest manifest
+redundanet sync
+
+# Start services with Docker
+docker compose up -d
+
+# Check status
+redundanet status
+```
+
+*Thank you for contributing to RedundaNet!*"""
+
+
+def main() -> int:
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_number = os.environ.get("ISSUE_NUMBER", "")
 
@@ -335,20 +434,26 @@ def main() -> None:
     if not result.success:
         print("::error::" + result.error)
         set_output(success="false", error=result.error)
-        return
+        return 1
 
     print(f"Node name: {result.node_name}")
     print(f"Assigned VPN IP: {result.vpn_ip}")
     print(f"GPG key id stored in manifest: {result.gpg_key_id}")
+    if result.revision is not None:
+        print(f"Manifest revision: {result.revision}")
     set_output(
         success="true",
         node_name=result.node_name,
         vpn_ip=result.vpn_ip,
         gpg_key_id=result.gpg_key_id,
         storage=result.storage,
+        revision=str(result.revision or ""),
+        next_steps=compose_next_steps(result),
+        **compose_pr(result, issue_number),
     )
     print("Done!")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -20,7 +20,7 @@ def temp_dir() -> Generator[Path, None, None]:
 def sample_manifest_data() -> dict:
     """Canonical, schema-valid manifest data for testing.
 
-    Keep this in sync with manifests/schema.json / core.manifest.MANIFEST_SCHEMA —
+    Keep this in sync with core.manifest.MANIFEST_SCHEMA —
     it is the reference shape tests should build on.
     """
     return {

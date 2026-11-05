@@ -40,7 +40,7 @@ services:
       - REDUNDANET_LOG_LEVEL=${LOG_LEVEL:-INFO}
       # Storage traffic limits on the VPN interface, storage port only (tc rates
       # such as 20mbit or 500kbit; empty = unlimited). IN caps writes into this
-      # node's shares, OUT caps the shares it serves. See docs/configuration.md.
+      # node's shares, OUT caps the shares it serves. See docs/legacy/configuration.md.
       - REDUNDANET_STORAGE_RATE_IN=${STORAGE_RATE_IN:-}
       - REDUNDANET_STORAGE_RATE_OUT=${STORAGE_RATE_OUT:-}
     volumes:
@@ -139,7 +139,7 @@ services:
       - REDUNDANET_LEASE_RENEW_INTERVAL=${LEASE_RENEW_INTERVAL:-604800}
       - REDUNDANET_LEASE_RENEW_TIMEOUT=${LEASE_RENEW_TIMEOUT:-21600}
       - REDUNDANET_REPAIR_ENABLED=${REPAIR_ENABLED:-true}
-      # Usage meter: member usage vs allocation (see docs/quotas.md). Enforcement
+      # Usage meter: member usage vs allocation (see docs/legacy/quotas.md). Enforcement
       # follows the manifest's network.quota.enforce unless overridden here.
       - REDUNDANET_USAGE_INTERVAL=${USAGE_INTERVAL:-3600}
       - REDUNDANET_QUOTA_ENFORCE=${QUOTA_ENFORCE:-}

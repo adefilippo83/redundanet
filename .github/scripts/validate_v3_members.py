@@ -5,8 +5,10 @@ A member migrating from RedundaNet 2 signs their new member key with a GPG
 key the v2 manifest lists under one of their nodes, and records it in their
 `members:` entry as `legacy_pgp: {fingerprint, signature}`. For each such
 record this script checks that the fingerprint belongs to one of that
-member's v2 nodes, fetches the key from the keyservers, and verifies the
-armored detached signature over the member key string. Any failure exits 1.
+member's v2 nodes (the v2 `member:` field is matched ignoring case, since
+it carries the GitHub login as typed), fetches the key from the keyservers,
+and verifies the armored detached signature over the member key string. Any
+failure exits 1.
 A v2-only manifest, or a member without the record, passes with a note: the
 attestation is what ties the new key to the person, so a missing one is
 visible in the log, not fatal.
@@ -132,10 +134,14 @@ def validate(
         notes.append("not a RedundaNet 3 manifest; nothing to check")
         return errors, notes
 
+    # The v2 `member:` field carries the GitHub login as typed (AlessioCappe);
+    # v3 names are lowercase, so the match ignores case.
     v2_keys: dict[str, set[str]] = {}
     for node in manifest.get("nodes") or []:
         if isinstance(node, dict) and node.get("member") and node.get("gpg_key_id"):
-            v2_keys.setdefault(str(node["member"]), set()).add(normalize(str(node["gpg_key_id"])))
+            v2_keys.setdefault(str(node["member"]).lower(), set()).add(
+                normalize(str(node["gpg_key_id"]))
+            )
 
     for member in manifest.get("members") or []:
         if not isinstance(member, dict):
@@ -146,7 +152,7 @@ def validate(
             member.get("legacy_pgp"),
         )
         if record is None:
-            if name in v2_keys:
+            if name.lower() in v2_keys:
                 notes.append(
                     f"{name}: a RedundaNet 2 member without legacy_pgp; the attestation is still to come"
                 )
@@ -162,7 +168,7 @@ def validate(
         if not FINGERPRINT.match(fingerprint):
             errors.append(f"{name}: legacy_pgp.fingerprint is not a 40-character fingerprint")
             continue
-        if fingerprint not in v2_keys.get(name, set()):
+        if fingerprint not in v2_keys.get(name.lower(), set()):
             errors.append(f"{name}: {fingerprint} is not a GPG key of {name}'s RedundaNet 2 nodes")
             continue
         try:

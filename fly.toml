@@ -1,5 +1,5 @@
 # fly.io deployment for the RedundaNet bootstrap hub (Tinc entry node +
-# Tahoe introducer). Full runbook: docs/bootstrap-hub.md
+# Tahoe introducer). Full runbook: docs/legacy/bootstrap-hub.md
 #
 # UDP note: tinc prefers UDP but fly.io's UDP routing requires binding the
 # special fly-global-services address, which tincd does not do. Only 655/tcp is
