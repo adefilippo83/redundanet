@@ -5,8 +5,10 @@ from __future__ import annotations
 import io
 import json
 import sys
+import threading
 import urllib.error
 import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -104,3 +106,106 @@ class TestProbeStorage:
             listener.close()
         assert status_server.probe_storage("127.0.0.1", port=port, timeout=2) is False
         assert status_server.probe_storage("", port=port) is None
+
+
+class TestV3Store:
+    def test_put_get_and_authorization(self, tmp_path: Path):
+        store = status_server.V3Store(tmp_path / "v3", "tok")
+        assert store.enabled
+        assert store.get("index.html") is None
+        store.put("index.html", b"<html></html>")
+        got = store.get("index.html")
+        assert got is not None and got[0] == b"<html></html>" and got[1] > 0
+        assert store.authorized("Bearer tok")
+        assert not store.authorized("Bearer nope")
+        assert not store.authorized("Basic tok")
+        assert not store.authorized(None)
+        assert store.get("../etc/passwd") is None
+        try:
+            store.put("other.txt", b"x")
+        except KeyError:
+            pass
+        else:
+            raise AssertionError("an unlisted name was stored")
+
+    def test_without_a_token_nothing_is_authorized(self, tmp_path: Path):
+        store = status_server.V3Store(tmp_path, None)
+        assert not store.enabled and not store.authorized("Bearer ")
+        assert not status_server.V3Store(tmp_path, "").enabled
+
+
+class TestV3Routes:
+    def _serve(self, monkeypatch, tmp_path: Path, token: str | None):
+        monkeypatch.setattr(status_server, "V3", status_server.V3Store(tmp_path / "v3", token))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), status_server.Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        return server, base
+
+    @staticmethod
+    def _call(
+        url: str,
+        method: str = "GET",
+        body: bytes | None = None,
+        token: str | None = None,
+        headers: dict[str, str] | None = None,
+    ):
+        request = urllib.request.Request(url, data=body, method=method)  # noqa: S310
+        if token is not None:
+            request.add_header("Authorization", f"Bearer {token}")
+        if body is not None:
+            request.add_header("Content-Type", "application/octet-stream")
+        for key, value in (headers or {}).items():
+            request.add_header(key, value)
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+                return response.status, dict(response.headers), response.read()
+        except urllib.error.HTTPError as err:
+            return err.code, dict(err.headers), err.read()
+
+    def test_publish_and_serve(self, monkeypatch, tmp_path: Path):
+        server, base = self._serve(monkeypatch, tmp_path, "tok")
+        try:
+            assert self._call(f"{base}/v3/")[0] == 404
+            assert self._call(f"{base}/v3/status.json", "PUT", b"{}", None)[0] == 401
+            assert self._call(f"{base}/v3/status.json", "PUT", b"{}", "wrong")[0] == 401
+            assert self._call(f"{base}/v3/other", "PUT", b"{}", "tok")[0] == 404
+            assert self._call(f"{base}/v3/status.json", "PUT", b"not json", "tok")[0] == 400
+            # The length guard answers before reading the body: a small body
+            # with a lying Content-Length gets the 413 without a broken pipe.
+            too_big = {"Content-Length": str(status_server.V3_MAX_BYTES + 1)}
+            assert self._call(f"{base}/v3/status.json", "PUT", b"{}", "tok", too_big)[0] == 413
+            assert (
+                self._call(f"{base}/v3/status.json", "PUT", b'{"network": "demo"}', "tok")[0] == 204
+            )
+            page = b'<!doctype html><body><a href="status.json">status.json</a></body>'
+            assert self._call(f"{base}/v3/index.html", "PUT", page, "tok")[0] == 204
+
+            status, headers, body = self._call(f"{base}/v3/status.json")
+            assert (
+                status == 200
+                and headers["Content-Type"] == "application/json"
+                and json.loads(body) == {"network": "demo"}
+            )
+            assert headers["X-Published-At"].startswith("20")
+            for path in ("/v3", "/v3/", "/v3/index.html"):
+                status, headers, body = self._call(base + path)
+                assert (
+                    status == 200
+                    and body == page
+                    and headers["Content-Type"].startswith("text/html")
+                )
+                assert headers["Content-Security-Policy"].startswith("default-src 'none'")
+            assert self._call(f"{base}/v3/../status.json")[0] in (200, 404)  # never the v3 store
+            assert self._call(f"{base}/healthz")[0] == 200
+            assert (tmp_path / "v3" / "status.json").read_bytes() == b'{"network": "demo"}'
+        finally:
+            server.shutdown()
+
+    def test_publishing_is_off_without_a_token(self, monkeypatch, tmp_path: Path):
+        server, base = self._serve(monkeypatch, tmp_path, None)
+        try:
+            assert self._call(f"{base}/v3/status.json", "PUT", b"{}", "tok")[0] == 503
+            assert self._call(f"{base}/v3/")[0] == 404
+        finally:
+            server.shutdown()

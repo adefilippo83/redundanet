@@ -8,6 +8,8 @@ announcements); a stdlib HTTP server serves the cached snapshot:
     /             human status page
     /status.json  machine-readable status (alerting hook)
     /healthz      liveness for the fly.io check
+    /v3/          the RedundaNet 3 hub's status page and /v3/status.json, as
+                  that hub last PUT them here with its bearer token
 
 A collector failure can never take the page down — the page keeps serving the
 last snapshot and shows how stale it is.
@@ -16,6 +18,7 @@ last snapshot and shows how stale it is.
 from __future__ import annotations
 
 import contextlib
+import hmac
 import json
 import os
 import socket
@@ -55,6 +58,10 @@ ROLLUP_PATH = Path("/var/lib/tahoe-introducer/monitor/uptime-hourly.jsonl")
 CENSUS_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/census")
 CENSUS_STORE_PATH = CENSUS_CACHE_DIR / "census.sqlite"
 USAGE_CACHE_DIR = Path("/var/lib/tahoe-introducer/monitor/usage")
+V3_DIR = Path("/var/lib/tahoe-introducer/monitor/v3")
+V3_TOKEN_ENV = "REDUNDANET_V3_PUBLISH_TOKEN"  # noqa: S105  (the variable name, not a secret)
+V3_MAX_BYTES = 2 * 1024 * 1024
+V3_FILES = {"status.json": "application/json", "index.html": "text/html; charset=utf-8"}
 INTRODUCER_JSON = "http://127.0.0.1:4458/?t=json"
 INTRODUCER_PAGE = "http://127.0.0.1:4458/"
 INTERVAL = 60
@@ -217,6 +224,49 @@ class Snapshot:
 SNAPSHOT = Snapshot()
 
 
+class V3Store:
+    """What the RedundaNet 3 hub publishes here: its status page and
+    status.json, PUT with a bearer token and served under /v3/. The files
+    live on the volume so a restart keeps serving the last copy; without a
+    token nothing can be published and the old copy keeps being served."""
+
+    def __init__(self, directory: Path, token: str | None) -> None:
+        self.directory = directory
+        self._token = token or None
+        self._lock = threading.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        return self._token is not None
+
+    def authorized(self, header: str | None) -> bool:
+        if self._token is None or not header or not header.startswith("Bearer "):
+            return False
+        return hmac.compare_digest(header[len("Bearer ") :].strip(), self._token)
+
+    def put(self, name: str, body: bytes) -> None:
+        if name not in V3_FILES:
+            raise KeyError(name)
+        with self._lock:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            tmp = self.directory / f".{name}.tmp"
+            tmp.write_bytes(body)
+            tmp.replace(self.directory / name)
+
+    def get(self, name: str) -> tuple[bytes, float] | None:
+        if name not in V3_FILES:
+            return None
+        path = self.directory / name
+        with self._lock:
+            try:
+                return path.read_bytes(), path.stat().st_mtime
+            except FileNotFoundError:
+                return None
+
+
+V3 = V3Store(V3_DIR, None)  # main() configures the token
+
+
 def collect_once(node_name: str) -> None:
     logger = get_logger()
     manifest_file = locate_manifest(MANIFEST_DIR)
@@ -282,12 +332,16 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "redundanet-status"
 
     def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/v3" or path.startswith("/v3/"):
+            self._get_v3(path)
+            return
         html, json_body, collected_at = SNAPSHOT.get()
-        if self.path.startswith("/healthz"):
+        if path.startswith("/healthz"):
             body, ctype = b"ok\n", "text/plain"
-        elif self.path.startswith("/status.json"):
+        elif path.startswith("/status.json"):
             body, ctype = json_body, "application/json"
-        elif self.path in ("/", "/index.html"):
+        elif path in ("/", "/index.html"):
             stale = time.time() - collected_at > 5 * INTERVAL
             if stale and collected_at:
                 marker = f"<!-- stale since {datetime.fromtimestamp(collected_at, tz=UTC)} -->"
@@ -296,10 +350,78 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
             return
-        self.send_response(200)
+        self._send(200, ctype, body)
+
+    @staticmethod
+    def _v3_name(path: str, *, put: bool = False) -> str | None:
+        """The stored file a /v3/ path names, returned as one of our own
+        constants so the request string itself never reaches the filesystem."""
+        if not put and path in ("/v3", "/v3/"):
+            return "index.html"
+        for known in V3_FILES:
+            if path == f"/v3/{known}":
+                return known
+        return None
+
+    def _get_v3(self, path: str) -> None:
+        name = self._v3_name(path)
+        if name is None:
+            self.send_error(404)
+            return
+        found = V3.get(name)
+        if found is None:
+            self._send(404, "text/plain", b"nothing published yet\n")
+            return
+        body, published_at = found
+        headers = {"X-Published-At": datetime.fromtimestamp(published_at, tz=UTC).isoformat()}
+        if name == "index.html":
+            headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+            if time.time() - published_at > 5 * INTERVAL:
+                marker = f"<!-- stale since {datetime.fromtimestamp(published_at, tz=UTC)} -->"
+                body = body.replace(b"</body>", marker.encode() + b"</body>")
+        self._send(200, V3_FILES[name], body, headers)
+
+    def do_PUT(self) -> None:
+        path = self.path.split("?", 1)[0]
+        name = self._v3_name(path, put=True)
+        if name is None:
+            self.send_error(404)
+            return
+        if not V3.enabled:
+            self.send_error(503, "publishing is not configured")
+            return
+        if not V3.authorized(self.headers.get("Authorization")):
+            self.send_error(401)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or "")
+        except ValueError:
+            self.send_error(411)
+            return
+        if length < 1 or length > V3_MAX_BYTES:
+            self.send_error(413)
+            return
+        body = self.rfile.read(length)
+        if name == "status.json":
+            try:
+                json.loads(body)
+            except ValueError:
+                self.send_error(400, "status.json is not JSON")
+                return
+        V3.put(name, body)
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _send(
+        self, status: int, ctype: str, body: bytes, headers: dict[str, str] | None = None
+    ) -> None:
+        self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -332,6 +454,10 @@ def main() -> None:
     node_name = os.environ.get("REDUNDANET_NODE_NAME", "hub")
     port = int(os.environ.get("REDUNDANET_STATUS_PORT", "8080"))
     open_store()
+    global V3
+    V3 = V3Store(V3_DIR, os.environ.get(V3_TOKEN_ENV))
+    if not V3.enabled:
+        logger.info("RedundaNet 3 publishing is off: %s is not set", V3_TOKEN_ENV)
 
     threading.Thread(target=collector_loop, args=(node_name,), daemon=True).start()
     logger.info("Status server listening", port=port)

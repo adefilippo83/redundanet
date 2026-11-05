@@ -1,0 +1,45 @@
+# RedundaNet 3 hub on hub-hetzner: relay, census collector, status publisher.
+# Installed at /etc/systemd/system/redundanet-hub.service; see README.md.
+# The binary lives under the service user's directory so the hub can update
+# itself (download, probation, rename); systemd restarts it afterwards.
+[Unit]
+Description=RedundaNet 3 hub
+Documentation=https://github.com/adefilippo83/redundanet/tree/main/agent/deploy/hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=redundanet3
+Group=redundanet3
+ExecStart=/var/lib/redundanet3/bin/redundanet hub \
+  --network redundanet \
+  --data-dir /var/lib/redundanet3 \
+  --channel early \
+  --udp :8443 --tcp :8443 \
+  --status 127.0.0.1:4480 \
+  --legacy-status https://redundanet-hub.fly.dev/status.json \
+  --publish https://redundanet-hub.fly.dev/v3/ \
+  --publish-token-file /etc/redundanet3/publish.token
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# The hub holds no key worth stealing and no share, but it is on the internet.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/redundanet3
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

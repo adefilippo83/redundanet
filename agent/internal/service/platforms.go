@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func run(name string, args ...string) (string, error) {
@@ -38,14 +39,46 @@ func installLaunchd(s Spec) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
-	_, _ = run("launchctl", "bootout", launchdDomain()+"/org.redundanet."+s.label())
+	target := launchdDomain() + "/org.redundanet." + s.label()
+	_, _ = run("launchctl", "bootout", target)
+	waitLaunchdGone(target)
 	if err := os.WriteFile(p, []byte(LaunchdPlist(s)), 0o644); err != nil {
 		return "", err
 	}
-	if _, err := run("launchctl", "bootstrap", launchdDomain(), p); err != nil {
-		return p, err
+	return p, bootstrapLaunchd(p)
+}
+
+// launchctl bootout returns before launchd has torn the old instance
+// down, and a bootstrap that arrives while the label still exists fails
+// with "Input/output error" (5): a reinstall of a running service hit
+// that. waitLaunchdGone polls until the label is gone, for as long as
+// launchd itself gives a service to stop, and bootstrapLaunchd retries
+// past that, since the moment the label becomes free is not observable.
+func waitLaunchdGone(target string) {
+	deadline := time.Now().Add(launchdStopWait)
+	for time.Now().Before(deadline) {
+		if _, err := run("launchctl", "print", target); err != nil {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	return p, nil
+}
+
+// launchdStopWait is launchd's own SIGTERM to SIGKILL grace (20 s) and
+// some margin.
+var launchdStopWait = 25 * time.Second
+
+func bootstrapLaunchd(p string) error {
+	var err error
+	for attempt := 0; attempt < 10; attempt++ {
+		if attempt > 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		if _, err = run("launchctl", "bootstrap", launchdDomain(), p); err == nil || !strings.Contains(err.Error(), "Input/output error") {
+			return err
+		}
+	}
+	return err
 }
 
 func uninstallLaunchd(s Spec) error {
