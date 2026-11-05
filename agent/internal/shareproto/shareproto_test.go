@@ -697,9 +697,20 @@ func TestLocalOpener(t *testing.T) {
 	if !errors.Is(err, fail) {
 		t.Fatalf("failed put: %v", err)
 	}
-	calls := 0
-	if err := c.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) { calls++; return o.blocks[2][s], nil }); err != nil || calls == 0 || calls >= len(o.blocks[2]) {
-		t.Fatalf("resumed put: %v, %d of %d blocks sent", err, calls, len(o.blocks[2]))
+	// The handler keeps the partial once it has seen the end; the resume
+	// picks up from there.
+	for i := 0; i < 50; i++ {
+		if p, _ = c.Has(ctx, peer, si); p != nil && p.Partial[2] == 2 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if p == nil || p.Partial[2] != 2 {
+		t.Fatalf("partial after interruption: %+v", p)
+	}
+	sent := []int{}
+	if err := c.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) { sent = append(sent, s); return o.blocks[2][s], nil }); err != nil || len(sent) != 2 || sent[0] != 2 {
+		t.Fatalf("resumed put: %v, sent %v", err, sent)
 	}
 	if p, err := c.Has(ctx, peer, si); err != nil || p == nil || len(p.Complete) != 2 {
 		t.Fatalf("has after resume: %+v %v", p, err)
