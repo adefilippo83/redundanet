@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/migrate"
@@ -48,7 +49,7 @@ func runMigrateNode(args []string) error {
 		if err := migrate.Rollback(cfg); err != nil {
 			return err
 		}
-		fmt.Println("the RedundaNet 2 stack is starting again; the agent never stopped")
+		fmt.Println("the RedundaNet 2 stack is starting again, every service together and tinc first; the agent never stopped")
 		return nil
 	}
 	if at, ok := migrate.Migrated(d); ok {
@@ -84,7 +85,7 @@ func runMigrateNode(args []string) error {
 	if err := migrate.Apply(cfg, plan, agent, *force); err != nil {
 		return err
 	}
-	fmt.Println("the RedundaNet 2 stack is stopped and removed as containers; its files and the Tahoe shares stay on disk")
+	fmt.Printf("the RedundaNet 2 stack (%s) is stopped and removed as containers; its files and the Tahoe shares stay on disk\n", strings.Join(plan.Services, ", "))
 	if st, err := c.Status(ctx); err == nil {
 		up := 0
 		if st.Transport != nil {
