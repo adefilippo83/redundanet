@@ -1,6 +1,15 @@
 # RedundaNet 3 release index. Signed by the release key (index.sig); see README.md.
-revision: 20
+revision: 21
 releases:
+  - version: 3.0.0-alpha.21
+    channel: early
+    notes: https://github.com/adefilippo83/redundanet/releases/tag/agent%2Fv3.0.0-alpha.21
+    assets:
+      darwin/amd64: {url: https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0-alpha.21/redundanet-3.0.0-alpha.21-darwin-amd64.tar.gz, sha256: def1295463b34ca9cc9930031c3cb7cb97ebd0f4ddae05f14fc24fedc55ede58, size: 8252867}
+      darwin/arm64: {url: https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0-alpha.21/redundanet-3.0.0-alpha.21-darwin-arm64.tar.gz, sha256: 42f016e721ac88ce70d126e89b0e336dd6253e8a38f341e6139271e40da1a50d, size: 7585453}
+      linux/amd64: {url: https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0-alpha.21/redundanet-3.0.0-alpha.21-linux-amd64.tar.gz, sha256: 89ed6e85c6b544fccd8245b0e44b34a53332fee1868555ce9748e8a25ff24cfd, size: 8245465}
+      linux/arm64: {url: https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0-alpha.21/redundanet-3.0.0-alpha.21-linux-arm64.tar.gz, sha256: 20b6a33b49603bb2c85f6218cbd753fdacdce0f4c3b4b81861c7b57433d693bd, size: 7405650}
+      windows/amd64: {url: https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0-alpha.21/redundanet-3.0.0-alpha.21-windows-amd64.zip, sha256: 038c5dcf891b678e4cafa2db0fe1604d5f58b996182732571e86fa3075f664bc, size: 8221889}
   - version: 3.0.0-alpha.20
     channel: early
     notes: https://github.com/adefilippo83/redundanet/releases/tag/agent%2Fv3.0.0-alpha.20
