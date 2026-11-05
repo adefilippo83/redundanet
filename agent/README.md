@@ -320,6 +320,19 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
     operators listed in the manifest itself, which proves consistency, not
     authenticity; agents pin the keys from the network descriptor they
     joined with.
+
+sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
+    Phase 3, on a node that runs the agent beside the RedundaNet 2 stack:
+    retires the stack. Refuses while the folder backup-sync pushed to the
+    old grid is not held by a native set with a complete run and a passed
+    restore test on this device, or while no hub is connected; --force
+    overrides, and the plan names what is lost. Then one `docker compose
+    down` through the installed compose file, its override and .env, every
+    container at once and tinc last by its dependencies, and a marker in
+    the data directory. The compose files, the .env and the Tahoe share
+    directories stay on disk; the shares go on the network's stop date,
+    not here. --rollback is `compose up` with the same files and removes
+    the marker. The agent is untouched throughout.
 ```
 
 ## Encodings, fixed here
