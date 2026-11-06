@@ -11,16 +11,14 @@ on:
     branches: [main, develop]
     paths:
       - "rpi-image/**"
-      - "src/**"
-      - "pyproject.toml"
+      - "agent/deploy/node/**"
       - "scripts/rpi-smoke-test.sh"
       - ".github/workflows/rpi-smoke.yml"
   pull_request:
     branches: [main, develop]
     paths:
       - "rpi-image/**"
-      - "src/**"
-      - "pyproject.toml"
+      - "agent/deploy/node/**"
       - "scripts/rpi-smoke-test.sh"
       - ".github/workflows/rpi-smoke.yml"
   workflow_dispatch:
@@ -38,10 +36,10 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+      - uses: actions/setup-go@v7
         with:
-          version: 1.7.1
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
 
       - name: Run Raspberry Pi image smoke test
         run: bash scripts/rpi-smoke-test.sh
