@@ -133,6 +133,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/backup/verify", s.apiBackupVerify)
 	mux.HandleFunc("POST /api/backup/cleanup", s.apiBackupCleanup)
 	mux.HandleFunc("POST /api/backup/rebalance", s.apiBackupRebalance)
+	mux.HandleFunc("POST /api/backup/limit", s.apiBackupLimit)
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
@@ -318,6 +319,28 @@ func (s *Server) apiBackupAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"result": "set " + set.Name + " saved"})
+}
+
+// Limits is the bandwidth caps as the API carries them.
+type Limits struct {
+	UploadKBps   int `json:"upload_kbps"`
+	DownloadKBps int `json:"download_kbps"`
+}
+
+func (s *Server) apiBackupLimit(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var l Limits
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&l); err != nil {
+		http.Error(w, "bad limits: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.SetLimits(l.UploadKBps, l.DownloadKBps); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "limits saved"})
 }
 
 func (s *Server) apiBackupRemove(w http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,7 @@ type command struct {
 }
 
 var commands = []command{
-	{"identity", "member and device identity: init, show, device-key, certify, accept-certificate", runIdentity},
+	{"identity", "member and device identity: init, show, check, device-key, certify, accept-certificate", runIdentity},
 	{"device", "this member's devices: revoke", runDevice},
 	{"operator", "the offline operator key: init", runOperator},
 	{"manifest", "sign a merged manifest, or verify a signature: sign, verify", runManifest},
@@ -26,7 +26,7 @@ var commands = []command{
 	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},
 	{"object", "store, fetch or look up one object on the grid: put, get, has, check, repair, delete", runObject},
 	{"storage", "this node's own share store, beside the running agent: has, drop", runStorage},
-	{"backup", "backup sets of the running agent: add, remove, list, run, verify", runBackup},
+	{"backup", "backup sets of the running agent: add, remove, list, run, verify, limit", runBackup},
 	{"restore", "restore from the running agent: list, browse, start, status", runRestore},
 	{"status", "what the running agent sees", runStatus},
 	{"open", "open the local page in the browser, with a one-time link", runOpen},

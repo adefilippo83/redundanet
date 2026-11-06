@@ -18,6 +18,7 @@ New member on this device: shows the twelve-word phrase, checks three words back
 
 ```
 redundanet identity show --network NAME
+redundanet identity check --network NAME        # the phrase you type must derive this device's member key; nothing is written
 ```
 Member key, its ten-group display code, device key, roles, certificate date and serial.
 
@@ -55,6 +56,7 @@ The running agent's recent log lines.
 
 ```
 redundanet backup add NAME FOLDER [FOLDER...] [--exclude a,b]
+redundanet backup limit [--upload KBPS] [--download KBPS]   # caps on what this device sends and receives over the mesh, kilobytes per second, 0 for none
 redundanet backup remove NAME
 redundanet backup list
 redundanet backup run [NAME]

@@ -71,6 +71,7 @@ redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-onl
 redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
+redundanet backup limit [--upload KBPS] [--download KBPS]   # bandwidth caps on this device's mesh traffic, 0 for none
 redundanet diagnostics [--out FILE]
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
@@ -87,6 +88,14 @@ A storage device also opens its store in the `redundanet3` directory of
 at a rate that covers them monthly, and sends each hub its share census as
 deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
+The bandwidth caps of the RFC (F8) pace every mesh stream of the device,
+opened or accepted, so a backup never takes more than its share of a home
+uplink: `backup limit --upload 2000 --download 0` caps what the device
+sends at 2000 kB/s and leaves what it receives free. The caps live in
+`backup.yaml` as `upload_kbps` and `download_kbps`, apply at once and
+survive restarts, and show in `backup list` and on the local page. A token
+bucket grants a second's worth of burst after idle time, never more. The
+in-process path to the device's own store is never paced.
 The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
 the restore test weekly (a file saved by an earlier version with the
@@ -287,6 +296,10 @@ redundanet identity init --network NAME [--storage] [--passphrase]
     the identity file (device key, member secret, certificate).
 
 redundanet identity show --network NAME
+redundanet identity check --network NAME
+    Types the phrase and says whether it is the one this device was
+    certified under; nothing is written. The check to run after writing
+    the phrase down, and whenever in doubt.
     Member key, its ten-group display code, device key, roles.
 
 redundanet identity device-key --network NAME            (on a headless node)

@@ -28,6 +28,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/ratelimit"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 	"github.com/adefilippo83/redundanet/agent/internal/repair"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
@@ -488,6 +489,13 @@ func runAgent(args []string) error {
 	// This device's own server is reached in process, whatever the mesh is
 	// doing: a storage node never dials itself.
 	local := shareproto.LocalOpener(identity.Peer{Device: rc.device, Member: rc.state.Member, Certificate: &rc.state.Certificate}, onStream)
+	// The bandwidth caps pace every mesh stream, opened or accepted; the
+	// in-process path to this device's own store is never paced. The jobs
+	// file holds the caps and feeds them in.
+	upCap, downCap := ratelimit.New(0), ratelimit.New(0)
+	pacedOnStream := func(p identity.Peer, path string, st wire.Stream) {
+		onStream(p, path, ratelimit.Stream(st, upCap, downCap))
+	}
 	client := shareproto.NewClient(func(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
 		if peer == rc.device {
 			return local(ctx, peer)
@@ -496,7 +504,11 @@ func runAgent(args []string) error {
 		if e == nil {
 			return nil, "", errors.New("the endpoint is handing over")
 		}
-		return e.OpenStream(ctx, peer)
+		st, path, err := e.OpenStream(ctx, peer)
+		if err != nil {
+			return nil, "", err
+		}
+		return ratelimit.Stream(st, upCap, downCap), path, nil
 	})
 	var runner *jobs.Runner
 	// A storage node volunteers as a repair worker: it takes the hub's
@@ -513,6 +525,7 @@ func runAgent(args []string) error {
 			revocations = rc.member.Revocations
 		}
 		runner, err = jobs.New(jobs.Config{DataDir: rc.dataDir, Engine: eng, DB: ldb, Member: rc.state.Member, Device: rc.device, Revocations: revocations,
+			OnLimits: func(up, down int) { upCap.SetKBps(up); downCap.SetKBps(down) },
 			Manifest: rc.current, SpoolDir: spoolDir, Log: rc.log})
 		if err != nil {
 			return err
@@ -612,7 +625,7 @@ func runAgent(args []string) error {
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 			UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
-			OnStream: onStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, Log: rc.log,
+			OnStream: pacedOnStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, Log: rc.log,
 		})
 		if err != nil {
 			return nil, err
