@@ -35,7 +35,7 @@ Agents apply only a manifest signed by an operator key pinned at join, with a re
 
 ## Device revocation
 
-A member revokes a lost or stolen device from any other device of theirs with `redundanet device revoke --device KEY`: the command asks for the phrase and prints a signed revocation record. The operator adds it to the manifest under `revocations:`, signs and merges; every agent and server refuses the device from then on, and the revocation survives every later manifest. It takes effect when the operator signs, not within seconds. What the device wrote while it was trusted keeps verifying, so repair keeps working.
+A member revokes a lost or stolen device from any other device of theirs with `redundanet device revoke --device KEY`: the command asks for the phrase, signs a revocation record, and the running agent applies it at once and sends it to every storage server and every hub, which spread it to every device within seconds and to any device that connects later. The command also prints the record; the operator adds it to the manifest under `revocations:`, signs and merges, so it survives every later manifest and reaches whoever was unreachable. What the device wrote while it was trusted keeps verifying, so repair keeps working.
 
 ## What a lost device can do
 

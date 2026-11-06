@@ -283,6 +283,16 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 			return
 		}
 		c.ep.cfg.OnTask(&t, func(r *wire.TaskReport) error { return c.sendMessage(wire.FrameTaskReport, r) })
+	case wire.FrameRevocation:
+		if c.ep.cfg.OnRevocation == nil {
+			return
+		}
+		r, err := identity.DecodeRevocation(payload)
+		if err != nil {
+			c.ep.log.Warn("hub sent a bad revocation", "err", err)
+			return
+		}
+		c.ep.cfg.OnRevocation(r)
 	case wire.FrameRelease:
 		if c.ep.cfg.OnRelease == nil {
 			return

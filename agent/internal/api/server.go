@@ -56,6 +56,18 @@ type Actions struct {
 	CheckUpdate func(ctx context.Context) (string, error) // returns the available version, "" for none
 	ApplyUpdate func(ctx context.Context) error
 	RetryUpdate func(ctx context.Context, version string) error // forgets a failed probation
+	// Revoke applies a member's signed device revocation here and sends it
+	// to every storage server and hub: the direct path of "Losing a device".
+	Revoke func(ctx context.Context, r *identity.SignedRevocation) (RevokeReport, error)
+}
+
+// RevokeReport is how far a revocation got right away; the signed
+// manifest carries it to the rest.
+type RevokeReport struct {
+	Servers      int `json:"servers"`       // storage servers that took it
+	ServersTotal int `json:"servers_total"` // storage servers in the manifest
+	Hubs         int `json:"hubs"`          // hubs that took it
+	HubsTotal    int `json:"hubs_total"`
 }
 
 // Config wires the server.
@@ -134,6 +146,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/backup/cleanup", s.apiBackupCleanup)
 	mux.HandleFunc("POST /api/backup/rebalance", s.apiBackupRebalance)
 	mux.HandleFunc("POST /api/backup/limit", s.apiBackupLimit)
+	mux.HandleFunc("POST /api/revoke", s.apiRevoke)
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
@@ -233,6 +246,34 @@ func (s *Server) apiLoginLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"url": "http://" + s.Addr() + "/login?t=" + t})
+}
+
+func (s *Server) apiRevoke(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAPI(w, r) {
+		return
+	}
+	if s.cfg.Actions.Revoke == nil {
+		http.Error(w, "revocation is not configured", http.StatusNotImplemented)
+		return
+	}
+	var in struct {
+		Record []byte `json:"record"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		http.Error(w, "bad record: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	rv, err := identity.DecodeRevocation(in.Record)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rep, err := s.cfg.Actions.Revoke(r.Context(), rv)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, rep)
 }
 
 func (s *Server) apiUpdateCheck(w http.ResponseWriter, r *http.Request) {

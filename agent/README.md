@@ -53,11 +53,12 @@ redundanet network descriptor --manifest manifests/manifest.yaml --repository ht
     where the signed manifest is served. It goes into invite links.
 
 redundanet device revoke --network NAME --device KEY [--serial N]
-    Any device of the member, with the phrase: prints a signed revocation
-    record for `revocations:` in the manifest. Serial 0, the default,
-    covers every certificate of the device, the case of a lost one. The
-    operator appends it, raises the revision and signs; every agent and
-    server refuses the device from then on.
+    Any device of the member, with the phrase: signs a revocation record
+    and hands it to the running agent, which applies it here and sends it
+    to every storage server and hub within seconds; the record is printed
+    too, for `revocations:` in the manifest, which carries it to whoever
+    was not reachable. Serial 0, the default, covers every certificate of
+    the device, the case of a lost one.
 
 redundanet network join <descriptor>
     A device pins the descriptor's operator keys, fetches the manifest and
@@ -360,11 +361,16 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
     first by its dependencies, and removes the marker: the stack is never
     restarted one container at a time. The agent is untouched throughout.
 
-A device revocation travels in the manifest: the member's `device revoke`
-prints the record, the operator appends it under `revocations:` (member
-key, device key, serial, revoked_at, signature), raises the revision and
-signs; `validate` checks every record's signature against the member's
-key and warns when one names a listed storage device.
+A device revocation takes the direct path first, the RFC's "Losing a
+device": the agent applies the member's signed record, delivers it to every
+storage server over the storage protocol (`revoke`) and to every hub over
+the channel; a hub keeps it, sends it to every connected device at once and
+to each device that connects later, so a server that was offline learns it
+on its next connection. The manifest carries it for good: the operator
+appends the printed record under `revocations:` (member key, device key,
+serial, revoked_at, signature), raises the revision and signs; `validate`
+checks every record's signature against the member's key and warns when
+one names a listed storage device.
 ```
 
 ## Encodings, fixed here

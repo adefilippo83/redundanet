@@ -27,6 +27,7 @@ const (
 	TypeDelete   = "delete"   // a signed delete token: the first phase of deletion
 	TypeUndelete = "undelete" // the owner's change of mind within the window
 	TypeList     = "list"     // the objects this server holds for the asking member
+	TypeRevoke   = "revoke"   // a member's signed device revocation, applied and kept by the server
 )
 
 // Statuses a response carries; everything but StatusOK is a refusal the
@@ -54,18 +55,19 @@ const maxMessage = 1 << 20
 
 // Request opens every exchange.
 type Request struct {
-	Type         string                   `cbor:"type"`
-	StorageIndex object.StorageIndex      `cbor:"si"`
-	Number       uint8                    `cbor:"n"`
-	Descriptor   *object.SignedDescriptor `cbor:"descriptor,omitempty"` // put
-	From         int                      `cbor:"from"`                 // get: first segment
-	To           int                      `cbor:"to"`                   // get: one past the last segment; 0 means all
-	HashesOnly   bool                     `cbor:"hashes_only"`          // get: the hash list, no blocks
-	Member       identity.Key             `cbor:"member"`               // get-roots
-	Root         *RootEnvelope            `cbor:"root,omitempty"`       // put-root
-	Task         *wire.RepairTask         `cbor:"task,omitempty"`       // put by a repair worker: the hub's signed order
-	Token        *DeleteToken             `cbor:"token,omitempty"`      // delete
-	After        object.StorageIndex      `cbor:"after"`                // list: the page starts after this index
+	Type         string                     `cbor:"type"`
+	StorageIndex object.StorageIndex        `cbor:"si"`
+	Number       uint8                      `cbor:"n"`
+	Descriptor   *object.SignedDescriptor   `cbor:"descriptor,omitempty"` // put
+	From         int                        `cbor:"from"`                 // get: first segment
+	To           int                        `cbor:"to"`                   // get: one past the last segment; 0 means all
+	HashesOnly   bool                       `cbor:"hashes_only"`          // get: the hash list, no blocks
+	Member       identity.Key               `cbor:"member"`               // get-roots
+	Root         *RootEnvelope              `cbor:"root,omitempty"`       // put-root
+	Task         *wire.RepairTask           `cbor:"task,omitempty"`       // put by a repair worker: the hub's signed order
+	Token        *DeleteToken               `cbor:"token,omitempty"`      // delete
+	Revocation   *identity.SignedRevocation `cbor:"revocation,omitempty"` // revoke
+	After        object.StorageIndex        `cbor:"after"`                // list: the page starts after this index
 }
 
 // Response answers a request; for put it precedes the blocks and a second

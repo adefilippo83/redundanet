@@ -33,6 +33,12 @@ type Policy interface {
 	Converting() (k, n int, ok bool)
 }
 
+// Revoker is a policy that applies and keeps device revocations; the
+// agent's does, the tests' may not.
+type Revoker interface {
+	Revoke(r *identity.SignedRevocation) error
+}
+
 // Server serves the storage protocol over streams of the mesh.
 type Server struct {
 	st  *store.Store
@@ -83,6 +89,8 @@ func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 		err = s.undelete(peer, st, &req)
 	case TypeList:
 		err = s.list(peer, st, &req)
+	case TypeRevoke:
+		err = s.revoke(st, &req)
 	default:
 		err = writeMsg(st, Response{Status: StatusBad, Message: "unknown request " + req.Type})
 	}
@@ -90,6 +98,34 @@ func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 		s.log.Debug("request ended", "type", req.Type, "peer", peer.Device.Short(), "err", err)
 		st.CancelRead(1)
 	}
+}
+
+// revoke applies a member's signed device revocation: the record carries
+// its own proof, so any admitted peer may deliver it; the member must be
+// listed, so a stranger's key cannot fill the list.
+func (s *Server) revoke(st wire.Stream, req *Request) error {
+	r := req.Revocation
+	if r == nil {
+		return refuse(st, StatusBad, "revoke without a record")
+	}
+	if err := r.Verify(); err != nil {
+		return refuse(st, StatusBad, err.Error())
+	}
+	if r.Revocation.Network != s.pol.Network() {
+		return refuse(st, StatusBad, "a revocation for another network")
+	}
+	if active, leaving := s.pol.MemberStatus(r.Revocation.Member); !active && !leaving {
+		return refuse(st, StatusRefused, "the member is not listed")
+	}
+	rv, ok := s.pol.(Revoker)
+	if !ok {
+		return refuse(st, StatusUnavailable, "this server keeps no revocations")
+	}
+	if err := rv.Revoke(r); err != nil {
+		return refuse(st, StatusFailed, err.Error())
+	}
+	s.log.Info("device revoked", "member", r.Revocation.Member.Short(), "device", r.Revocation.Device.Short(), "serial", r.Revocation.Serial)
+	return writeMsg(st, Response{Status: StatusOK})
 }
 
 func refuse(st io.Writer, status, msg string) error {

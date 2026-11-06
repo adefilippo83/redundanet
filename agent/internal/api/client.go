@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/rebalance"
@@ -87,6 +88,18 @@ func (c *Client) Backups(ctx context.Context) (*jobs.Status, error) {
 // BackupAdd creates or replaces a set.
 func (c *Client) BackupAdd(ctx context.Context, set backup.Set) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/backup/add", set, nil)
+}
+
+// Revoke hands the running agent a signed device revocation to apply and
+// send around; the report says how far it got.
+func (c *Client) Revoke(ctx context.Context, r *identity.SignedRevocation) (RevokeReport, error) {
+	var rep RevokeReport
+	enc, err := r.Encode()
+	if err != nil {
+		return rep, err
+	}
+	err = c.doJSON(ctx, http.MethodPost, "/api/revoke", map[string][]byte{"record": enc}, &rep)
+	return rep, err
 }
 
 // BackupLimit sets the bandwidth caps in kilobytes per second, 0 for none.

@@ -246,7 +246,18 @@ func runHub(args []string) error {
 			cancel()
 			return nil, err
 		}
-		h, err := hub.Start(bctx, hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log})
+		hcfg := hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log}
+		if rc.member != nil {
+			// The hub keeps every revocation it is handed and sends the list
+			// to each device that connects.
+			hcfg.OnRevocation = func(_ identity.Peer, r *identity.SignedRevocation) {
+				if err := rc.member.AddRevocation(r); err != nil {
+					rc.log.Warn("revocation not kept", "err", err)
+				}
+			}
+			hcfg.Revocations = rc.member.Revocations
+		}
+		h, err := hub.Start(bctx, hcfg)
 		if err != nil {
 			cancel()
 			return nil, err
@@ -510,6 +521,59 @@ func runAgent(args []string) error {
 		}
 		return ratelimit.Stream(st, upCap, downCap), path, nil
 	})
+	// A revocation a hub pushes is kept like one a peer delivers.
+	onRevocation := func(r *identity.SignedRevocation) {
+		if rc.member == nil {
+			return
+		}
+		if err := rc.member.AddRevocation(r); err != nil {
+			rc.log.Warn("revocation not kept", "err", err)
+		}
+	}
+	// The direct path of "Losing a device": applied here, then handed to
+	// every storage server and every hub; the signed manifest carries it
+	// to whoever was not reachable.
+	revokeAction := func(ctx context.Context, r *identity.SignedRevocation) (api.RevokeReport, error) {
+		var rep api.RevokeReport
+		if rc.member == nil {
+			return rep, errors.New("no membership on this device")
+		}
+		if r.Revocation.Member != rc.state.Member {
+			return rep, errors.New("the record is another member's")
+		}
+		if err := rc.member.AddRevocation(r); err != nil {
+			return rep, err
+		}
+		man := rc.current()
+		if man == nil {
+			return rep, errors.New("no manifest yet")
+		}
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, s := range man.Storage {
+			rep.ServersTotal++
+			wg.Add(1)
+			go func(dev identity.Key) {
+				defer wg.Done()
+				cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				if err := client.Revoke(cctx, dev, r); err != nil {
+					rc.log.Info("revocation not delivered", "server", dev.Short(), "err", err)
+					return
+				}
+				mu.Lock()
+				rep.Servers++
+				mu.Unlock()
+			}(s.Device)
+		}
+		wg.Wait()
+		rep.HubsTotal = len(man.Hubs)
+		if e := current(); e != nil {
+			rep.Hubs = e.SendRevocation(r)
+		}
+		rc.log.Info("device revoked", "device", r.Revocation.Device.Short(), "servers", rep.Servers, "of", rep.ServersTotal, "hubs", rep.Hubs)
+		return rep, nil
+	}
 	var runner *jobs.Runner
 	// A storage node volunteers as a repair worker: it takes the hub's
 	// signed tasks and answers its surplus hints.
@@ -625,7 +689,7 @@ func runAgent(args []string) error {
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
 			UDPPort: udpPort, PortMap: *portMap, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
-			OnStream: pacedOnStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, Log: rc.log,
+			OnStream: pacedOnStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, OnRevocation: onRevocation, Log: rc.log,
 		})
 		if err != nil {
 			return nil, err
@@ -659,6 +723,7 @@ func runAgent(args []string) error {
 			return s
 		},
 		Actions: api.Actions{
+			Revoke: revokeAction,
 			CheckUpdate: func(ctx context.Context) (string, error) {
 				u := getU()
 				if u == nil {
@@ -922,6 +987,15 @@ func shareCensus(st *store.Store) func(since uint64) (*wire.ShareCensus, error) 
 type manifestPolicy struct{ rc *runtimeConfig }
 
 func (p *manifestPolicy) Network() string { return p.rc.state.Network }
+
+// Revoke keeps a revocation a peer delivered: applied, persisted, and the
+// connections of the revoked device closed through the recheck.
+func (p *manifestPolicy) Revoke(r *identity.SignedRevocation) error {
+	if p.rc.member == nil {
+		return errors.New("no membership on this device")
+	}
+	return p.rc.member.AddRevocation(r)
+}
 
 func (p *manifestPolicy) Device() identity.Key { return p.rc.device }
 

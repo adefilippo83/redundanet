@@ -112,7 +112,7 @@ Back on the device: checks the certificate against the pending key and the netwo
 ```
 redundanet device revoke --device KEY
 ```
-New in 3.0.0. On any device of the member: asks for the phrase and prints a signed revocation record to add to the manifest under `revocations:`. The operator signs and merges; every agent and server refuses the device from then on.
+On any device of the member: asks for the phrase, signs a revocation record, and the running agent applies it and sends it to every storage server and hub within seconds. The record is printed too, to add to the manifest under `revocations:`; the operator signs and merges, which carries it to whoever was not reachable. `--serial N` revokes one certificate; the default revokes every certificate of the device.
 
 ## Operator commands
 

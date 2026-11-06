@@ -28,6 +28,7 @@ type testNet struct {
 	allowed map[identity.Key]bool
 	census  map[identity.Key][]wire.Census
 	shares  map[identity.Key][]*wire.ShareCensus
+	revoked []*identity.SignedRevocation // what the hub was handed and keeps
 	log     *slog.Logger
 }
 
@@ -97,7 +98,17 @@ func newTestNet(t *testing.T, tcp bool) *testNet {
 		n.shares[p.Device] = append(n.shares[p.Device], c)
 		n.mu.Unlock()
 	}
-	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, OnShares: onShares, Log: n.log})
+	onRevocation := func(_ identity.Peer, r *identity.SignedRevocation) {
+		n.mu.Lock()
+		n.revoked = append(n.revoked, r)
+		n.mu.Unlock()
+	}
+	revocations := func() []*identity.SignedRevocation {
+		n.mu.RLock()
+		defer n.mu.RUnlock()
+		return append([]*identity.SignedRevocation(nil), n.revoked...)
+	}
+	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, OnShares: onShares, OnRevocation: onRevocation, Revocations: revocations, Log: n.log})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,4 +429,54 @@ func TestNoStreamToOneself(t *testing.T) {
 	if st := ep.Status(); len(st.Sessions) != 0 {
 		t.Fatalf("a session with oneself: %+v", st.Sessions)
 	}
+}
+
+// TestRevocationSpreadsThroughTheHub: a device hands its member's signed
+// revocation to the hub; the hub keeps it, sends it to every connected
+// device at once, and to a device that connects later.
+func TestRevocationSpreadsThroughTheHub(t *testing.T) {
+	n := newTestNet(t, false)
+	var mu sync.Mutex
+	got := map[identity.Key][]*identity.SignedRevocation{}
+	receive := func(dev identity.Key) func(*Config) {
+		return func(c *Config) {
+			c.OnRevocation = func(r *identity.SignedRevocation) {
+				mu.Lock()
+				got[dev] = append(got[dev], r)
+				mu.Unlock()
+			}
+		}
+	}
+	a, aID := n.endpoint(seed(1), true, nil)
+	_, bID := n.endpoint(seed(2), true, nil)
+	eventually(t, 10*time.Second, "both channels up", func() bool {
+		return len(a.Status().Hubs) == 1 && a.Status().Hubs[0].Up && len(n.hub.Status().Clients) == 2
+	})
+	_ = bID
+	// b's endpoint was made before got knew its key; make the receivers now.
+	b2, b2ID := n.endpoint(seed(3), true, receive(seed(3).MemberKey()))
+	eventually(t, 10*time.Second, "b2 up", func() bool { return len(b2.Status().Hubs) == 1 && b2.Status().Hubs[0].Up })
+	rv, err := identity.Revoke(seed(1), identity.Revocation{Network: "testnet", Device: aID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := a.SendRevocation(rv); sent != 1 {
+		t.Fatalf("sent to %d hubs", sent)
+	}
+	eventually(t, 10*time.Second, "the hub kept it and b2 received it", func() bool {
+		n.mu.RLock()
+		kept := len(n.revoked)
+		n.mu.RUnlock()
+		mu.Lock()
+		defer mu.Unlock()
+		return kept == 1 && len(got[seed(3).MemberKey()]) == 1 && got[seed(3).MemberKey()][0].Revocation.Device == aID
+	})
+	_ = b2ID
+	// A device that connects afterwards is sent what the hub keeps.
+	late, _ := n.endpoint(seed(4), true, receive(seed(4).MemberKey()))
+	eventually(t, 10*time.Second, "the late device received it on connect", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(late.Status().Hubs) == 1 && len(got[seed(4).MemberKey()]) == 1
+	})
 }
