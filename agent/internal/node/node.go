@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -142,21 +143,24 @@ func Install(cfg Config) (*Report, error) {
 	if err := os.WriteFile(rep.Unit, []byte(unitFile), 0o644); err != nil {
 		return nil, err
 	}
+	// The store as the node knows it: a Linux path in the node's files,
+	// whatever host runs the tests.
+	store := path.Join(cfg.StoragePath, storeDir)
 	rep.Store = filepath.Join(sp, storeDir)
 	if err := os.MkdirAll(rep.Store, 0o750); err != nil {
 		return nil, err
 	}
-	if _, err := cfg.Run("chown", User+":"+User, rep.Store); err != nil {
-		return nil, fmt.Errorf("node: chown %s: %w", rep.Store, err)
+	if _, err := cfg.Run("chown", User+":"+User, store); err != nil {
+		return nil, fmt.Errorf("node: chown %s: %w", store, err)
 	}
 	dropDir := rep.Unit + ".d"
 	if err := os.MkdirAll(dropDir, 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(dropDir, "storage.conf"), []byte(fmt.Sprintf("[Service]\nReadWritePaths=%s\n", filepath.Join(cfg.StoragePath, storeDir))), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dropDir, "storage.conf"), []byte(fmt.Sprintf("[Service]\nReadWritePaths=%s\n", store)), 0o644); err != nil {
 		return nil, err
 	}
-	step("unit %s with the store %s", UnitName, filepath.Join(cfg.StoragePath, storeDir))
+	step("unit %s with the store %s", UnitName, store)
 
 	// quic-go asks for 7 MiB socket buffers; only the kernel can allow them.
 	sc := cfg.path(sysctlFile)
