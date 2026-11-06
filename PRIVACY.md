@@ -84,8 +84,10 @@ backup and the restore-test streak. Plus grid totals and repair counters.
 IP addresses are not published. The page also mirrors the RedundaNet 2
 status described below.
 
-The status page is hosted on fly.io, which sees the IP address of whoever
-opens it.
+The status page is served by the hub itself at hub.redundanet.com, a
+server rented from Hetzner in Germany. Its web server sees the IP address
+of whoever opens the page, as any web server does, and keeps no access
+log. The RedundaNet 2 page stays on fly.io until the old grid's stop date.
 
 ### What a storage server receives
 

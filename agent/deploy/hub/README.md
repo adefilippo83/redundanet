@@ -2,17 +2,23 @@
 
 The hub runs on the host beside the RedundaNet 2 containers, as the RFC's
 migration step 0 says: relay on UDP and TCP 8443, census collector, status
-page on loopback, published to the fly.io page under `/v3/`. One static
-binary, one system user, one systemd unit, no Docker.
+page on loopback, served to the world as <https://hub.redundanet.com/> by
+Caddy on the same host. One static binary, one system user, one systemd
+unit, no Docker.
 
 What it needs before the first start, in this order:
 
 1. **A release that has the hub features**: `agent/v3.0.0` or later
    in `releases/index.yaml`.
-2. **The fly.io side**: the `REDUNDANET_V3_PUBLISH_TOKEN` secret set and the
-   2.7.41 hub deployed (`docs/bootstrap-hub.md`, "RedundaNet 3 status").
+2. **The name and the web server**: `hub.redundanet.com` resolves to the
+   host; ports 80 and 443 TCP are open in the Hetzner cloud firewall and
+   in nftables (`tcp dport { 80, 443 } accept`); Caddy is installed from
+   Debian's package with `Caddyfile` from this directory at
+   `/etc/caddy/Caddyfile` (`systemctl reload caddy`). Caddy fetches and
+   renews the certificate by itself and proxies to the loopback page.
 3. **The manifest lists the hub**: its device key under `hubs:` with
-   `relay: 2.29.46.249:8443` and `tcp: 2.29.46.249:8443`, in a manifest
+   `relay: hub.redundanet.com:8443`, `tcp: hub.redundanet.com:8443` and
+   `status: https://hub.redundanet.com/`, in a manifest
    signed by the operator key (`manifest.sig` on main). The hub refuses to
    start otherwise.
 
@@ -62,17 +68,23 @@ Both layers of the host firewall need 8443, UDP and TCP:
   `tcp dport 8443 accept` and `udp dport 8443 accept`, then
   `nft -f /etc/nftables.conf`.
 
-The status page stays on loopback (`127.0.0.1:4480`); read it over SSH with
-`ssh -L 4480:127.0.0.1:4480 root@hub-hetzner` or on the fly page under
-`/v3/`.
+The hub serves the status page on loopback (`127.0.0.1:4480`) and Caddy
+publishes it as <https://hub.redundanet.com/> with `/status.json` beside
+it. Over SSH it is `ssh -L 4480:127.0.0.1:4480 root@hub-hetzner` as well.
+
+The fly.io publish (`--publish` and `--publish-token-file` in the unit)
+is the handover from the old address: keep it a week after the manifest
+names the new page, so the old link keeps working, then remove the two
+lines and `/etc/redundanet3/publish.token`, `systemctl daemon-reload`,
+and restart the hub at a quiet moment.
 
 ## Check
 
 - `journalctl -u redundanet-hub` shows `hub up`, `status page up`,
   `status published`, and a `device up` line per device that connects.
-- `curl -s https://redundanet-hub.fly.dev/v3/status.json | head -c 300`
-  names the network and the hub, with `X-Published-At` within the last
-  minute.
+- `curl -s https://hub.redundanet.com/status.json | head -c 300` names the
+  network and the hub, with `generated_at` within the last minute, and
+  `curl -sI https://hub.redundanet.com/ | head -1` answers 200 over TLS.
 - `/var/lib/redundanet3/census.json` appears after the first heartbeat,
   `placement.sqlite` with the first share census; the repair tasks the
   hub issues are in its `tasks` table, and `repair task issued` lines

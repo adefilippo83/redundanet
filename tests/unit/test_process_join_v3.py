@@ -58,7 +58,7 @@ hubs:
   - name: hub-hetzner
     relay: 2.29.46.249:8443
     tcp: 2.29.46.249:8443
-    status: https://redundanet-hub.fly.dev/v3/
+    status: https://hub.redundanet.com/
     key: bm4ld4ezgwnvup4654wd6su7h3id2p4nvhfq6a7krn3qfgfsfkna
 # Phase 1: the agent beside the stack stores nothing yet.
 members:

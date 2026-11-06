@@ -1,0 +1,10 @@
+# The RedundaNet 3 status page on the hub's own name: Caddy fetches and
+# renews the certificate by itself and proxies to the hub's loopback page.
+# Install at /etc/caddy/Caddyfile; ports 80 and 443 must be open to the world.
+hub.redundanet.com {
+	reverse_proxy 127.0.0.1:4480
+	header -Server
+	log {
+		output discard
+	}
+}

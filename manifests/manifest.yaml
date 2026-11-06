@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 4
+revision: 5
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
@@ -25,9 +25,9 @@ operators:
     key: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q
 hubs:
   - name: hub-hetzner
-    relay: 2.29.46.249:8443
-    tcp: 2.29.46.249:8443
-    status: https://redundanet-hub.fly.dev/v3/
+    relay: hub.redundanet.com:8443
+    tcp: hub.redundanet.com:8443
+    status: https://hub.redundanet.com/
     key: bm4ld4ezgwnvup4654wd6su7h3id2p4nvhfq6a7krn3qfgfsfkna
 # Phase 1 (RFC 0001, G1): the agent beside the stack stores nothing yet.
 # Contributions name the disks the native grid will use from phase 2.
