@@ -784,3 +784,21 @@ func TestRevokeReachesThePolicy(t *testing.T) {
 		t.Fatalf("unlisted member: %v", err)
 	}
 }
+
+// TestUsageReportsWhatTheServerHolds: a member's device learns the share
+// bytes the server holds for the member.
+func TestUsageReportsWhatTheServerHolds(t *testing.T) {
+	w := newWorld(t)
+	c, ctx, _ := client(t, w, w.server)
+	peer := w.server.dev.ID()
+	if n, err := c.Usage(ctx, peer); err != nil || n != 0 {
+		t.Fatalf("usage before: %d %v", n, err)
+	}
+	o := encode(t, w.server, 3*8192+100, 1)
+	if err := c.PutShare(ctx, peer, o.sd, 1, func(s int) ([]byte, error) { return o.blocks[1][s], nil }); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := c.Usage(ctx, peer); err != nil || n <= 0 {
+		t.Fatalf("usage after: %d %v", n, err)
+	}
+}

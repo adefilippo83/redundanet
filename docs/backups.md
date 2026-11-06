@@ -20,6 +20,24 @@ On macOS, `backup add` probes each folder as the service and refuses one the sys
 
 Each set runs daily, the first time two minutes after the agent starts. `redundanet backup run [NAME]` starts a run now; `backup list` follows it. The interval is `every` in `backup.yaml` ([configuration.md](configuration.md)). One run at a time.
 
+## Settings
+
+The local page has a Settings card, and every setting has a command:
+
+```
+redundanet backup schedule --every 24h --verify-every 168h --cleanup-every 168h
+redundanet backup retention --days 7 --daily 30 --weekly 12 --monthly 12
+redundanet backup exclude NAME --exclude "*.iso,cache/"
+redundanet backup limit --upload 2000 --download 0
+redundanet update channel stable
+```
+
+Backups run at most hourly, restore tests and cleanups at most daily; a changed schedule takes effect at once. Retention keeps everything for the first days, then one snapshot a day, a week, a month. Excludes are base-name globs or relative prefixes beside the defaults, per set. The channel choice is kept on the device and wins over the way the service was installed.
+
+## Your allocation
+
+Before every run the agent asks the storage servers what they hold for you and compares it, as the data it stands for, with the allocation the manifest gives you. The local page and `backup list` show "allocation: X of Y GB used". When the allocation is used up a run is refused and says so: prune snapshots with a shorter retention, or ask the operator for a larger allocation. The servers enforce a bound with headroom as well; this is the exact budget on your side.
+
 ## Bandwidth
 
 The agent can cap what the device sends and receives over the mesh, in kilobytes per second, so a backup never takes more than its share of a home connection:

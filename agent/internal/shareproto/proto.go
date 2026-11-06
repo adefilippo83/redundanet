@@ -28,6 +28,7 @@ const (
 	TypeUndelete = "undelete" // the owner's change of mind within the window
 	TypeList     = "list"     // the objects this server holds for the asking member
 	TypeRevoke   = "revoke"   // a member's signed device revocation, applied and kept by the server
+	TypeUsage    = "usage"    // the share bytes this server holds for the asking member
 )
 
 // Statuses a response carries; everything but StatusOK is a refusal the
@@ -76,6 +77,7 @@ type Response struct {
 	Status     string                   `cbor:"status"`
 	Message    string                   `cbor:"message,omitempty"`
 	Resume     int                      `cbor:"resume"`               // put: the segment to continue from
+	Usage      int64                    `cbor:"usage,omitempty"`      // usage: share bytes held for the member
 	Complete   bool                     `cbor:"complete"`             // put: nothing to send
 	Hashes     []object.Hash            `cbor:"hashes,omitempty"`     // get: the share's block hashes
 	Descriptor *object.SignedDescriptor `cbor:"descriptor,omitempty"` // get with hashes only: the share's signed descriptor

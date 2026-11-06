@@ -73,6 +73,10 @@ redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
 redundanet backup limit [--upload KBPS] [--download KBPS]   # bandwidth caps on this device's mesh traffic, 0 for none
+redundanet backup schedule [--every 24h] [--verify-every 168h] [--cleanup-every 168h]
+redundanet backup retention [--days N] [--daily N] [--weekly N] [--monthly N]
+redundanet backup exclude NAME --exclude a,b                # replaces the set's own excludes
+redundanet update channel stable|early                       # chosen on this device, over the service's flag
 redundanet diagnostics [--out FILE]
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
@@ -89,6 +93,21 @@ A storage device also opens its store in the `redundanet3` directory of
 at a rate that covers them monthly, and sends each hub its share census as
 deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
+The settings live in `backup.yaml` of the data directory and change from
+the local page's Settings card, from the commands above, or by hand: the
+schedule (`every`, `verify_every`, `cleanup_every`; backups at most hourly,
+the others at most daily, the scheduler re-arms at once), the retention
+policy, the bandwidth caps and each set's own excludes. The update channel
+is chosen with `update channel`, kept with the updater's state, and wins
+over the service's `--channel` flag from the next check on.
+Before every run the agent asks the storage servers what they hold for the
+member (`usage`, share bytes under the current encoding) and sets that,
+times k/n, against the manifest's allocation: the local page and `backup
+list` show "allocation: X of Y GB used", and a run is refused once the
+allocation is used up, with the way out in the message. The servers bound
+the member with headroom anyway; this is the exact budget on the client
+side (RFC "Quota").
+
 The bandwidth caps of the RFC (F8) pace every mesh stream of the device,
 opened or accepted, so a backup never takes more than its share of a home
 uplink: `backup limit --upload 2000 --download 0` caps what the device

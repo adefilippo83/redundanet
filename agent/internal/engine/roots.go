@@ -162,3 +162,34 @@ func (e *Native) GetRoots(ctx context.Context, member identity.Key) (*Roots, err
 	}
 	return out, nil
 }
+
+// Usage asks every storage server what it holds for the member and sums
+// the answers: the budget check's measure.
+func (e *Native) Usage(ctx context.Context) (Usage, error) {
+	servers, _, err := e.servers()
+	if err != nil {
+		return Usage{}, err
+	}
+	u := Usage{Servers: len(servers)}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, s := range servers {
+		wg.Add(1)
+		go func(s server) {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
+			defer cancel()
+			n, err := e.cfg.Client.Usage(cctx, s.Device)
+			if err != nil {
+				e.log.Info("usage not answered", "server", s.Device.Short(), "err", err)
+				return
+			}
+			mu.Lock()
+			u.Bytes += n
+			u.Answered++
+			mu.Unlock()
+		}(s)
+	}
+	wg.Wait()
+	return u, nil
+}

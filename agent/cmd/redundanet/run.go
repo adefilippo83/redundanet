@@ -724,6 +724,13 @@ func runAgent(args []string) error {
 		},
 		Actions: api.Actions{
 			Revoke: revokeAction,
+			SetChannel: func(channel string) error {
+				u := getU()
+				if u == nil {
+					return errors.New("updates are off")
+				}
+				return u.SetChannel(channel)
+			},
 			CheckUpdate: func(ctx context.Context) (string, error) {
 				u := getU()
 				if u == nil {

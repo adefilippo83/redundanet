@@ -52,7 +52,8 @@ var ErrRestart = errors.New("update installed: restart to run it")
 
 // state is what persists between runs.
 type state struct {
-	Channel      string            `yaml:"channel,omitempty"` // the channel of the last check, for `update status` from another process
+	Channel      string            `yaml:"channel,omitempty"`        // the channel of the last check, for `update status` from another process
+	Chosen       string            `yaml:"chosen_channel,omitempty"` // a channel chosen on this device, over the service's flag
 	LastRevision uint64            `yaml:"last_index_revision"`
 	Failed       map[string]string `yaml:"failed"` // version -> why probation failed
 	Installed    map[string]string `yaml:"installed"`
@@ -99,7 +100,25 @@ func New(cfg Config) *Updater {
 	}
 	u := &Updater{cfg: cfg, log: cfg.Log.With("component", "update")}
 	u.st = u.load()
+	if u.st.Chosen != "" {
+		u.cfg.Channel = u.st.Chosen
+	}
 	return u
+}
+
+// SetChannel chooses the channel on this device, over the service's flag,
+// and keeps the choice with the updater's state; the running agent takes
+// it at its next check, which also lets `update channel` set it from
+// another process.
+func (u *Updater) SetChannel(channel string) error {
+	if channel != release.ChannelStable && channel != release.ChannelEarly {
+		return fmt.Errorf("the channel is %q or %q", release.ChannelStable, release.ChannelEarly)
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.st.Chosen, u.st.Channel, u.cfg.Channel = channel, channel, channel
+	u.save()
+	return nil
 }
 
 func (u *Updater) statePath() string { return filepath.Join(u.cfg.DataDir, "updates", "state.yaml") }
@@ -186,6 +205,11 @@ func (u *Updater) Check(ctx context.Context) (*release.Release, error) {
 		return nil, errors.New("self-update is disabled: no release key in this build")
 	}
 	u.reload()
+	u.mu.Lock()
+	if u.st.Chosen != "" {
+		u.cfg.Channel = u.st.Chosen
+	}
+	u.mu.Unlock()
 	rel, err := u.check(ctx)
 	u.mu.Lock()
 	u.st.LastCheck = time.Now()

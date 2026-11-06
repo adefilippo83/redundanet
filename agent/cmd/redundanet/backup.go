@@ -50,7 +50,7 @@ func arg(pos []string, i int) string {
 
 func runBackup(args []string) error {
 	if len(args) == 0 {
-		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup, rebalance, limit")
+		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup, rebalance, limit, schedule, retention, exclude")
 	}
 	fs := flag.NewFlagSet("backup "+args[0], flag.ContinueOnError)
 	dir, _ := commonFlags(fs)
@@ -58,6 +58,13 @@ func runBackup(args []string) error {
 	dryRun := fs.Bool("dry-run", false, "cleanup: count what would be deleted and delete nothing")
 	force := fs.Bool("force", false, "cleanup: lift the bound on how much one run may delete")
 	upload := fs.Int("upload", -1, "limit: kilobytes per second this device sends over the mesh, 0 for no cap")
+	every := fs.String("every", "", "schedule: between runs of each set, for example 24h (at most hourly)")
+	verifyEvery := fs.String("verify-every", "", "schedule: between restore tests, for example 168h (at most daily)")
+	cleanupEvery := fs.String("cleanup-every", "", "schedule: between cleanups, for example 168h (at most daily)")
+	days := fs.Int("days", -1, "retention: keep everything this many days")
+	daily := fs.Int("daily", -1, "retention: then one snapshot a day for this many days")
+	weekly := fs.Int("weekly", -1, "retention: then one a week for this many weeks")
+	monthly := fs.Int("monthly", -1, "retention: then one a month for this many months")
 	download := fs.Int("download", -1, "limit: kilobytes per second this device receives over the mesh, 0 for no cap")
 	pos, err := parseInterspersed(fs, args[1:])
 	if err != nil {
@@ -123,7 +130,17 @@ func runBackup(args []string) error {
 				fmt.Println("  not run yet")
 			}
 		}
-		fmt.Printf("every %s; restore test every %s\n", st.Every, st.VerifyEvery)
+		fmt.Printf("every %s; restore test every %s; cleanup every %s\n", st.Every, st.VerifyEvery, st.CleanupEvery)
+		fmt.Printf("retention: everything %d days, then daily for %d days, weekly for %d weeks, monthly for %d months\n", st.Retention.Days, st.Retention.Daily, st.Retention.Weekly, st.Retention.Monthly)
+		if b := st.Budget; b != nil {
+			fmt.Printf("allocation: %.1f of %d GB used", b.UsedGB, b.AllowedGB)
+			if b.Exhausted {
+				fmt.Print(" (used up: prune snapshots or ask the operator for a larger allocation)")
+			} else if b.Answered < b.Servers {
+				fmt.Printf(" (from %d of %d servers)", b.Answered, b.Servers)
+			}
+			fmt.Println()
+		}
 		if st.UploadKBps > 0 || st.DownloadKBps > 0 {
 			fmt.Printf("bandwidth: upload %s, download %s\n", capWord(st.UploadKBps), capWord(st.DownloadKBps))
 		}
@@ -172,6 +189,59 @@ func runBackup(args []string) error {
 		if rep.Error != "" {
 			return errors.New(rep.Error)
 		}
+		return nil
+	case "schedule":
+		if *every == "" && *verifyEvery == "" && *cleanupEvery == "" {
+			return errors.New("usage: backup schedule [--every 24h] [--verify-every 168h] [--cleanup-every 168h]")
+		}
+		var s api.Settings
+		if *every != "" {
+			s.Every = every
+		}
+		if *verifyEvery != "" {
+			s.VerifyEvery = verifyEvery
+		}
+		if *cleanupEvery != "" {
+			s.CleanupEvery = cleanupEvery
+		}
+		if err := c.Settings(ctx, s); err != nil {
+			return err
+		}
+		fmt.Println("schedule saved; the scheduler uses it from now")
+		return nil
+	case "retention":
+		if *days < 0 && *daily < 0 && *weekly < 0 && *monthly < 0 {
+			return errors.New("usage: backup retention [--days N] [--daily N] [--weekly N] [--monthly N]")
+		}
+		st, err := c.Backups(ctx)
+		if err != nil {
+			return err
+		}
+		ret := st.Retention
+		for v, dst := range map[*int]*int{days: &ret.Days, daily: &ret.Daily, weekly: &ret.Weekly, monthly: &ret.Monthly} {
+			if *v >= 0 {
+				*dst = *v
+			}
+		}
+		if err := c.Settings(ctx, api.Settings{Retention: &ret}); err != nil {
+			return err
+		}
+		fmt.Printf("retention: everything %d days, then daily for %d days, weekly for %d weeks, monthly for %d months\n", ret.Days, ret.Daily, ret.Weekly, ret.Monthly)
+		return nil
+	case "exclude":
+		if len(pos) != 1 {
+			return errors.New("usage: backup exclude NAME --exclude a,b   (replaces the set's own excludes; --exclude \"\" clears them)")
+		}
+		var excludes []string
+		for _, e := range strings.Split(*exclude, ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				excludes = append(excludes, e)
+			}
+		}
+		if err := c.BackupExcludes(ctx, arg(pos, 0), excludes); err != nil {
+			return err
+		}
+		fmt.Printf("excludes of %s: %s\n", arg(pos, 0), strings.Join(append([]string{}, excludes...), ", "))
 		return nil
 	case "limit":
 		if *upload < 0 && *download < 0 {

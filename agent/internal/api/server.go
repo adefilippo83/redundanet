@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/repair"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
+	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
 	"github.com/adefilippo83/redundanet/agent/internal/update"
 )
@@ -56,6 +58,8 @@ type Actions struct {
 	CheckUpdate func(ctx context.Context) (string, error) // returns the available version, "" for none
 	ApplyUpdate func(ctx context.Context) error
 	RetryUpdate func(ctx context.Context, version string) error // forgets a failed probation
+	// SetChannel chooses the update channel on this device.
+	SetChannel func(channel string) error
 	// Revoke applies a member's signed device revocation here and sends it
 	// to every storage server and hub: the direct path of "Losing a device".
 	Revoke func(ctx context.Context, r *identity.SignedRevocation) (RevokeReport, error)
@@ -147,6 +151,9 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/backup/rebalance", s.apiBackupRebalance)
 	mux.HandleFunc("POST /api/backup/limit", s.apiBackupLimit)
 	mux.HandleFunc("POST /api/revoke", s.apiRevoke)
+	mux.HandleFunc("POST /api/settings", s.apiSettings)
+	mux.HandleFunc("POST /api/backup/excludes", s.apiBackupExcludes)
+	mux.HandleFunc("POST /api/update/channel", s.apiUpdateChannel)
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
@@ -382,6 +389,132 @@ func (s *Server) apiBackupLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"result": "limits saved"})
+}
+
+// Settings is what the settings endpoint changes: each field present is
+// applied, the rest stays.
+type Settings struct {
+	Every        *string             `json:"every,omitempty"`
+	VerifyEvery  *string             `json:"verify_every,omitempty"`
+	CleanupEvery *string             `json:"cleanup_every,omitempty"`
+	Retention    *snapshot.Retention `json:"retention,omitempty"`
+	UploadKBps   *int                `json:"upload_kbps,omitempty"`
+	DownloadKBps *int                `json:"download_kbps,omitempty"`
+}
+
+// applySettings changes what in is set; the message says what changed.
+func (s *Server) applySettings(in Settings) (string, error) {
+	j := s.cfg.Jobs
+	st := j.Status()
+	var changed []string
+	if in.Every != nil || in.VerifyEvery != nil || in.CleanupEvery != nil {
+		every, verify, cleanup, err := durations(st, in)
+		if err != nil {
+			return "", err
+		}
+		if err := j.SetSchedule(every, verify, cleanup); err != nil {
+			return "", err
+		}
+		changed = append(changed, "schedule")
+	}
+	if in.Retention != nil {
+		if err := j.SetRetention(*in.Retention); err != nil {
+			return "", err
+		}
+		changed = append(changed, "retention")
+	}
+	if in.UploadKBps != nil || in.DownloadKBps != nil {
+		up, down := st.UploadKBps, st.DownloadKBps
+		if in.UploadKBps != nil {
+			up = *in.UploadKBps
+		}
+		if in.DownloadKBps != nil {
+			down = *in.DownloadKBps
+		}
+		if err := j.SetLimits(up, down); err != nil {
+			return "", err
+		}
+		changed = append(changed, "bandwidth")
+	}
+	if len(changed) == 0 {
+		return "nothing to change", nil
+	}
+	return "saved: " + strings.Join(changed, ", "), nil
+}
+
+func durations(st jobs.Status, in Settings) (every, verify, cleanup time.Duration, err error) {
+	pick := func(cur string, p *string) (time.Duration, error) {
+		if p != nil {
+			cur = *p
+		}
+		return time.ParseDuration(cur)
+	}
+	if every, err = pick(st.Every, in.Every); err != nil {
+		return
+	}
+	if verify, err = pick(st.VerifyEvery, in.VerifyEvery); err != nil {
+		return
+	}
+	cleanup, err = pick(st.CleanupEvery, in.CleanupEvery)
+	return
+}
+
+func (s *Server) apiSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var in Settings
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		http.Error(w, "bad settings: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	msg, err := s.applySettings(in)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": msg})
+}
+
+func (s *Server) apiBackupExcludes(w http.ResponseWriter, r *http.Request) {
+	if !s.needJobs(w, r) {
+		return
+	}
+	var in struct {
+		Set      string   `json:"set"`
+		Excludes []string `json:"excludes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		http.Error(w, "bad excludes: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Jobs.SetExcludes(in.Set, in.Excludes); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "excludes of " + in.Set + " saved"})
+}
+
+func (s *Server) apiUpdateChannel(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAPI(w, r) {
+		return
+	}
+	if s.cfg.Actions.SetChannel == nil {
+		http.Error(w, "updates are not configured", http.StatusNotImplemented)
+		return
+	}
+	var in struct {
+		Channel string `json:"channel"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&in); err != nil {
+		http.Error(w, "bad channel: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.Actions.SetChannel(in.Channel); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"result": "channel " + in.Channel})
 }
 
 func (s *Server) apiBackupRemove(w http.ResponseWriter, r *http.Request) {
@@ -631,6 +764,45 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 		}
 		s.cfg.Jobs.RunNow("verify")
 		msg = "restore test requested"
+	case "settings-schedule", "settings-retention", "settings-bandwidth":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		in, err := settingsFromForm(r)
+		if err != nil {
+			msg = "not saved: " + err.Error()
+			break
+		}
+		if msg, err = s.applySettings(in); err != nil {
+			msg = "not saved: " + err.Error()
+		}
+	case "settings-excludes":
+		if s.cfg.Jobs == nil {
+			msg = "this device runs no backup jobs"
+			break
+		}
+		var excludes []string
+		for _, e := range strings.Split(r.FormValue("excludes"), ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				excludes = append(excludes, e)
+			}
+		}
+		if err := s.cfg.Jobs.SetExcludes(r.FormValue("set"), excludes); err != nil {
+			msg = "not saved: " + err.Error()
+		} else {
+			msg = "excludes of " + r.FormValue("set") + " saved"
+		}
+	case "settings-channel":
+		if s.cfg.Actions.SetChannel == nil {
+			msg = "updates are not configured in this build"
+			break
+		}
+		if err := s.cfg.Actions.SetChannel(r.FormValue("channel")); err != nil {
+			msg = "not saved: " + err.Error()
+		} else {
+			msg = "channel " + r.FormValue("channel") + "; the next check uses it"
+		}
 	case "update-retry":
 		if s.cfg.Actions.RetryUpdate == nil {
 			msg = "updates are not configured in this build"
@@ -650,6 +822,51 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 	s.lastMsg = msg
 	s.mu.Unlock()
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// settingsFromForm reads the settings forms of the page: a field left
+// empty stays as it is.
+func settingsFromForm(r *http.Request) (Settings, error) {
+	var in Settings
+	str := func(name string) *string {
+		if v := strings.TrimSpace(r.FormValue(name)); v != "" {
+			return &v
+		}
+		return nil
+	}
+	num := func(name string) (*int, error) {
+		v := strings.TrimSpace(r.FormValue(name))
+		if v == "" {
+			return nil, nil
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("%s: not a number", name)
+		}
+		return &n, nil
+	}
+	in.Every, in.VerifyEvery, in.CleanupEvery = str("every"), str("verify_every"), str("cleanup_every")
+	var err error
+	if in.UploadKBps, err = num("upload_kbps"); err != nil {
+		return in, err
+	}
+	if in.DownloadKBps, err = num("download_kbps"); err != nil {
+		return in, err
+	}
+	if r.FormValue("days") != "" {
+		var ret snapshot.Retention
+		for name, dst := range map[string]*int{"days": &ret.Days, "daily": &ret.Daily, "weekly": &ret.Weekly, "monthly": &ret.Monthly} {
+			n, err := num(name)
+			if err != nil {
+				return in, err
+			}
+			if n != nil {
+				*dst = *n
+			}
+		}
+		in.Retention = &ret
+	}
+	return in, nil
 }
 
 func short(s string) string {
