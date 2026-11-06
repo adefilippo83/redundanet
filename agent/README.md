@@ -287,6 +287,10 @@ redundanet identity init --network NAME [--storage] [--passphrase]
     the identity file (device key, member secret, certificate).
 
 redundanet identity show --network NAME
+redundanet identity check --network NAME
+    Types the phrase and says whether it is the one this device was
+    certified under; nothing is written. The check to run after writing
+    the phrase down, and whenever in doubt.
     Member key, its ten-group display code, device key, roles.
 
 redundanet identity device-key --network NAME            (on a headless node)
