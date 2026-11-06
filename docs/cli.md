@@ -18,6 +18,7 @@ New member on this device: shows the twelve-word phrase, checks three words back
 
 ```
 redundanet identity show --network NAME
+redundanet identity check --network NAME        # the phrase you type must derive this device's member key; nothing is written
 ```
 Member key, its ten-group display code, device key, roles, certificate date and serial.
 

@@ -12,6 +12,8 @@ On other members' storage servers, as encrypted, erasure-coded shares: every obj
 **Can the maintainer, or a storage server, read my files?**
 No. Every object is encrypted on your device with a key derived from your member secret and the content. Servers and the hub see ciphertext, sizes, your member key and timing; never names or contents. What exactly they see is in [../PRIVACY.md](../PRIVACY.md).
 
+**Is my phrase still right?** Run `redundanet identity check --network redundanet` on any of your devices and type it: the command says whether it derives the member key this device was certified under, and writes nothing. Do it once after writing the phrase down.
+
 **What if I lose the phrase?**
 The data is unreadable to everyone, by design; there is no escrow and nobody can recover it for you. A new identity is a new member entry, and the maintainer retires the old one. Keep the phrase like a passport. Seal the identity file with `--passphrase` if the device is shared.
 
