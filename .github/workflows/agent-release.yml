@@ -32,6 +32,12 @@ on:
   push:
     tags: ["agent/v*"]
 
+# One run per tag at a time; a second run for a tag that already has its
+# archives stops before building (see "the tag's release must be empty").
+concurrency:
+  group: agent-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -48,6 +54,21 @@ jobs:
       windows-artifact-id: ${{ steps.unsigned-windows.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v7
+      - name: the tag's release must be empty
+        # A second run for the same tag would rebuild the archives (gzip
+        # stamps differ, so bytes and sizes differ) and replace the ones the
+        # signed index may already list, which strands every device on a
+        # checksum mismatch. To rebuild, delete the release first, and never
+        # once the index lists it: cut the next version instead.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if assets=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' 2>/dev/null) && echo "$assets" | grep -q 'redundanet-.*\.\(tar\.gz\|zip\)$'; then
+            echo "::error::release $GITHUB_REF_NAME already has archives from an earlier run; this run would replace them under the signed index. Delete the release to rebuild, or cut the next version."
+            exit 1
+          fi
+          echo "no archives yet for $GITHUB_REF_NAME"
       - uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
