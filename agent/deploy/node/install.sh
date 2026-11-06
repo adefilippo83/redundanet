@@ -8,6 +8,11 @@
 # prepare downloads the release named VERSION from GitHub and checks it
 # against the sha256 in releases/index.yaml on main. finish needs the file
 # the member made on their laptop with `redundanet identity certify`.
+#
+# An image build (rpi-image/) runs prepare with ARCHIVE=<file> to install an
+# archive it verified itself, since the signed index lists a release only
+# once the maintainer has signed it, and NO_DEVICE_KEY=1 to stop before the
+# device key, which every booted image must make for itself.
 set -euo pipefail
 
 REPO=${REPO:-adefilippo83/redundanet}
@@ -53,14 +58,19 @@ prepare() {
   install -d -m 0755 /etc/redundanet3
 
   local tmp; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
-  curl -fsSL -o "$tmp/index.yaml" "$RAW/releases/index.yaml"
-  local sha
-  sha=$(awk -v t="$target" -v v="$version" '
-    $1=="-" && $2=="version:" {cur=$3}
-    cur==v && $1==t":" { if (match($0, /sha256: [0-9a-f]{64}/)) print substr($0, RSTART+8, 64) }' "$tmp/index.yaml")
-  [ -n "$sha" ] || die "releases/index.yaml on main does not list $version for $target"
-  curl -fsSL -o "$tmp/$asset" "https://github.com/$REPO/releases/download/agent%2Fv$version/$asset"
-  echo "$sha  $tmp/$asset" | sha256sum -c >/dev/null || die "checksum mismatch for $asset"
+  if [ -n "${ARCHIVE:-}" ]; then
+    [ -f "$ARCHIVE" ] || die "ARCHIVE $ARCHIVE is not a file"
+    cp "$ARCHIVE" "$tmp/$asset"
+  else
+    curl -fsSL -o "$tmp/index.yaml" "$RAW/releases/index.yaml"
+    local sha
+    sha=$(awk -v t="$target" -v v="$version" '
+      $1=="-" && $2=="version:" {cur=$3}
+      cur==v && $1==t":" { if (match($0, /sha256: [0-9a-f]{64}/)) print substr($0, RSTART+8, 64) }' "$tmp/index.yaml")
+    [ -n "$sha" ] || die "releases/index.yaml on main does not list $version for $target"
+    curl -fsSL -o "$tmp/$asset" "https://github.com/$REPO/releases/download/agent%2Fv$version/$asset"
+    echo "$sha  $tmp/$asset" | sha256sum -c >/dev/null || die "checksum mismatch for $asset"
+  fi
   tar -xzf "$tmp/$asset" -C "$tmp"
   install -o redundanet3 -g redundanet3 -m 0755 "$(find "$tmp" -type f -name redundanet | head -1)" "$BIN"
   echo "installed $("$BIN" version) at $BIN"
@@ -71,7 +81,7 @@ prepare() {
   fi
   install -m 0644 "$here/redundanet-agent.service" "$UNIT"
   storage_grant
-  systemctl daemon-reload
+  systemctl daemon-reload 2>/dev/null || true # no systemd runs inside an image build's chroot
   # quic-go asks for 7 MiB socket buffers; an unprivileged process only gets them if the kernel allows
   if [ ! -f /etc/sysctl.d/90-redundanet-agent.conf ]; then
     printf '# RedundaNet 3 agent: let quic-go size its UDP socket buffers (7 MiB)\nnet.core.rmem_max = 7500000\nnet.core.wmem_max = 7500000\n' > /etc/sysctl.d/90-redundanet-agent.conf
@@ -80,6 +90,10 @@ prepare() {
 
   if [ -f "$DATA/identity" ]; then
     echo "this node already has an identity; nothing more to prepare"
+    return
+  fi
+  if [ "${NO_DEVICE_KEY:-}" = 1 ]; then
+    echo "prepared without a device key; the first boot makes one"
     return
   fi
   echo

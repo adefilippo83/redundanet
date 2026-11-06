@@ -105,9 +105,9 @@ sudo /var/lib/redundanet3/bin/redundanet logs -n 100
 
 The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print` and open the link it prints. To change the channel, edit `CHANNEL` in `/etc/redundanet3/agent.env` and `systemctl restart redundanet-agent`.
 
-## Raspberry Pi 5
+## Raspberry Pi
 
-A Raspberry Pi 5 running a 64-bit Linux is a Linux storage node: use the `linux-arm64` archive, which `install.sh prepare` picks on its own, and follow the storage node steps above. Raspberry Pi 4 has not been measured.
+Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it once, certify the device key it leaves on the SD card's boot partition, put the certificate back there, and the Pi joins: the steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: `install.sh prepare` picks the `linux-arm64` archive on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
 
 ## Windows
 
