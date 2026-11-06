@@ -8,7 +8,8 @@
 #   1. the unit files are structurally sound and the scripts parse
 #   2. the agent cross-builds for linux/arm64 and packs like a release archive
 #   3. in an arm64 container: install.sh prepare with that archive and no
-#      device key lays out the node; the first boot makes the device key and
+#      device key lays out the node; install.sh pair shows a code and gives
+#      up cleanly when nobody comes; the first boot makes the device key and
 #      hands it over on the boot partition, twice the same; a bad certificate
 #      is refused and reported, and the node has no identity afterwards
 #
@@ -61,6 +62,11 @@ docker run --rm --platform "$PLATFORM" -v "$WORK:/work:ro" -e VERSION="$VERSION"
   test -d /mnt/storage/redundanet3 && grep -q ReadWritePaths=/mnt/storage/redundanet3 /etc/systemd/system/redundanet-agent.service.d/storage.conf || { echo "FAIL: store grant"; exit 1; }
   test ! -e /var/lib/redundanet3/identity && test ! -e /var/lib/redundanet3/device-key.pending || { echo "FAIL: the image build made a key"; exit 1; }
   echo "prepared without a key: ok"
+  # pair: shows a code, waits, and gives up cleanly when nobody comes
+  if PAIR_WAIT=2s bash /usr/local/lib/redundanet3/install.sh pair > /tmp/pair.out 2>&1; then echo "FAIL: pair succeeded with nobody pairing"; exit 1; fi
+  grep -q "rn3:pair:" /tmp/pair.out && grep -q "pairing did not complete" /tmp/pair.out || { echo "FAIL: pair output"; cat /tmp/pair.out; exit 1; }
+  test ! -e /var/lib/redundanet3/identity || { echo "FAIL: an identity appeared from a failed pairing"; exit 1; }
+  echo "pair: code shown, gave up after the wait: ok"
   # first boot, twice: the key, handed over on the boot partition, the same both times
   bash /usr/local/lib/redundanet3/firstboot.sh >/dev/null
   key=$(grep -oE "^  [a-z2-7]{52}$" /boot/firmware/redundanet-device-key.txt | tr -d " ")

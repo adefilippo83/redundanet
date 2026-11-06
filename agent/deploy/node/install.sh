@@ -2,12 +2,15 @@
 # RedundaNet 3 agent installer for a Linux node, run as root.
 #
 #   install.sh prepare VERSION        user, directories, binary, unit; prints the device key
-#   install.sh finish CERTIFICATE     accepts the member's certificate, joins, starts
+#   install.sh pair                   shows a pairing code; a device of the member on this network certifies the node, then it joins and starts
+#   install.sh finish CERTIFICATE     accepts the member's certificate made on another machine, joins, starts
 #   install.sh storage                grants the store under STORAGE_PATH to a node installed earlier
 #
 # prepare downloads the release named VERSION from GitHub and checks it
-# against the sha256 in releases/index.yaml on main. finish needs the file
-# the member made on their laptop with `redundanet identity certify`.
+# against the sha256 in releases/index.yaml on main. pair needs a device of
+# the member that can reach this node (`redundanet device pair --storage`
+# there, with the phrase); finish needs the file the member made with
+# `redundanet identity certify` instead, for a node reached over SSH only.
 #
 # An image build (rpi-image/) runs prepare with ARCHIVE=<file> to install an
 # archive it verified itself, since the signed index lists a release only
@@ -104,6 +107,25 @@ prepare() {
   echo "then here:      install.sh finish $(hostname).cert"
 }
 
+# pair: the node shows a one-time code and waits; the member's other device
+# certifies it through the code and hands over the identity and the network,
+# so nothing is copied by hand. The code's TCP port must be reachable from
+# that device for the minutes of pairing (a host firewall would block it).
+pair() {
+  [ -x "$BIN" ] || die "run prepare first"
+  [ -f "$ENV" ] && . "$ENV"
+  [ ! -f "$DATA/identity" ] || die "this node already has an identity"
+  echo "On a device of yours that has its identity and reaches this node, with the phrase at hand:"
+  echo "  redundanet device pair --network $NETWORK --storage <the code shown below>"
+  echo
+  sudo -u redundanet3 "$BIN" identity pair --network "$NETWORK" --data-dir "$DATA" --wait "${PAIR_WAIT:-10m}" || die "pairing did not complete; run install.sh pair again for a new code, or use finish with a certificate file"
+  systemctl enable --now redundanet-agent
+  sleep 3
+  systemctl --no-pager --lines=5 status redundanet-agent || true
+  echo
+  echo "the agent as it sees itself: sudo $BIN status"
+}
+
 finish() {
   local cert=${1:-}; [ -f "$cert" ] || die "finish needs the certificate file"
   [ -x "$BIN" ] || die "run prepare first"
@@ -125,7 +147,8 @@ finish() {
 
 case "${1:-}" in
   prepare) prepare "${2:-}" ;;
+  pair) pair ;;
   finish) finish "${2:-}" ;;
   storage) [ -f "$ENV" ] && . "$ENV"; storage_grant; systemctl daemon-reload; systemctl restart redundanet-agent; echo "agent restarted with the store" ;;
-  *) sed -n '2,10p' "$0"; exit 2 ;;
+  *) sed -n '2,11p' "$0"; exit 2 ;;
 esac
