@@ -31,7 +31,7 @@ import (
 // as a file.
 func runIdentity(args []string) error {
 	if len(args) == 0 {
-		return errors.New("identity: a subcommand is needed: init, show, device-key, certify, accept-certificate")
+		return errors.New("identity: a subcommand is needed: init, show, check, device-key, certify, accept-certificate")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -39,6 +39,8 @@ func runIdentity(args []string) error {
 		return identityInit(rest)
 	case "show":
 		return identityShow(rest)
+	case "check":
+		return identityCheck(rest)
 	case "device-key":
 		return identityDeviceKey(rest)
 	case "certify":
@@ -154,6 +156,40 @@ func identityShow(args []string) error {
 	}
 	printState(st)
 	return nil
+}
+
+// identityCheck is the RFC's "check my recovery phrase": the phrase typed
+// here must derive the member key this device was certified under. Nothing
+// is written; the seed is wiped afterwards.
+func identityCheck(args []string) error {
+	fs := flag.NewFlagSet("identity check", flag.ContinueOnError)
+	dir, network := commonFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	d, err := dataDir(*dir)
+	if err != nil {
+		return err
+	}
+	st, err := loadState(identityPath(d), *network)
+	if err != nil {
+		return err
+	}
+	seed, err := readPhrase()
+	if err != nil {
+		return err
+	}
+	defer seed.Zero()
+	if !phraseMatches(seed, st) {
+		return fmt.Errorf("the phrase does not match this identity: it derives member %s, this device belongs to %s", identity.DisplayCode(seed.MemberKey()), identity.DisplayCode(st.Member))
+	}
+	fmt.Printf("the phrase matches: member %s (%s)\n", st.Member, identity.DisplayCode(st.Member))
+	return nil
+}
+
+// phraseMatches reports whether a seed is the one this identity came from.
+func phraseMatches(seed identity.Seed, st *identity.State) bool {
+	return seed.MemberKey() == st.Member && seed.Secret() == st.MemberSecret
 }
 
 func identityDeviceKey(args []string) error {

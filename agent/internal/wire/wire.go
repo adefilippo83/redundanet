@@ -41,6 +41,10 @@ const (
 	FrameTask       byte = 11 // hub to device: RepairTask, signed by the hub
 	FrameTaskReport byte = 12 // device to hub: TaskReport
 	FrameRelease    byte = 13 // hub to device: ReleaseHint
+	// FrameRevocation carries a member's signed device revocation
+	// (identity.SignedRevocation): device to hub, which keeps it and sends
+	// it on to every device, on arrival and to each device that connects.
+	FrameRevocation byte = 14
 )
 
 // MaxFrame bounds a frame payload.

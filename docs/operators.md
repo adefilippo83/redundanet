@@ -57,7 +57,7 @@ A member revokes a lost or stolen device from any other device of theirs:
 redundanet device revoke --device KEY
 ```
 
-It asks for the phrase and prints a signed revocation record. The operator adds the record to the manifest under `revocations:`, raises the revision, signs and merges; every agent and server refuses the device from then on, and the revocation survives every later manifest. Because it travels through the signed manifest, it takes effect when the operator signs, not within seconds. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
+It asks for the phrase, signs a revocation record, and the running agent applies it and sends it to every storage server and every hub; the hubs keep it, send it to every connected device at once and to each device that connects later. The member also sends you the printed record: add it to the manifest under `revocations:`, raise the revision, sign and merge, so it survives every later manifest and reaches whoever was unreachable. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
 
 ## Changing k-of-n
 

@@ -256,6 +256,19 @@ func (c *Client) PutRoot(ctx context.Context, peer identity.Key, e *RootEnvelope
 	return nil
 }
 
+// Revoke hands a server a member's signed device revocation: the direct
+// path of the RFC's "Losing a device", seconds instead of the next signed
+// manifest. The server verifies the record itself; who carries it does
+// not matter.
+func (c *Client) Revoke(ctx context.Context, peer identity.Key, r *identity.SignedRevocation) error {
+	st, _, err := c.exchange(ctx, peer, &Request{Type: TypeRevoke, Revocation: r})
+	if err != nil {
+		return err
+	}
+	done(st)
+	return nil
+}
+
 // GetRoots lists the member's device roots a server holds.
 func (c *Client) GetRoots(ctx context.Context, peer identity.Key, member identity.Key) ([]*RootEnvelope, error) {
 	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeGetRoots, Member: member})

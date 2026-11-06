@@ -279,3 +279,40 @@ func TestLastRunSurvivesARestart(t *testing.T) {
 		t.Fatalf("after a restart: %+v", st.Runs)
 	}
 }
+
+// TestLimitsAreSavedAndApplied: the bandwidth caps live in the jobs file,
+// reach the limiters on load and on every change, and refuse nonsense.
+func TestLimitsAreSavedAndApplied(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var got [][2]int
+	cfg := Config{DataDir: dir, Engine: engine.NewFake(member, device, 2, 4), DB: db, Member: member, Device: device,
+		OnLimits: func(up, down int) { got = append(got, [2]int{up, down}) }}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != [2]int{0, 0} {
+		t.Fatalf("limits on load: %v", got)
+	}
+	if err := r.SetLimits(500, 0); err != nil || len(got) != 2 || got[1] != [2]int{500, 0} {
+		t.Fatalf("set: %v %v", err, got)
+	}
+	if err := r.SetLimits(-1, 0); err == nil {
+		t.Fatal("a negative cap was accepted")
+	}
+	st := r.Status()
+	if st.UploadKBps != 500 || st.DownloadKBps != 0 {
+		t.Fatalf("status: %d %d", st.UploadKBps, st.DownloadKBps)
+	}
+	r2, err := New(cfg)
+	if err != nil || len(got) != 3 || got[2] != [2]int{500, 0} || r2.Status().UploadKBps != 500 {
+		t.Fatalf("after a restart: %v %v", err, got)
+	}
+}

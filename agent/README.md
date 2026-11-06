@@ -53,11 +53,12 @@ redundanet network descriptor --manifest manifests/manifest.yaml --repository ht
     where the signed manifest is served. It goes into invite links.
 
 redundanet device revoke --network NAME --device KEY [--serial N]
-    Any device of the member, with the phrase: prints a signed revocation
-    record for `revocations:` in the manifest. Serial 0, the default,
-    covers every certificate of the device, the case of a lost one. The
-    operator appends it, raises the revision and signs; every agent and
-    server refuses the device from then on.
+    Any device of the member, with the phrase: signs a revocation record
+    and hands it to the running agent, which applies it here and sends it
+    to every storage server and hub within seconds; the record is printed
+    too, for `revocations:` in the manifest, which carries it to whoever
+    was not reachable. Serial 0, the default, covers every certificate of
+    the device, the case of a lost one.
 
 redundanet network join <descriptor>
     A device pins the descriptor's operator keys, fetches the manifest and
@@ -71,6 +72,7 @@ redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-onl
 redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
+redundanet backup limit [--upload KBPS] [--download KBPS]   # bandwidth caps on this device's mesh traffic, 0 for none
 redundanet diagnostics [--out FILE]
 redundanet restore list | browse DEVICE SNAPSHOT [PATH] | start DEVICE SNAPSHOT [PATH] --to DIR | status
 ```
@@ -87,6 +89,14 @@ A storage device also opens its store in the `redundanet3` directory of
 at a rate that covers them monthly, and sends each hub its share census as
 deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
+The bandwidth caps of the RFC (F8) pace every mesh stream of the device,
+opened or accepted, so a backup never takes more than its share of a home
+uplink: `backup limit --upload 2000 --download 0` caps what the device
+sends at 2000 kB/s and leaves what it receives free. The caps live in
+`backup.yaml` as `upload_kbps` and `download_kbps`, apply at once and
+survive restarts, and show in `backup list` and on the local page. A token
+bucket grants a second's worth of burst after idle time, never more. The
+in-process path to the device's own store is never paced.
 The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
 the restore test weekly (a file saved by an earlier version with the
@@ -287,6 +297,10 @@ redundanet identity init --network NAME [--storage] [--passphrase]
     the identity file (device key, member secret, certificate).
 
 redundanet identity show --network NAME
+redundanet identity check --network NAME
+    Types the phrase and says whether it is the one this device was
+    certified under; nothing is written. The check to run after writing
+    the phrase down, and whenever in doubt.
     Member key, its ten-group display code, device key, roles.
 
 redundanet identity device-key --network NAME            (on a headless node)
@@ -347,11 +361,16 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
     first by its dependencies, and removes the marker: the stack is never
     restarted one container at a time. The agent is untouched throughout.
 
-A device revocation travels in the manifest: the member's `device revoke`
-prints the record, the operator appends it under `revocations:` (member
-key, device key, serial, revoked_at, signature), raises the revision and
-signs; `validate` checks every record's signature against the member's
-key and warns when one names a listed storage device.
+A device revocation takes the direct path first, the RFC's "Losing a
+device": the agent applies the member's signed record, delivers it to every
+storage server over the storage protocol (`revoke`) and to every hub over
+the channel; a hub keeps it, sends it to every connected device at once and
+to each device that connects later, so a server that was offline learns it
+on its next connection. The manifest carries it for good: the operator
+appends the printed record under `revocations:` (member key, device key,
+serial, revoked_at, signature), raises the revision and signs; `validate`
+checks every record's signature against the member's key and warns when
+one names a listed storage device.
 ```
 
 ## Encodings, fixed here

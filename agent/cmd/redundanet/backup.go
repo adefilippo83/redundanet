@@ -50,13 +50,15 @@ func arg(pos []string, i int) string {
 
 func runBackup(args []string) error {
 	if len(args) == 0 {
-		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup, rebalance")
+		return errors.New("backup: a subcommand is needed: add, remove, list, run, verify, cleanup, rebalance, limit")
 	}
 	fs := flag.NewFlagSet("backup "+args[0], flag.ContinueOnError)
 	dir, _ := commonFlags(fs)
 	exclude := fs.String("exclude", "", "add: comma-separated excludes beside the defaults (base-name globs or relative prefixes)")
 	dryRun := fs.Bool("dry-run", false, "cleanup: count what would be deleted and delete nothing")
 	force := fs.Bool("force", false, "cleanup: lift the bound on how much one run may delete")
+	upload := fs.Int("upload", -1, "limit: kilobytes per second this device sends over the mesh, 0 for no cap")
+	download := fs.Int("download", -1, "limit: kilobytes per second this device receives over the mesh, 0 for no cap")
 	pos, err := parseInterspersed(fs, args[1:])
 	if err != nil {
 		return err
@@ -122,6 +124,9 @@ func runBackup(args []string) error {
 			}
 		}
 		fmt.Printf("every %s; restore test every %s\n", st.Every, st.VerifyEvery)
+		if st.UploadKBps > 0 || st.DownloadKBps > 0 {
+			fmt.Printf("bandwidth: upload %s, download %s\n", capWord(st.UploadKBps), capWord(st.DownloadKBps))
+		}
 		if v := st.LastVerify; v != nil {
 			fmt.Printf("last verified restore %s: %d of %d files read back, %d compared with unchanged sources, %d failed\n", v.At.Format(time.RFC3339), v.Verified, v.Sampled, v.Compared, len(v.Failed))
 		}
@@ -168,6 +173,26 @@ func runBackup(args []string) error {
 			return errors.New(rep.Error)
 		}
 		return nil
+	case "limit":
+		if *upload < 0 && *download < 0 {
+			return errors.New("usage: backup limit [--upload KBPS] [--download KBPS] (kilobytes per second, 0 for no cap)")
+		}
+		st, err := c.Backups(ctx)
+		if err != nil {
+			return err
+		}
+		up, down := st.UploadKBps, st.DownloadKBps
+		if *upload >= 0 {
+			up = *upload
+		}
+		if *download >= 0 {
+			down = *download
+		}
+		if err := c.BackupLimit(ctx, up, down); err != nil {
+			return err
+		}
+		fmt.Printf("bandwidth: upload %s, download %s\n", capWord(up), capWord(down))
+		return nil
 	case "rebalance":
 		lctx, lcancel := context.WithTimeout(context.Background(), 12*time.Hour)
 		defer lcancel()
@@ -186,6 +211,14 @@ func runBackup(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("backup: unknown subcommand %q", args[0])
+}
+
+// capWord words one cap.
+func capWord(kbps int) string {
+	if kbps <= 0 {
+		return "no cap"
+	}
+	return fmt.Sprintf("%d kB/s", kbps)
 }
 
 func runRestore(args []string) error {

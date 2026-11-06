@@ -20,6 +20,16 @@ On macOS, `backup add` probes each folder as the service and refuses one the sys
 
 Each set runs daily, the first time two minutes after the agent starts. `redundanet backup run [NAME]` starts a run now; `backup list` follows it. The interval is `every` in `backup.yaml` ([configuration.md](configuration.md)). One run at a time.
 
+## Bandwidth
+
+The agent can cap what the device sends and receives over the mesh, in kilobytes per second, so a backup never takes more than its share of a home connection:
+
+```
+redundanet backup limit --upload 2000 --download 0
+```
+
+Caps apply at once, survive restarts, and show in `backup list` and on the local page; 0 means no cap. A short burst after idle time is allowed, one second's worth. Restores, restore tests and repair traffic are paced too, since the cap is on the device's mesh streams, not on the backup job.
+
 ## What a run does
 
 The agent walks the folders, honouring the excludes. A file it has seen (same path, size, modification time, change time and file id) costs nothing; a changed or new file is hashed, and content the member already stored on any device costs no upload. Each run also re-hashes a rolling share of unchanged files, so a file that defeats every timestamp is still caught. Every object is encrypted on the device, erasure coded and sent as shares to storage servers across members. The run ends by publishing a signed root that names the new snapshot.
