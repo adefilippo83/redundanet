@@ -1,0 +1,5 @@
+
+  RedundaNet 3 node image. The first boot writes this node's device key to
+  the boot partition (redundanet-device-key.txt) and shows it here.
+  Default login: redundanet / redundanet. Change it first: passwd
+

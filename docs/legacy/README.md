@@ -185,7 +185,10 @@ Commands:
 
 ## Raspberry Pi
 
-Pre-built images are available for Raspberry Pi:
+Pre-built RedundaNet 2 images were attached to releases up to v2.7.39; none
+is built any more. Since 3.0.0 the Raspberry Pi image is RedundaNet 3's,
+see [rpi-image/README.md](../../rpi-image/README.md). The old images worked
+like this:
 
 1. Download from [GitHub Releases](https://github.com/adefilippo83/redundanet/releases)
 2. Flash to SD card using Raspberry Pi Imager

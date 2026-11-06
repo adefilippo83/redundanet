@@ -6,6 +6,10 @@ sessions, and updates itself from the signed release index with probation
 and rollback. A storage node also serves shares of the native grid from
 `STORAGE_PATH/redundanet3`.
 
+A Raspberry Pi can boot the ready-made image instead, which ships this
+layout with a first boot that hands the device key over on the SD card:
+[rpi-image/README.md](../../../rpi-image/README.md).
+
 Three steps, the middle one on the member's laptop because that is where the
 phrase lives (the RFC's headless flow):
 

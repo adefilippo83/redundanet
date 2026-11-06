@@ -146,7 +146,9 @@ Legacy release flow: bump `pyproject.toml` (version lives there only; every
 user-facing Python change bumps the patch version; `readme` points at
 `docs/legacy/README.md`, the PyPI long description), run the Python gate,
 maintainer tags `vX.Y.Z`; the release workflow publishes PyPI and ghcr
-images (plus the Raspberry Pi image under QEMU). The tahoe-* images build
+images. The Raspberry Pi image is RedundaNet 3's since 3.0.0: built by
+`build-rpi-image.yml` after a stable agent release, never for a `v*` tag.
+The tahoe-* images build
 FROM `redundanet-tahoe-base`, which `tahoe-base.yml` rebuilds only when
 `poetry.lock` or `docker/Dockerfile.tahoe-base` changes. Images are 64-bit
 only. Hub changes additionally need `fly deploy`. Nodes pick up images via

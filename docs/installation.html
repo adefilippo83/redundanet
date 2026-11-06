@@ -464,6 +464,7 @@ redundanet open</code></pre>
 
             <section id="node">
                 <h2 data-i18n="ig.node.title">Linux storage node</h2>
+                <p>A Raspberry Pi can skip the steps below: each stable release carries a ready-to-boot image with the agent installed as a storage node. Flash it, boot it, certify the key it leaves on the SD card, put the certificate back. The guide is <a href="https://github.com/adefilippo83/redundanet/blob/main/rpi-image/README.md">rpi-image/README.md</a>.</p>
                 <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: the node's device key is certified on your laptop. Three steps, as root on the node for the first and the last.</p>
                 <h3 data-i18n="ig.node.s1">1. On the node: prepare</h3>
                 <pre><code>curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
