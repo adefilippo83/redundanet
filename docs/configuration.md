@@ -78,6 +78,8 @@ sets:
 every: 24h            # between runs of each set
 verify_every: 168h    # between restore tests; 7 days
 cleanup_every: 168h   # between cleanups of unreferenced objects; 7 days
+upload_kbps: 0      # bandwidth caps on the device's mesh traffic, kilobytes per second; 0 is none
+download_kbps: 0
 retention:
   days: 7             # keep everything this long
   daily: 30           # then one per day

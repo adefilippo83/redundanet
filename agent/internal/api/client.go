@@ -89,6 +89,11 @@ func (c *Client) BackupAdd(ctx context.Context, set backup.Set) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/backup/add", set, nil)
 }
 
+// BackupLimit sets the bandwidth caps in kilobytes per second, 0 for none.
+func (c *Client) BackupLimit(ctx context.Context, uploadKBps, downloadKBps int) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/backup/limit", Limits{UploadKBps: uploadKBps, DownloadKBps: downloadKBps}, nil)
+}
+
 // BackupRemove deletes a set.
 func (c *Client) BackupRemove(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodPost, "/api/backup/remove?set="+url.QueryEscape(name), nil)

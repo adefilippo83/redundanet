@@ -56,6 +56,7 @@ The running agent's recent log lines.
 
 ```
 redundanet backup add NAME FOLDER [FOLDER...] [--exclude a,b]
+redundanet backup limit [--upload KBPS] [--download KBPS]   # caps on what this device sends and receives over the mesh, kilobytes per second, 0 for none
 redundanet backup remove NAME
 redundanet backup list
 redundanet backup run [NAME]
