@@ -10,8 +10,17 @@ A Raspberry Pi can boot the ready-made image instead, which ships this
 layout with a first boot that hands the device key over on the SD card:
 [rpi-image/README.md](../../../rpi-image/README.md).
 
-Three steps, the middle one on the member's laptop because that is where the
-phrase lives (the RFC's headless flow):
+Two ways to certify the node, both keeping the phrase on the laptop. With
+the laptop on the node's network, pairing is two commands after `prepare`:
+
+```bash
+sudo bash install.sh pair                                        # on the node: shows a code and waits
+redundanet device pair --network redundanet --storage <code>     # on the laptop, with the phrase
+```
+
+The node joins and starts by itself. For a node reached over SSH only, the
+certificate file flow, three steps with the middle one on the laptop (the
+RFC's headless flow):
 
 ```bash
 # 1. on the node, as root: user, directories, binary, unit; prints the device key

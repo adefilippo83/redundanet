@@ -67,7 +67,7 @@ That is a systemd user unit with lingering, so it runs while you are logged out 
 
 ## Linux storage node
 
-A storage node contributes disk and runs the agent as a system service, headless. The phrase never reaches the node: the node makes its own device key, you certify it on your laptop, and the certificate travels back as a file. The node needs at least 10 GiB free above its floor. Everything is in the node runbook, [../agent/deploy/node/README.md](../agent/deploy/node/README.md); the three steps are:
+A storage node contributes disk and runs the agent as a system service, headless. The phrase never reaches the node: the node makes its own device key and a device of yours certifies it, by pairing when your laptop is on the node's network, or through a certificate file over SSH. The node needs at least 10 GiB free above its floor. Everything is in the node runbook, [../agent/deploy/node/README.md](../agent/deploy/node/README.md). First, on the node:
 
 ```bash
 # 1. on the node, as root: user, directories, binary, unit; prints the device key
@@ -76,18 +76,26 @@ curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent
 sudo STORAGE_PATH=/mnt/storage bash install.sh prepare 3.0.0
 ```
 
+Then, with your laptop on the same network, pairing:
+
+```bash
+# 2. on the node: show a one-time code and wait
+sudo bash install.sh pair
+# on your laptop, where the phrase is typed
+redundanet device pair --network redundanet --storage <the code>
+```
+
+The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. Or, for a node you reach over SSH only, the certificate file:
+
 ```bash
 # 2. on your laptop, where the phrase is typed: certify the node's device key
 redundanet identity certify --network redundanet --device <KEY> --storage > node.cert
 scp node.cert node:
-```
-
-```bash
 # 3. on the node: accept the certificate, join, start; the certificate file is destroyed
 sudo bash install.sh finish node.cert
 ```
 
-`prepare` checks the download against the sha256 in `releases/index.yaml` on main. `finish` joins the network and enables `redundanet-agent.service`.
+`prepare` checks the download against the sha256 in `releases/index.yaml` on main. `pair` and `finish` both join the network and enable `redundanet-agent.service`.
 
 What `prepare` sets up:
 
