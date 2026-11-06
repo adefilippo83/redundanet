@@ -106,7 +106,6 @@
   "limits.title": "Was noch fehlt",
   "limits.subtitle": "Die Grenzen von 3.0.0, klar benannt",
   "limits.hub": "Ein einziger Hub, unter einer nackten IP-Adresse. Fällt er aus, gibt es keine neuen Verbindungen, keine Reparaturplanung und keine Statusseite; bestehende direkte Verbindungen laufen weiter. Die öffentliche Statusseite wird auf der fly.io-App des alten Produkts gehostet.",
-  "limits.pairing": "Kein Geräte-Pairing: jedes Gerät wird aus der Phrase zertifiziert.",
   "limits.keystore": "Kein Schlüsselspeicher des Betriebssystems.",
   "limits.platforms": "Die Builds für Windows und Intel-Macs sind noch nicht im Live-Netzwerk gelaufen. Raspberry Pi 4 ist nicht gemessen.",
   "limits.winddown": "Die Abschaltung von RedundaNet 2 erfolgt manuell.",

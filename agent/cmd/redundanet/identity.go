@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"errors"
 	"flag"
@@ -16,6 +17,9 @@ import (
 	"golang.org/x/term"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/pairing"
+	"github.com/adefilippo83/redundanet/agent/internal/version"
 )
 
 // The identity commands cover the RFC's first-run and headless flows:
@@ -31,7 +35,7 @@ import (
 // as a file.
 func runIdentity(args []string) error {
 	if len(args) == 0 {
-		return errors.New("identity: a subcommand is needed: init, show, check, device-key, certify, accept-certificate")
+		return errors.New("identity: a subcommand is needed: init, show, check, pair, device-key, certify, accept-certificate")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -41,6 +45,8 @@ func runIdentity(args []string) error {
 		return identityShow(rest)
 	case "check":
 		return identityCheck(rest)
+	case "pair":
+		return identityPair(rest)
 	case "device-key":
 		return identityDeviceKey(rest)
 	case "certify":
@@ -205,25 +211,9 @@ func identityDeviceKey(args []string) error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(d, "device-key.pending")
-	if _, err := os.Stat(identityPath(d)); err == nil {
-		return fmt.Errorf("%s exists: this device already has an identity", identityPath(d))
-	}
-	var dev *identity.DeviceKey
-	if b, err := os.ReadFile(path); err == nil {
-		if dev, err = identity.DeviceKeyFromSeed(b); err != nil {
-			return err
-		}
-	} else {
-		if dev, err = identity.NewDeviceKey(); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, dev.Seed(), 0o600); err != nil {
-			return err
-		}
+	dev, err := pendingDeviceKey(d)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("device key: %s\n", dev.ID())
 	fmt.Printf("network:    %s\n", *network)
@@ -282,6 +272,116 @@ func identityCertify(args []string) error {
 	return err
 }
 
+// pendingDeviceKey is this device's key before it has an identity: made
+// once and kept in device-key.pending until a certificate arrives.
+func pendingDeviceKey(d string) (*identity.DeviceKey, error) {
+	path := filepath.Join(d, "device-key.pending")
+	if _, err := os.Stat(identityPath(d)); err == nil {
+		return nil, fmt.Errorf("%s exists: this device already has an identity", identityPath(d))
+	}
+	if b, err := os.ReadFile(path); err == nil {
+		return identity.DeviceKeyFromSeed(b)
+	}
+	dev, err := identity.NewDeviceKey()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, dev.Seed(), 0o600); err != nil {
+		return nil, err
+	}
+	return dev, nil
+}
+
+// acceptState checks an identity made for this device's pending key and
+// writes it: the common end of accept-certificate and pair.
+func acceptState(d, network string, dev *identity.DeviceKey, st *identity.State) error {
+	if err := st.Certificate.Verify(); err != nil {
+		return err
+	}
+	if st.Certificate.Certificate.Device != dev.ID() {
+		return fmt.Errorf("the certificate is for device %s, this device is %s", st.Certificate.Certificate.Device.Short(), dev.ID().Short())
+	}
+	if st.Network != network || st.Certificate.Certificate.Network != network {
+		return fmt.Errorf("the certificate is for network %q", st.Certificate.Certificate.Network)
+	}
+	st.DeviceSeed = dev.Seed()
+	if err := identity.Save(identityPath(d), st, nil); err != nil {
+		return err
+	}
+	_ = os.Remove(filepath.Join(d, "device-key.pending"))
+	return nil
+}
+
+// identityPair is the new device's side of pairing: a one-time code shown
+// here, an existing device of the member certifies this one through it and
+// hands over the identity and the network, so the phrase stays where it is.
+func identityPair(args []string) error {
+	fs := flag.NewFlagSet("identity pair", flag.ContinueOnError)
+	dir, network := commonFlags(fs)
+	wait := fs.Duration("wait", 10*time.Minute, "how long the code stays valid")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *network == "" {
+		return errors.New("--network is required")
+	}
+	d, err := dataDir(*dir)
+	if err != nil {
+		return err
+	}
+	dev, err := pendingDeviceKey(d)
+	if err != nil {
+		return err
+	}
+	l, err := pairing.Listen(*network, dev.ID(), "")
+	if err != nil {
+		return err
+	}
+	defer l.Close()
+	fmt.Printf("device key: %s\n\n", dev.ID())
+	fmt.Println("On a device of yours that already has its identity, within", wait.String(), "and on a network that reaches this one, run:")
+	fmt.Printf("  redundanet device pair --network %s %s\n", *network, l.Code())
+	fmt.Println("add --storage there if this device contributes disk. Waiting...")
+	ctx, cancel := context.WithTimeout(context.Background(), *wait)
+	defer cancel()
+	offer, err := l.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("pairing did not complete: %w", err)
+	}
+	var st identity.State
+	if err := identity.Unmarshal(offer.State, &st); err != nil {
+		return fmt.Errorf("the offer did not carry an identity: %w", err)
+	}
+	if err := acceptState(d, *network, dev, &st); err != nil {
+		return err
+	}
+	fmt.Printf("Identity written to %s\n", identityPath(d))
+	printState(&st)
+	if offer.Descriptor != "" {
+		desc, err := membership.ParseDescriptor(offer.Descriptor)
+		if err != nil {
+			return fmt.Errorf("the offer's network descriptor: %w", err)
+		}
+		m, err := membership.Open(membership.Config{DataDir: d, Descriptor: desc, Version: version.Version, Log: quietLog()})
+		if err != nil {
+			return err
+		}
+		jctx, jcancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer jcancel()
+		m.Refresh(jctx)
+		if ms := m.Status(); ms.LastError != "" {
+			fmt.Printf("joined %s, but the first manifest fetch failed: %s\n", desc.Network, ms.LastError)
+		} else {
+			fmt.Printf("joined %s: manifest revision %d\n", ms.Network, ms.Revision)
+		}
+	}
+	fmt.Printf("next: redundanet service install --network %s\n", *network)
+	return nil
+}
+
 func identityAcceptCertificate(args []string) error {
 	fs := flag.NewFlagSet("identity accept-certificate", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
@@ -311,20 +411,9 @@ func identityAcceptCertificate(args []string) error {
 	if err := identity.Unmarshal(raw, &st); err != nil {
 		return fmt.Errorf("certificate file: %w", err)
 	}
-	if err := st.Certificate.Verify(); err != nil {
+	if err := acceptState(d, *network, dev, &st); err != nil {
 		return err
 	}
-	if st.Certificate.Certificate.Device != dev.ID() {
-		return fmt.Errorf("the certificate is for device %s, this device is %s", st.Certificate.Certificate.Device.Short(), dev.ID().Short())
-	}
-	if st.Network != *network || st.Certificate.Certificate.Network != *network {
-		return fmt.Errorf("the certificate is for network %q", st.Certificate.Certificate.Network)
-	}
-	st.DeviceSeed = dev.Seed()
-	if err := identity.Save(identityPath(d), &st, nil); err != nil {
-		return err
-	}
-	_ = os.Remove(filepath.Join(d, "device-key.pending"))
 	fmt.Printf("Identity written to %s\n", identityPath(d))
 	printState(&st)
 	return nil

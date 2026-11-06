@@ -106,7 +106,6 @@
   "limits.title": "尚未实现的部分",
   "limits.subtitle": "3.0.0 的局限，直说",
   "limits.hub": "只有一个 hub，且使用裸 IP 地址。它宕机时无法建立新连接，无法调度修复，也没有状态页面；已有的直接连接会继续。公开状态页面托管在旧产品的 fly.io 应用上。",
-  "limits.pairing": "没有设备配对：每台设备都由短语认证。",
   "limits.keystore": "不使用操作系统密钥库。",
   "limits.platforms": "Windows 和 Intel Mac 构建版本尚未在线上网络中运行过。Raspberry Pi 4 未做测量。",
   "limits.winddown": "RedundaNet 2 的停用是手动的。",

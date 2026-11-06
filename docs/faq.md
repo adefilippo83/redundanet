@@ -14,6 +14,8 @@ No. Every object is encrypted on your device with a key derived from your member
 
 **Is my phrase still right?** Run `redundanet identity check --network redundanet` on any of your devices and type it: the command says whether it derives the member key this device was certified under, and writes nothing. Do it once after writing the phrase down.
 
+**How do I add a second laptop?** `redundanet identity pair` on the new one shows a code; `redundanet device pair <code>` on a device that already has your identity, with your phrase, certifies it and hands over the network. The phrase is never typed on the new device. See [install.md](install.md).
+
 **What if I lose the phrase?**
 The data is unreadable to everyone, by design; there is no escrow and nobody can recover it for you. A new identity is a new member entry, and the maintainer retires the old one. Keep the phrase like a passport. Seal the identity file with `--passphrase` if the device is shared.
 

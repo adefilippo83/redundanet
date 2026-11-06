@@ -35,6 +35,8 @@ Agents apply only a manifest signed by an operator key pinned at join, with a re
 
 ## Device revocation
 
+A new device is certified either by typing the phrase on it, or by pairing: the new device shows a one-time code with a 160-bit secret, an existing device with the phrase connects to it and hands over the certificate and the member secret sealed under a key derived from the code. Whoever is between the two sees only ciphertext; a wrong code opens nothing and three failed connections end the code. The member secret travels, as it does in a certificate file; the phrase does not.
+
 A member revokes a lost or stolen device from any other device of theirs with `redundanet device revoke --device KEY`: the command asks for the phrase, signs a revocation record, and the running agent applies it at once and sends it to every storage server and every hub, which spread it to every device within seconds and to any device that connects later. The command also prints the record; the operator adds it to the manifest under `revocations:`, signs and merges, so it survives every later manifest and reaches whoever was unreachable. What the device wrote while it was trusted keeps verifying, so repair keeps working.
 
 ## What a lost device can do

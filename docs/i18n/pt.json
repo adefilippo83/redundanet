@@ -106,7 +106,6 @@
   "limits.title": "O que ainda não existe",
   "limits.subtitle": "Os limites da 3.0.0, ditos com clareza",
   "limits.hub": "Um único hub, em um endereço IP sem domínio. Com ele fora do ar não há novas conexões, nem agendamento de reparos, nem página de status; as conexões diretas existentes continuam. A página de status pública é hospedada no app fly.io do produto antigo.",
-  "limits.pairing": "Não há pareamento de dispositivos: cada dispositivo é certificado a partir da frase.",
   "limits.keystore": "Não há uso do keystore do sistema operacional.",
   "limits.platforms": "As builds para Windows e Mac Intel ainda não rodaram na rede em produção. O Raspberry Pi 4 não foi medido.",
   "limits.winddown": "A desativação do RedundaNet 2 é manual.",
