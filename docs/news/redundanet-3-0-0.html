@@ -200,7 +200,7 @@
                 <li><a href="../installation.html" data-i18n="nav.install">Install</a></li>
                 <li><a href="../join.html" data-i18n="nav.join">Join</a></li>
                 <li><a href="../migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
-                <li><a href="https://redundanet-hub.fly.dev/v3/" data-i18n="nav.status">Status</a></li>
+                <li><a href="https://hub.redundanet.com/" data-i18n="nav.status">Status</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet" data-i18n="nav.source">Source</a></li>
@@ -229,7 +229,7 @@
                     <li><strong>Identity.</strong> A member key comes from a twelve-word phrase shown once at <code>redundanet identity init</code>. Every device gets a certificate signed by the member key. No GPG keys on keyservers.</li>
                     <li><strong>Membership.</strong> Member and storage lists live in a manifest in the repository, signed offline by the maintainer's operator key. Agents fetch it every five minutes and apply a newer signed revision at once. Joining is a <a href="../join.html">form</a> that opens a GitHub issue; a workflow validates it and opens the pull request.</li>
                     <li><strong>Network.</strong> No VPN. The agent reaches the hub outbound; devices connect directly through hole punching when they can, otherwise through the hub's relay, over QUIC with TLS 1.3. No inbound firewall rule is needed.</li>
-                    <li><strong>Backups.</strong> Native backup sets, daily runs, snapshots under a retention policy, restores per file, folder or snapshot, and a weekly restore test whose streak shows on the <a href="https://redundanet-hub.fly.dev/v3/">status page</a>.</li>
+                    <li><strong>Backups.</strong> Native backup sets, daily runs, snapshots under a retention policy, restores per file, folder or snapshot, and a weekly restore test whose streak shows on the <a href="https://hub.redundanet.com/">status page</a>.</li>
                     <li><strong>Updates.</strong> The agent checks the signed release index hourly, verifies the hash, runs the new version in probation for up to two minutes, keeps the old binary as <code>redundanet.old</code>, and rolls back by itself if the new one does not reconnect.</li>
                     <li><strong>Lost devices.</strong> <code>redundanet device revoke --device KEY</code> on any device of the member prints a signed revocation record for the manifest; once the operator signs and merges, every agent and server refuses that device.</li>
                     <li><strong>Diagnostics.</strong> <code>redundanet diagnostics</code> writes a bundle with no paths, URLs or addresses, to send by hand. Nothing is ever uploaded automatically. The <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">privacy policy</a> lists every exchange the software makes.</li>

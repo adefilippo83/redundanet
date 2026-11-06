@@ -5,7 +5,7 @@
 
 Community-run encrypted backup. Members give each other disk; everyone's data is encrypted on their own devices and spread over the others' machines.
 
-**Website**: [https://redundanet.com](https://redundanet.com). **Status page**: [https://redundanet-hub.fly.dev/v3/](https://redundanet-hub.fly.dev/v3/).
+**Website**: [https://redundanet.com](https://redundanet.com). **Status page**: [https://hub.redundanet.com/](https://hub.redundanet.com/).
 
 ## What it is
 
@@ -63,7 +63,7 @@ Sets, schedule, excludes, skipped files, restore tests, cleanup and the 30-day w
 
 ## Status page
 
-[https://redundanet-hub.fly.dev/v3/](https://redundanet-hub.fly.dev/v3/) shows members, devices, grid health, repair, and per member the day of the last backup and the restore-test streak. It never shows an IP address, a path or a storage index. Your own device's view is the local page: `redundanet open`.
+[https://hub.redundanet.com/](https://hub.redundanet.com/) shows members, devices, grid health, repair, and per member the day of the last backup and the restore-test streak. It never shows an IP address, a path or a storage index. Your own device's view is the local page: `redundanet open`.
 
 ## Security and privacy
 

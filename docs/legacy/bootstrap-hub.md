@@ -211,6 +211,8 @@ services manually, recreate them as a group, not individually.
 
 ## RedundaNet 3 status under /v3/
 
+Since manifest revision 5 the RedundaNet 3 page is served by the hub itself at <https://hub.redundanet.com/>; the publish described here is kept for a short handover and then removed from the hub unit.
+
 The RedundaNet 3 hub on hub-hetzner has no domain of its own, so the fly.io
 page serves its status page and `status.json` under
 `https://redundanet-hub.fly.dev/v3/`. The Hetzner hub PUTs both files there

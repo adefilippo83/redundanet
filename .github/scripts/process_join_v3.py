@@ -69,7 +69,7 @@ MIN_UDP_PORT, MAX_UDP_PORT = 1024, 65535
 MAX_SIGNATURE_LINES = 200
 SIGNATURE_BEGIN = "-----BEGIN PGP SIGNATURE-----"
 SIGNATURE_END = "-----END PGP SIGNATURE-----"
-STATUS_PAGE = "https://redundanet-hub.fly.dev/v3/"
+STATUS_PAGE = "https://hub.redundanet.com/"
 
 
 class JoinError(Exception):
