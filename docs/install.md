@@ -67,7 +67,16 @@ That is a systemd user unit with lingering, so it runs while you are logged out 
 
 ## Linux storage node
 
-A storage node contributes disk and runs the agent as a system service, headless. The phrase never reaches the node: the node makes its own device key and a device of yours certifies it, by pairing when your laptop is on the node's network, or through a certificate file over SSH. The node needs at least 10 GiB free above its floor. Everything is in the node runbook, [../agent/deploy/node/README.md](../agent/deploy/node/README.md). First, on the node:
+A storage node contributes disk and runs the agent as a system service, headless. The phrase never reaches the node: the node makes its own device key and a device of yours certifies it, by pairing when your laptop is on the node's network, or through a certificate file over SSH. The node needs at least 10 GiB free above its floor. Everything is in the node runbook, [../agent/deploy/node/README.md](../agent/deploy/node/README.md).
+
+The short way, since 3.0.4: download the `linux-amd64` or `linux-arm64` archive as in [Download and verify](#download-and-verify), then, with the storage disk mounted:
+
+```bash
+sudo ./redundanet node install --storage-path /mnt/storage       # on the node: lays it out, shows a pairing code
+redundanet device pair --network redundanet --storage <the code>  # on your laptop, with the phrase
+```
+
+The node starts by itself once paired and prints the `storage:` lines for your join request. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident; `--allow-root-disk` overrides that knowingly. The script below makes the same layout and keeps the certificate-file flow for a node reached over SSH only. On the node:
 
 ```bash
 # 1. on the node, as root: user, directories, binary, unit; prints the device key

@@ -10,6 +10,23 @@ A Raspberry Pi can boot the ready-made image instead, which ships this
 layout with a first boot that hands the device key over on the SD card:
 [rpi-image/README.md](../../../rpi-image/README.md).
 
+Since 3.0.4 the binary lays the node out itself and pairs it, as root, one
+command on the node and one on the laptop:
+
+```bash
+curl -fsSL -o redundanet.tgz https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.4/redundanet-3.0.4-linux-arm64.tar.gz   # or linux-amd64; check the sha256 against releases/index.yaml
+tar -xzf redundanet.tgz --strip-components=1
+sudo ./redundanet node install --storage-path /mnt/storage       # lays the node out, shows a pairing code, starts the service once paired
+redundanet device pair --network redundanet --storage <code>     # on the laptop, with the phrase
+```
+
+`node install` refuses a storage path that is not a mount point unless
+told `--allow-root-disk`, keeps `agent.env` and the identity on a second
+run, and prints the `storage:` lines to send for the manifest once paired;
+`node status` and `node uninstall` go with it (the data directory and the
+store stay). `install.sh` below makes the same layout from a script, which
+the Pi image uses, and keeps the certificate-file flow.
+
 Two ways to certify the node, both keeping the phrase on the laptop. With
 the laptop on the node's network, pairing is two commands after `prepare`:
 
