@@ -84,6 +84,8 @@ redundanet update check [--channel early]
 redundanet update apply [--channel early]
 redundanet update status [--channel early]
 redundanet update retry VERSION
+redundanet node install --storage-path DIR [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]   # Linux, as root: lays the storage node out, pairs it, starts the service
+redundanet node status | uninstall                # the node's layout and service; uninstall keeps the data directory and the store
 redundanet update channel stable|early          # chosen on this device, kept with the updater's state, wins over the service's flag
 ```
 The self-updater by hand. `check` names the newest release that fits the channel; `apply` installs it (restart the agent or the service to run it); `status` is the updater's record; `retry` allows a version that failed probation to be installed again.

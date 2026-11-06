@@ -253,6 +253,8 @@ redundanet open                 # the local page, through a one-time link that l
 redundanet logs [-n 100]
 
 redundanet service install --network NAME [--channel early]  # this binary, as a user service that starts at login
+redundanet node install --storage-path DIR [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]   # Linux, as root: a storage node laid out, paired and started
+redundanet node status | uninstall
 redundanet service status | uninstall
 
 redundanet update check | apply | status [--channel early]
