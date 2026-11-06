@@ -90,6 +90,16 @@ type Engine interface {
 	PutRoot(ctx context.Context, root Root) (uint64, error)
 	GetRoots(ctx context.Context, member identity.Key) (*Roots, error)
 	Census(ctx context.Context, since uint64) (*store.CensusDelta, error)
+	// Usage is what the storage servers hold for the member, in share
+	// bytes, summed over the servers that answered.
+	Usage(ctx context.Context) (Usage, error)
+}
+
+// Usage is the member's share bytes across the storage servers.
+type Usage struct {
+	Bytes    int64 // share bytes on the servers that answered
+	Servers  int   // storage servers in the manifest
+	Answered int   // that answered; the sum is a lower bound when fewer
 }
 
 // Config wires the native engine.

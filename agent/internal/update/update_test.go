@@ -256,3 +256,26 @@ func TestCheckSeesARetryFromAnotherProcess(t *testing.T) {
 		t.Fatalf("the service did not see the retry without a restart: %v %v", rel, err)
 	}
 }
+
+// TestChosenChannelOverridesTheFlag: a channel chosen on the device is
+// kept with the state and wins over the service's flag at the next start.
+func TestChosenChannelOverridesTheFlag(t *testing.T) {
+	dir := t.TempDir()
+	u := New(Config{DataDir: dir, Version: "3.0.1", Channel: "stable"})
+	if u.Status().Channel != "stable" {
+		t.Fatalf("channel: %s", u.Status().Channel)
+	}
+	if err := u.SetChannel("nightly"); err == nil {
+		t.Fatal("an unknown channel was accepted")
+	}
+	if err := u.SetChannel("early"); err != nil {
+		t.Fatal(err)
+	}
+	if u.Status().Channel != "early" {
+		t.Fatalf("channel after the choice: %s", u.Status().Channel)
+	}
+	again := New(Config{DataDir: dir, Version: "3.0.1", Channel: "stable"})
+	if again.Status().Channel != "early" {
+		t.Fatalf("the choice did not survive a restart: %s", again.Status().Channel)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
+	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 )
 
@@ -314,5 +315,104 @@ func TestLimitsAreSavedAndApplied(t *testing.T) {
 	r2, err := New(cfg)
 	if err != nil || len(got) != 3 || got[2] != [2]int{500, 0} || r2.Status().UploadKBps != 500 {
 		t.Fatalf("after a restart: %v %v", err, got)
+	}
+}
+
+// TestSettingsPersistAndReconfigure: schedule, retention and a set's
+// excludes change through the runner, are checked, saved, and come back
+// after a restart.
+func TestSettingsPersistAndReconfigure(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	cfg := Config{DataDir: dir, Engine: engine.NewFake(member, device, 2, 4), DB: db, Member: member, Device: device}
+	r, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "docs")
+	_ = os.MkdirAll(src, 0o755)
+	if err := r.AddSet(backup.Set{Name: "docs", Folders: []string{src}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetSchedule(30*time.Minute, 48*time.Hour, 48*time.Hour); err == nil {
+		t.Fatal("a half-hourly backup was accepted")
+	}
+	if err := r.SetSchedule(2*time.Hour, 48*time.Hour, 72*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetRetention(snapshot.Retention{Days: 0}); err == nil {
+		t.Fatal("a zero-day retention was accepted")
+	}
+	if err := r.SetRetention(snapshot.Retention{Days: 3, Daily: 10, Weekly: 4, Monthly: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SetExcludes("nope", []string{"*.iso"}); err == nil {
+		t.Fatal("excludes of a missing set were accepted")
+	}
+	if err := r.SetExcludes("docs", []string{"*.iso", "cache/"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-r.reconf:
+	default:
+		t.Fatal("the scheduler was not woken")
+	}
+	r2, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := r2.Status()
+	if st.Every != "2h0m0s" || st.VerifyEvery != "48h0m0s" || st.CleanupEvery != "72h0m0s" || st.Retention != (snapshot.Retention{Days: 3, Daily: 10, Weekly: 4, Monthly: 6}) || len(st.Sets) != 1 || len(st.Sets[0].Excludes) != 2 {
+		t.Fatalf("after a restart: %+v", st)
+	}
+}
+
+// TestBudgetRefusesARunWhenUsedUp: with the servers holding more than the
+// member's allocation stands for, a run is refused and says so; below it
+// the run goes ahead and the budget shows the use.
+func TestBudgetRefusesARunWhenUsedUp(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fake := engine.NewFake(member, device, 2, 4)
+	// 100 GB contributed, 15% reserve, 2-of-4: 42 GB of data allowed.
+	man := &manifest.Manifest{Network: manifest.Network{Name: "testnet", Encoding: manifest.Encoding{K: 2, N: 4}, ReservePercent: 15},
+		Members: []manifest.Member{{Name: "m", Key: member, ContributionGB: 100, Status: manifest.StatusActive}}}
+	r, err := New(Config{DataDir: dir, Engine: fake, DB: db, Member: member, Device: device, Manifest: func() *manifest.Manifest { return man }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "docs")
+	_ = os.MkdirAll(src, 0o755)
+	_ = os.WriteFile(filepath.Join(src, "a.bin"), make([]byte, 5000), 0o644)
+	if err := r.AddSet(backup.Set{Name: "docs", Folders: []string{src}}); err != nil {
+		t.Fatal(err)
+	}
+	fake.UsageBytes = 100e9 // share bytes: 50 GB of data, above 42
+	rs := r.RunSet(context.Background(), backup.Set{Name: "docs", Folders: []string{src}}, snapshot.DefaultRetention)
+	if rs == nil || !strings.Contains(rs.LastErr, "allocation is used up") || fake.Puts != 0 {
+		t.Fatalf("over the allocation: %+v, %d puts", rs, fake.Puts)
+	}
+	if b := r.Status().Budget; b == nil || !b.Exhausted || b.AllowedGB != 42 || b.UsedGB < 49.9 {
+		t.Fatalf("budget: %+v", b)
+	}
+	fake.UsageBytes = 10e9 // 5 GB of data
+	rs = r.RunSet(context.Background(), backup.Set{Name: "docs", Folders: []string{src}}, snapshot.DefaultRetention)
+	if rs == nil || rs.LastErr != "" || rs.Last == nil {
+		t.Fatalf("under the allocation: %+v", rs)
+	}
+	if b := r.Status().Budget; b == nil || b.Exhausted || b.UsedGB > 5.1 {
+		t.Fatalf("budget after: %+v", b)
 	}
 }

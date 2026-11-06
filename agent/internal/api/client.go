@@ -90,6 +90,21 @@ func (c *Client) BackupAdd(ctx context.Context, set backup.Set) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/backup/add", set, nil)
 }
 
+// Settings changes what is set in s; the rest stays.
+func (c *Client) Settings(ctx context.Context, s Settings) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/settings", s, nil)
+}
+
+// BackupExcludes replaces a set's own excludes.
+func (c *Client) BackupExcludes(ctx context.Context, set string, excludes []string) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/backup/excludes", map[string]any{"set": set, "excludes": excludes}, nil)
+}
+
+// UpdateChannel chooses the update channel on this device.
+func (c *Client) UpdateChannel(ctx context.Context, channel string) error {
+	return c.doJSON(ctx, http.MethodPost, "/api/update/channel", map[string]string{"channel": channel}, nil)
+}
+
 // Revoke hands the running agent a signed device revocation to apply and
 // send around; the report says how far it got.
 func (c *Client) Revoke(ctx context.Context, r *identity.SignedRevocation) (RevokeReport, error) {

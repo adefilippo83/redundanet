@@ -256,6 +256,16 @@ func (c *Client) PutRoot(ctx context.Context, peer identity.Key, e *RootEnvelope
 	return nil
 }
 
+// Usage asks a server how many share bytes it holds for the asking member.
+func (c *Client) Usage(ctx context.Context, peer identity.Key) (int64, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeUsage})
+	if err != nil {
+		return 0, err
+	}
+	done(st)
+	return resp.Usage, nil
+}
+
 // Revoke hands a server a member's signed device revocation: the direct
 // path of the RFC's "Losing a device", seconds instead of the next signed
 // manifest. The server verifies the record itself; who carries it does

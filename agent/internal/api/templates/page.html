@@ -27,6 +27,7 @@ th { color: var(--muted); font-weight: 500; font-size: 12.5px }
 .msg { background: var(--card); border-left: 3px solid var(--accent); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px }
 form { display:inline } button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); cursor: pointer }
 pre { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 12px; overflow:auto; max-height: 320px }
+.settings{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 10px}.settings b{min-width:90px}.settings label{display:inline-flex;gap:4px;align-items:center}.settings input,.settings select{font:inherit;padding:2px 4px}.settings .muted{flex-basis:100%}
 </style>
 </head>
 <body>
@@ -73,6 +74,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
     <td>{{range .Needs}}<span class="bad">{{.}}</span><br>{{end}}{{if .LastErr}}<span class="bad">{{.LastErr}}</span>{{else if .Last}}{{.Last.Snapshot.Files}} files, {{.Last.Snapshot.Skipped}} skipped{{with .Last.SkipReasons}} ({{.}}){{end}}{{if .Last.Snapshot.Partial}}, <span class="warn">partial</span>{{end}}, root {{.Last.RootVersion}}{{end}}</td></tr>{{end}}
   </table>{{else}}<p class="muted">No backup set yet: <code class="cmd">redundanet backup add NAME FOLDER</code></p>{{end}}
   <div class="kv" style="margin-top:8px"><b>every</b><span>{{.Every}}{{if or .UploadKBps .DownloadKBps}}; bandwidth: upload {{if .UploadKBps}}{{.UploadKBps}} kB/s{{else}}no cap{{end}}, download {{if .DownloadKBps}}{{.DownloadKBps}} kB/s{{else}}no cap{{end}}{{end}}</span>
+    {{with .Budget}}<b>allocation</b><span>{{printf "%.1f" .UsedGB}} of {{.AllowedGB}} GB used{{if .Exhausted}}, <span class="bad">used up: prune snapshots or ask for more</span>{{else if lt .Answered .Servers}} (from {{.Answered}} of {{.Servers}} servers){{end}}</span>{{end}}
     <b>restore tests</b><span>every {{.VerifyEvery}}{{if .VerifyStreak}}, <span class="ok">{{.VerifyStreak}} week{{if ne .VerifyStreak 1}}s{{end}} in a row passing</span>{{end}}</span>
     <b>last verified restore</b><span>{{with .LastVerify}}{{since .At}}: {{.Verified}} of {{.Sampled}} files read back{{if .Failed}}, <span class="bad">{{len .Failed}} failed</span>{{end}}{{else}}never{{end}}</span>
     <b>cleanup</b><span>{{if .Cleaning}}<span class="ok">running</span>{{else}}{{with .LastCleanup}}{{since .At}}: {{.Reachable}} objects live, {{.Tombstoned}} deleted{{if .Recent}}, {{.Recent}} waiting out the immunity{{end}}{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}{{else}}never{{end}}{{end}}</span>
@@ -86,7 +88,23 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
   <p style="margin:10px 0 0">
     <form method="post" action="/action/backup-run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Back up now</button></form>
     <form method="post" action="/action/backup-verify"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Restore test</button></form>
-  </p></div>{{end}}
+  </p></div>
+  <div class="card"><h2>Settings</h2>
+  <form method="post" action="/action/settings-schedule" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <b>schedule</b><label>backups every <input name="every" value="{{.Every}}" size="8"></label><label>restore test every <input name="verify_every" value="{{.VerifyEvery}}" size="8"></label><label>cleanup every <input name="cleanup_every" value="{{.CleanupEvery}}" size="8"></label><button>Save</button>
+    <span class="muted">durations like 24h, 168h; backups at most hourly, the others at most daily</span></form>
+  <form method="post" action="/action/settings-retention" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <b>retention</b><label>everything for <input name="days" value="{{.Retention.Days}}" size="3"> days</label><label>then one a day for <input name="daily" value="{{.Retention.Daily}}" size="3"> days</label><label>one a week for <input name="weekly" value="{{.Retention.Weekly}}" size="3"> weeks</label><label>one a month for <input name="monthly" value="{{.Retention.Monthly}}" size="3"> months</label><button>Save</button></form>
+  <form method="post" action="/action/settings-bandwidth" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <b>bandwidth</b><label>upload <input name="upload_kbps" value="{{.UploadKBps}}" size="6"> kB/s</label><label>download <input name="download_kbps" value="{{.DownloadKBps}}" size="6"> kB/s</label><button>Save</button>
+    <span class="muted">0 is no cap; applies at once to every mesh stream</span></form>
+  {{with $.Update}}<form method="post" action="/action/settings-channel" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <b>channel</b><label><select name="channel"><option value="stable"{{if eq .Channel "stable"}} selected{{end}}>stable</option><option value="early"{{if eq .Channel "early"}} selected{{end}}>early</option></select></label><button>Save</button>
+    <span class="muted">early takes pre-releases; the next hourly check uses the choice</span></form>{{end}}
+  {{range .Sets}}<form method="post" action="/action/settings-excludes" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="set" value="{{.Name}}">
+    <b>excludes of {{.Name}}</b><label><input name="excludes" value="{{range $i, $e := .Excludes}}{{if $i}}, {{end}}{{$e}}{{end}}" size="40" placeholder="*.iso, node_modules, cache/"></label><button>Save</button>
+    <span class="muted">base-name globs or relative prefixes, beside the defaults</span></form>{{end}}
+  </div>{{end}}
   {{with .Service}}<div class="card"><h2>Service</h2><div class="kv">
     <b>installed</b><span>{{if .Installed}}<span class="ok">yes</span>{{else}}no: run <code class="cmd">redundanet service install</code>{{end}}</span>
     <b>running</b><span>{{if .Running}}<span class="ok">yes</span>{{else}}{{if .Installed}}<span class="warn">no</span>{{else}}this process{{end}}{{end}}</span>

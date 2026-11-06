@@ -91,6 +91,8 @@ func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 		err = s.list(peer, st, &req)
 	case TypeRevoke:
 		err = s.revoke(st, &req)
+	case TypeUsage:
+		err = s.usage(peer, st)
 	default:
 		err = writeMsg(st, Response{Status: StatusBad, Message: "unknown request " + req.Type})
 	}
@@ -98,6 +100,27 @@ func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 		s.log.Debug("request ended", "type", req.Type, "peer", peer.Device.Short(), "err", err)
 		st.CancelRead(1)
 	}
+}
+
+// usage tells a member's device what this server holds for the member:
+// the budget the device keeps against the allocation. Shares under an
+// encoding a transition retires count for nothing, as for the cap.
+func (s *Server) usage(peer identity.Peer, st wire.Stream) error {
+	if active, leaving := s.pol.MemberStatus(peer.Member); !active && !leaving {
+		return refuse(st, StatusRefused, "the member is not listed")
+	}
+	var used int64
+	var err error
+	if k, n, ok := s.pol.Converting(); ok {
+		used, err = s.st.UsageExcluding(peer.Member, k, n)
+	} else {
+		used, err = s.st.Usage(peer.Member)
+	}
+	if err != nil {
+		code, msg := statusOf(err)
+		return refuse(st, code, msg)
+	}
+	return writeMsg(st, Response{Status: StatusOK, Usage: used})
 }
 
 // revoke applies a member's signed device revocation: the record carries

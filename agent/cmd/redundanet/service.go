@@ -190,6 +190,15 @@ func runUpdate(args []string) error {
 		}
 		fmt.Printf("running %s, available %s (%s)\n", version.Version, rel.Version, rel.Channel)
 		return nil
+	case "channel":
+		if fs.NArg() != 1 {
+			return errors.New("update channel needs stable or early")
+		}
+		if err := u.SetChannel(fs.Arg(0)); err != nil {
+			return err
+		}
+		fmt.Printf("channel %s, chosen on this device; the running agent uses it at its next check\n", fs.Arg(0))
+		return nil
 	case "retry":
 		if fs.NArg() != 1 {
 			return errors.New("update retry needs the version that failed probation")

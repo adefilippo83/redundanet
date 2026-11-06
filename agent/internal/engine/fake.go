@@ -29,8 +29,11 @@ type Fake struct {
 	unopen    map[identity.Key]bool // roots that do not open with the member's key
 	version   uint64
 	Puts      int // how many uploads actually happened
-	Deletes   int // how many delete tokens were sent
-	Checks    int // how many placement checks were asked
+	// UsageBytes, when set, is what Usage reports instead of the sum of
+	// the objects held, times n/k: a test's budget scenario.
+	UsageBytes int64
+	Deletes    int // how many delete tokens were sent
+	Checks     int // how many placement checks were asked
 	// RootsAnswered is how many servers GetRoots reports answering; -1
 	// means all of them.
 	RootsAnswered int
@@ -261,3 +264,23 @@ func (f *Fake) Bytes(rc object.ReadCap) []byte {
 
 var _ Engine = (*Fake)(nil)
 var _ Engine = (*Native)(nil)
+
+// Usage is the objects held, as share bytes, or the override.
+func (f *Fake) Usage(_ context.Context) (Usage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.UsageBytes > 0 {
+		return Usage{Bytes: f.UsageBytes, Servers: 1, Answered: 1}, nil
+	}
+	var logical int64
+	for h, b := range f.objects {
+		if !f.tombstone[h] {
+			logical += int64(len(b))
+		}
+	}
+	k, n := f.K, f.N
+	if k == 0 || n == 0 {
+		k, n = 1, 1
+	}
+	return Usage{Bytes: logical * int64(n) / int64(k), Servers: 1, Answered: 1}, nil
+}

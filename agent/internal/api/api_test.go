@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
@@ -157,7 +158,7 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 	}
 	page, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "testnet") || !strings.Contains(string(page), "Install 3.0.1") ||
-		!strings.Contains(string(page), "repairing abcdefgh") || !strings.Contains(string(page), "3 surplus shares released") || strings.Contains(string(page), "%!") ||
+		!strings.Contains(string(page), "repairing abcdefgh") || !strings.Contains(string(page), "settings-schedule") || !strings.Contains(string(page), "3 surplus shares released") || strings.Contains(string(page), "%!") ||
 		!strings.Contains(string(page), "2 weeks in a row passing") || !strings.Contains(string(page), "20 of 20") || !strings.Contains(string(page), "1 failed") ||
 		!strings.Contains(string(page), "grant Full Disk Access") || !strings.Contains(string(page), "1 skipped (1 not on this computer)") {
 		t.Fatalf("page after login: %d %s", resp.StatusCode, firstLines(string(page)))
@@ -285,3 +286,56 @@ func TestRevokeThroughTheAPI(t *testing.T) {
 		t.Fatalf("a tampered record was accepted: %v", err)
 	}
 }
+
+// TestSettingsThroughTheAPI: the settings endpoint changes the schedule,
+// the retention, the caps and a set's excludes on a real runner, refuses
+// what the runner refuses, and the channel choice reaches the action.
+func TestSettingsThroughTheAPI(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	runner, err := jobs.New(jobs.Config{DataDir: dir, Engine: engine.NewFake(member, device, 2, 4), DB: db, Member: member, Device: device})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "docs")
+	_ = os.MkdirAll(src, 0o755)
+	if err := runner.AddSet(backup.Set{Name: "docs", Folders: []string{src}}); err != nil {
+		t.Fatal(err)
+	}
+	var channels []string
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	srv, err := Start(ctx, Config{Addr: "127.0.0.1:0", DataDir: dir, Jobs: runner, Snapshot: func() Snapshot { return Snapshot{Jobs: ptr(runner.Status())} },
+		Actions: Actions{SetChannel: func(c string) error { channels = append(channels, c); return nil }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := os.ReadFile(filepath.Join(dir, tokenFile))
+	c := NewClient(srv.Addr(), strings.TrimSpace(string(tok)))
+	every, verify, up := "6h", "48h", 1500
+	if err := c.Settings(ctx, Settings{Every: &every, VerifyEvery: &verify, UploadKBps: &up, Retention: &snapshot.Retention{Days: 2, Daily: 5, Weekly: 2, Monthly: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	st := runner.Status()
+	if st.Every != "6h0m0s" || st.VerifyEvery != "48h0m0s" || st.CleanupEvery != "168h0m0s" || st.UploadKBps != 1500 || st.Retention.Days != 2 {
+		t.Fatalf("settings: %+v", st)
+	}
+	bad := "10m"
+	if err := c.Settings(ctx, Settings{Every: &bad}); err == nil || !strings.Contains(err.Error(), "hourly") {
+		t.Fatalf("a ten-minute schedule: %v", err)
+	}
+	if err := c.BackupExcludes(ctx, "docs", []string{"*.iso"}); err != nil || len(runner.Status().Sets[0].Excludes) != 1 {
+		t.Fatalf("excludes: %v %+v", err, runner.Status().Sets)
+	}
+	if err := c.UpdateChannel(ctx, "early"); err != nil || len(channels) != 1 || channels[0] != "early" {
+		t.Fatalf("channel: %v %v", err, channels)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

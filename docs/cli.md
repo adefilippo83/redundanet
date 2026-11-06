@@ -57,6 +57,9 @@ The running agent's recent log lines.
 ```
 redundanet backup add NAME FOLDER [FOLDER...] [--exclude a,b]
 redundanet backup limit [--upload KBPS] [--download KBPS]   # caps on what this device sends and receives over the mesh, kilobytes per second, 0 for none
+redundanet backup schedule [--every 24h] [--verify-every 168h] [--cleanup-every 168h]   # backups at most hourly, the others at most daily
+redundanet backup retention [--days N] [--daily N] [--weekly N] [--monthly N]           # keep everything N days, then one a day, a week, a month
+redundanet backup exclude NAME --exclude a,b                                            # replaces the set's own excludes; --exclude "" clears them
 redundanet backup remove NAME
 redundanet backup list
 redundanet backup run [NAME]
@@ -79,6 +82,7 @@ redundanet update check [--channel early]
 redundanet update apply [--channel early]
 redundanet update status [--channel early]
 redundanet update retry VERSION
+redundanet update channel stable|early          # chosen on this device, kept with the updater's state, wins over the service's flag
 ```
 The self-updater by hand. `check` names the newest release that fits the channel; `apply` installs it (restart the agent or the service to run it); `status` is the updater's record; `retry` allows a version that failed probation to be installed again.
 

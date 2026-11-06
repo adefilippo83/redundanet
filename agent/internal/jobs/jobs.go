@@ -142,13 +142,18 @@ type RestoreStatus struct {
 
 // Status is everything the page shows about the jobs.
 type Status struct {
-	Sets         []backup.Set          `json:"sets"`
-	Every        string                `json:"every"`
-	VerifyEvery  string                `json:"verify_every"`
-	UploadKBps   int                   `json:"upload_kbps"`
-	DownloadKBps int                   `json:"download_kbps"`
-	Runs         []RunStatus           `json:"runs"`
-	LastVerify   *restore.Verification `json:"last_verify,omitempty"`
+	Sets         []backup.Set       `json:"sets"`
+	Every        string             `json:"every"`
+	VerifyEvery  string             `json:"verify_every"`
+	UploadKBps   int                `json:"upload_kbps"`
+	DownloadKBps int                `json:"download_kbps"`
+	CleanupEvery string             `json:"cleanup_every"`
+	Retention    snapshot.Retention `json:"retention"`
+	// Budget is what the member stores against their allocation, as the
+	// last run attempt measured it; nil before the first.
+	Budget     *Budget               `json:"budget,omitempty"`
+	Runs       []RunStatus           `json:"runs"`
+	LastVerify *restore.Verification `json:"last_verify,omitempty"`
 	// Verifications are the newest restore tests first, as the device
 	// kept them; VerifyStreak is how many weeks in a row had a passing
 	// one, counting back from this week.
@@ -190,6 +195,9 @@ type Runner struct {
 	runs map[string]*RunStatus
 	busy bool
 	kick chan string
+	// reconf wakes the scheduler when the intervals changed.
+	reconf chan struct{}
+	budget *Budget
 
 	lastVerify  *restore.Verification
 	restore     *RestoreStatus
@@ -213,7 +221,7 @@ func New(cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Runner{cfg: cfg, log: cfg.Log.With("component", "jobs"), file: f, runs: loadRuns(cfg.DataDir), kick: make(chan string, 8)}
+	r := &Runner{cfg: cfg, log: cfg.Log.With("component", "jobs"), file: f, runs: loadRuns(cfg.DataDir), kick: make(chan string, 8), reconf: make(chan struct{}, 1)}
 	// The last restore test survives a restart: the census says when it
 	// was, and the page what it found.
 	if vs, err := cfg.DB.Verifications(1); err == nil && len(vs) == 1 {
@@ -223,6 +231,99 @@ func New(cfg Config) (*Runner, error) {
 		cfg.OnLimits(f.UploadKBps, f.DownloadKBps)
 	}
 	return r, nil
+}
+
+// Budget is the member's use of their allocation: what the storage servers
+// hold for the member, counted as the data it stands for (share bytes
+// times k/n), against the manifest's allocation. A run is refused once
+// the allocation is used up; the servers bound it with headroom anyway.
+type Budget struct {
+	UsedGB    float64   `json:"used_gb"`
+	AllowedGB int       `json:"allowed_gb"`
+	Servers   int       `json:"servers"`  // storage servers asked
+	Answered  int       `json:"answered"` // that answered; the use is a lower bound when fewer
+	At        time.Time `json:"at"`
+	Exhausted bool      `json:"exhausted"`
+}
+
+// ErrBudget is a run refused for a used-up allocation.
+var ErrBudget = errors.New("the member's allocation is used up")
+
+// checkBudget asks the servers what they hold for the member and sets the
+// budget; nil when it cannot be known (no manifest, no allocation, no
+// server answering), which never blocks a run.
+func (r *Runner) checkBudget(ctx context.Context) *Budget {
+	if r.cfg.Manifest == nil {
+		return nil
+	}
+	man := r.cfg.Manifest()
+	if man == nil {
+		return nil
+	}
+	mem := man.MemberByKey(r.cfg.Member)
+	if mem == nil {
+		return nil
+	}
+	allowed := man.Allocation(mem.Name)
+	if allowed <= 0 || man.Network.Encoding.N == 0 {
+		return nil
+	}
+	uctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	u, err := r.cfg.Engine.Usage(uctx)
+	if err != nil || u.Answered == 0 {
+		r.log.Warn("the member's use of the allocation could not be measured", "err", err)
+		return nil
+	}
+	e := man.Network.Encoding
+	logical := u.Bytes * int64(e.K) / int64(e.N)
+	b := &Budget{UsedGB: float64(logical) / 1e9, AllowedGB: allowed, Servers: u.Servers, Answered: u.Answered, At: r.cfg.Now(), Exhausted: logical >= int64(allowed)*1e9}
+	r.mu.Lock()
+	r.budget = b
+	r.mu.Unlock()
+	return b
+}
+
+// SetSchedule changes the intervals and wakes the scheduler.
+func (r *Runner) SetSchedule(every, verifyEvery, cleanupEvery time.Duration) error {
+	if every < time.Hour || verifyEvery < 24*time.Hour || cleanupEvery < 24*time.Hour {
+		return errors.New("jobs: backups run at most hourly, restore tests and cleanups at most daily")
+	}
+	r.mu.Lock()
+	r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery = every, verifyEvery, cleanupEvery
+	err := r.file.Save(r.cfg.DataDir)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	select {
+	case r.reconf <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+// SetRetention changes the retention policy for the next run.
+func (r *Runner) SetRetention(ret snapshot.Retention) error {
+	if ret.Days < 1 || ret.Daily < 0 || ret.Weekly < 0 || ret.Monthly < 0 {
+		return errors.New("jobs: retention keeps everything for at least a day; the daily, weekly and monthly counts are 0 or more")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.file.Retention = ret
+	return r.file.Save(r.cfg.DataDir)
+}
+
+// SetExcludes replaces a set's own excludes, beside the defaults.
+func (r *Runner) SetExcludes(set string, excludes []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur := r.file.Find(set)
+	if cur == nil {
+		return errors.New("jobs: no such set")
+	}
+	cur.Excludes = excludes
+	return r.file.Save(r.cfg.DataDir)
 }
 
 // SetLimits saves the bandwidth caps, in kilobytes per second, 0 for none,
@@ -284,7 +385,7 @@ func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), VerifyEvery: r.file.VerifyEvery.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning,
-		UploadKBps: r.file.UploadKBps, DownloadKBps: r.file.DownloadKBps}
+		UploadKBps: r.file.UploadKBps, DownloadKBps: r.file.DownloadKBps, CleanupEvery: r.file.CleanupEvery.String(), Retention: r.file.Retention, Budget: r.budget}
 	if vs, err := r.cfg.DB.Verifications(8); err == nil {
 		st.Verifications = vs
 	}
@@ -405,6 +506,13 @@ func (r *Runner) Run(ctx context.Context) {
 			if r.transitionDeclared() {
 				_, _ = r.RunRebalance(ctx)
 			}
+		case <-r.reconf:
+			r.mu.Lock()
+			every, verifyEvery, cleanupEvery = r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery
+			r.mu.Unlock()
+			t.Reset(every)
+			v.Reset(verifyEvery)
+			cl.Reset(cleanupEvery)
 		}
 	}
 }
@@ -521,6 +629,18 @@ func (r *Runner) RunSet(ctx context.Context, s backup.Set, retention snapshot.Re
 	}
 	rs.Running, rs.Progress = true, &backup.Progress{Phase: "starting"}
 	r.mu.Unlock()
+	if b := r.checkBudget(ctx); b != nil && b.Exhausted {
+		err := fmt.Errorf("backup: %w: %.1f of %d GB; prune snapshots or ask the operator for a larger allocation", ErrBudget, b.UsedGB, b.AllowedGB)
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.busy = false
+		rs.Running, rs.Progress, rs.LastAt, rs.LastErr = false, nil, r.cfg.Now(), err.Error()
+		r.log.Warn("backup refused", "set", s.Name, "err", err)
+		if serr := saveRuns(r.cfg.DataDir, r.runs); serr != nil {
+			r.log.Warn("last run not saved", "err", serr)
+		}
+		return rs
+	}
 	res, err := backup.Run(ctx, backup.Config{Engine: r.cfg.Engine, DB: r.cfg.DB, Member: r.cfg.Member, Device: r.cfg.Device, Set: s, Retention: retention,
 		Log: r.log, Now: r.cfg.Now, Progress: func(p backup.Progress) {
 			r.mu.Lock()
