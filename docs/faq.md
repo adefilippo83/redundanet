@@ -12,11 +12,13 @@ On other members' storage servers, as encrypted, erasure-coded shares: every obj
 **Can the maintainer, or a storage server, read my files?**
 No. Every object is encrypted on your device with a key derived from your member secret and the content. Servers and the hub see ciphertext, sizes, your member key and timing; never names or contents. What exactly they see is in [../PRIVACY.md](../PRIVACY.md).
 
+**Is my phrase still right?** Run `redundanet identity check --network redundanet` on any of your devices and type it: the command says whether it derives the member key this device was certified under, and writes nothing. Do it once after writing the phrase down.
+
 **What if I lose the phrase?**
 The data is unreadable to everyone, by design; there is no escrow and nobody can recover it for you. A new identity is a new member entry, and the maintainer retires the old one. Keep the phrase like a passport. Seal the identity file with `--passphrase` if the device is shared.
 
 **What if I lose a device?**
-Revoke it from any other device of yours: `redundanet device revoke --device KEY`. The maintainer adds the record to the manifest and signs; the device is refused from then on. Until then it can read what your devices can read and write as that device, but anything it deletes stays recoverable for 30 days. See [security.md](security.md).
+Revoke it from any other device of yours: `redundanet device revoke --device KEY`. The agent sends the signed record to every storage server and hub within seconds, and the maintainer adds it to the manifest for good; the device is refused from then on. Until then it can read what your devices can read and write as that device, but anything it deletes stays recoverable for 30 days. See [security.md](security.md).
 
 **How much space do I get?**
 Your allocation is your contribution, less the network's reserve, times k/n. With the live network's 15 percent reserve and 2-of-3, 1000 GB contributed gives 566 GB. `redundanet validate --manifest manifests/manifest.yaml` prints every member's allocation; the status page shows what you use against it. A member without a storage device gets an allocation from a sponsor or the reserve, set by the maintainer.

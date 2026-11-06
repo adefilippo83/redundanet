@@ -36,6 +36,10 @@ type File struct {
 	VerifyEvery  time.Duration      `yaml:"verify_every"`  // between restore tests; default 7 days
 	CleanupEvery time.Duration      `yaml:"cleanup_every"` // between cleanups of unreferenced objects; default 7 days
 	Retention    snapshot.Retention `yaml:"retention"`
+	// The bandwidth caps (RFC F8) on this device's mesh traffic, in
+	// kilobytes per second; 0 is none.
+	UploadKBps   int `yaml:"upload_kbps,omitempty"`
+	DownloadKBps int `yaml:"download_kbps,omitempty"`
 }
 
 const fileName = "backup.yaml"
@@ -138,11 +142,13 @@ type RestoreStatus struct {
 
 // Status is everything the page shows about the jobs.
 type Status struct {
-	Sets        []backup.Set          `json:"sets"`
-	Every       string                `json:"every"`
-	VerifyEvery string                `json:"verify_every"`
-	Runs        []RunStatus           `json:"runs"`
-	LastVerify  *restore.Verification `json:"last_verify,omitempty"`
+	Sets         []backup.Set          `json:"sets"`
+	Every        string                `json:"every"`
+	VerifyEvery  string                `json:"verify_every"`
+	UploadKBps   int                   `json:"upload_kbps"`
+	DownloadKBps int                   `json:"download_kbps"`
+	Runs         []RunStatus           `json:"runs"`
+	LastVerify   *restore.Verification `json:"last_verify,omitempty"`
 	// Verifications are the newest restore tests first, as the device
 	// kept them; VerifyStreak is how many weeks in a row had a passing
 	// one, counting back from this week.
@@ -164,6 +170,9 @@ type Config struct {
 	// Revocations lists the member's revoked devices, for the cleanup; nil
 	// when the agent runs from a manifest file.
 	Revocations func() []*identity.SignedRevocation
+	// OnLimits receives the bandwidth caps, on load and whenever they
+	// change, for the limiters that pace the mesh streams.
+	OnLimits func(uploadKBps, downloadKBps int)
 	// Manifest is the current manifest, for the conversion job; nil means
 	// no conversion ever runs.
 	Manifest func() *manifest.Manifest
@@ -210,7 +219,29 @@ func New(cfg Config) (*Runner, error) {
 	if vs, err := cfg.DB.Verifications(1); err == nil && len(vs) == 1 {
 		r.lastVerify = fromRecord(vs[0])
 	}
+	if cfg.OnLimits != nil {
+		cfg.OnLimits(f.UploadKBps, f.DownloadKBps)
+	}
 	return r, nil
+}
+
+// SetLimits saves the bandwidth caps, in kilobytes per second, 0 for none,
+// and applies them at once.
+func (r *Runner) SetLimits(uploadKBps, downloadKBps int) error {
+	if uploadKBps < 0 || downloadKBps < 0 {
+		return errors.New("jobs: a bandwidth cap is 0 or a number of kilobytes per second")
+	}
+	r.mu.Lock()
+	r.file.UploadKBps, r.file.DownloadKBps = uploadKBps, downloadKBps
+	err := r.file.Save(r.cfg.DataDir)
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if r.cfg.OnLimits != nil {
+		r.cfg.OnLimits(uploadKBps, downloadKBps)
+	}
+	return nil
 }
 
 func fromRecord(v localdb.Verification) *restore.Verification {
@@ -252,7 +283,8 @@ func streak(tests []localdb.Verification, now time.Time) int {
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), VerifyEvery: r.file.VerifyEvery.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning}
+	st := Status{Sets: append([]backup.Set{}, r.file.Sets...), Every: r.file.Every.String(), VerifyEvery: r.file.VerifyEvery.String(), LastVerify: r.lastVerify, LastCleanup: r.lastCleanup, Cleaning: r.cleaning,
+		UploadKBps: r.file.UploadKBps, DownloadKBps: r.file.DownloadKBps}
 	if vs, err := r.cfg.DB.Verifications(8); err == nil {
 		st.Verifications = vs
 	}

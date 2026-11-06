@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
@@ -25,6 +26,7 @@ import (
 )
 
 type harness struct {
+	revoked []*identity.SignedRevocation
 	t       *testing.T
 	srv     *Server
 	token   string
@@ -53,6 +55,10 @@ func newHarness(t *testing.T) *harness {
 				Generated: time.Now()}
 		},
 		Actions: Actions{
+			Revoke: func(_ context.Context, r *identity.SignedRevocation) (RevokeReport, error) {
+				h.revoked = append(h.revoked, r)
+				return RevokeReport{Servers: 2, ServersTotal: 2, Hubs: 1, HubsTotal: 1}, nil
+			},
 			CheckUpdate: func(context.Context) (string, error) { h.checks++; return "3.0.1", nil },
 			ApplyUpdate: func(context.Context) error { h.applies++; return errors.New("probation failed (test)") },
 			RetryUpdate: func(_ context.Context, v string) error {
@@ -253,4 +259,29 @@ func extract(s, after, until string) string {
 func firstLines(s string) string {
 	lines := strings.SplitN(s, "\n", 6)
 	return strings.Join(lines, "\n")
+}
+
+// TestRevokeThroughTheAPI: the CLI hands the running agent a signed record;
+// the action applies and spreads it and the report comes back. A record
+// that does not verify never reaches the action.
+func TestRevokeThroughTheAPI(t *testing.T) {
+	h := newHarness(t)
+	c := NewClient(h.srv.Addr(), h.token)
+	var seed identity.Seed
+	seed[0] = 5
+	dev, _ := identity.NewDeviceKey()
+	rv, err := identity.Revoke(seed, identity.Revocation{Network: "testnet", Device: dev.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := c.Revoke(context.Background(), rv)
+	if err != nil || rep.Servers != 2 || rep.Hubs != 1 || len(h.revoked) != 1 || h.revoked[0].Revocation.Device != dev.ID() {
+		t.Fatalf("revoke: %v %+v, %d records", err, rep, len(h.revoked))
+	}
+	bad := *rv
+	bad.Signature = append([]byte{}, rv.Signature...)
+	bad.Signature[0] ^= 1
+	if _, err := c.Revoke(context.Background(), &bad); err == nil || len(h.revoked) != 1 {
+		t.Fatalf("a tampered record was accepted: %v", err)
+	}
 }

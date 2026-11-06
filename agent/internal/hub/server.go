@@ -33,6 +33,12 @@ type Config struct {
 	OnShares func(peer identity.Peer, c *wire.ShareCensus)
 	// OnTaskReport receives a repair worker's word on a task.
 	OnTaskReport func(peer identity.Peer, r *wire.TaskReport)
+	// OnRevocation receives a member's signed device revocation a device
+	// delivered, verified; the hub's membership keeps it. Revocations is
+	// what a device that connects is sent, so one that was offline learns
+	// what it missed.
+	OnRevocation func(peer identity.Peer, r *identity.SignedRevocation)
+	Revocations  func() []*identity.SignedRevocation
 	Log          *slog.Logger
 }
 
@@ -260,6 +266,11 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	s.clients[id] = c
 	s.mu.Unlock()
 	s.log.Info("device up", "device", id.Short(), "carrier", c.carrier, "from", c.remote())
+	if s.cfg.Revocations != nil {
+		for _, r := range s.cfg.Revocations() {
+			_ = c.w.Message(wire.FrameRevocation, r)
+		}
+	}
 	defer func() {
 		s.mu.Lock()
 		if s.clients[id] == c {
@@ -314,6 +325,25 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 			if s.cfg.OnShares != nil {
 				s.cfg.OnShares(c.peer, &sc)
+			}
+		case wire.FrameRevocation:
+			rv, err := identity.DecodeRevocation(payload)
+			if err != nil {
+				return
+			}
+			if s.cfg.OnRevocation != nil {
+				s.cfg.OnRevocation(c.peer, rv)
+			}
+			s.mu.Lock()
+			others := make([]*client, 0, len(s.clients))
+			for _, o := range s.clients {
+				if o != c {
+					others = append(others, o)
+				}
+			}
+			s.mu.Unlock()
+			for _, o := range others {
+				_ = o.w.Message(wire.FrameRevocation, rv)
 			}
 		case wire.FrameTaskReport:
 			var r wire.TaskReport

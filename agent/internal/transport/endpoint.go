@@ -65,6 +65,9 @@ type Config struct {
 	// a generation; the endpoint sends it to each hub in chunks whenever
 	// the generation moved.
 	ShareCensus func(since uint64) (*wire.ShareCensus, error)
+	// OnRevocation receives a member's signed device revocation a hub
+	// sent, verified; the membership applies and keeps it.
+	OnRevocation func(r *identity.SignedRevocation)
 	// OnTask receives a repair task a hub sent; report answers that hub on
 	// the same channel. It must not block: the worker queues the task.
 	OnTask func(t *wire.RepairTask, report func(*wire.TaskReport) error)
@@ -218,6 +221,22 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stre
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+// SendRevocation hands a signed device revocation to every hub whose
+// channel is up, which keeps it and spreads it; the count is how many
+// took it.
+func (e *Endpoint) SendRevocation(r *identity.SignedRevocation) int {
+	e.mu.Lock()
+	hubs := append([]*hubClient(nil), e.hubs...)
+	e.mu.Unlock()
+	n := 0
+	for _, h := range hubs {
+		if h.sendMessage(wire.FrameRevocation, r) == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // Recheck runs the allow policy over every session's peer again and closes

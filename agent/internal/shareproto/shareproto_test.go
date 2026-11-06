@@ -58,6 +58,15 @@ type policy struct {
 	leaving      map[identity.Key]bool
 	capFor       map[identity.Key]int64
 	allowed      map[identity.Key]bool
+	revoked      []*identity.SignedRevocation
+}
+
+// Revoke keeps what a peer delivered, as the agent's policy does.
+func (p *policy) Revoke(r *identity.SignedRevocation) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.revoked = append(p.revoked, r)
+	return nil
 }
 
 func (p *policy) Network() string              { return "testnet" }
@@ -735,5 +744,43 @@ func TestLocalOpener(t *testing.T) {
 	ccancel()
 	if _, err := c.Has(cctx, peer, si); err == nil {
 		t.Fatal("a stream opened on a cancelled context")
+	}
+}
+
+// TestRevokeReachesThePolicy: a member's signed revocation delivered by
+// any admitted peer is applied by the server; a tampered record, one for
+// another network and one from an unlisted member are refused.
+func TestRevokeReachesThePolicy(t *testing.T) {
+	w := newWorld(t)
+	c, ctx, laptop := client(t, w, w.server)
+	peer := w.server.dev.ID()
+	rv, err := identity.Revoke(w.server.seed, identity.Revocation{Network: "testnet", Device: laptop.dev.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Revoke(ctx, peer, rv); err != nil {
+		t.Fatal(err)
+	}
+	w.pol.mu.Lock()
+	n := len(w.pol.revoked)
+	w.pol.mu.Unlock()
+	if n != 1 || w.pol.revoked[0].Revocation.Device != laptop.dev.ID() {
+		t.Fatalf("the policy kept %d revocations", n)
+	}
+	bad := *rv
+	bad.Signature = append([]byte{}, rv.Signature...)
+	bad.Signature[0] ^= 1
+	if err := c.Revoke(ctx, peer, &bad); !isStatus(err, StatusBad) {
+		t.Fatalf("tampered record: %v", err)
+	}
+	other, _ := identity.Revoke(w.server.seed, identity.Revocation{Network: "othernet", Device: laptop.dev.ID()})
+	if err := c.Revoke(ctx, peer, other); !isStatus(err, StatusBad) {
+		t.Fatalf("another network: %v", err)
+	}
+	var stranger identity.Seed
+	stranger[0] = 77
+	unlisted, _ := identity.Revoke(stranger, identity.Revocation{Network: "testnet", Device: laptop.dev.ID()})
+	if err := c.Revoke(ctx, peer, unlisted); !isStatus(err, StatusRefused) {
+		t.Fatalf("unlisted member: %v", err)
 	}
 }
