@@ -106,7 +106,6 @@
   "limits.title": "Lo que todavía no está",
   "limits.subtitle": "Los límites de la 3.0.0, dichos claramente",
   "limits.hub": "Un solo hub, en una dirección IP sin dominio. Si está caído no hay conexiones nuevas, ni programación de reparaciones, ni página de estado; las conexiones directas existentes continúan. La página de estado pública se aloja en la app de fly.io del producto antiguo.",
-  "limits.pairing": "No hay emparejamiento de dispositivos: cada dispositivo se certifica a partir de la frase.",
   "limits.keystore": "No se usa el almacén de claves del sistema operativo.",
   "limits.platforms": "Las compilaciones para Windows y Mac con Intel todavía no se han ejecutado en la red en producción. Raspberry Pi 4 no se ha medido.",
   "limits.winddown": "El cierre de RedundaNet 2 es manual.",

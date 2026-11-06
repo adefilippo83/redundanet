@@ -7,9 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/pairing"
 )
 
 // `device` is what a member does about their own devices. Revocation
@@ -20,14 +24,76 @@ import (
 
 func runDevice(args []string) error {
 	if len(args) == 0 {
-		return errors.New("device: a subcommand is needed: revoke")
+		return errors.New("device: a subcommand is needed: pair, revoke")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "revoke":
 		return deviceRevoke(rest)
+	case "pair":
+		return devicePair(rest)
 	}
 	return fmt.Errorf("device: unknown subcommand %q", sub)
+}
+
+// devicePair is the existing device's side of pairing: with the phrase typed
+// here, it reaches the new device through its code, certifies its key and
+// hands over the identity and this network's descriptor.
+func devicePair(args []string) error {
+	fs := flag.NewFlagSet("device pair", flag.ContinueOnError)
+	dir, network := commonFlags(fs)
+	storage := fs.Bool("storage", false, "grant the new device the storage role")
+	serial := fs.Uint64("serial", 0, "certificate serial for this member (default: seconds since 2026-01-01)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *network == "" || fs.NArg() != 1 {
+		return errors.New("usage: device pair --network NAME [--storage] <code shown by the new device>")
+	}
+	d, err := dataDir(*dir)
+	if err != nil {
+		return err
+	}
+	descriptor := ""
+	if desc, err := membership.LoadDescriptor(filepath.Join(d, "network.yaml")); err == nil {
+		if descriptor, err = desc.Encode(); err != nil {
+			descriptor = ""
+		}
+	}
+	if descriptor == "" {
+		fmt.Fprintln(os.Stderr, "this device has no network descriptor on disk; the new device will need `network join` by hand")
+	}
+	seed, err := readPhrase()
+	if err != nil {
+		return err
+	}
+	defer seed.Zero()
+	if *serial == 0 {
+		*serial = uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
+	}
+	roles := []string{identity.RoleClient}
+	if *storage {
+		roles = append(roles, identity.RoleStorage)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	dev, err := pairing.Pair(ctx, fs.Arg(0), *network, func(device identity.Key) (*pairing.Offer, error) {
+		sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: device, Roles: roles, IssuedAt: time.Now(), Serial: *serial})
+		if err != nil {
+			return nil, err
+		}
+		st := identity.State{Network: *network, Member: sc.Certificate.Member, MemberSecret: seed.Secret(), Certificate: *sc}
+		b, err := identity.Marshal(&st)
+		if err != nil {
+			return nil, err
+		}
+		return &pairing.Offer{State: b, Descriptor: descriptor}, nil
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", dev.Short(), seed.MemberKey().Short(), strings.Join(roles, ", "))
+	return nil
 }
 
 func deviceRevoke(args []string) error {

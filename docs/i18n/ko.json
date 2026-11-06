@@ -106,7 +106,6 @@
   "limits.title": "아직 없는 것",
   "limits.subtitle": "3.0.0의 한계를 있는 그대로 밝힙니다",
   "limits.hub": "허브가 하나뿐이며, 도메인 없이 IP 주소만으로 운영됩니다. 허브가 내려가면 새 연결, 복구 예약, 상태 페이지가 모두 멈춥니다. 기존의 직접 연결은 유지됩니다. 공개 상태 페이지는 이전 제품의 fly.io 앱에서 호스팅됩니다.",
-  "limits.pairing": "기기 페어링이 없습니다. 각 기기는 문구로부터 인증됩니다.",
   "limits.keystore": "OS 키 저장소를 쓰지 않습니다.",
   "limits.platforms": "Windows와 Intel Mac 빌드는 아직 실제 네트워크에서 실행된 적이 없습니다. Raspberry Pi 4는 측정하지 않았습니다.",
   "limits.winddown": "RedundaNet 2의 종료는 수동으로 진행됩니다.",

@@ -19,6 +19,8 @@ New member on this device: shows the twelve-word phrase, checks three words back
 ```
 redundanet identity show --network NAME
 redundanet identity check --network NAME        # the phrase you type must derive this device's member key; nothing is written
+redundanet identity pair --network NAME [--wait 10m]   # new device: shows a one-time code and waits for a device of yours to certify it
+redundanet device pair --network NAME [--storage] CODE # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
 Member key, its ten-group display code, device key, roles, certificate date and serial.
 

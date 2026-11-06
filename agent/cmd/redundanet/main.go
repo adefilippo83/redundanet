@@ -13,8 +13,8 @@ type command struct {
 }
 
 var commands = []command{
-	{"identity", "member and device identity: init, show, check, device-key, certify, accept-certificate", runIdentity},
-	{"device", "this member's devices: revoke", runDevice},
+	{"identity", "member and device identity: init, show, check, pair, device-key, certify, accept-certificate", runIdentity},
+	{"device", "this member's devices: pair, revoke", runDevice},
 	{"operator", "the offline operator key: init", runOperator},
 	{"manifest", "sign a merged manifest, or verify a signature: sign, verify", runManifest},
 	{"validate", "check a manifest and print the allocations", runValidate},

@@ -109,6 +109,22 @@ The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 
 
 Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it once, certify the device key it leaves on the SD card's boot partition, put the certificate back there, and the Pi joins: the steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: `install.sh prepare` picks the `linux-arm64` archive on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
 
+## A second device, without the phrase
+
+On the new device, after installing the binary:
+
+```
+redundanet identity pair --network redundanet
+```
+
+It shows a code and waits ten minutes. On a device of yours that already has its identity, on the same network, type the phrase when asked:
+
+```
+redundanet device pair --network redundanet <the code>
+```
+
+Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install --network redundanet`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes, and the two devices must be able to reach each other, on the same network or over public IPv6. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.
+
 ## Windows
 
 The Windows build passes the test suite but has not run on the live network yet. Unzip `redundanet-3.0.0-windows-amd64.zip`; the binary is `redundanet-3.0.0-windows-amd64\redundanet.exe`. Put it somewhere on your PATH, open a terminal and run `redundanet version`. The data directory is `%AppData%\redundanet`. After joining:

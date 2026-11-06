@@ -93,6 +93,21 @@ A storage device also opens its store in the `redundanet3` directory of
 at a rate that covers them monthly, and sends each hub its share census as
 deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
+Pairing (RFC 0001, "Adding a device") is how a member adds a laptop without
+typing the phrase on it: `identity pair` on the new device shows a code,
+`rn3:pair:` and base32 of the device's addresses and a 160-bit secret, and
+listens on a TCP port; `device pair CODE` on a device that has the
+identity, after the phrase, connects to one of those addresses, and the
+two exchange four messages sealed with AES-GCM under a key HKDF derives
+from the secret: open, the new device's key, the offer (the identity as
+`identity certify` makes it, plus the network descriptor), done. Only the
+holders of the code can take part, a wrong code opens nothing, three
+failed connections end the code, and it is good for ten minutes and one
+device. The two must reach each other: the same network, or a public IPv6
+path. The new device then holds its identity and the network, and installs
+its service. The headless flows (`install.sh`, the Pi image) stay for
+machines without a second device beside them.
+
 The settings live in `backup.yaml` of the data directory and change from
 the local page's Settings card, from the commands above, or by hand: the
 schedule (`every`, `verify_every`, `cleanup_every`; backups at most hourly,
@@ -320,6 +335,13 @@ redundanet identity check --network NAME
     Types the phrase and says whether it is the one this device was
     certified under; nothing is written. The check to run after writing
     the phrase down, and whenever in doubt.
+redundanet identity pair --network NAME [--wait 10m]
+    The new device's side of pairing: makes its device key, shows a
+    one-time code and waits. Nothing is typed here but the command.
+redundanet device pair --network NAME [--storage] CODE
+    The existing device's side, with the phrase: reaches the new device
+    through the code, certifies its key and hands over the identity and
+    the network descriptor, sealed under the code. The phrase never moves.
     Member key, its ten-group display code, device key, roles.
 
 redundanet identity device-key --network NAME            (on a headless node)
