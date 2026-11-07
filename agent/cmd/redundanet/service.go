@@ -80,7 +80,7 @@ func runService(args []string) error {
 
 func runRelease(args []string) error {
 	if len(args) == 0 {
-		return errors.New("release: a subcommand is needed: keygen, sign")
+		return errors.New("release: a subcommand is needed: keygen, sign, add")
 	}
 	switch args[0] {
 	case "keygen":
@@ -98,6 +98,46 @@ func runRelease(args []string) error {
 		}
 		fmt.Printf("release key written to %s\n", *path)
 		fmt.Printf("public key, to embed in builds (-X .../version.ReleaseKey=): %s\n", k.Public())
+		return nil
+	case "add":
+		// No key here: CI and the maintainer's script both use it to put a
+		// release's fragment into the index before anyone signs.
+		fs := flag.NewFlagSet("release add", flag.ContinueOnError)
+		idxPath := fs.String("index", "releases/index.yaml", "release index file, rewritten in place")
+		fragPath := fs.String("fragment", "", "the release's index-fragment.yaml")
+		assets := fs.String("assets", "", "a directory with the release's archives as downloaded, checked against the fragment")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *fragPath == "" {
+			return errors.New("usage: release add --fragment index-fragment.yaml [--assets DIR] [--index releases/index.yaml]")
+		}
+		index, err := os.ReadFile(*idxPath)
+		if err != nil {
+			return err
+		}
+		fragment, err := os.ReadFile(*fragPath)
+		if err != nil {
+			return err
+		}
+		out, rel, err := release.AddFragment(index, fragment)
+		if err != nil {
+			return err
+		}
+		if *assets != "" {
+			if err := rel.CheckAssets(*assets); err != nil {
+				return fmt.Errorf("the archives do not match the fragment: %w", err)
+			}
+		}
+		if err := os.WriteFile(*idxPath, out, 0o644); err != nil {
+			return err
+		}
+		idx, _ := release.Parse(out)
+		checked := "not checked against archives"
+		if *assets != "" {
+			checked = fmt.Sprintf("%d archives checked by sha256 and size", len(rel.Assets))
+		}
+		fmt.Printf("added %s (%s channel, %s) as revision %d of %s; unsigned until `release sign`\n", rel.Version, rel.Channel, checked, idx.Revision, *idxPath)
 		return nil
 	case "sign":
 		fs := flag.NewFlagSet("release sign", flag.ContinueOnError)

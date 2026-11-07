@@ -33,7 +33,7 @@ A storage host served a legal demand can hand over what it holds: ciphertext, th
 
 ## Releases
 
-A release is a tag `agent/vX.Y.Z` on `main`, built by the repository's workflow on GitHub's runners. The maintainer adds it to `releases/index.yaml` with its hashes, on the `early` channel first and `stable` once the early members are fine, and signs the index offline with the release key. Every agent installs only what the signed index names, after verifying hash and size, with probation and rollback. The policy and the steps are in [releases/README.md](releases/README.md); the code signing status is in [README.md](README.md). Every change, AI-assisted ones included, is reviewed by the maintainer before it reaches `main`.
+A release is a tag `agent/vX.Y.Z` on `main`, built by the repository's workflow on GitHub's runners. The workflow checks it and prepares the next revision of `releases/index.yaml` as a pull request, unsigned; the maintainer checks it again and signs it offline with the release key, with `scripts/sign.sh`. Every agent installs only what the signed index names, after verifying hash and size, with probation and rollback. The policy and the steps are in [releases/README.md](releases/README.md); the code signing status is in [README.md](README.md). Every change, AI-assisted ones included, is reviewed by the maintainer before it reaches `main`.
 
 ## The hub
 

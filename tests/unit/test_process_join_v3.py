@@ -675,6 +675,7 @@ class TestOutputs:
         assert "revision 5" in pr["commit_message"]
         body = pr["pr_body"]
         assert "git checkout join-request/123" in body
+        assert "`scripts/sign.sh manifest join-request/123`" in body
         assert (
             "cd agent && go run ./cmd/redundanet manifest sign --key operator.key "
             "--manifest ../manifests/manifest.yaml"

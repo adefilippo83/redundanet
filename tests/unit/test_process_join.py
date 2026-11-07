@@ -385,6 +385,7 @@ class TestOutputs:
         assert pr["commit_message"] == "Add node node-2680cd08 to network manifest"
         assert "Closes #42" in pr["pr_body"]
         assert "`revision` to 5" in pr["pr_body"]
+        assert "`scripts/sign.sh manifest join-request/42`" in pr["pr_body"]
         assert (
             "manifest sign --key operator.key --manifest ../manifests/manifest.yaml"
             in (pr["pr_body"])

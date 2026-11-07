@@ -352,3 +352,65 @@ jobs:
           name: "agent ${{ github.ref_name }}"
           body_path: ${{ runner.temp }}/notes.md
           files: agent/dist/*
+
+  # The index revision for this release, prepared as a pull request: the
+  # checks the maintainer used to run by hand, then `release add`. Nothing
+  # here holds a key; the pull request waits for `scripts/sign.sh release`
+  # on the maintainer's laptop, which rebuilds the same revision on its own,
+  # signs it with the offline release key, merges and undrafts.
+  index-pr:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - name: the release as it is on GitHub, checked, into the index
+        id: index
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#agent/v}"
+          git merge-base --is-ancestor "$GITHUB_SHA" HEAD || { echo "::error::$tag is not on main"; exit 1; }
+          runs=$(gh run list --workflow agent-release.yml --branch "$tag" --json databaseId --jq 'length')
+          [ "$runs" = 1 ] || { echo "::error::$runs runs for $tag; its archives may have been replaced, check by hand"; exit 1; }
+          dir="$RUNNER_TEMP/assets"
+          mkdir -p "$dir"
+          gh release download "$tag" -D "$dir" -p '*.tar.gz' -p '*.zip' -p index-fragment.yaml
+          gh release view "$tag" --json assets --jq '.assets[] | select(.name|test("\\.(tar\\.gz|zip)$")) | "\(.name) \(.size)"' |
+          while read -r name size; do
+            [ "$(stat -c %s "$dir/$name")" = "$size" ] || { echo "::error::$name: $size bytes on the release, a different file downloaded"; exit 1; }
+          done
+          (cd agent && go run ./cmd/redundanet release add --index ../releases/index.yaml --fragment "$dir/index-fragment.yaml" --assets "$dir")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "revision=$(sed -n 's/^revision: //p' releases/index.yaml)" >> "$GITHUB_OUTPUT"
+          echo "channel=$(sed -n '0,/^    channel: /s/^    channel: //p' releases/index.yaml)" >> "$GITHUB_OUTPUT"
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: release/index-${{ steps.index.outputs.version }}
+          delete-branch: true
+          add-paths: releases/index.yaml
+          commit-message: "releases: index revision ${{ steps.index.outputs.revision }}, ${{ steps.index.outputs.version }}, unsigned"
+          title: "releases: index revision ${{ steps.index.outputs.revision }}, ${{ steps.index.outputs.version }}"
+          body: |
+            The draft release `${{ github.ref_name }}` is built and checked: its tag is on main, the tag had one workflow run, and every archive on the release matches the index fragment by sha256 and size. This pull request puts it into `releases/index.yaml` as revision ${{ steps.index.outputs.revision }}, on the ${{ steps.index.outputs.channel }} channel, unsigned.
+
+            To publish, on the laptop with the release key:
+
+            ```
+            scripts/sign.sh release ${{ steps.index.outputs.version }}
+            ```
+
+            It downloads and checks the archives again on its own, rebuilds this revision on the current main, signs it, pushes the signature here, merges and undrafts the release. Devices pick it up within the hour.

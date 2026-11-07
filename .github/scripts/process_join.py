@@ -371,7 +371,7 @@ This PR adds a new node to the RedundaNet network manifest{revision}.
 - [ ] Verify GPG key is valid
 - [ ] Confirm storage allocation
 - [ ] Review node configuration
-- [ ] Sign the manifest: `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml`, commit `manifests/manifest.sig`, push
+- [ ] Sign the manifest: `scripts/sign.sh manifest join-request/{issue_number}` on the laptop with the operator key, or by hand `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml`, commit `manifests/manifest.sig`, push
 
 Closes #{issue_number}
 
