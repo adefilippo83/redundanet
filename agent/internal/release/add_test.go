@@ -56,6 +56,7 @@ func TestAddFragmentRefuses(t *testing.T) {
 		"bad channel":      {baseIndex, strings.Replace(fragment("3.0.4", strings.Repeat("2", 64), 20), "stable", "nightly", 1)},
 		"no revision line": {strings.Replace(baseIndex, "revision: 29\n", "", 1), fragment("3.0.4", strings.Repeat("2", 64), 20)},
 		"not a list":       {baseIndex, "version: 3.0.4\n"},
+		"crlf index":       {strings.ReplaceAll(baseIndex, "\n", "\r\n"), fragment("3.0.4", strings.Repeat("2", 64), 20)},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

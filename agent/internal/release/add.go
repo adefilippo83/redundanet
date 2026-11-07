@@ -44,6 +44,9 @@ func ParseFragment(fragment []byte) (*Release, error) {
 // and raises the revision by one, as text, then proves the result: it
 // parses, it is the old index plus that one release, nothing else moved.
 func AddFragment(index, fragment []byte) ([]byte, *Release, error) {
+	if bytes.Contains(index, []byte("\r\n")) || bytes.Contains(fragment, []byte("\r\n")) {
+		return nil, nil, errors.New("Windows line endings in the index or the fragment: the signed file must be the bytes git stores, with plain newlines (see .gitattributes)")
+	}
 	old, err := Parse(index)
 	if err != nil {
 		return nil, nil, err

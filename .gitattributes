@@ -1,0 +1,7 @@
+# Signed files are signed byte for byte: the bytes git stores are the bytes
+# agents fetch and verify. A checkout must never rewrite their line endings,
+# or a signature made on that checkout would not match what GitHub serves.
+releases/index.yaml   text eol=lf
+releases/index.sig    text eol=lf
+manifests/manifest.yaml text eol=lf
+manifests/manifest.sig  text eol=lf
