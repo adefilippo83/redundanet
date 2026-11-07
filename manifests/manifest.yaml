@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 5
+revision: 6
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
@@ -56,6 +56,30 @@ members:
         LQSlRyr0YkLOhVj5VoUswZBj2x16KGTGy0caX8DEBAPDmYtLNGo=
         =ai+a
         -----END PGP SIGNATURE-----
+  - name: ptlug
+    key: wsxr2cvmwz2ttqfceecdjvceetpmmky7llniqu7ngge4tqzt7r7a
+    contribution_gb: 500
+    joined: 2026-11-07
+    status: active
+    legacy_pgp:
+      fingerprint: A4E8A270C554BE59EF4008DA61DFA68239276AF8
+      signature: |
+        -----BEGIN PGP SIGNATURE-----
+
+        iQIzBAABCgAdFiEEpOiicMVUvlnvQAjaYd+mgjknavgFAmrvPbQACgkQYd+mgjkn
+        avipBBAAgitA/jLH15tCceQC7S+VzIcIyxIO0pWisWvPTGzRq+rJlkJrHsRP4amG
+        Es7kkzcAIK9R25j//vutPkmqgY2bnruJkbVYvqCXIh1OVziF7A2YURSo6CR7vnd8
+        EHCPA34xGEv3YgJ9Apwe48RIa6JjXCoeygm7uoN0juOUoCYIGWdltmtMMkDlkFDu
+        iV5qDXsz+woLxHUcBg/0oOrUXrTs3S9qXuUb5cxcMCRa/wmoKM1BABW66O8B0tjf
+        DGL2vuCaX91Q+P2goCnPCz3wYqHyyhJlPJfKUK87R1BkZV8uM7PxIUpz5dwGO6ep
+        XVc09tDzFJCnO7QB8BXJLV8ZDL2YCUIOIPwtUY2LdNolpkIqeBf7I85783qH5flC
+        v8aaIeAsfUgH26ih+DOLKwlCbSy0nEW1VHBl6vuB7g5UrYtH9EGogJyYhOvzgH0E
+        JImPwJcjcSW3l1L3RWXCIQCoaswi3s+9jIg2XQjMZKnEmR2XnzUx5TXn/pXX1SDw
+        +quzCUriZSCibbroXv9oQ/03lNlYVynLVSX/4rEjvyXPVXoYmDx1Jvfo0UMPRpRF
+        qdaa8ijkLh2ZQairav2G/rcVRf2d4wjBKHgHwOhuU0D9BqAKs6STxAriD3ZQ8/Ka
+        Z/5jKPM/8x986aMPvTw8clUujtuzWqs/Qa0FPm0YPIVD7ZdP59c=
+        =Aqeo
+        -----END PGP SIGNATURE-----
 storage:
   - member: adefilippo83
     device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
@@ -63,6 +87,9 @@ storage:
   - member: adefilippo83
     device: f3tvhbkoldiobpjza7uocjt62a5onkcuthrpjbatoryuibcbue5a
     name: falcon-1
+  - member: ptlug
+    device: ikpijbsqxiz4cz2a6s3t6r6gqfqz6dt6mgci5yubzuklc64l3qsa
+    name: ptlug-1
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
 - name: hub-fly
