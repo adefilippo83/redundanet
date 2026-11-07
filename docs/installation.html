@@ -418,8 +418,8 @@
             <section id="macos">
                 <h2>macOS</h2>
                 <p data-i18n="ig.mac.intro">Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. Unpack the archive, put the binary on your PATH, and run the four commands.</p>
-                <pre><code>tar -xzf redundanet-3.0.0-darwin-arm64.tar.gz
-sudo mv redundanet-3.0.0-darwin-arm64/redundanet /usr/local/bin/redundanet
+                <pre><code>tar -xzf redundanet-*-darwin-arm64.tar.gz --strip-components=1
+sudo mv redundanet /usr/local/bin/redundanet
 
 redundanet identity init --network redundanet      # the phrase, shown once
 redundanet network join &lt;descriptor&gt;
@@ -434,7 +434,7 @@ redundanet open                                    # the local page in your brow
 
             <section id="windows">
                 <h2>Windows</h2>
-                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. The zip holds <code>redundanet-3.0.0-windows-amd64\redundanet.exe</code>. Unpack it, add that folder to your PATH or run from it, then the same four commands in a terminal.</p>
+                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. The zip holds <code>redundanet-&lt;version&gt;-windows-amd64\redundanet.exe</code>. Unpack it, add that folder to your PATH or run from it, then the same four commands in a terminal.</p>
                 <pre><code>redundanet identity init --network redundanet
 redundanet network join &lt;descriptor&gt;
 redundanet service install --network redundanet    # a logon task, restarts on failure
@@ -449,8 +449,8 @@ redundanet open</code></pre>
             <section id="linux">
                 <h2 data-i18n="ig.linux.title">Linux laptop or desktop</h2>
                 <p data-i18n="ig.linux.intro">x86-64 and ARM64 are tested on the live network, including Raspberry Pi 5. For a machine you sit at: unpack, place on PATH, the four commands. The service is a systemd user unit that starts at login.</p>
-                <pre><code>tar -xzf redundanet-3.0.0-linux-amd64.tar.gz
-sudo mv redundanet-3.0.0-linux-amd64/redundanet /usr/local/bin/redundanet
+                <pre><code>tar -xzf redundanet-*-linux-amd64.tar.gz --strip-components=1
+sudo mv redundanet /usr/local/bin/redundanet
 
 redundanet identity init --network redundanet
 redundanet network join &lt;descriptor&gt;
@@ -465,20 +465,16 @@ redundanet open</code></pre>
             <section id="node">
                 <h2 data-i18n="ig.node.title">Linux storage node</h2>
                 <p>A Raspberry Pi can skip the steps below: each stable release carries a ready-to-boot image with the agent installed as a storage node. Flash it, boot it, certify the key it leaves on the SD card, put the certificate back. The guide is <a href="https://github.com/adefilippo83/redundanet/blob/main/rpi-image/README.md">rpi-image/README.md</a>.</p>
-                <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: the node's device key is certified on your laptop. Three steps, as root on the node for the first and the last.</p>
-                <p>Since 3.0.4 one command does the laying out and the pairing: download and verify the Linux archive as above, mount the storage disk, then <code>sudo ./redundanet node install --storage-path /mnt/storage</code> on the node shows a pairing code, and <code>redundanet device pair --network redundanet --storage &lt;code&gt;</code> on your laptop, with the phrase, certifies it; the node starts by itself and prints the lines for your join request. It refuses a storage path that is not a mount point. The steps below are the script that makes the same layout, kept for nodes reached over SSH only and for the Raspberry Pi image.</p>
-                <h3 data-i18n="ig.node.s1">1. On the node: prepare</h3>
-                <pre><code>curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
-curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/redundanet-agent.service
-sudo STORAGE_PATH=/mnt/storage bash install.sh prepare 3.0.0</code></pre>
-                <p data-i18n="ig.node.s1.desc"><code>prepare</code> creates the service user, the directories and the unit, downloads the release and checks it against the sha256 in the signed index, and prints the node's <strong>device key</strong>. <code>STORAGE_PATH</code> is the disk you contribute; the share store goes in <code>STORAGE_PATH/redundanet3</code>. A storage node needs at least 10 GiB free above its floor.</p>
-                <h3 data-i18n="ig.node.s2">2. On your laptop: certify the device key</h3>
-                <pre><code>redundanet identity certify --network redundanet --device &lt;KEY&gt; --storage &gt; node.cert
-scp node.cert node:</code></pre>
-                <h3 data-i18n="ig.node.s3">3. On the node: finish</h3>
-                <pre><code>sudo bash install.sh finish node.cert</code></pre>
-                <p data-i18n="ig.node.s3.desc"><code>finish</code> accepts the certificate, joins the network, starts the service and destroys the certificate file. The node's device key and the name you give it go into your <a href="join.html">join request</a> as the storage entry; the node counts once the maintainer has signed the manifest with it.</p>
-                <p>Since 3.0.3, with your laptop on the node's network, steps 2 and 3 are one step: <code>sudo bash install.sh pair</code> on the node shows a one-time code and waits; <code>redundanet device pair --network redundanet --storage &lt;code&gt;</code> on the laptop, with the phrase, certifies the node and hands it the network, and the node starts by itself. The certificate file above stays the way for a node reached over SSH only.</p>
+                <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: a device of yours certifies it through a one-time code. Two steps, the first as root on the node, the second on your laptop on the same network.</p>
+                <h3 data-i18n="ig.node.s1">1. On the node: install</h3>
+                <pre><code># download the linux-arm64 or linux-amd64 archive from the Download page and check its sha256 against the index
+tar -xzf redundanet-*-linux-*.tar.gz --strip-components=1
+sudo ./redundanet node install --storage-path /mnt/storage</code></pre>
+                <p data-i18n="ig.node.s1.desc"><code>node install</code> creates the service user, the directories and the unit, puts the binary in place and shows a <strong>pairing code</strong>. <code>--storage-path</code> is the disk you contribute, mounted; the share store goes in its <code>redundanet3</code> directory, and a path that is not a mount point is refused, so shares never land on the system disk. A storage node needs at least 10 GiB free above its floor.</p>
+                <h3 data-i18n="ig.node.s2">2. On your laptop: pair</h3>
+                <pre><code>redundanet device pair --network redundanet --storage &lt;code&gt;</code></pre>
+                <p data-i18n="ig.node.s2.desc">With your phrase, your laptop certifies the node through the code and hands it the network. The node starts by itself and prints the <code>storage:</code> lines for your <a href="join.html">join request</a>; it counts once the maintainer has signed the manifest with them.</p>
+                <p data-i18n="ig.node.alt">No laptop on the node's network? The runbook's script makes the same layout with a certificate file copied over SSH.</p>
                 <ul>
                     <li data-i18n="ig.node.layout">Layout: data in <code>/var/lib/redundanet3</code>, the binary at <code>/var/lib/redundanet3/bin/redundanet</code>, service user <code>redundanet3</code>, unit <code>redundanet-agent</code>, settings in <code>/etc/redundanet3/agent.env</code> (<code>NETWORK</code>, <code>CHANNEL</code>, <code>STORAGE_PATH</code>).</li>
                     <li data-i18n="ig.node.fullpath">Use the full path <code>/var/lib/redundanet3/bin/redundanet</code> in commands on a node. On a RedundaNet 2 node the Python <code>redundanet</code> on PATH is the legacy tool.</li>
