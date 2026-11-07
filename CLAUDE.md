@@ -87,14 +87,17 @@ commits. Never weaken that chain.
    CI must be green.
 2. Maintainer tags `agent/vX.Y.Z` (or `-alpha.N`, `-beta.N`, `-rc.N`); the
    `agent release` workflow builds every target, opens a draft release with
-   `sha256sums.txt` and prints the index fragment. Windows signing and macOS
-   notarization run only once their secrets exist; until then the binaries
-   ship unsigned and the index is the verification.
-3. Maintainer pastes the fragment into `releases/index.yaml`, raises
-   `revision` by one, sets the channel (`early` first, `stable` once the
-   early members are fine), signs offline with `redundanet release sign
-   --key release.key --index releases/index.yaml`, commits `index.yaml` and
-   `index.sig` together, publishes the draft. See `releases/README.md`.
+   `sha256sums.txt` and the index fragment (plain version stable,
+   pre-release early), then its `index-pr` job checks the release as it is
+   on GitHub and opens `release/index-X.Y.Z` with the next index revision,
+   unsigned. Windows signing and macOS notarization run only once their
+   secrets exist; until then the binaries ship unsigned and the index is
+   the verification. A second run for a tag stops at its first step.
+3. Maintainer runs `scripts/sign.sh release X.Y.Z` on the laptop with the
+   release key: it rechecks, rebuilds the revision on main with
+   `redundanet release add`, signs, merges and undrafts. Manifest pull
+   requests the same way with `scripts/sign.sh manifest PR`. The keys never
+   go into CI or a server. See `releases/README.md`.
 4. Nodes and laptops update themselves within an hour: probation up to two
    minutes, `redundanet.old` kept, automatic rollback. The hub updates
    itself the same way with probation on the same ports

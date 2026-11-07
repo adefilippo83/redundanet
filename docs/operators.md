@@ -22,13 +22,19 @@ Every change to membership is a pull request against `manifests/manifest.yaml`: 
    ```
 
    It parses the v3 half (the RedundaNet 2 keys are set aside, anything else unknown is an error), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request, beside the legacy validator for the v2 half.
-3. Sign offline, with the merged file:
+3. Sign offline, on the laptop with the operator key, one command for a pull request:
+
+   ```bash
+   scripts/sign.sh manifest PR        # a number or the branch, for example join-request/42; no argument signs the current branch
+   ```
+
+   It builds the signing tool from main, checks out the pull request, shows the manifest diff, refuses a revision that does not rise, validates, asks, signs, pushes `manifests/manifest.sig`, waits for the checks and merges. `--dry-run` stops before signing; the key file is `~/.redundanet/operator.key` unless `OPERATOR_KEY` names another. By hand it is:
 
    ```bash
    redundanet manifest sign --key operator.key --manifest manifests/manifest.yaml
    ```
 
-   It validates, then writes `manifests/manifest.sig`: the operator's signature over the network, the revision, the time and the file's hash. Commit the manifest and the signature together. CI shows the signature check red until the signature matches the file, which is why the operator signs the branch before merging.
+   which validates, then writes `manifests/manifest.sig`: the operator's signature over the network, the revision, the time and the file's hash. Commit the manifest and the signature together. CI shows the signature check red until the signature matches the file, which is why the operator signs the branch before merging.
 4. Every agent fetches the pair within five minutes and applies it at once; devices the new policy no longer admits are disconnected.
 
 Anyone can check a signature:
@@ -79,13 +85,13 @@ network:
 
 ## Releases
 
-Releases are the maintainer's: tag `agent/vX.Y.Z`, paste the workflow's index fragment into `releases/index.yaml`, raise its `revision`, set the channel (`early` first, `stable` once the early members are fine), sign offline with `redundanet release sign --key release.key --index releases/index.yaml`, commit `index.yaml` and `index.sig` together, publish the draft release. To withdraw a release, set `withdrawn: true`, raise the revision, sign again. All of it: [../releases/README.md](../releases/README.md). Nothing in the manifest can name a release.
+Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it, checks it and opens the pull request that adds it to `releases/index.yaml`, unsigned; `scripts/sign.sh release X.Y.Z` on the laptop with the release key checks it again, signs, merges and publishes the draft. To withdraw a release, set `withdrawn: true`, raise the revision, sign again. All of it: [../releases/README.md](../releases/README.md). Nothing in the manifest can name a release.
 
 ## The hub
 
-The live network has one hub, `hub-hetzner` (relay `2.29.46.249:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a failed candidate is never retried until `redundanet update retry VERSION`.
+The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a failed candidate is never retried until `redundanet update retry VERSION`.
 
-The hub has no domain of its own, so it publishes its status page and `status.json` every minute to the fly.io app of the old product, under <https://hub.redundanet.com/>, with a bearer token (`--publish` and `--publish-token-file`). The fly side, the `REDUNDANET_V3_PUBLISH_TOKEN` secret and what the server does when the hub goes quiet are in the legacy hub runbook, [legacy/bootstrap-hub.md](legacy/bootstrap-hub.md), section "RedundaNet 3 status under /v3/". The hub also mirrors the RedundaNet 2 status page (`--legacy-status`) so today's nodes stay visible beside the new devices until the old grid stops.
+The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. The earlier publish to the fly.io app of the old product (`--publish`, `--publish-token-file`) is a handover kept for a short time and then removed from the unit; its fly side is in the legacy hub runbook, [legacy/bootstrap-hub.md](legacy/bootstrap-hub.md), section "RedundaNet 3 status under /v3/". The hub also mirrors the RedundaNet 2 status page (`--legacy-status`) so today's nodes stay visible beside the new devices until the old grid stops.
 
 The network descriptor that new members join with is printed from the manifest:
 

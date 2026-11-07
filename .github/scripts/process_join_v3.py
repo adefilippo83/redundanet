@@ -621,10 +621,9 @@ This PR adds a member to the RedundaNet 3 manifest as revision {revision}: {adds
 
 ### Maintainer checklist
 - [ ] {review}
-- [ ] `git fetch origin && git checkout join-request/{issue_number}`
-- [ ] `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml` (the operator key stays offline; writes `manifests/manifest.sig`)
-- [ ] `git add manifests/manifest.sig && git commit -m "manifests: sign revision {revision}" && git push`
-- [ ] Merge; every agent applies revision {revision} within five minutes
+- [ ] On the laptop with the operator key: `scripts/sign.sh manifest join-request/{issue_number}`. It checks out this branch, shows the manifest diff, checks that the revision rises and validates, signs, pushes `manifests/manifest.sig`, waits for the checks and merges; every agent applies revision {revision} within five minutes.
+
+By hand instead: `git fetch origin && git checkout join-request/{issue_number}`, then `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml` (the operator key stays offline; writes `manifests/manifest.sig`), commit the signature, push, merge.
 
 The `validate` check on this PR runs the Python and Go validators inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
 
