@@ -763,7 +763,11 @@
                         <h4 data-i18n="joinp.s1.title">Install and create your identity</h4>
                     </div>
                     <p data-i18n="joinp.s1.desc">One line installs the agent on your laptop and opens its page; the page creates your identity and links to the join form filled in. The phrase is shown once; write it down. The network is built in: nothing to paste.</p>
-                    <pre><code>curl -fsSL https://redundanet.com/install.sh | sh</code></pre>
+                    <pre><code># macOS and Linux
+curl -fsSL https://redundanet.com/install.sh | sh
+
+# Windows, in PowerShell
+irm https://redundanet.com/install.ps1 | iex</code></pre>
                 </div>
 
                 <div class="join-step">

@@ -381,11 +381,15 @@
         <div class="guide">
             <section id="install">
                 <h2 data-i18n="ig.install.title">One line</h2>
-                <p data-i18n="ig.install.intro">On macOS and Linux, one line finds your platform, downloads the newest release, checks it against the signed release index, installs it, starts the agent as a service that runs at login, and opens the agent's page in your browser. The page walks you through the rest.</p>
-                <pre><code>curl -fsSL https://redundanet.com/install.sh | sh</code></pre>
+                <p data-i18n="ig.install.intro">One line finds your platform, downloads the newest release, checks it against the signed release index, installs it, starts the agent as a service that runs at login, and opens the agent's page in your browser. The page walks you through the rest. In a terminal on macOS and Linux, in PowerShell on Windows:</p>
+                <pre><code># macOS and Linux
+curl -fsSL https://redundanet.com/install.sh | sh
+
+# Windows, in PowerShell
+irm https://redundanet.com/install.ps1 | iex</code></pre>
                 <ul>
                     <li data-i18n="ig.install.setup">The page asks which case you are in: new here (a twelve-word phrase, shown once, then three of its words asked back), your recovery phrase at hand, or another device of yours nearby to pair with. Then it becomes the device's page: it says whether you are listed in the manifest yet and links to the join form filled in from this device until you are. The phrase appears only there, on a page served on 127.0.0.1 and reached through a one-time link. Prefer a terminal? <code>redundanet setup</code> walks you through the same steps.</li>
-                    <li data-i18n="ig.install.script">The script is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh">docs/install.sh</a> in the repository, short enough to read first. It refuses a download whose sha256 or size differs from the signed index, puts the binary in your data directory where the agent can update it, links <code>/usr/local/bin/redundanet</code> to it (the one step that asks for your password), and has the installed binary check the index's signature itself.</li>
+                    <li data-i18n="ig.install.script">The scripts are <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh">docs/install.sh</a> and <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1">docs/install.ps1</a> in the repository, short enough to read first. Each refuses a download whose sha256 or size differs from the signed index, puts the binary in your data directory where the agent can update it, puts it on your PATH (a link at <code>/usr/local/bin/redundanet</code> on macOS and Linux, the one step that asks for your password; the folder added to your user PATH on Windows, with nothing to approve), and has the installed binary check the index's signature itself.</li>
                     <li data-i18n="ig.install.network">The network is built into the binary: its name, its hub, the operator keys and where the signed manifest is served. Nothing to paste and no flag to type; the agent fetches the manifest the first time it needs it.</li>
                     <li data-i18n="ig.install.phrase"><strong>The phrase.</strong> <code>redundanet identity init</code> shows a twelve-word phrase once and never again. Write it down and keep it like a password: your member key comes from it, and so does every device you certify. There is no reset. <code>--passphrase</code> seals the identity file on disk.</li>
                     <li data-i18n="ig.install.next">In the <a href="join.html">join form</a> it opened, add your member name and your contribution, then open the issue on GitHub; your devices are admitted once the maintainer has signed the manifest with you in it, and <code>redundanet status</code> says so.</li>
@@ -405,13 +409,13 @@
 
             <section id="windows">
                 <h2>Windows</h2>
-                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. Take <code>redundanet-&lt;version&gt;-windows-amd64.zip</code> from the <a href="download.html">download page</a> and check its sha256 as that page shows. Unpack it, add the folder to your PATH or run from it, then two commands in a terminal: the service, a logon task that restarts on failure, and the page, which walks you through the rest.</p>
+                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. The one line above, in Windows PowerShell 5.1 (every Windows 10 and 11 has it) or PowerShell 7, needs no administrator rights: the binary goes to <code>bin\redundanet.exe</code> in your data directory, that folder joins your user PATH (terminals opened from then on find <code>redundanet</code>), the service is a logon task that restarts on failure, and the page opens. By hand instead: the zip from the <a href="download.html">download page</a>, its sha256 checked as that page shows, the folder on your PATH, then two commands in a terminal.</p>
                 <pre><code>redundanet service install
 redundanet open</code></pre>
                 <ul>
-                    <li data-i18n="ig.win.unsigned">The binary is not code-signed yet, so Windows may warn before it runs. Check the sha256 against the signed index first.</li>
+                    <li data-i18n="ig.win.unsigned">The binary is not code-signed yet, so Windows may warn before it runs. The script checks the sha256 against the signed index for you; a zip taken by hand, check yourself first.</li>
                     <li data-i18n="ig.win.onedrive">A OneDrive online-only file is listed as skipped, "not on this computer", never pulled down.</li>
-                    <li data-i18n="ig.win.data">Data directory: <code>%AppData%\redundanet</code>.</li>
+                    <li data-i18n="ig.win.data">Data directory: <code>%AppData%\redundanet</code>; the binary is in its <code>bin</code>.</li>
                 </ul>
             </section>
 

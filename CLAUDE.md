@@ -21,9 +21,10 @@ operator keys, manifest URL) is built into the binary too
 (`agent/internal/version`): every `--network` flag defaults to it and a
 device that never joined by hand is seeded from it, so `--network` and
 `network join <descriptor>` appear in docs only for another network.
-`docs/install.sh`, served at redundanet.com/install.sh, is the one-line
-installer; `redundanet setup` then takes a laptop through identity,
-service and join request. Design: `rfcs/0001-redundanet-3.md`; the
+`docs/install.sh` and `docs/install.ps1`, served at redundanet.com/install.sh
+and /install.ps1, are the one-line installers (sh for macOS and Linux,
+PowerShell for Windows); `redundanet setup` then takes a laptop through
+identity, service and join request. Design: `rfcs/0001-redundanet-3.md`; the
 package map: `agent/README.md`. `spike/` is the measured prototype that
 preceded it and is not edited.
 

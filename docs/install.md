@@ -1,18 +1,26 @@
 # Installing the RedundaNet 3 agent
 
-RedundaNet 3 is one static binary named `redundanet`. There are no containers and nothing else to install. One line installs it on macOS and Linux, and the agent then keeps itself up to date from the signed release index. Joining the network is the next page: [join.md](join.md).
+RedundaNet 3 is one static binary named `redundanet`. There are no containers and nothing else to install. One line installs it on macOS, Linux and Windows, and the agent then keeps itself up to date from the signed release index. Joining the network is the next page: [join.md](join.md).
 
 Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
 
-## macOS and Linux: one line
+## One line
+
+In a terminal on macOS and Linux:
 
 ```bash
 curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
-The script is [docs/install.sh](install.sh) in the repository, served by the website, and short enough to read first. It finds your platform, reads the signed release index, downloads the newest stable release and refuses it unless its sha256 and size match the index. It puts the binary at `bin/redundanet` in your data directory, where the agent can replace it when it updates itself (a directory owned by root would refuse the rename), and links `/usr/local/bin/redundanet` to it; that link is the one step that asks for your password. The installed binary then checks the index's signature itself, with the release key built into it. A copy fetched this way carries no quarantine mark, so macOS runs it at once. Last, on a laptop or desktop, it installs the agent as a service that starts at login and opens the agent's page in your browser.
+In PowerShell on Windows (Windows PowerShell 5.1, which every Windows 10 and 11 has, or PowerShell 7):
 
-Options: `--channel early` installs the newest release of either channel and puts the service on it, `--version 3.0.9` a given release, `--bin PATH` puts the link elsewhere. Run the line again to move to another release by hand; the agent does that on its own anyway. A service installed earlier is left alone; `redundanet service install` points it at the new binary.
+```powershell
+irm https://redundanet.com/install.ps1 | iex
+```
+
+The scripts are [docs/install.sh](install.sh) and [docs/install.ps1](install.ps1) in the repository, served by the website, and short enough to read first. Each finds your platform, reads the signed release index, downloads the newest stable release and refuses it unless its sha256 and size match the index. It puts the binary at `bin/redundanet` in your data directory (`bin\redundanet.exe` on Windows), where the agent can replace it when it updates itself (a directory owned by root would refuse the rename), and puts it on your PATH: on macOS and Linux a link at `/usr/local/bin/redundanet`, the one step that asks for your password; on Windows the folder is added to your user PATH, with nothing to approve, and terminals opened from then on find it. The installed binary then checks the index's signature itself, with the release key built into it. A copy fetched this way carries no quarantine mark, so macOS runs it at once. Last, on a laptop or desktop, it installs the agent as a service that starts at login and opens the agent's page in your browser.
+
+Options: `--channel early` installs the newest release of either channel and puts the service on it, `--version 3.0.9` a given release, `--bin PATH` puts the link elsewhere. On Windows a piped script takes no arguments, so the first two go in the environment before the line, `$env:REDUNDANET_CHANNEL = "early"` or `$env:REDUNDANET_VERSION = "3.0.9"`; or run it with parameters: `& ([scriptblock]::Create((irm https://redundanet.com/install.ps1))) -Channel early`. Run the line again to move to another release by hand; the agent does that on its own anyway. A service installed earlier is left alone; `redundanet service install` points it at the new binary.
 
 The page walks you through the rest. With no identity yet it asks which case you are in: new here (a twelve-word phrase, shown once and never again: write it down and keep it like a passport, your member key comes from it and so does every device you certify, and there is no reset; then three of the words are asked back), an existing member with the recovery phrase at hand (typed into the page, this device gets a certificate of its own), or a member with another device nearby to pair with (the page shows a code, the phrase stays on the other device). The phrase appears only there, on a page served on 127.0.0.1 and reached through a one-time link, never over the network. Once the identity exists the same page becomes the device's page: it says whether you are listed in the manifest yet and, until you are, links to the join form filled in from this device.
 
@@ -81,14 +89,16 @@ Add `--storage` if the new device will contribute disk. The new device now holds
 
 ## Windows
 
-The Windows build passes the test suite but has not run on the live network yet. Take `redundanet-<version>-windows-amd64.zip` from the newest release on the [download page](https://redundanet.com/download.html) and check its sha256 as described there; the binary inside is `redundanet-<version>-windows-amd64\redundanet.exe`. Put it somewhere on your PATH, open a terminal and run `redundanet version`. The data directory is `%AppData%\redundanet`. Then:
+The Windows build passes the test suite but has not run on the live network yet. The one line above, in PowerShell, needs no administrator rights: the binary goes to `%AppData%\redundanet\bin\redundanet.exe`, that folder is added to your user PATH (terminals opened from then on find `redundanet`; the one you ran it in is told too), the service is a logon task that restarts on failure, and the page opens. The data directory is `%AppData%\redundanet`.
+
+By hand instead: take `redundanet-<version>-windows-amd64.zip` from the newest release on the [download page](https://redundanet.com/download.html) and check its sha256 as described there; the binary inside is `redundanet-<version>-windows-amd64\redundanet.exe`. Put it at `%AppData%\redundanet\bin\redundanet.exe`, where the agent can replace it when it updates itself, add that folder to your PATH, open a terminal and run `redundanet version`. Then:
 
 ```powershell
 redundanet service install     # a logon task with restart on failure; the agent serves its page with the setup
 redundanet open                # the page walks you through the rest; or redundanet setup here
 ```
 
-The Windows binary carries a version resource (product name and version in its properties) and is unsigned for now; see the download page.
+The Windows binary carries a version resource (product name and version in its properties) and is unsigned for now, so Windows may warn before it runs; the script checks the sha256 against the signed index, and so can you, as the download page shows.
 
 ## By hand, without the script
 
@@ -115,7 +125,7 @@ Get-FileHash redundanet-<version>-windows-amd64.zip         # Windows
 
 Windows signing through SignPath and macOS notarization are set up in the release workflow but not yet active, so every binary is unsigned; Linux binaries are never code-signed. The index is the way to verify a download on every platform, and once installed, the agent only ever updates to what the index names, after verifying the signature on the index.
 
-Unpack the archive and put the binary where the agent can replace it: for a laptop that is `bin/redundanet` in the data directory, with a link on your PATH, which is what the script does; a copy owned by root in `/usr/local/bin` runs, but the agent cannot update it. A browser's download on macOS is quarantined: allow it once in System Settings, Privacy and Security, after the first refusal, or clear the mark with `xattr -d com.apple.quarantine ./redundanet`.
+Unpack the archive and put the binary where the agent can replace it: for a laptop that is `bin/redundanet` in the data directory, with a link on your PATH, which is what the script does (on Windows `bin\redundanet.exe` in `%AppData%\redundanet`, with that folder on your PATH); a copy owned by root in `/usr/local/bin` runs, but the agent cannot update it. A browser's download on macOS is quarantined: allow it once in System Settings, Privacy and Security, after the first refusal, or clear the mark with `xattr -d com.apple.quarantine ./redundanet`.
 
 ## Channels and updates
 

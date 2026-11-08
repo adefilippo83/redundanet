@@ -1,7 +1,7 @@
 # Frequently asked questions
 
 **Does it run on Windows?**
-A Windows build is provided and passes the test suite, but it has not run on the live network yet. The same holds for the Intel Mac build. Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. The Windows binary is unsigned at 3.0.0; verify it against the signed release index ([install.md](install.md)).
+A Windows build is provided and passes the test suite, but it has not run on the live network yet. The same holds for the Intel Mac build. Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. The Windows binary is unsigned for now; the one-line installer for Windows checks it against the signed release index, and so can you ([install.md](install.md)).
 
 **What happens if the hub is down?**
 There is one hub today. With it down there are no new connections, no repair scheduling and no status page; existing direct connections between devices continue. Your data is on the storage servers, not on the hub, and nothing on the hub is needed to recover it.

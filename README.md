@@ -31,14 +31,20 @@ Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon M
 
 ## Install
 
-On macOS and Linux, one line installs the newest release, checked against the signed release index:
+One line installs the newest release, checked against the signed release index. In a terminal on macOS and Linux:
 
 ```bash
 curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
+In PowerShell on Windows:
+
+```powershell
+irm https://redundanet.com/install.ps1 | iex
+```
+
 - macOS and Linux laptops: the line also installs the agent as a user service that starts at login (launchd on macOS, a systemd user unit on Linux) and opens its page in your browser, which makes your identity and links to the join form filled in. `redundanet setup` does the same in a terminal.
-- Windows: take the zip from the [download page](https://redundanet.com/download.html); `redundanet service install` installs a logon task and `redundanet open` shows the page.
+- Windows: the PowerShell line does the same with no administrator rights: the binary under `%AppData%\redundanet`, its folder on your user PATH, a logon task that restarts on failure, and the page in your browser.
 - Linux storage node: `curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage` lays the agent out under `/var/lib/redundanet3` as a system service and shows a pairing code for your laptop. The phrase never reaches the node.
 
 Step by step, per platform, and the way by hand: [docs/install.md](docs/install.md).
