@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -87,12 +88,15 @@ type Offer struct {
 	Descriptor string `cbor:"descriptor,omitempty"`
 }
 
-// message is every sealed frame of the exchange.
+// message is every sealed frame of the exchange. Name is the new device's
+// host name, in the hello, so the existing device can record which machine
+// it certified and name it in the join request.
 type message struct {
 	Type    string       `cbor:"type"`
 	Nonce   []byte       `cbor:"nonce,omitempty"`
 	Network string       `cbor:"network,omitempty"`
 	Device  identity.Key `cbor:"device,omitempty"`
+	Name    string       `cbor:"name,omitempty"`
 	Offer   *Offer       `cbor:"offer,omitempty"`
 }
 
@@ -102,6 +106,7 @@ type Listener struct {
 	code    *Code
 	network string
 	dev     identity.Key
+	name    string
 }
 
 // Listen binds a TCP port and makes the code. bind is ":0" for every
@@ -131,7 +136,8 @@ func Listen(network string, dev identity.Key, bind string) (*Listener, error) {
 		_ = ln.Close()
 		return nil, errors.New("this device has no address another device could reach")
 	}
-	return &Listener{ln: ln, code: &Code{Version: version, Addrs: addrs, Secret: secret}, network: network, dev: dev}, nil
+	name, _ := os.Hostname()
+	return &Listener{ln: ln, code: &Code{Version: version, Addrs: addrs, Secret: secret}, network: network, dev: dev, name: name}, nil
 }
 
 // Code is what to show.
@@ -180,7 +186,7 @@ func (l *Listener) serve(conn net.Conn) (*Offer, error) {
 	if open.Type != "open" || len(open.Nonce) < 16 {
 		return nil, errors.New("the exchange did not start with an open")
 	}
-	if err := s.write(conn, dirToExisting, &message{Type: "hello", Nonce: open.Nonce, Network: l.network, Device: l.dev}); err != nil {
+	if err := s.write(conn, dirToExisting, &message{Type: "hello", Nonce: open.Nonce, Network: l.network, Device: l.dev, Name: l.name}); err != nil {
 		return nil, err
 	}
 	m, err := s.read(conn, dirToNew)
@@ -195,12 +201,13 @@ func (l *Listener) serve(conn net.Conn) (*Offer, error) {
 }
 
 // Pair is the existing device's side: reach the new device through the
-// code, learn its key, have certify make the offer, hand it over. It
-// returns the device key that was paired.
-func Pair(ctx context.Context, code string, network string, certify func(device identity.Key) (*Offer, error)) (identity.Key, error) {
+// code, learn its key and name, have certify make the offer, hand it
+// over. It returns the device key that was paired and the name the new
+// device gave (its host name, possibly empty).
+func Pair(ctx context.Context, code string, network string, certify func(device identity.Key, name string) (*Offer, error)) (identity.Key, string, error) {
 	c, err := Parse(code)
 	if err != nil {
-		return identity.Key{}, err
+		return identity.Key{}, "", err
 	}
 	var last error
 	for _, addr := range c.Addrs {
@@ -211,58 +218,58 @@ func Pair(ctx context.Context, code string, network string, certify func(device 
 			last = err
 			continue
 		}
-		dev, err := pairOver(conn, c.Secret, network, certify)
+		dev, name, err := pairOver(conn, c.Secret, network, certify)
 		_ = conn.Close()
 		if err == nil {
-			return dev, nil
+			return dev, name, nil
 		}
 		last = err
 		if !errors.Is(err, errUnreachable) {
-			return identity.Key{}, err
+			return identity.Key{}, "", err
 		}
 	}
 	if last == nil {
 		last = errors.New("the code names no address")
 	}
-	return identity.Key{}, fmt.Errorf("the new device could not be reached at %s: %w", strings.Join(c.Addrs, ", "), last)
+	return identity.Key{}, "", fmt.Errorf("the new device could not be reached at %s: %w", strings.Join(c.Addrs, ", "), last)
 }
 
 var errUnreachable = errors.New("unreachable")
 
-func pairOver(conn net.Conn, secret []byte, network string, certify func(identity.Key) (*Offer, error)) (identity.Key, error) {
+func pairOver(conn net.Conn, secret []byte, network string, certify func(identity.Key, string) (*Offer, error)) (identity.Key, string, error) {
 	_ = conn.SetDeadline(time.Now().Add(connTimeout))
 	s := newSealer(secret)
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
-		return identity.Key{}, err
+		return identity.Key{}, "", err
 	}
 	if err := s.write(conn, dirToNew, &message{Type: "open", Nonce: nonce}); err != nil {
-		return identity.Key{}, fmt.Errorf("%w: %v", errUnreachable, err)
+		return identity.Key{}, "", fmt.Errorf("%w: %v", errUnreachable, err)
 	}
 	hello, err := s.read(conn, dirToExisting)
 	if err != nil {
-		return identity.Key{}, fmt.Errorf("the device at %s did not answer the code: %w", conn.RemoteAddr(), err)
+		return identity.Key{}, "", fmt.Errorf("the device at %s did not answer the code: %w", conn.RemoteAddr(), err)
 	}
 	if hello.Type != "hello" || string(hello.Nonce) != string(nonce) {
-		return identity.Key{}, errors.New("the answer did not match the open")
+		return identity.Key{}, "", errors.New("the answer did not match the open")
 	}
 	if hello.Network != network {
-		return identity.Key{}, fmt.Errorf("the new device waits for network %q, this one is %q", hello.Network, network)
+		return identity.Key{}, "", fmt.Errorf("the new device waits for network %q, this one is %q", hello.Network, network)
 	}
 	if hello.Device.IsZero() {
-		return identity.Key{}, errors.New("the new device sent no key")
+		return identity.Key{}, "", errors.New("the new device sent no key")
 	}
-	offer, err := certify(hello.Device)
+	offer, err := certify(hello.Device, hello.Name)
 	if err != nil {
-		return identity.Key{}, err
+		return identity.Key{}, "", err
 	}
 	if err := s.write(conn, dirToNew, &message{Type: "offer", Offer: offer}); err != nil {
-		return identity.Key{}, err
+		return identity.Key{}, "", err
 	}
 	if done, err := s.read(conn, dirToExisting); err != nil || done.Type != "done" {
-		return identity.Key{}, errors.New("the new device did not confirm the offer")
+		return identity.Key{}, "", errors.New("the new device did not confirm the offer")
 	}
-	return hello.Device, nil
+	return hello.Device, hello.Name, nil
 }
 
 // Directions, part of every nonce and of the associated data, so a frame

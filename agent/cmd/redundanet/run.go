@@ -64,6 +64,10 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		Roles: rc.state.Certificate.Certificate.Roles, Generated: time.Now()}
 	if m := rc.current(); m != nil {
 		s.Network = m.Network.Name
+		s.Admission = "waiting"
+		if memberListed(m, rc.state.Member) {
+			s.Admission = "listed"
+		}
 	}
 	if ep != nil {
 		t := ep.Status()

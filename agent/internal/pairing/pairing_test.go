@@ -3,6 +3,7 @@ package pairing
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestPairHandsOverTheOffer(t *testing.T) {
 	got := make(chan result, 1)
 	go func() { o, err := l.Wait(ctx); got <- result{o, err} }()
 	var certified identity.Key
-	paired, err := Pair(ctx, code, "testnet", func(d identity.Key) (*Offer, error) {
+	paired, pairedName, err := Pair(ctx, code, "testnet", func(d identity.Key, _ string) (*Offer, error) {
 		certified = d
 		return &Offer{State: []byte("the identity"), Descriptor: "rn3:net:xyz"}, nil
 	})
@@ -45,6 +46,9 @@ func TestPairHandsOverTheOffer(t *testing.T) {
 	}
 	if paired != dev.ID() || certified != dev.ID() {
 		t.Fatalf("paired %s, certified %s, device %s", paired.Short(), certified.Short(), dev.ID().Short())
+	}
+	if host, _ := os.Hostname(); pairedName != host {
+		t.Fatalf("the new device's name came through as %q, its host name is %q", pairedName, host)
 	}
 }
 
@@ -62,7 +66,7 @@ func TestWrongCodeRevealsNothingAndThreeStrikesEndIt(t *testing.T) {
 	go func() { _, err := l.Wait(ctx); done <- err }()
 	called := false
 	for i := 0; i < maxAttempts; i++ {
-		_, err := Pair(ctx, wrong.String(), "testnet", func(identity.Key) (*Offer, error) { called = true; return nil, nil })
+		_, _, err := Pair(ctx, wrong.String(), "testnet", func(identity.Key, string) (*Offer, error) { called = true; return nil, nil })
 		if err == nil || !strings.Contains(err.Error(), "did not answer the code") {
 			t.Fatalf("attempt %d with the wrong code: %v", i, err)
 		}
@@ -90,7 +94,7 @@ func TestPairRefusesAnotherNetworkAndBadCodes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	go func() { _, _ = l.Wait(ctx) }()
-	if _, err := Pair(ctx, l.Code(), "othernet", func(identity.Key) (*Offer, error) { return &Offer{State: []byte("x")}, nil }); err == nil || !strings.Contains(err.Error(), "network") {
+	if _, _, err := Pair(ctx, l.Code(), "othernet", func(identity.Key, string) (*Offer, error) { return &Offer{State: []byte("x")}, nil }); err == nil || !strings.Contains(err.Error(), "network") {
 		t.Fatalf("another network: %v", err)
 	}
 	for _, bad := range []string{"", "rn3:net:abc", "rn3:pair:!!!", "rn3:pair:" + strings.Repeat("a", 10)} {
@@ -98,7 +102,7 @@ func TestPairRefusesAnotherNetworkAndBadCodes(t *testing.T) {
 			t.Fatalf("%q parsed", bad)
 		}
 	}
-	if _, err := Pair(ctx, (&Code{Version: version, Addrs: []string{"127.0.0.1:1"}, Secret: make([]byte, secretBytes)}).String(), "testnet", nil); err == nil || !errors.Is(err, errUnreachable) && !strings.Contains(err.Error(), "could not be reached") {
+	if _, _, err := Pair(ctx, (&Code{Version: version, Addrs: []string{"127.0.0.1:1"}, Secret: make([]byte, secretBytes)}).String(), "testnet", nil); err == nil || !errors.Is(err, errUnreachable) && !strings.Contains(err.Error(), "could not be reached") {
 		t.Fatalf("an unreachable address: %v", err)
 	}
 }
