@@ -115,7 +115,7 @@ func identityInit(args []string) error {
 		if seed, err = readPhrase(); err != nil {
 			return err
 		}
-		serial = uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
+		serial = restoreSerial()
 	} else {
 		if seed, err = identity.NewSeed(); err != nil {
 			return err
@@ -135,26 +135,14 @@ func identityInit(args []string) error {
 	}
 	defer seed.Zero()
 
-	dev, err := identity.NewDeviceKey()
-	if err != nil {
-		return err
-	}
-	roles := []string{identity.RoleClient}
-	if *storage {
-		roles = append(roles, identity.RoleStorage)
-	}
-	sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: dev.ID(), Roles: roles, IssuedAt: time.Now(), Serial: serial})
-	if err != nil {
-		return err
-	}
 	var pass []byte
 	if *passphrase {
 		if pass, err = readNewPassphrase(); err != nil {
 			return err
 		}
 	}
-	st := &identity.State{Network: *network, Member: seed.MemberKey(), MemberSecret: seed.Secret(), DeviceSeed: dev.Seed(), Certificate: *sc}
-	if err := identity.Save(path, st, pass); err != nil {
+	st, err := createIdentity(d, *network, seed, *storage, serial, pass)
+	if err != nil {
 		return err
 	}
 	if *fromPhrase {
@@ -165,6 +153,43 @@ func identityInit(args []string) error {
 	printState(st)
 	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
+}
+
+// createIdentity makes this device's identity from a member's seed: a new
+// device key, a certificate with the roles, the file in the data directory.
+// It refuses to overwrite one. The CLI's init and the page's wizard share
+// it; the seed is the caller's to wipe.
+func createIdentity(d, network string, seed identity.Seed, storage bool, serial uint64, pass []byte) (*identity.State, error) {
+	path := identityPath(d)
+	if _, err := os.Stat(path); err == nil {
+		return nil, fmt.Errorf("%s exists: this device already has an identity", path)
+	}
+	dev, err := identity.NewDeviceKey()
+	if err != nil {
+		return nil, err
+	}
+	roles := []string{identity.RoleClient}
+	if storage {
+		roles = append(roles, identity.RoleStorage)
+	}
+	sc, err := identity.Issue(seed, identity.Certificate{Network: network, Device: dev.ID(), Roles: roles, IssuedAt: time.Now(), Serial: serial})
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return nil, err
+	}
+	st := &identity.State{Network: network, Member: seed.MemberKey(), MemberSecret: seed.Secret(), DeviceSeed: dev.Seed(), Certificate: *sc}
+	if err := identity.Save(path, st, pass); err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
+// restoreSerial is the certificate serial of a device an existing member
+// adds: seconds since 2026, so no two devices of the member share one.
+func restoreSerial() uint64 {
+	return uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
 }
 
 func identityShow(args []string) error {
@@ -459,37 +484,48 @@ func identityPair(args []string) error {
 	}
 	fmt.Printf("Identity written to %s\n", identityPath(d))
 	printState(&st)
-	// The network: the descriptor the offer carried, else the one built into
-	// this binary when it is the network paired for. A descriptor that is the
-	// built-in one, from either source, is followed across releases like a
-	// seeded one; any other is pinned.
-	var desc *membership.Descriptor
-	if offer.Descriptor != "" {
-		if desc, err = membership.ParseDescriptor(offer.Descriptor); err != nil {
-			return fmt.Errorf("the offer's network descriptor: %w", err)
-		}
-	} else if b, err := builtinDescriptor(); err == nil && b.Network == *network {
-		desc = b
-	}
-	if desc != nil {
-		m, err := membership.Open(membership.Config{DataDir: d, Descriptor: desc, Version: version.Version, Log: quietLog()})
-		if err != nil {
-			return err
-		}
-		if version.Network != "" && (offer.Descriptor == "" || offer.Descriptor == version.Network) {
-			_ = os.WriteFile(filepath.Join(d, builtinMarker), []byte(version.Network), 0o644)
-		}
-		jctx, jcancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer jcancel()
-		m.Refresh(jctx)
-		if ms := m.Status(); ms.LastError != "" {
-			fmt.Printf("joined %s, but the first manifest fetch failed: %s\n", desc.Network, ms.LastError)
-		} else {
-			fmt.Printf("joined %s: manifest revision %d\n", ms.Network, ms.Revision)
-		}
+	if msg, err := joinFromOffer(d, *network, offer.Descriptor); err != nil {
+		return err
+	} else if msg != "" {
+		fmt.Println(msg)
 	}
 	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
+}
+
+// joinFromOffer joins the network a pairing offer names, or the built-in
+// one when it names none and that is the network paired for. A descriptor
+// that is the built-in one, from either source, is followed across releases
+// like a seeded one; any other is pinned. The message says what happened,
+// and is empty when there was no descriptor to join with.
+func joinFromOffer(d, network, offered string) (string, error) {
+	var desc *membership.Descriptor
+	var err error
+	if offered != "" {
+		if desc, err = membership.ParseDescriptor(offered); err != nil {
+			return "", fmt.Errorf("the offer's network descriptor: %w", err)
+		}
+	} else if b, err := builtinDescriptor(); err == nil && b.Network == network {
+		desc = b
+	}
+	if desc == nil {
+		return "", nil
+	}
+	m, err := membership.Open(membership.Config{DataDir: d, Descriptor: desc, Version: version.Version, Log: quietLog()})
+	if err != nil {
+		return "", err
+	}
+	if version.Network != "" && (offered == "" || offered == version.Network) {
+		_ = os.WriteFile(filepath.Join(d, builtinMarker), []byte(version.Network), 0o644)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	m.Refresh(ctx)
+	ms := m.Status()
+	if ms.LastError != "" {
+		return fmt.Sprintf("joined %s, but the first manifest fetch failed: %s", desc.Network, ms.LastError), nil
+	}
+	return fmt.Sprintf("joined %s: manifest revision %d", ms.Network, ms.Revision), nil
 }
 
 func identityAcceptCertificate(args []string) error {

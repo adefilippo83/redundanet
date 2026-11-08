@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if or (eq .Phase "pairing") (eq .Phase "done")}}<meta http-equiv="refresh" content="3">{{end}}
+<title>RedundaNet setup</title>
+<style>
+:root { --bg:#faf9f5; --fg:#141413; --muted:#5e5d59; --line:#e8e6dc; --card:#ffffff; --ok:#2c7a4b; --warn:#b4540a; --bad:#b42318; --accent:#2c7be5; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#f0efe9; --muted:#a5a39b; --line:#2b2a27; --card:#1d1c1a; } }
+* { box-sizing: border-box }
+body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif }
+header { padding: 20px 24px; border-bottom: 1px solid var(--line); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
+header h1 { font-size: 18px; margin:0 }
+header .meta { color: var(--muted); font-size: 13px }
+main { padding: 16px 24px 40px; max-width: 760px }
+.card { background:var(--card); border:1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 14px }
+.card h2 { font-size: 16px; margin: 0 0 8px }
+.card p { margin: 6px 0 }
+.muted { color: var(--muted) }
+.ok { color: var(--ok) } .warn { color: var(--warn) } .bad { color: var(--bad) }
+code { font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all }
+.msg { background: var(--card); border-left: 3px solid var(--accent); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px }
+form { margin: 10px 0 0 } button { font: inherit; padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); cursor: pointer }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff }
+label { display:inline-flex; gap:6px; align-items:center; margin-right: 12px }
+input[type=text], textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg) }
+textarea { width: 100%; min-height: 70px }
+.words { display:grid; grid-template-columns: repeat(3, 1fr); gap: 6px 18px; margin: 12px 0; font: 17px/1.6 ui-monospace, "SF Mono", Menlo, monospace }
+.words span b { color: var(--muted); font-weight: 500; margin-right: 8px; font-size: 13px }
+.code { font: 16px/1.5 ui-monospace, "SF Mono", Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; word-break: break-all }
+</style>
+</head>
+<body>
+<header>
+  <h1>RedundaNet</h1>
+  <span class="meta">setting up this device · {{.Version}}</span>
+</header>
+<main>
+{{if .Message}}<p class="msg">{{.Message}}</p>{{end}}
+
+{{if eq .Phase "choose"}}
+<div class="card">
+  <h2>Welcome. Which is it?</h2>
+  <p class="muted">This device needs an identity before it can back anything up. Everything here stays on this computer: the page is served on 127.0.0.1 only.</p>
+</div>
+<div class="card">
+  <h2>I am new here</h2>
+  <p>A twelve-word recovery phrase is made for you and shown once. Write it down and keep it like a passport: your member key comes from it, and so does every device you ever add. There is no reset.</p>
+  <form method="post" action="/setup/begin"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label><input type="checkbox" name="storage"> this device also contributes disk</label>
+    <button class="primary">Show my phrase</button></form>
+</div>
+<div class="card">
+  <h2>I have my recovery phrase</h2>
+  <p>You are a member already and this is a new device: type the twelve words and this device gets a certificate of its own.</p>
+  <form method="post" action="/setup/restore"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    <textarea name="phrase" placeholder="twelve words, in order" autocomplete="off" spellcheck="false"></textarea><br>
+    <label><input type="checkbox" name="storage"> this device also contributes disk</label>
+    <button>Restore my identity here</button></form>
+</div>
+<div class="card">
+  <h2>Another device of mine is nearby</h2>
+  <p>Pair with it: this page shows a code, you run <code>redundanet device pair CODE</code> on that device with your phrase, and the phrase never leaves it.</p>
+  <form method="post" action="/setup/pair"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Show a pairing code</button></form>
+</div>
+{{end}}
+
+{{if eq .Phase "confirm"}}
+<div class="card">
+  <h2>Your recovery phrase</h2>
+  {{if .Words}}
+  <p class="warn">Shown once. Write these twelve words down, in order, and keep them where you keep your passport. They are the only way back to your data on another machine; nobody can recover them for you.</p>
+  <div class="words">{{range $i, $w := .Words}}<span><b>{{inc $i}}.</b>{{$w}}</span>{{end}}</div>
+  {{else}}
+  <p class="warn">The phrase was shown once, on the page before this one. If you did not write it down, start over: a new phrase is made and nothing has been written yet.</p>
+  {{end}}
+  <p>Now type three of the words back, from what you wrote down:</p>
+  <form method="post" action="/setup/confirm"><input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{range $i, $n := .Check}}<label>word {{$n}} <input type="text" name="w{{inc $i}}" size="12" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>{{end}}
+    <button class="primary">Confirm</button></form>
+  <form method="post" action="/setup/cancel"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Start over</button></form>
+</div>
+{{end}}
+
+{{if eq .Phase "pairing"}}
+<div class="card">
+  <h2>Pairing</h2>
+  <p>On a device of yours that already has its identity, on this network, run, with your phrase at hand:</p>
+  <p class="code">redundanet device pair {{.Code}}</p>
+  <p class="muted">The code is good for ten minutes and one device. This page refreshes on its own and continues once the other device has answered.{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}</p>
+  <form method="post" action="/setup/cancel"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Cancel</button></form>
+</div>
+{{end}}
+
+{{if eq .Phase "done"}}
+<div class="card">
+  <h2 class="ok">Identity written</h2>
+  <p>The agent is starting with it. This page refreshes on its own and shows the device in a moment.</p>
+</div>
+{{end}}
+</main>
+</body>
+</html>
