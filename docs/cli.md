@@ -9,12 +9,24 @@ Two flags are accepted by most commands:
 
 Exit status is 0 on success, 1 on an error, 2 for a usage error.
 
+## Setting up a device
+
+```
+redundanet setup [--storage] [--channel early] [--print]
+```
+Walks the device you sit at through everything after the install, in order, and can be run again at any time: each step says what is already done and does what is missing. It checks that the binary sits where the agent can update it (bin/ in the data directory, where the one-line installer puts it). It makes the identity when there is none, asking which case applies: a new member (`identity init`, the phrase shown once), an existing member with the recovery phrase at hand (`identity init --from-phrase`), or another device of the member nearby to pair with (`identity pair`). It fetches the manifest of the built-in network and says whether the member is listed. It installs and starts the service. While the member is not listed, it opens the join form filled in (`join-request`). Last, it opens the local page. `--storage` gives this device the storage role when it makes the identity; `--print` prints the links instead of opening the browser. A storage node is laid out with `node install` instead, and `setup` refuses to run as root on Linux.
+
+```
+redundanet join-request [--print]
+```
+Opens the join form on the website with the fields filled in from this device: the member key, and the first storage node this device paired (`device pair --storage` records it in `devices.yaml` in the data directory) or this device itself when it has the storage role; the contribution is 0 when there is no storage device. Nothing is sent: the member reviews the form, fills the member name and the contribution, and opens the GitHub issue from it. Says so and stops when the member is already listed in the manifest.
+
 ## Member commands
 
 ```
-redundanet identity init [--storage] [--passphrase] [--yes]
+redundanet identity init [--storage] [--passphrase] [--yes] [--from-phrase]
 ```
-New member on this device: shows the twelve-word phrase, checks three words back, writes the identity file (device key, member secret, certificate) and prints the member key, its display code and the device key. `--storage` adds the storage role. `--passphrase` seals the file. `--yes` skips the three words (scripts only).
+New member on this device: shows the twelve-word phrase, checks three words back, writes the identity file (device key, member secret, certificate) and prints the member key, its display code and the device key. `--storage` adds the storage role. `--passphrase` seals the file. `--yes` skips the three words (scripts only). `--from-phrase` is an existing member on a new device: the recovery phrase is typed instead of made, nothing is shown, and the device gets a certificate with a serial of its own.
 
 ```
 redundanet identity show
@@ -22,7 +34,7 @@ redundanet identity check                # the phrase you type must derive this 
 redundanet identity pair [--wait 10m]    # new device: shows a one-time code and waits for a device of yours to certify it
 redundanet device pair [--storage] CODE  # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
-Member key, its ten-group display code, device key, roles, certificate date and serial.
+Member key, its ten-group display code, device key, roles, certificate date and serial. `device pair` also records the new device (key, host name, roles) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
 
 ```
 redundanet network join [descriptor]
@@ -44,7 +56,7 @@ Installs this binary as a user service that starts at login: a launchd agent on 
 ```
 redundanet status [--json]
 ```
-What the running agent sees: version, uptime, member and device, manifest revision, hubs and their carrier, peers and their paths, updates, service state.
+What the running agent sees: version, uptime, member and device, whether the member is listed in the manifest yet (`admission` in the JSON: `listed` or `waiting`), manifest revision, hubs and their carrier, peers and their paths, updates, service state.
 
 ```
 redundanet open [--print]

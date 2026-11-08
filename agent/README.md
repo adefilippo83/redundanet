@@ -334,9 +334,20 @@ until then those jobs are skipped and the binaries ship unsigned.
 ## Identity commands
 
 ```
-redundanet identity init [--storage] [--passphrase]
+redundanet setup [--storage] [--channel early] [--print]
+    The device you sit at, step by step and again any time: binary where
+    the agent can update it, identity (new, from the phrase, or paired),
+    the manifest and whether the member is listed, the service, the join
+    form filled in while not listed, the page.
+redundanet join-request [--print]
+    The join form on the website, filled in from this device: member key
+    and the storage node it paired. Nothing is sent; the member reviews.
+
+redundanet identity init [--storage] [--passphrase] [--from-phrase]
     New member on this device: shows the phrase, checks three words, writes
-    the identity file (device key, member secret, certificate).
+    the identity file (device key, member secret, certificate). With
+    --from-phrase an existing member types the phrase instead, and the
+    device gets a certificate of its own.
 
 redundanet identity show
 redundanet identity check
@@ -350,6 +361,8 @@ redundanet device pair [--storage] CODE
     The existing device's side, with the phrase: reaches the new device
     through the code, certifies its key and hands over the identity and
     the network descriptor, sealed under the code. The phrase never moves.
+    The new device (key, host name, roles) goes on record in devices.yaml,
+    for the join request.
     Member key, its ten-group display code, device key, roles.
 
 redundanet identity device-key            (on a headless node)

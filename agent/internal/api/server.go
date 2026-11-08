@@ -43,6 +43,7 @@ type Snapshot struct {
 	Device     string             `json:"device"`
 	Member     string             `json:"member"`
 	MemberCode string             `json:"member_code"`
+	Admission  string             `json:"admission,omitempty"` // "listed" once the manifest names the member, "waiting" before
 	Roles      []string           `json:"roles"`
 	Transport  *transport.Status  `json:"transport,omitempty"`
 	Membership *membership.Status `json:"membership,omitempty"`

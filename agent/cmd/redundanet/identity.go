@@ -86,6 +86,7 @@ func identityInit(args []string) error {
 	storage := fs.Bool("storage", false, "this device will also contribute disk")
 	yes := fs.Bool("yes", false, "skip typing three words back (scripts only)")
 	passphrase := fs.Bool("passphrase", false, "seal the identity file with a passphrase")
+	fromPhrase := fs.Bool("from-phrase", false, "an existing member on a new device: type the recovery phrase instead of making one")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -101,23 +102,34 @@ func identityInit(args []string) error {
 		return fmt.Errorf("%s exists: this device already has an identity", path)
 	}
 
-	seed, err := identity.NewSeed()
-	if err != nil {
-		return err
-	}
-	defer seed.Zero()
-	words := seed.Phrase()
-	fmt.Println("Your recovery phrase. Write it down and keep it where you keep your passport;")
-	fmt.Println("it is the only thing that restores your data on another machine, and nobody")
-	fmt.Println("can recover it for you.")
-	fmt.Println()
-	printPhrase(words)
-	fmt.Println()
-	if !*yes {
-		if err := confirmPhrase(words); err != nil {
+	// A new member draws a seed and must write the phrase down; an existing
+	// member types it, and this device gets a certificate of its own with a
+	// serial no other device of the member has.
+	var seed identity.Seed
+	serial := uint64(1)
+	if *fromPhrase {
+		if seed, err = readPhrase(); err != nil {
 			return err
 		}
+		serial = uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
+	} else {
+		if seed, err = identity.NewSeed(); err != nil {
+			return err
+		}
+		words := seed.Phrase()
+		fmt.Println("Your recovery phrase. Write it down and keep it where you keep your passport;")
+		fmt.Println("it is the only thing that restores your data on another machine, and nobody")
+		fmt.Println("can recover it for you.")
+		fmt.Println()
+		printPhrase(words)
+		fmt.Println()
+		if !*yes {
+			if err := confirmPhrase(words); err != nil {
+				return err
+			}
+		}
 	}
+	defer seed.Zero()
 
 	dev, err := identity.NewDeviceKey()
 	if err != nil {
@@ -127,7 +139,7 @@ func identityInit(args []string) error {
 	if *storage {
 		roles = append(roles, identity.RoleStorage)
 	}
-	sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: dev.ID(), Roles: roles, IssuedAt: time.Now(), Serial: 1})
+	sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: dev.ID(), Roles: roles, IssuedAt: time.Now(), Serial: serial})
 	if err != nil {
 		return err
 	}
@@ -141,7 +153,11 @@ func identityInit(args []string) error {
 	if err := identity.Save(path, st, pass); err != nil {
 		return err
 	}
-	fmt.Printf("Identity written to %s\n", path)
+	if *fromPhrase {
+		fmt.Printf("Member %s restored on this device; identity written to %s\n", identity.DisplayCode(st.Member), path)
+	} else {
+		fmt.Printf("Identity written to %s\n", path)
+	}
 	printState(st)
 	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil

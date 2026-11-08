@@ -22,7 +22,8 @@ operator keys, manifest URL) is built into the binary too
 device that never joined by hand is seeded from it, so `--network` and
 `network join <descriptor>` appear in docs only for another network.
 `docs/install.sh`, served at redundanet.com/install.sh, is the one-line
-installer. Design: `rfcs/0001-redundanet-3.md`; the
+installer; `redundanet setup` then takes a laptop through identity,
+service and join request. Design: `rfcs/0001-redundanet-3.md`; the
 package map: `agent/README.md`. `spike/` is the measured prototype that
 preceded it and is not edited.
 

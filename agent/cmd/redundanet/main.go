@@ -13,6 +13,7 @@ type command struct {
 }
 
 var commands = []command{
+	{"setup", "this device, step by step: identity, network, service, join request, page", runSetup},
 	{"identity", "member and device identity: init, show, check, pair, device-key, certify, accept-certificate", runIdentity},
 	{"device", "this member's devices: pair, revoke", runDevice},
 	{"operator", "the offline operator key: init", runOperator},
@@ -30,6 +31,7 @@ var commands = []command{
 	{"backup", "backup sets of the running agent: add, remove, list, run, verify, limit, schedule, retention, exclude", runBackup},
 	{"restore", "restore from the running agent: list, browse, start, status", runRestore},
 	{"status", "what the running agent sees", runStatus},
+	{"join-request", "open the join form filled in from this device and the nodes it paired", runJoinRequest},
 	{"open", "open the local page in the browser, with a one-time link", runOpen},
 	{"logs", "the running agent's recent log lines", runLogs},
 	{"diagnostics", "write the bundle to send when something is wrong; works with the agent down", runDiagnostics},

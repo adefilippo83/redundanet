@@ -86,7 +86,7 @@ func devicePair(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	dev, err := pairing.Pair(ctx, fs.Arg(0), *network, func(device identity.Key) (*pairing.Offer, error) {
+	dev, name, err := pairing.Pair(ctx, fs.Arg(0), *network, func(device identity.Key, _ string) (*pairing.Offer, error) {
 		sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: device, Roles: roles, IssuedAt: time.Now(), Serial: *serial})
 		if err != nil {
 			return nil, err
@@ -101,7 +101,15 @@ func devicePair(args []string) error {
 	if err != nil {
 		return err
 	}
+	// On record here, so the join request can name the storage node without
+	// its key being copied by hand.
+	if err := recordDevice(d, pairedDevice{Device: dev.String(), Name: name, Roles: roles, PairedAt: time.Now()}); err != nil {
+		fmt.Fprintln(os.Stderr, "could not record the device:", err)
+	}
 	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", dev.Short(), seed.MemberKey().Short(), strings.Join(roles, ", "))
+	if *storage {
+		fmt.Printf("storage node %s is on record here: redundanet join-request puts it in the join form, or send its storage: lines to the maintainer\n", name)
+	}
 	return nil
 }
 

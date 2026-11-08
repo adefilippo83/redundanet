@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -64,6 +63,12 @@ func runStatus(args []string) error {
 	}
 	fmt.Printf("%s %s, up %s, network %s\n", "redundanet", s.Version, s.Uptime, s.Network)
 	fmt.Printf("member %s (%s), device %s\n", s.Member, s.MemberCode, s.Device)
+	switch s.Admission {
+	case "listed":
+		fmt.Println("member: listed in the manifest")
+	case "waiting":
+		fmt.Println("member: not in the manifest yet; redundanet join-request opens the join form filled in, and the maintainer admits you by signing")
+	}
 	if s.Membership != nil {
 		m := s.Membership
 		fmt.Printf("manifest revision %d, %d members, %d hubs", m.Revision, m.Members, m.Hubs)
@@ -143,20 +148,8 @@ func runOpen(args []string) error {
 	}
 	fmt.Println(link)
 	fmt.Fprintln(os.Stderr, "the link works once and for two minutes")
-	if *noBrowser {
-		return nil
-	}
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", link)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", link)
-	default:
-		cmd = exec.Command("xdg-open", link)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil // the link is printed; a headless box has no browser
+	if !*noBrowser {
+		openInBrowser(link) // the link is printed anyway; a headless box has no browser
 	}
 	return nil
 }

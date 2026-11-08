@@ -41,6 +41,7 @@ pre { background: var(--card); border:1px solid var(--line); border-radius: 10px
   <div class="card"><h2>This device</h2><div class="kv">
     <b>help</b><span><a href="/diagnostics.zip">Download a diagnostics bundle</a> to send when something is wrong: versions, counts and redacted log lines, no file names, no addresses, nothing uploaded</span>
     <b>member</b><span><code>{{.Member}}</code><br><small>{{.MemberCode}}</small></span>
+    {{if eq .Admission "listed"}}<b>status</b><span class="ok">listed in the manifest</span>{{else if eq .Admission "waiting"}}<b>status</b><span class="warn">not in the manifest yet: send the <a href="https://redundanet.com/join.html">join request</a> (<code>redundanet join-request</code> fills it in); the maintainer admits you by signing</span>{{end}}
     <b>device</b><code>{{.Device}}</code>
     <b>roles</b><span>{{range .Roles}}{{.}} {{end}}</span>
     <b>data</b><code>{{.DataDir}}</code>
