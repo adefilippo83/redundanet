@@ -6,13 +6,13 @@ On a RedundaNet 2 node both programs exist: the Python `redundanet` on PATH is t
 
 ## 1. Your identity, on your laptop
 
-Install the agent on your laptop ([install.md](install.md), one line) and run:
+Install the agent on your laptop ([install.md](install.md), one line):
 
 ```bash
-redundanet setup
+curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
-Choose the first case, a new identity. It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key, installs the service and opens the join form of step 4 with the key filled in; close it for now, the attestation of step 2 goes in too. The network is built into the binary; there is nothing to join by hand.
+In the page it opens (or in `redundanet setup` in the terminal), choose the first case, a new identity. It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key, installs the service and opens the join form of step 4 with the key filled in; close it for now, the attestation of step 2 goes in too. The network is built into the binary; there is nothing to join by hand.
 
 ## 2. The attestation that you are you
 
