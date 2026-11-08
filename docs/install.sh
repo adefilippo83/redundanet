@@ -79,7 +79,7 @@ target() {
   case "$os" in
     Linux) os=linux ;;
     Darwin) os=darwin ;;
-    MINGW*|MSYS*|CYGWIN*|Windows_NT) die "on Windows, take the zip from https://redundanet.com/download.html and see https://redundanet.com/installation.html#windows" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT) die "on Windows, in PowerShell:  irm https://redundanet.com/install.ps1 | iex" ;;
     *) die "no release for $os" ;;
   esac
   case "$arch" in

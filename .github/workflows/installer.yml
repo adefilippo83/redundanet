@@ -1,0 +1,100 @@
+# The one-line installer for Windows, docs/install.ps1, run for real on a
+# fresh runner against the signed index on main. CI is the only Windows
+# machine this project has, so this is where the script is proven: under
+# Windows PowerShell 5.1 and PowerShell 7, run as a file and piped into iex,
+# the refusal path and the already-installed path included.
+name: installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/install.ps1"
+      - ".github/workflows/installer.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/install.ps1"
+      - ".github/workflows/installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: install.ps1 (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: a version the index does not list is refused, as a file (exit 1) and piped (no exit)
+        shell: powershell
+        run: |
+          & .\docs\install.ps1 -Version 0.0.0
+          if ($LASTEXITCODE -ne 1) { throw "expected exit code 1 for a version the index does not list, got $LASTEXITCODE" }
+          $env:REDUNDANET_VERSION = '0.0.0'
+          $out = & { Get-Content -Raw .\docs\install.ps1 | Invoke-Expression } 6>&1 | Out-String
+          Remove-Item Env:\REDUNDANET_VERSION
+          if ($out -notmatch 'does not list 0\.0\.0') { throw "the piped run said: $out" }
+          if (Test-Path (Join-Path $env:AppData 'redundanet\bin\redundanet.exe')) { throw "a refused install left a binary behind" }
+          "refused twice, nothing installed"
+          $global:LASTEXITCODE = 0   # the refusal's exit code is the point of this step, not its result
+
+      - name: install the newest stable release (Windows PowerShell 5.1, as a file)
+        shell: powershell
+        run: |
+          & .\docs\install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          $exe = Join-Path $env:AppData 'redundanet\bin\redundanet.exe'
+          if (-not (Test-Path $exe)) { throw "no binary at $exe" }
+          $v = & $exe version
+          if ($v -notmatch '^redundanet \d+\.\d+\.\d+(-[0-9A-Za-z.]+)? \(windows/amd64') { throw "version says: $v" }
+          $chk = & $exe update check | Out-String
+          if ($chk -notmatch 'nothing newer on the stable channel') { throw "update check: $chk" }
+          $bin = Split-Path $exe
+          $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if (($user -split ';') -notcontains $bin) { throw "$bin is not on the user PATH: $user" }
+          if (($env:Path -split ';') -notcontains $bin) { throw "$bin is not on this process's PATH" }
+          "installed: $v"
+
+      - name: a second run finds it installed and changes nothing (PowerShell 7, piped)
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:AppData 'redundanet\bin\redundanet.exe'
+          $before = (Get-Item $exe).LastWriteTimeUtc
+          $out = & { Get-Content -Raw .\docs\install.ps1 | Invoke-Expression } 6>&1 | Out-String
+          if ($out -notmatch 'is already at') { throw "the second run said: $out" }
+          if ((Get-Item $exe).LastWriteTimeUtc -ne $before) { throw "the second run replaced the binary" }
+          $bin = Split-Path $exe
+          $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $times = @(($user -split ';') | Where-Object { $_ -eq $bin }).Count
+          if ($times -ne 1) { throw "$bin is on the user PATH $times times: $user" }
+          "unchanged"
+
+      - name: the script the website serves is text for irm (by hand, once the site has deployed)
+        if: github.event_name == 'workflow_dispatch'
+        shell: powershell
+        run: |
+          $s = irm https://redundanet.com/install.ps1
+          if ($s -isnot [string]) { throw "irm returned $($s.GetType().FullName), not a string: iex would fail" }
+          if ($s -notmatch 'function Install-RedundaNet') { throw "the served script is not install.ps1" }
+          "Windows PowerShell 5.1: irm returns text"
+
+      - name: the same under PowerShell 7
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $s = irm https://redundanet.com/install.ps1
+          if ($s -isnot [string]) { throw "irm returned $($s.GetType().FullName), not a string: iex would fail" }
+          if ($s -notmatch 'function Install-RedundaNet') { throw "the served script is not install.ps1" }
+          "PowerShell 7: irm returns text, served as $((Invoke-WebRequest -UseBasicParsing https://redundanet.com/install.ps1).Headers['Content-Type'])"
+
+      - name: remove the logon task
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $exe = Join-Path $env:AppData 'redundanet\bin\redundanet.exe'
+          if (Test-Path $exe) { & $exe service uninstall 2>&1 | Out-String | Write-Host }
+          exit 0
