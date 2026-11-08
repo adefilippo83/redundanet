@@ -13,8 +13,9 @@ layout with a first boot that hands the device key over on the SD card:
 The short way is one line as root on the node and one command on the
 laptop. The line downloads the newest release, checks it against the
 signed index and runs `redundanet node install`, which lays the node out
-and shows a pairing code; the laptop, on the node's network and with the
-phrase at hand, certifies the node through the code:
+and shows a pairing code; the laptop, with the phrase at hand, on the
+node's network or anywhere (the hub relays the exchange when the two
+cannot reach each other), certifies the node through the code:
 
 ```bash
 curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage   # on the node
@@ -30,7 +31,7 @@ its own, and `--network` is only for another one. `install.sh` below makes
 the same layout from a script, which the Pi image uses, and keeps the
 certificate-file flow for a node the laptop cannot reach.
 
-With the laptop on the node's network, pairing is two commands after
+With a laptop of the member anywhere, pairing is two commands after
 `prepare`:
 
 ```bash
@@ -38,7 +39,8 @@ sudo bash install.sh pair                        # on the node: shows a code and
 redundanet device pair --storage <code>          # on the laptop, with the phrase
 ```
 
-The node joins and starts by itself. For a node reached over SSH only, the
+The node joins and starts by itself. For a node with no laptop of the
+member at all, or one that cannot reach the hub over HTTPS, the
 certificate file flow, three steps with the middle one on the laptop (the
 RFC's headless flow):
 

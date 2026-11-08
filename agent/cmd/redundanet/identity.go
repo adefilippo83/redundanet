@@ -460,13 +460,13 @@ func identityPair(args []string) error {
 	if err != nil {
 		return err
 	}
-	l, err := pairing.Listen(*network, dev.ID(), "")
+	l, err := pairing.Listen(*network, dev.ID(), "", pairingRelays(d, *network))
 	if err != nil {
 		return err
 	}
 	defer l.Close()
 	fmt.Printf("device key: %s\n\n", dev.ID())
-	fmt.Println("On a device of yours that already has its identity, within", wait.String(), "and on a network that reaches this one, run:")
+	fmt.Println("On a device of yours that already has its identity, within", wait.String()+", run (on this network or anywhere: the hub relays the exchange when the two cannot reach each other):")
 	fmt.Printf("  redundanet device pair%s %s\n", networkArg(*network), l.Code())
 	fmt.Println("add --storage there if this device contributes disk. Waiting...")
 	ctx, cancel := context.WithTimeout(context.Background(), *wait)
@@ -491,6 +491,34 @@ func identityPair(args []string) error {
 	}
 	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
+}
+
+// pairingRelays is where the hubs relay a pairing for two devices that
+// cannot reach each other: the status page URLs of the hubs in the manifest
+// this device knows, fetched once from the built-in network if it has none
+// yet. Empty when nothing is known: the code then works directly only.
+func pairingRelays(d, network string) []string {
+	m, err := membership.Open(membershipConfig(d, network))
+	if err != nil {
+		return nil
+	}
+	man := m.Manifest()
+	if man == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		m.Refresh(ctx)
+		cancel()
+		man = m.Manifest()
+	}
+	if man == nil {
+		return nil
+	}
+	var out []string
+	for _, h := range man.Hubs {
+		if u := strings.TrimRight(h.Status, "/"); u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // joinFromOffer joins the network a pairing offer names, or the built-in

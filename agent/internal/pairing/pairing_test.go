@@ -13,7 +13,7 @@ import (
 
 func TestPairHandsOverTheOffer(t *testing.T) {
 	dev, _ := identity.NewDeviceKey()
-	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0")
+	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestPairHandsOverTheOffer(t *testing.T) {
 
 func TestWrongCodeRevealsNothingAndThreeStrikesEndIt(t *testing.T) {
 	dev, _ := identity.NewDeviceKey()
-	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0")
+	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestWrongCodeRevealsNothingAndThreeStrikesEndIt(t *testing.T) {
 
 func TestPairRefusesAnotherNetworkAndBadCodes(t *testing.T) {
 	dev, _ := identity.NewDeviceKey()
-	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0")
+	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

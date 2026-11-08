@@ -182,7 +182,7 @@
   "ig.linux.data": "数据目录：<code>~/.config/redundanet</code>；二进制文件在其中的 <code>bin</code> 目录。",
   "ig.linux.node": "对于贡献磁盘的无头机器，请改用下面的存储节点流程。",
   "ig.node.title": "Linux 存储节点",
-  "ig.node.intro": "存储节点是一台通常无显示器的 Linux 机器，保存其他成员的分片。它以自己的用户身份把代理作为系统服务运行，并且从不持有你的助记短语：你的某台设备通过一次性配对码为它签发证书。在节点上以 root 执行一行命令，在同一网络中的笔记本上执行一条命令。",
+  "ig.node.intro": "存储节点是一台通常无显示器的 Linux 机器，保存其他成员的分片。它以自己的用户身份把代理作为系统服务运行，并且从不持有你的助记短语：你的某台设备通过一次性配对码为它签发证书。在节点上以 root 执行一行命令，在笔记本电脑上执行一条命令，同一网络或任何地方都行：两者无法直连时由 hub 中转交换。",
   "ig.node.s1": "1. 在节点上：install",
   "ig.node.s1.desc": "同样的下载和校验，然后是 <code>redundanet node install</code>：创建服务用户、目录和 unit，把二进制放到位，并显示一个<strong>配对码</strong>。<code>/mnt/storage</code> 是你贡献的已挂载磁盘；分片存储放在其中的 <code>redundanet3</code> 目录，不是挂载点的路径会被拒绝，这样分片永远不会落到系统盘上。存储节点需要在下限之上至少有 10 GiB 可用空间。",
   "ig.node.s2": "2. 在笔记本上：配对",
@@ -325,7 +325,7 @@
   "mig.request.desc": "在<a href=\"join.html\">加入表单</a>中填写你的成员名、成员密钥、你贡献的磁盘，以及 RedundaNet 2 部分的指纹和签名。如果贡献磁盘，表单还需要你节点的设备密钥，它由第 4 步打印；多数成员先做第 4 步，然后只发一次请求。",
   "mig.request.after": "工作流校验请求并开启一个 pull request；维护者离线签名 manifest 并合并；每个代理在五分钟内应用它。",
   "mig.nodes.title": "4. 每个节点上的代理",
-  "mig.nodes.desc": "<a href=\"installation.html#node\">存储节点流程</a>：在节点上以 root 执行一行命令，把代理安装为系统服务并显示配对码；你的笔记本电脑在节点所在网络中通过配对码为它签发证书，节点随即自行加入网络并启动。代理与 Docker 栈并行运行在主机网络上，分片存放在 <code>STORAGE_PATH/redundanet3</code> 下。对于笔记本电脑无法连通的节点，操作手册中通过 SSH 传递证书文件的方式可达到同样效果。",
+  "mig.nodes.desc": "<a href=\"installation.html#node\">存储节点流程</a>：在节点上以 root 执行一行命令，把代理安装为系统服务并显示配对码；你的笔记本电脑在节点所在网络或任何地方（hub 中转交换）通过配对码为它签发证书，节点随即自行加入网络并启动。代理与 Docker 栈并行运行在主机网络上，分片存放在 <code>STORAGE_PATH/redundanet3</code> 下。对于笔记本电脑无法连通的节点，操作手册中通过 SSH 传递证书文件的方式可达到同样效果。",
   "mig.nodes.runbook": "操作手册：<a href=\"https://github.com/adefilippo83/redundanet/blob/main/agent/deploy/node/README.md\">agent/deploy/node/README.md</a>。manifest 列出该节点后，它会以你的名义出现在<a href=\"https://hub.redundanet.com/\">状态页面</a>上。",
   "mig.sets.title": "5. 原生备份集和一次恢复测试",
   "mig.sets.desc": "为每个 <code>backup-sync</code> 曾推送到旧网格的文件夹添加一个原生备份集，在持有该文件夹的设备上操作。代理每天扫描它，每周运行一次恢复测试。",
@@ -340,5 +340,5 @@
   "mig.next.backups": "docs/backups.md，关于备份集、恢复和清理的成员指南",
   "mig.meta.title": "从 RedundaNet 2 迁移 | RedundaNet",
   "ig.node.s2.desc": "你的笔记本电脑用你的短语通过配对码为节点签发证书并把网络交给它。节点自行启动，笔记本电脑会记住它，因此 <code>redundanet setup</code> 或 <code>redundanet join-request</code> 会把它的密钥和名称填入<a href=\"join.html\">加入表单</a>；节点也会打印自己的 <code>storage:</code> 行。维护者用这些内容签署清单后，它才开始计入。",
-  "ig.node.alt": "节点所在网络里没有笔记本？运行手册中的脚本可以用通过 SSH 复制的证书文件完成同样的部署。"
+  "ig.node.alt": "手边完全没有自己的笔记本电脑？操作手册中的脚本用通过 SSH 复制的证书文件建立同样的布局。"
 }

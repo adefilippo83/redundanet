@@ -61,7 +61,7 @@ textarea { width: 100%; min-height: 70px }
 </div>
 <div class="card">
   <h2>Another device of mine is nearby</h2>
-  <p>Pair with it: this page shows a code, you run <code>redundanet device pair CODE</code> on that device with your phrase, and the phrase never leaves it.</p>
+  <p>Pair with it: this page shows a code, you run <code>redundanet device pair CODE</code> on that device with your phrase, and the phrase never leaves it. The two devices reach each other directly on the same network, or through the hub from anywhere.</p>
   <form method="post" action="/setup/pair"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Show a pairing code</button></form>
 </div>
 {{end}}
@@ -86,7 +86,7 @@ textarea { width: 100%; min-height: 70px }
 {{if eq .Phase "pairing"}}
 <div class="card">
   <h2>Pairing</h2>
-  <p>On a device of yours that already has its identity, on this network, run, with your phrase at hand:</p>
+  <p>On a device of yours that already has its identity, anywhere, run with your phrase at hand:</p>
   <p class="code">redundanet device pair {{.Code}}</p>
   <p class="muted">The code is good for ten minutes and one device. This page refreshes on its own and continues once the other device has answered.{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}</p>
   <form method="post" action="/setup/cancel"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Cancel</button></form>

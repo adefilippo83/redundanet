@@ -364,7 +364,7 @@
 
             <section id="nodes">
                 <h2 data-i18n="mig.nodes.title">4. The agent on each node</h2>
-                <p data-i18n="mig.nodes.desc">The <a href="installation.html#node">storage node flow</a>: one line as root on the node lays the agent out as a system service and shows a pairing code; your laptop, on the node's network, certifies it through the code, and the node joins and starts by itself. The agent runs beside the Docker stack on the host's network and stores shares under <code>STORAGE_PATH/redundanet3</code>. For a node your laptop cannot reach, the runbook's certificate file over SSH does the same.</p>
+                <p data-i18n="mig.nodes.desc">The <a href="installation.html#node">storage node flow</a>: one line as root on the node lays the agent out as a system service and shows a pairing code; your laptop, on the node's network or anywhere (the hub relays the exchange), certifies it through the code, and the node joins and starts by itself. The agent runs beside the Docker stack on the host's network and stores shares under <code>STORAGE_PATH/redundanet3</code>. For a node your laptop cannot reach, the runbook's certificate file over SSH does the same.</p>
                 <pre><code># on the node, as root, with the storage disk mounted
 curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 

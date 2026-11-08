@@ -182,7 +182,7 @@
   "ig.linux.data": "Diretório de dados: <code>~/.config/redundanet</code>; o binário fica no seu <code>bin</code>.",
   "ig.linux.node": "Para uma máquina sem monitor que contribui com disco, use o fluxo de nó de armazenamento abaixo.",
   "ig.node.title": "Nó de armazenamento Linux",
-  "ig.node.intro": "Um nó de armazenamento é uma máquina Linux, normalmente sem ecrã, que guarda as shares dos outros membros. Executa o agente como serviço do sistema com o seu próprio utilizador e nunca guarda a sua frase: um dispositivo seu certifica-o através de um código de uso único. Uma linha como root no nó, um comando no seu portátil na mesma rede.",
+  "ig.node.intro": "Um nó de armazenamento é uma máquina Linux, normalmente sem ecrã, que guarda as shares dos outros membros. Executa o agente como serviço do sistema com o seu próprio utilizador e nunca guarda a sua frase: um dispositivo seu certifica-o através de um código de uso único. Uma linha como root no nó, um comando no seu portátil, na mesma rede ou em qualquer lugar: o hub retransmite a troca quando os dois não se alcançam.",
   "ig.node.s1": "1. No nó: install",
   "ig.node.s1.desc": "O mesmo download e as mesmas verificações, depois <code>redundanet node install</code>: cria o utilizador do serviço, as pastas e a unit, coloca o binário no lugar e mostra um <strong>código de emparelhamento</strong>. <code>/mnt/storage</code> é o disco que contribui, montado; o armazém de shares fica na sua pasta <code>redundanet3</code>, e um caminho que não é um ponto de montagem é recusado, para que as shares nunca fiquem no disco do sistema. Um nó de armazenamento precisa de pelo menos 10 GiB livres acima do seu limite.",
   "ig.node.s2": "2. No seu portátil: emparelhar",
@@ -325,7 +325,7 @@
   "mig.request.desc": "Preencha o <a href=\"join.html\">formulário de adesão</a> com o seu nome de membro, a sua chave de membro, o disco com que você contribui e, na seção do RedundaNet 2, a fingerprint e a assinatura. Se você contribuir com disco, o formulário também pede a chave de dispositivo do seu nó, que o passo 4 imprime; a maioria dos membros faz antes o passo 4 e envia um único pedido.",
   "mig.request.after": "Um workflow valida o pedido e abre um pull request; o mantenedor assina o manifesto offline e faz o merge; cada agente o aplica em até cinco minutos.",
   "mig.nodes.title": "4. O agente em cada nó",
-  "mig.nodes.desc": "O <a href=\"installation.html#node\">fluxo de nó de armazenamento</a>: uma linha como root no nó instala o agente como serviço do sistema e mostra um código de emparelhamento; o seu notebook, na rede do nó, o certifica pelo código, e o nó entra na rede e inicia sozinho. O agente roda ao lado da stack Docker na rede do host e guarda fragmentos em <code>STORAGE_PATH/redundanet3</code>. Para um nó que o seu notebook não alcança, o arquivo de certificado por SSH do runbook faz o mesmo.",
+  "mig.nodes.desc": "O <a href=\"installation.html#node\">fluxo de nó de armazenamento</a>: uma linha como root no nó instala o agente como serviço do sistema e mostra um código de emparelhamento; o seu notebook, na rede do nó ou em qualquer lugar (o hub retransmite a troca), o certifica pelo código, e o nó entra na rede e inicia sozinho. O agente roda ao lado da stack Docker na rede do host e guarda fragmentos em <code>STORAGE_PATH/redundanet3</code>. Para um nó que o seu notebook não alcança, o arquivo de certificado por SSH do runbook faz o mesmo.",
   "mig.nodes.runbook": "O runbook: <a href=\"https://github.com/adefilippo83/redundanet/blob/main/agent/deploy/node/README.md\">agent/deploy/node/README.md</a>. O nó aparece na <a href=\"https://hub.redundanet.com/\">página de status</a> sob o seu nome assim que o manifesto o lista.",
   "mig.sets.title": "5. Conjuntos de backup nativos e um teste de restauração",
   "mig.sets.desc": "Adicione um conjunto de backup nativo para cada pasta que o <code>backup-sync</code> enviava para a grid antiga, no dispositivo que guarda a pasta. O agente o varre diariamente e executa um teste de restauração semanalmente.",
@@ -340,5 +340,5 @@
   "mig.next.backups": "docs/backups.md, o guia do membro sobre conjuntos, restaurações e limpeza",
   "mig.meta.title": "Migrar do RedundaNet 2 | RedundaNet",
   "ig.node.s2.desc": "Com a sua frase, o seu notebook certifica o nó pelo código e lhe entrega a rede. O nó inicia sozinho, e o seu notebook o lembra, de modo que <code>redundanet setup</code> ou <code>redundanet join-request</code> coloca a chave e o nome dele no <a href=\"join.html\">formulário de adesão</a>; o nó também imprime as suas linhas <code>storage:</code>. Ele conta quando o mantenedor assina o manifesto com elas.",
-  "ig.node.alt": "Sem portátil na rede do nó? O script do runbook faz a mesma disposição com um ficheiro de certificado copiado por SSH."
+  "ig.node.alt": "Nenhum portátil seu à mão? O script do runbook cria a mesma estrutura com um ficheiro de certificado copiado por SSH."
 }

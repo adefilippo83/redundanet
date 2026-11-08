@@ -34,7 +34,7 @@ redundanet identity check                # the phrase you type must derive this 
 redundanet identity pair [--wait 10m]    # new device: shows a one-time code and waits for a device of yours to certify it
 redundanet device pair [--storage] CODE  # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
-Member key, its ten-group display code, device key, roles, certificate date and serial. `device pair` also records the new device (key, host name, roles, certificate) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
+Member key, its ten-group display code, device key, roles, certificate date and serial. The two devices reach each other directly on the same network or, when they cannot, through a hub: the code names the hubs' status pages, and `device pair` tries the direct addresses first, then each hub's mailbox under `/pair/`, with the same sealed frames either way. `device pair` also records the new device (key, host name, roles, certificate) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
 
 ```
 redundanet identity verify-certificate [--network NAME] FILE|-

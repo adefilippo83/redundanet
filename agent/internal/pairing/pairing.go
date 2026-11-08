@@ -5,8 +5,8 @@
 // identity and the network descriptor. Every message is sealed under a key
 // derived from the code, so only the two holders of the code can take part
 // and nothing in between learns anything. The code carries the new device's
-// addresses, so the two must be able to reach each other: the same network,
-// or a public IPv6 path.
+// addresses, for the two on the same network, and the hubs that relay the
+// same sealed frames when they are not (relay.go).
 package pairing
 
 import (
@@ -33,7 +33,7 @@ import (
 
 const (
 	prefix      = "rn3:pair:"
-	version     = 1
+	version     = 2  // 2 added the relays; a version 1 code, from an older device, still parses
 	secretBytes = 20 // 160 bits: not guessable within the code's life
 	// maxAttempts is how many connections may fail the code before the
 	// listener gives up; a wrong code reveals nothing either way.
@@ -52,6 +52,7 @@ type Code struct {
 	Version int      `cbor:"v"`
 	Addrs   []string `cbor:"addrs"`
 	Secret  []byte   `cbor:"secret"`
+	Relays  []string `cbor:"relays,omitempty"` // hubs that relay the exchange, by their status page URL
 }
 
 // String is the code as shown: a prefix and base32.
@@ -74,7 +75,7 @@ func Parse(s string) (*Code, error) {
 	if err := identity.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("pairing code: %w", err)
 	}
-	if c.Version != version || len(c.Secret) != secretBytes || len(c.Addrs) == 0 {
+	if c.Version < 1 || c.Version > version || len(c.Secret) != secretBytes || len(c.Addrs) == 0 {
 		return nil, errors.New("pairing code: not one this version makes")
 	}
 	return &c, nil
@@ -111,8 +112,10 @@ type Listener struct {
 
 // Listen binds a TCP port and makes the code. bind is ":0" for every
 // interface, whose addresses then go into the code; a specific address,
-// for tests, goes in alone.
-func Listen(network string, dev identity.Key, bind string) (*Listener, error) {
+// for tests, goes in alone. relays are the hubs' status page URLs, through
+// which the exchange also runs, for an existing device that cannot reach
+// this one; none means direct only.
+func Listen(network string, dev identity.Key, bind string, relays []string) (*Listener, error) {
 	if bind == "" {
 		bind = ":0"
 	}
@@ -137,7 +140,7 @@ func Listen(network string, dev identity.Key, bind string) (*Listener, error) {
 		return nil, errors.New("this device has no address another device could reach")
 	}
 	name, _ := os.Hostname()
-	return &Listener{ln: ln, code: &Code{Version: version, Addrs: addrs, Secret: secret}, network: network, dev: dev, name: name}, nil
+	return &Listener{ln: ln, code: &Code{Version: version, Addrs: addrs, Secret: secret, Relays: relays}, network: network, dev: dev, name: name}, nil
 }
 
 // Code is what to show.
@@ -146,33 +149,85 @@ func (l *Listener) Code() string { return l.code.String() }
 // Close stops listening.
 func (l *Listener) Close() error { return l.ln.Close() }
 
-// Wait serves connections until one completes the exchange and returns
-// its offer, or maxAttempts fail the code, or the context ends.
+// Wait serves the exchange, over direct connections and through each
+// relay at once, until one completes and returns its offer, or every path
+// has given up (maxAttempts failures of the code each), or the context
+// ends.
 func (l *Listener) Wait(ctx context.Context) (*Offer, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go func() {
 		<-ctx.Done()
 		_ = l.ln.Close()
 	}()
-	attempts := 0
-	for {
-		conn, err := l.ln.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+	type result struct {
+		offer *Offer
+		err   error
+	}
+	paths := 1 + len(l.code.Relays)
+	results := make(chan result, paths)
+	go func() {
+		attempts := 0
+		for {
+			conn, err := l.ln.Accept()
+			if err != nil {
+				if ctx.Err() != nil {
+					results <- result{nil, ctx.Err()}
+				} else {
+					results <- result{nil, err}
+				}
+				return
 			}
-			return nil, err
+			offer, err := l.serve(conn)
+			if err == nil {
+				results <- result{offer, nil}
+				return
+			}
+			attempts++
+			if attempts >= maxAttempts {
+				results <- result{nil, fmt.Errorf("%d connections failed the code (last: %v); make a new code", attempts, err)}
+				return
+			}
 		}
-		offer, err := l.serve(conn)
-		if err == nil {
-			_ = l.ln.Close()
-			return offer, nil
-		}
-		attempts++
-		if attempts >= maxAttempts {
-			_ = l.ln.Close()
-			return nil, fmt.Errorf("%d connections failed the code (last: %v); make a new code", attempts, err)
+	}()
+	for _, relay := range l.code.Relays {
+		go func(relay string) {
+			attempts := 0
+			for {
+				offer, err := l.serve(newRelayConn(ctx, relay, roomID(l.code.Secret), sideNew))
+				if err == nil {
+					results <- result{offer, nil}
+					return
+				}
+				if ctx.Err() != nil {
+					results <- result{nil, ctx.Err()}
+					return
+				}
+				if errors.Is(err, errRelayUnavailable) || errors.Is(err, errUnreachable) {
+					results <- result{nil, fmt.Errorf("through %s: %w", relay, err)}
+					return
+				}
+				attempts++
+				if attempts >= maxAttempts {
+					results <- result{nil, fmt.Errorf("through %s: %d exchanges failed the code (last: %v); make a new code", relay, attempts, err)}
+					return
+				}
+			}
+		}(relay)
+	}
+	var last error
+	for failed := 0; failed < paths; failed++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case r := <-results:
+			if r.err == nil {
+				return r.offer, nil
+			}
+			last = r.err
 		}
 	}
+	return nil, last
 }
 
 func (l *Listener) serve(conn net.Conn) (*Offer, error) {
@@ -201,7 +256,8 @@ func (l *Listener) serve(conn net.Conn) (*Offer, error) {
 }
 
 // Pair is the existing device's side: reach the new device through the
-// code, learn its key and name, have certify make the offer, hand it
+// code, directly at its addresses or, failing that, through the hubs the
+// code names, learn its key and name, have certify make the offer, hand it
 // over. It returns the device key that was paired and the name the new
 // device gave (its host name, possibly empty).
 func Pair(ctx context.Context, code string, network string, certify func(device identity.Key, name string) (*Offer, error)) (identity.Key, string, error) {
@@ -228,10 +284,26 @@ func Pair(ctx context.Context, code string, network string, certify func(device 
 			return identity.Key{}, "", err
 		}
 	}
+	for _, relay := range c.Relays {
+		conn := newRelayConn(ctx, relay, roomID(c.Secret), sideExisting)
+		dev, name, err := pairOver(conn, c.Secret, network, certify)
+		_ = conn.Close()
+		if err == nil {
+			return dev, name, nil
+		}
+		last = err
+		if !errors.Is(err, errUnreachable) && !errors.Is(err, errRelayUnavailable) {
+			return identity.Key{}, "", err
+		}
+	}
 	if last == nil {
 		last = errors.New("the code names no address")
 	}
-	return identity.Key{}, "", fmt.Errorf("the new device could not be reached at %s: %w", strings.Join(c.Addrs, ", "), last)
+	where := strings.Join(c.Addrs, ", ")
+	if len(c.Relays) > 0 {
+		where += ", nor through " + strings.Join(c.Relays, ", ")
+	}
+	return identity.Key{}, "", fmt.Errorf("the new device could not be reached at %s: %w", where, last)
 }
 
 var errUnreachable = errors.New("unreachable")
