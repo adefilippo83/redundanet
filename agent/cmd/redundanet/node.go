@@ -72,7 +72,7 @@ func needRoot() error {
 
 func nodeInstall(args []string) error {
 	fs := flag.NewFlagSet("node install", flag.ContinueOnError)
-	network := fs.String("network", "redundanet", "the network to join")
+	network := fs.String("network", defaultNetwork(), "the network to join")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	storage := fs.String("storage-path", "", "the storage disk, mounted; the store goes in its redundanet3 directory")
 	allowRoot := fs.Bool("allow-root-disk", false, "accept a storage path that is not a mount point")
@@ -80,7 +80,7 @@ func nodeInstall(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *storage == "" {
+	if *storage == "" || *network == "" {
 		return errors.New("usage: sudo redundanet node install --storage-path /mnt/storage [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]")
 	}
 	if err := needRoot(); err != nil {
@@ -113,7 +113,7 @@ func nodeInstall(args []string) error {
 	// Pairing, as the service user so the identity is its own: the code
 	// shows here, the member's other device answers it.
 	fmt.Println()
-	fmt.Printf("On a device of yours that has its identity and reaches this node, with the phrase at hand:\n  redundanet device pair --network %s --storage <the code shown below>\n\n", *network)
+	fmt.Printf("On a device of yours that has its identity and reaches this node, with the phrase at hand:\n  redundanet device pair%s --storage <the code shown below>\n\n", networkArg(*network))
 	if err := asServiceUser(rep.Binary, "identity", "pair", "--network", *network, "--data-dir", node.DataDir); err != nil {
 		return fmt.Errorf("pairing did not complete (%w); run the install again for a new code, or install.sh finish with a certificate file", err)
 	}

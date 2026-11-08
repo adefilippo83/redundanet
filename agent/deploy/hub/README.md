@@ -42,15 +42,16 @@ tar -xzf /tmp/rn.tgz -C /tmp && install -o redundanet3 -g redundanet3 -m 0755 "$
 /var/lib/redundanet3/bin/redundanet version
 
 # the hub's identity: prints the device key that goes into the manifest
-sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet identity init --network redundanet --yes --data-dir /var/lib/redundanet3
+sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet identity init --yes --data-dir /var/lib/redundanet3
 ```
 
 Put the device key in the manifest's `hubs:` entry, sign, merge. Then join
-the network with the descriptor printed by
-`redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/adefilippo83/redundanet/main`:
+the network (the descriptor is built into the binary; a second hub needs a
+release whose descriptor lists it first, see `redundanet network
+descriptor`):
 
 ```bash
-sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet network join --data-dir /var/lib/redundanet3 'rn3:net:...'
+sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet network join --data-dir /var/lib/redundanet3
 install -m 0644 redundanet-hub.service /etc/systemd/system/redundanet-hub.service
 systemctl daemon-reload && systemctl enable --now redundanet-hub
 journalctl -u redundanet-hub -f

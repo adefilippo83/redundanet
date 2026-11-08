@@ -178,7 +178,7 @@ func TestFirstFetchThenOfflineStart(t *testing.T) {
 	if err := m.Allow(peerFor(t, w.bob, 1)); err == nil {
 		t.Fatal("bob allowed before he is a member")
 	}
-	for _, f := range []string{fileManifest, fileSignature, fileTrust, fileDescriptor} {
+	for _, f := range []string{fileManifest, fileSignature, fileTrust, DescriptorFile} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Fatalf("%s not written", f)
 		}

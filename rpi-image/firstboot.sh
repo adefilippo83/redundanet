@@ -12,6 +12,8 @@ KEYFILE=$BOOT/redundanet-device-key.txt
 [ -f "$DATA/identity" ] && exit 0
 key=$(sudo -u redundanet3 "$BIN" identity device-key --network "$NETWORK" --data-dir "$DATA" | awk '/^device key:/ {print $3}')
 [ -n "$key" ] || { echo "firstboot: the agent printed no device key" >&2; exit 1; }
+# The network built into the binary needs no flag on the member's laptop.
+netflag=""; [ "$NETWORK" = redundanet ] || netflag="--network $NETWORK "
 cat > "$KEYFILE" <<TXT
 RedundaNet 3 node: the device key of this Raspberry Pi
 
@@ -19,7 +21,7 @@ RedundaNet 3 node: the device key of this Raspberry Pi
 
 On a computer where you can type your recovery phrase:
 
-  redundanet identity certify --network $NETWORK --device $key --storage > redundanet-node.cert
+  redundanet identity certify ${netflag}--device $key --storage > redundanet-node.cert
 
 Then put redundanet-node.cert on this SD card's boot partition, next to this
 file, and boot the Pi again; or copy it over SSH to /boot/firmware/ while it
