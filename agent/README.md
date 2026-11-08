@@ -75,6 +75,8 @@ redundanet network status [--refresh]
 redundanet hub   [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
 redundanet agent [--network NAME] [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
+    Without an identity it serves the local page alone, with the setup
+    wizard, and continues as the agent once the page or the CLI made one.
 redundanet object put|get|has|check|repair|delete [--network NAME] FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance

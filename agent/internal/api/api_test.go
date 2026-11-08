@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -339,3 +340,160 @@ func TestSettingsThroughTheAPI(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// Setup mode: before the device has an identity the page is the wizard,
+// the API answers with the wizard's state, and once the runtime is
+// attached the same browser session sees the running agent.
+func TestSetupModeThenAttach(t *testing.T) {
+	dir := t.TempDir()
+	buf := logbuf.New(slog.NewTextHandler(io.Discard, nil), 10)
+	lg := slog.New(buf)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	phase, errMsg := "choose", ""
+	var confirmed []string
+	srv, err := Start(ctx, Config{Addr: "127.0.0.1:0", DataDir: dir, Version: "3.0.9-test", Log: lg, Setup: &SetupActions{
+		Begin: func(storage bool) ([]string, []int, error) {
+			phase = "confirm"
+			return []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima"}, []int{2, 5, 11}, nil
+		},
+		Confirm: func(answers []string) error {
+			confirmed = answers
+			if answers[0] != "bravo" {
+				return errors.New("word 2 is not what the phrase says")
+			}
+			phase = "done"
+			return nil
+		},
+		Restore: func(string, bool) error { return nil },
+		Pair:    func() (string, error) { phase = "pairing"; return "rn3:pair:abc", nil },
+		Cancel:  func() { phase = "choose" },
+		Status: func() SetupStatus {
+			s := SetupStatus{Phase: phase, Error: errMsg}
+			if phase == "confirm" {
+				s.Check = []int{2, 5, 11}
+			}
+			if phase == "pairing" {
+				s.Code = "rn3:pair:abc"
+			}
+			return s
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := os.ReadFile(filepath.Join(dir, tokenFile))
+	token := strings.TrimSpace(string(tok))
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	base := "http://" + srv.Addr()
+	do := func(req *http.Request) *http.Response {
+		t.Helper()
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	body := func(resp *http.Response) string {
+		t.Helper()
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+
+	// The CLI's status in setup mode says where the wizard stands.
+	req, _ := http.NewRequest("GET", base+"/api/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	st := body(do(req))
+	if !strings.Contains(st, `"phase": "choose"`) || !strings.Contains(st, `"version": "3.0.9-test"`) {
+		t.Fatalf("setup status: %s", st)
+	}
+	// A runtime endpoint before attach says so instead of panicking.
+	req, _ = http.NewRequest("GET", base+"/api/backups", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	if resp := do(req); resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("backups before attach: %d", resp.StatusCode)
+	}
+
+	// Log in through the one-time link, as `redundanet open` does.
+	req, _ = http.NewRequest("POST", base+"/api/login-link", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	var link struct{ URL string }
+	if err := jsonDecode(body(do(req)), &link); err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("GET", link.URL, nil)
+	if resp := do(req); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login: %d", resp.StatusCode)
+	}
+	req, _ = http.NewRequest("GET", base+"/", nil)
+	page := body(do(req))
+	if !strings.Contains(page, "I am new here") || !strings.Contains(page, "/setup/begin") {
+		t.Fatalf("setup page: %s", page)
+	}
+	csrf := page[strings.Index(page, `name="csrf" value="`)+len(`name="csrf" value="`):]
+	csrf = csrf[:strings.Index(csrf, `"`)]
+
+	// Begin: the words show once, then not again.
+	form := url.Values{"csrf": {csrf}, "storage": {"on"}}
+	req, _ = http.NewRequest("POST", base+"/setup/begin", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if resp := do(req); resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("begin: %d", resp.StatusCode)
+	}
+	req, _ = http.NewRequest("GET", base+"/", nil)
+	page = body(do(req))
+	if !strings.Contains(page, "foxtrot") || !strings.Contains(page, "word 2") || !strings.Contains(page, "word 11") {
+		t.Fatalf("confirm page with words: %s", page)
+	}
+	req, _ = http.NewRequest("GET", base+"/", nil)
+	page = body(do(req))
+	if strings.Contains(page, "foxtrot") || !strings.Contains(page, "shown once") {
+		t.Fatalf("confirm page after reload still shows the phrase: %s", page)
+	}
+	// A wrong word is reported; the right ones end the wizard.
+	for _, words := range [][]string{{"wrong", "foxtrot", "lima"}, {"bravo", "foxtrot", "lima"}} {
+		form = url.Values{"csrf": {csrf}, "w1": {words[0]}, "w2": {words[1]}, "w3": {words[2]}}
+		req, _ = http.NewRequest("POST", base+"/setup/confirm", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		do(req)
+	}
+	if len(confirmed) != 3 || confirmed[0] != "bravo" {
+		t.Fatalf("confirmed %v", confirmed)
+	}
+	req, _ = http.NewRequest("GET", base+"/", nil)
+	if page = body(do(req)); !strings.Contains(page, "Identity written") {
+		t.Fatalf("done page: %s", page)
+	}
+	// Without the CSRF token nothing moves.
+	req, _ = http.NewRequest("POST", base+"/setup/cancel", strings.NewReader("csrf=nope"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if resp := do(req); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cancel without csrf: %d", resp.StatusCode)
+	}
+
+	// The runtime arrives; the session from setup still works and the
+	// wizard's forms are gone.
+	srv.Attach(Runtime{Snapshot: func() Snapshot {
+		return Snapshot{Version: "3.0.9-test", Network: "testnet", Device: "dev", Member: "mem", Admission: "waiting", Generated: time.Now()}
+	}})
+	req, _ = http.NewRequest("GET", base+"/", nil)
+	page = body(do(req))
+	if !strings.Contains(page, "not in the manifest yet") || strings.Contains(page, "/setup/begin") {
+		t.Fatalf("page after attach: %s", page)
+	}
+	form = url.Values{"csrf": {csrf}}
+	req, _ = http.NewRequest("POST", base+"/setup/begin", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if resp := do(req); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("begin after attach: %d", resp.StatusCode)
+	}
+	req, _ = http.NewRequest("GET", base+"/api/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	if st = body(do(req)); strings.Contains(st, `"setup"`) || !strings.Contains(st, `"admission": "waiting"`) {
+		t.Fatalf("status after attach: %s", st)
+	}
+}
+
+func jsonDecode(s string, v any) error { return json.Unmarshal([]byte(s), v) }

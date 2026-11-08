@@ -61,6 +61,23 @@ func runStatus(args []string) error {
 		fmt.Println(string(b))
 		return nil
 	}
+	if s.Setup != nil {
+		fmt.Printf("redundanet %s, up %s, no identity yet\n", s.Version, s.Uptime)
+		switch s.Setup.Phase {
+		case "pairing":
+			fmt.Printf("setup: waiting for a device of yours to answer: redundanet device pair %s\n", s.Setup.Code)
+		case "confirm":
+			fmt.Println("setup: a phrase was shown on the page; confirm three of its words there")
+		case "done":
+			fmt.Println("setup: identity written; the agent is starting")
+		default:
+			fmt.Println("setup: open the page with `redundanet open`, or run `redundanet setup` here")
+		}
+		if s.Setup.Error != "" {
+			fmt.Println("setup:", s.Setup.Error)
+		}
+		return nil
+	}
 	fmt.Printf("%s %s, up %s, network %s\n", "redundanet", s.Version, s.Uptime, s.Network)
 	fmt.Printf("member %s (%s), device %s\n", s.Member, s.MemberCode, s.Device)
 	switch s.Admission {

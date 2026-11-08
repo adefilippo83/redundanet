@@ -444,6 +444,20 @@ func runAgent(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Before this device has an identity the agent serves the setup page
+	// alone and waits; the page or the CLI makes the identity, and the agent
+	// continues with it in this process, the page's session intact.
+	var setupSrv *api.Server
+	if *mPath == "" {
+		d0, err := dataDir(*dir)
+		if err != nil {
+			return err
+		}
+		if setupSrv, err = runSetupMode(ctx, d0, *network, *apiAddr, slog.New(slog.NewTextHandler(os.Stderr, nil))); err != nil {
+			return err
+		}
+	}
+
 	var (
 		epMu sync.Mutex
 		ep   *transport.Endpoint
@@ -717,8 +731,8 @@ func runAgent(args []string) error {
 	}
 
 	go runner.Run(ctx)
-	apiSrv, err := api.Start(ctx, api.Config{
-		Addr: *apiAddr, DataDir: rc.dataDir, Logs: rc.logs, Log: rc.log, Jobs: runner,
+	rt := api.Runtime{
+		Logs: rc.logs, Jobs: runner,
 		Snapshot: func() api.Snapshot {
 			s := rc.snapshot(current(), getU(), worker)
 			js := runner.Status()
@@ -776,8 +790,12 @@ func runAgent(args []string) error {
 				return nil
 			},
 		},
-	})
-	if err != nil {
+	}
+	var apiSrv *api.Server
+	if setupSrv != nil {
+		setupSrv.Attach(rt)
+		apiSrv = setupSrv
+	} else if apiSrv, err = api.Start(ctx, api.Config{Addr: *apiAddr, DataDir: rc.dataDir, Log: rc.log, Snapshot: rt.Snapshot, Actions: rt.Actions, Jobs: rt.Jobs, Logs: rt.Logs}); err != nil {
 		return err
 	}
 	_ = apiSrv
