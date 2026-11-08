@@ -59,6 +59,18 @@ The service `setup` installed starts at login and runs the first backup two minu
 
 Your allocation is derived from your contribution and the encoding overhead: contribution, less the network's reserve, times k/n. `redundanet validate --manifest manifests/manifest.yaml` on a checkout of the repository prints every member's allocation. The status page shows what you use against it.
 
+## Adding a storage node later
+
+A listed member adds a storage node without a new membership request. Pair the node from your laptop as in [install.md](install.md), "Linux storage node" (one line on the node, `redundanet device pair --storage <code>` on the laptop), then on the laptop:
+
+```bash
+redundanet join-request
+```
+
+It opens the same form in its "add a storage node" mode with your member name, the node's key and name, and the node's certificate filled in; add the UDP port if you forward one and your new total contribution if it changes, then open the issue. The certificate is the proof: your member key signed it for this device with the storage role when you paired, and the workflow verifies that with `redundanet identity verify-certificate` before it checks the keys against the manifest and opens the pull request. A node paired before 3.0.8 has no certificate on your laptop; `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` on the node prints it, for the form's certificate field.
+
+The issue the form opens has the title `[Join Request] Storage device: <name> for <member>` and a body with the heading `## RedundaNet 3 storage device`, a table with the rows `Member name`, `Device key`, `Device name`, `UDP port` (optional), `Contribution GB` (optional, the new total) and `Notes`, and a section `## Device certificate` holding the one-line certificate. The workflow adds the node under `storage:`, rewrites your `contribution_gb` when you gave a new total, raises the revision, and the maintainer signs and merges as for a new member.
+
 ## More devices
 
 Every device of yours is certified from the phrase. On a second device, `redundanet setup` offers the two ways: pairing, without moving the phrase (on the new device `redundanet identity pair` shows a one-time code; on a device of yours that has its identity, on the same network, `redundanet device pair <code>` asks for the phrase, certifies the new device and hands it the identity and the network; add `--storage` if the new device contributes disk), or typing the phrase on the new device (`redundanet identity init --from-phrase`). A plain `identity init` on a second device would make a new member. Devices need no manifest change: servers accept any device whose certificate chains to a listed member.

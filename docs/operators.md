@@ -12,7 +12,7 @@ Makes the offline operator key and prints the public half for the manifest's `op
 
 ## Editing the manifest
 
-Every change to membership is a pull request against `manifests/manifest.yaml`: a join request's workflow opens one; the operator edits by hand for everything else. The rules:
+Every change to membership is a pull request against `manifests/manifest.yaml`: a join request's workflow opens one, for a new member and for a listed member's additional storage node alike (the latter proves itself with the node's certificate, which the workflow verifies with `redundanet identity verify-certificate` against the member key in the manifest); the operator edits by hand for everything else. The rules:
 
 1. Raise `revision` by one. An agent applies only a revision above the last one it applied, with a valid signature.
 2. Run the validator before and after:

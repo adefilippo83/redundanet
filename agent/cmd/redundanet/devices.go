@@ -15,10 +15,11 @@ import (
 const devicesFile = "devices.yaml"
 
 type pairedDevice struct {
-	Device   string    `yaml:"device"`
-	Name     string    `yaml:"name,omitempty"`
-	Roles    []string  `yaml:"roles"`
-	PairedAt time.Time `yaml:"paired_at"`
+	Device      string    `yaml:"device"`
+	Name        string    `yaml:"name,omitempty"`
+	Roles       []string  `yaml:"roles"`
+	Certificate string    `yaml:"certificate,omitempty"` // the device's certificate as one line, the proof a device request carries
+	PairedAt    time.Time `yaml:"paired_at"`
 }
 
 func loadDevices(dd string) ([]pairedDevice, error) {
@@ -61,7 +62,16 @@ func recordDevice(dd string, d pairedDevice) error {
 
 // storageDevice is the first storage device on record, for the join request.
 func storageDevice(devices []pairedDevice) *pairedDevice {
+	return storageDeviceNotIn(devices, nil)
+}
+
+// storageDeviceNotIn is the first storage device on record that the
+// manifest does not list yet: the one a listed member still has to request.
+func storageDeviceNotIn(devices []pairedDevice, listed map[string]bool) *pairedDevice {
 	for i := range devices {
+		if listed[devices[i].Device] {
+			continue
+		}
 		for _, r := range devices[i].Roles {
 			if r == "storage" {
 				return &devices[i]

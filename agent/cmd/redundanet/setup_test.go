@@ -96,3 +96,45 @@ func TestSetupRefusesWithoutATerminalAndIdentity(t *testing.T) {
 		t.Errorf("err %v, want the terminal hint", err)
 	}
 }
+
+// A storage node's certificate goes through the one-line form and back, and
+// a listed member's request names the first paired node the manifest lacks.
+func TestCertificateRoundTripAndDeviceRequest(t *testing.T) {
+	st := testState(t, identity.RoleClient)
+	var seed identity.Seed
+	seed[0] = 7 // the member of testState
+	node, _ := identity.NewDeviceKey()
+	sc, err := identity.Issue(seed, identity.Certificate{Network: "testnet", Device: node.ID(), Roles: []string{identity.RoleClient, identity.RoleStorage}, IssuedAt: time.Now(), Serial: 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := encodeCertificate(sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := decodeCertificate(" " + enc + "\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Certificate.Device != node.ID() || back.Certificate.Member != st.Member || !back.HasRole(identity.RoleStorage) {
+		t.Fatalf("decoded %+v", back.Certificate)
+	}
+	if _, err := decodeCertificate(enc[:len(enc)-4] + "AAAA"); err == nil {
+		t.Error("a tampered certificate verified")
+	}
+
+	m := &manifest.Manifest{Members: []manifest.Member{{Name: "me", Key: st.Member}}}
+	devices := []pairedDevice{{Device: node.ID().String(), Name: "nas-1", Roles: []string{"client", "storage"}, Certificate: enc}}
+	p := devicePrefill(m, st.Member, devices)
+	if p == nil || !p.Device || p.MemberName != "me" || p.DeviceKey != node.ID().String() || p.Certificate != enc {
+		t.Fatalf("device prefill %+v", p)
+	}
+	q := must(t, joinRequestURL(*p))
+	if q.Get("mode") != "device" || q.Get("name") != "me" || q.Get("cert") != enc || q.Get("devicename") != "nas-1" {
+		t.Errorf("device request url: %v", q)
+	}
+	m.Storage = []manifest.StorageDevice{{Member: "me", Device: node.ID(), Name: "nas-1"}}
+	if p := devicePrefill(m, st.Member, devices); p != nil {
+		t.Errorf("listed node still requested: %+v", p)
+	}
+}

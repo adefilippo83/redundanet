@@ -19,7 +19,7 @@ Walks the device you sit at through everything after the install, in order, and 
 ```
 redundanet join-request [--print]
 ```
-Opens the join form on the website with the fields filled in from this device: the member key, and the first storage node this device paired (`device pair --storage` records it in `devices.yaml` in the data directory) or this device itself when it has the storage role; the contribution is 0 when there is no storage device. Nothing is sent: the member reviews the form, fills the member name and the contribution, and opens the GitHub issue from it. Says so and stops when the member is already listed in the manifest.
+Opens the join form on the website with the fields filled in from this device. For a member not yet listed: the member key, and the first storage node this device paired (`device pair --storage` records it in `devices.yaml` in the data directory) or this device itself when it has the storage role; the contribution is 0 when there is no storage device. For a listed member: the form's "add a storage node" mode for the first paired storage node the manifest does not list, with the member name and the node's certificate as proof (a node paired before 3.0.8 has no certificate on record; `identity show --certificate` on the node prints it). Nothing is sent: the member reviews the form and opens the GitHub issue from it. Says so and stops when there is nothing to request.
 
 ## Member commands
 
@@ -29,12 +29,17 @@ redundanet identity init [--storage] [--passphrase] [--yes] [--from-phrase]
 New member on this device: shows the twelve-word phrase, checks three words back, writes the identity file (device key, member secret, certificate) and prints the member key, its display code and the device key. `--storage` adds the storage role. `--passphrase` seals the file. `--yes` skips the three words (scripts only). `--from-phrase` is an existing member on a new device: the recovery phrase is typed instead of made, nothing is shown, and the device gets a certificate with a serial of its own.
 
 ```
-redundanet identity show
+redundanet identity show [--certificate]   # --certificate prints this device's certificate as one line, the proof a storage device request carries
 redundanet identity check                # the phrase you type must derive this device's member key; nothing is written
 redundanet identity pair [--wait 10m]    # new device: shows a one-time code and waits for a device of yours to certify it
 redundanet device pair [--storage] CODE  # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
-Member key, its ten-group display code, device key, roles, certificate date and serial. `device pair` also records the new device (key, host name, roles) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
+Member key, its ten-group display code, device key, roles, certificate date and serial. `device pair` also records the new device (key, host name, roles, certificate) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
+
+```
+redundanet identity verify-certificate [--network NAME] FILE|-
+```
+Reads a certificate in the one-line form `identity show --certificate` prints, checks the member's signature over it and prints what it certifies as JSON: network, member key, device key, roles, serial, issue time. With `--network` (default: the built-in network) a certificate for another network is refused. The join workflow runs it on the certificate a listed member attaches when adding a storage node, then checks the member and device keys against the manifest itself. It says nothing about whether the member is in the manifest or the device is revoked.
 
 ```
 redundanet network join [descriptor]

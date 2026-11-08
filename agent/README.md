@@ -341,7 +341,9 @@ redundanet setup [--storage] [--channel early] [--print]
     form filled in while not listed, the page.
 redundanet join-request [--print]
     The join form on the website, filled in from this device: member key
-    and the storage node it paired. Nothing is sent; the member reviews.
+    and the storage node it paired, or, for a listed member, the form's
+    "add a storage node" mode with the node's certificate as proof. Nothing
+    is sent; the member reviews.
 
 redundanet identity init [--storage] [--passphrase] [--from-phrase]
     New member on this device: shows the phrase, checks three words, writes
@@ -349,7 +351,12 @@ redundanet identity init [--storage] [--passphrase] [--from-phrase]
     --from-phrase an existing member types the phrase instead, and the
     device gets a certificate of its own.
 
-redundanet identity show
+redundanet identity show [--certificate]
+    --certificate prints this device's certificate as one line, the proof a
+    listed member's storage device request carries.
+redundanet identity verify-certificate [--network NAME] FILE|-
+    Checks a certificate in that form and prints what it certifies as JSON;
+    the join workflow runs it on a storage device request.
 redundanet identity check
     Types the phrase and says whether it is the one this device was
     certified under; nothing is written. The check to run after writing

@@ -19,7 +19,8 @@ jobs:
     # usually absent on `opened`. Process when a maintainer has applied the
     # label, OR when the issue both carries the title the join form sets AND
     # contains one of the form's body markers (`## RedundaNet 3 membership`
-    # for a RedundaNet 3 member, `## New Node Application` for a RedundaNet 2
+    # for a RedundaNet 3 member, `## RedundaNet 3 storage device` for a
+    # listed member's new node, `## New Node Application` for a RedundaNet 2
     # node); requiring both narrows the attacker-controlled trigger surface to
     # genuine submissions. (The issue body is still untrusted; it is strictly
     # validated in the parse step.)
@@ -27,6 +28,7 @@ jobs:
       contains(github.event.issue.labels.*.name, 'join-request') ||
       (startsWith(github.event.issue.title, '[Join Request]') &&
        (contains(github.event.issue.body, 'RedundaNet 3 membership') ||
+        contains(github.event.issue.body, 'RedundaNet 3 storage device') ||
         contains(github.event.issue.body, 'New Node Application')))
 
     steps:
@@ -63,15 +65,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Dispatch on the body marker. The RedundaNet 3 marker wins when both
-      # are present. A bash `case` on an environment variable never evaluates
-      # the (untrusted) body.
+      # Dispatch on the body marker. The RedundaNet 3 markers win when both
+      # are present; the v3 script tells a membership request from a storage
+      # device request itself. A bash `case` on an environment variable never
+      # evaluates the (untrusted) body.
       - name: Detect the request kind
         id: kind
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
           case "$ISSUE_BODY" in
+            *"## RedundaNet 3 storage device"*) kind=v3 ;;
             *"## RedundaNet 3 membership"*) kind=v3 ;;
             *"## New Node Application"*) kind=v2 ;;
             *) kind=unknown ;;
@@ -102,7 +106,10 @@ jobs:
       # the manifest textually (the v3 half and manifest.sig's revision
       # survive), write outputs with random-delimiter heredocs, and exit
       # non-zero with `success=false` and an `error` on any failure; the
-      # steps continue so the applicant gets the reason as a comment.
+      # steps continue so the applicant gets the reason as a comment. A
+      # storage device request's certificate is verified by the checkout's
+      # own agent (`go run ./cmd/redundanet identity verify-certificate`),
+      # which is why Go is set up before this step.
       - name: Parse the issue and update the manifest (RedundaNet 3)
         id: v3
         if: steps.kind.outputs.kind == 'v3'
@@ -139,7 +146,7 @@ jobs:
             const outputs = JSON.parse(raw || '{}') || {};
             if (kind === 'unknown') {
               outputs.success = 'false';
-              outputs.error = 'The issue has neither the `## RedundaNet 3 membership` heading nor the `## New Node Application` heading. Please use the form at https://redundanet.com/join.html.';
+              outputs.error = 'The issue has none of the `## RedundaNet 3 membership`, `## RedundaNet 3 storage device` and `## New Node Application` headings. Please use the form at https://redundanet.com/join.html.';
             } else if (outputs.success !== 'true' && outputs.success !== 'false') {
               outputs.success = 'false';
               outputs.error = outputs.error || 'The processing step stopped before reporting a result; see the workflow log.';

@@ -144,13 +144,26 @@ func runSetup(args []string) error {
 		}
 	}
 
-	// 5. The join request, while the member is not listed.
+	// 5. The join request, while the member is not listed; for a listed
+	// member, a paired storage node the manifest does not list yet.
+	devices, _ := loadDevices(d)
 	if !listed {
-		devices, _ := loadDevices(d)
 		link := joinRequestURL(prefillFor(st, devices))
 		step("request", "the join form, filled in from this device:\n          %s\n          fill the member name and the contribution, then open the issue on GitHub; `redundanet status` says when you are listed", link)
 		if !*noBrowser {
 			openInBrowser(link)
+		}
+	} else if m != nil {
+		if p := devicePrefill(m.Manifest(), st.Member, devices); p != nil {
+			link := joinRequestURL(*p)
+			proof := "with the node's certificate as proof"
+			if p.Certificate == "" {
+				proof = "it needs the node's certificate, which `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` prints on the node"
+			}
+			step("request", "storage node %s is paired but not in the manifest yet; the form that adds it, %s:\n          %s", p.DeviceName, proof, link)
+			if !*noBrowser {
+				openInBrowser(link)
+			}
 		}
 	}
 
