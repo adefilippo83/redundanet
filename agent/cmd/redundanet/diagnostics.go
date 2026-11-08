@@ -16,7 +16,6 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
-	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/version"
 )
 
@@ -63,7 +62,7 @@ func runDiagnostics(args []string) error {
 			}
 		}
 	}
-	sv := service.Query("")
+	sv := serviceStatus()
 	in.Service = &sv
 	// The running agent, when it answers.
 	if c, err := localClient(*dir); err == nil {

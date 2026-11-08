@@ -13,6 +13,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/node"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
+	"github.com/adefilippo83/redundanet/agent/internal/service"
 )
 
 // `node` is the storage node's install, from the binary itself, as root
@@ -46,6 +47,20 @@ func nodeConfig() node.Config {
 		}
 		return string(out), nil
 	}}
+}
+
+// serviceStatus is the state of the service that runs the agent on this
+// machine: on a Linux storage node the system unit `node install` writes,
+// everywhere else the per-user service `service install` writes.
+func serviceStatus() service.Status {
+	if runtime.GOOS == "linux" {
+		cgroup, _ := os.ReadFile("/proc/self/cgroup")
+		cfg := nodeConfig()
+		if installed, running, state := node.ServiceState(cfg, string(cgroup)); installed {
+			return service.Status{Installed: true, Running: running, Path: "/etc/systemd/system/" + node.UnitName, Detail: "system unit, " + state}
+		}
+	}
+	return service.Query("")
 }
 
 func needRoot() error {

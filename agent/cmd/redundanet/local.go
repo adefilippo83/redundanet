@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/api"
@@ -107,11 +108,15 @@ func runStatus(args []string) error {
 		}
 	}
 	if s.Service != nil {
+		kind := ""
+		if strings.HasPrefix(s.Service.Detail, "system unit") {
+			kind = " (system unit redundanet-agent)"
+		}
 		switch {
 		case s.Service.Running:
-			fmt.Println("service: installed and running")
+			fmt.Println("service: installed and running" + kind)
 		case s.Service.Installed:
-			fmt.Println("service: installed, not running")
+			fmt.Println("service: installed, not running" + kind)
 		default:
 			fmt.Println("service: not installed")
 		}
