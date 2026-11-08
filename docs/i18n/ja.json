@@ -170,7 +170,7 @@
   "ig.install.next": "開いた<a href=\"join.html\">参加フォーム</a>にメンバー名と提供容量を加え、GitHub で Issue を作成します。メンテナーがあなたを含むマニフェストに署名すると、あなたのデバイスは参加を認められ、<code>redundanet status</code> がそう示します。",
   "ig.install.long": "このページは簡易版です。すべてのオプションと手動の手順を含む詳細版は GitHub の <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.md\">docs/install.md</a> です。",
   "ig.mac.intro": "Apple silicon は本番ネットワークでテスト済みです。Intel ビルドはテストスイートに合格していますが、本番ではまだ稼働していません。上の 1 行でインストールしてページを開きます。サービスはログイン時に起動する launchd エージェントです。",
-  "ig.mac.fda": "<strong>フルディスクアクセス。</strong>書類、デスクトップ、ダウンロードをバックアップするサービスには、エージェントへのフルディスクアクセスが必要です。フォルダーが保護されている場合は <code>backup add</code> がそう伝えます。システム設定の「プライバシーとセキュリティ」（Privacy &amp; Security）で <code>redundanet</code> に許可を与え、バックアップを再実行してください。",
+  "ig.mac.fda": "<strong>フルディスクアクセス。</strong>書類、デスクトップ、ダウンロードをバックアップするサービスには、エージェントへのフルディスクアクセスが必要です。フォルダーが保護されていると <code>backup add</code> がそう伝えます。システム設定の「プライバシーとセキュリティ」で <code>redundanet</code> に許可し、バックアップをやり直してください。一度許可すれば維持されます。サービスは変化しないランチャーを通じてエージェントを実行するため、macOS が更新のたびに再度尋ねることはありません。",
   "ig.mac.gatekeeper": "公証はまだ有効ではありません。スクリプトが取得したコピーには隔離マークが付かず、すぐに実行できます。ブラウザーでダウンロードしたコピーは、まず「プライバシーとセキュリティ」（Privacy &amp; Security）で許可するよう macOS に求められます。",
   "ig.mac.data": "データディレクトリ: <code>~/Library/Application Support/redundanet</code>。バイナリはその <code>bin</code> にあります。",
   "ig.win.intro": "Windows ビルドはテストスイートに合格していますが、本番ネットワークではまだ稼働していません。<a href=\"download.html\">ダウンロードページ</a>から <code>redundanet-&lt;version&gt;-windows-amd64.zip</code> を取得し、そのページの説明どおり sha256 を照合してください。展開して、そのフォルダーを PATH に追加するか、そこから実行し、ターミナルで 2 つのコマンドを実行します。サービス（失敗時に再起動するログオンタスク）と、残りを案内するページです。",

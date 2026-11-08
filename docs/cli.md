@@ -56,7 +56,12 @@ redundanet service install [--network NAME] [--channel early]
 redundanet service status
 redundanet service uninstall
 ```
-Installs this binary as a user service that starts at login: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task on Windows. The service runs `agent --network NAME --data-dir DIR [--channel early]`.
+Installs this binary as a user service that starts at login: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task on Windows. The service runs `agent --network NAME --data-dir DIR [--channel early]`. On macOS it runs that through a launcher: a copy of the binary made once at `launcher/redundanet` in the data directory and never replaced, which starts the agent as its child and starts it again when it exits. macOS keys the permissions it grants a program (Documents, Desktop, Downloads, Full Disk Access) to the program's code identity, and for an ad-hoc signed binary that identity is the file's hash, so every self-update would be a new program to it; macOS attributes a child's file access to the process launchd started, so a permission granted once to the launcher covers every version of the agent underneath. Deleting the launcher file and installing the service again makes a new one, at the cost of one more prompt.
+
+```
+redundanet launch -- EXECUTABLE ARGS...
+```
+What the macOS launcher runs: starts the program, starts it again when it exits (two seconds later, ten after a quick failure), and stops it when launchd stops the service.
 
 ```
 redundanet status [--json]

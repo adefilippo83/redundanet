@@ -23,6 +23,7 @@ var commands = []command{
 	{"agent", "run the agent: join the mesh through the hubs of a signed manifest", runAgent},
 	{"hub", "run the hub mode: rendezvous and relay for a signed manifest", runHub},
 	{"service", "install the agent as a user service: install, uninstall, status", runService},
+	{"launch", "run a program and start it again when it exits; what the macOS service runs the agent through", runLaunch},
 	{"node", "lay out a Linux storage node and pair it, as root: install, uninstall, status", runNode},
 	{"update", "self-update from the signed release index: check, apply, status, channel", runUpdate},
 	{"release", "the maintainer's release key and index signature: keygen, sign", runRelease},

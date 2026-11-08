@@ -397,7 +397,7 @@
                 <h2>macOS</h2>
                 <p data-i18n="ig.mac.intro">Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. The one line above installs it and opens the page; the service is a launchd agent that starts at login.</p>
                 <ul>
-                    <li data-i18n="ig.mac.fda"><strong>Full Disk Access.</strong> A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent. <code>backup add</code> says so when a folder is guarded: grant it to <code>redundanet</code> in System Settings, Privacy &amp; Security, then run the backup again.</li>
+                    <li data-i18n="ig.mac.fda"><strong>Full Disk Access.</strong> A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent. <code>backup add</code> says so when a folder is guarded: grant it to <code>redundanet</code> in System Settings, Privacy &amp; Security, then run the backup again. Granted once, it stays: the service runs the agent through a launcher that never changes, so macOS does not ask again after each update.</li>
                     <li data-i18n="ig.mac.gatekeeper">Notarization is not active yet. A copy the script fetched carries no quarantine mark and runs at once; one a browser downloaded makes macOS ask you to allow it under Privacy &amp; Security first.</li>
                     <li data-i18n="ig.mac.data">Data directory: <code>~/Library/Application Support/redundanet</code>; the binary is in its <code>bin</code>.</li>
                 </ul>

@@ -7,9 +7,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -51,16 +53,18 @@ func runService(args []string) error {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return err
 		}
-		args := []string{"agent", "--network", *network, "--data-dir", d}
-		if *channel != release.ChannelStable {
-			args = append(args, "--channel", *channel)
+		spec, err := agentSpec(exe, d, *network, *channel)
+		if err != nil {
+			return err
 		}
-		spec := service.Spec{Executable: exe, Args: args, DataDir: d}
 		path, err := service.Install(spec)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("service installed: %s\nruns: %s %s\n", path, exe, strings.Join(spec.Args, " "))
+		fmt.Printf("service installed: %s\nruns: %s %s\n", path, spec.Executable, strings.Join(spec.Args, " "))
+		if spec.Executable != exe {
+			fmt.Println("through a launcher that never changes, so what macOS lets it read survives the agent's updates; macOS asks once more for the launcher, then not again")
+		}
 		return nil
 	case "uninstall":
 		if err := service.Uninstall(""); err != nil {
@@ -74,6 +78,57 @@ func runService(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("service: unknown subcommand %q", args[0])
+}
+
+// agentSpec is the service definition for this device's agent. On macOS
+// launchd starts the launcher, a copy of this binary that never changes,
+// which runs the agent as its child (launch.go): the permissions macOS
+// keys to a program's identity then survive the agent's self-updates.
+// Elsewhere the service runs the binary itself. An existing launcher is
+// kept, whatever version it is: replacing it is what would cost a prompt.
+func agentSpec(exe, d, network, channel string) (service.Spec, error) {
+	args := []string{"agent", "--network", network, "--data-dir", d}
+	if channel != release.ChannelStable {
+		args = append(args, "--channel", channel)
+	}
+	if runtime.GOOS != "darwin" {
+		return service.Spec{Executable: exe, Args: args, DataDir: d}, nil
+	}
+	launcher := filepath.Join(d, "launcher", "redundanet")
+	if _, err := os.Stat(launcher); err != nil {
+		if err := copyExecutable(exe, launcher); err != nil {
+			return service.Spec{}, fmt.Errorf("the launcher: %w", err)
+		}
+	}
+	return service.Spec{Executable: launcher, Args: append([]string{"launch", "--", exe}, args...), DataDir: d}, nil
+}
+
+// copyExecutable copies a program byte for byte, signature included, and
+// renames it into place.
+func copyExecutable(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp := dst + ".new"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
 }
 
 // ---- release keygen | sign: the maintainer's side of self-update ----

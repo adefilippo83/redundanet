@@ -124,11 +124,11 @@ func runSetup(args []string) error {
 	// 4. The service.
 	sv := serviceStatus()
 	if !sv.Installed {
-		svcArgs := []string{"agent", "--network", *network, "--data-dir", d}
-		if *channel != release.ChannelStable {
-			svcArgs = append(svcArgs, "--channel", *channel)
+		spec, err := agentSpec(exe, d, *network, *channel)
+		if err != nil {
+			return err
 		}
-		if _, err := service.Install(service.Spec{Executable: exe, Args: svcArgs, DataDir: d}); err != nil {
+		if _, err := service.Install(spec); err != nil {
 			return fmt.Errorf("installing the service: %w", err)
 		}
 		sv = serviceStatus()
