@@ -170,7 +170,7 @@
   "ig.install.next": "在它打开的<a href=\"join.html\">加入表单</a>中填上你的成员名和贡献，然后在 GitHub 上提交 issue；维护者签署包含你的清单后，你的设备即被接纳，<code>redundanet status</code> 会显示出来。",
   "ig.install.long": "本页是简版。包含每个选项和手动方式的完整版是 GitHub 上的 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.md\">docs/install.md</a>。",
   "ig.mac.intro": "Apple silicon 已在线上网络中测试；Intel 构建版本通过测试套件，但尚未在那里运行过。上面那一行命令完成安装并打开页面；服务是一个在登录时启动的 launchd 代理。",
-  "ig.mac.fda": "<strong>完全磁盘访问权限。</strong>备份“文稿”、“桌面”或“下载”的服务需要为代理授予完全磁盘访问权限。当某个文件夹受保护时，<code>backup add</code> 会提示：在“系统设置”的“隐私与安全性”中授予 <code>redundanet</code> 该权限，然后重新运行备份。",
+  "ig.mac.fda": "<strong>完全磁盘访问权限。</strong>备份“文稿”“桌面”或“下载”的服务需要为代理授予完全磁盘访问权限。当某个文件夹受保护时，<code>backup add</code> 会提示：在“系统设置”的“隐私与安全性”中授予 <code>redundanet</code>，然后重新运行备份。授予一次即可长期有效：服务通过一个永不变化的启动器运行代理，因此 macOS 不会在每次更新后再次询问。",
   "ig.mac.gatekeeper": "公证尚未启用。脚本获取的副本没有隔离标记，可以立即运行；浏览器下载的副本会让 macOS 先要求你在“隐私与安全性”中允许它。",
   "ig.mac.data": "数据目录：<code>~/Library/Application Support/redundanet</code>；二进制文件在其中的 <code>bin</code> 目录。",
   "ig.win.intro": "Windows 构建版本通过测试套件，但尚未在线上网络中运行过。从<a href=\"download.html\">下载页面</a>获取 <code>redundanet-&lt;version&gt;-windows-amd64.zip</code>，并按该页面所示核对 sha256。解压后把该文件夹加入 PATH 或直接在其中运行，然后在终端里执行两条命令：服务（一个失败时重启的登录任务）和页面（引导你完成其余步骤）。",

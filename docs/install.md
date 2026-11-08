@@ -24,7 +24,7 @@ Then send the join request `setup` opened: [join.md](join.md). Your devices are 
 
 ### macOS
 
-Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. The service is a launchd agent that starts at login and runs `redundanet agent`. The data directory is `~/Library/Application Support/redundanet`. A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent; `backup add` says so when a folder is guarded and names the setting to change. `redundanet service status` and `redundanet service uninstall` do what they say.
+Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. The service is a launchd agent that starts at login and runs `redundanet agent` through a launcher, a copy of the binary kept at `launcher/redundanet` in the data directory and never replaced. macOS keys the permissions it grants a program, such as access to Documents, to the program's identity, and for an unsigned binary that identity changes with every update; because the agent runs as the launcher's child, a permission granted once to the launcher survives the agent's self-updates. The data directory is `~/Library/Application Support/redundanet`. A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent; `backup add` says so when a folder is guarded and names the setting to change, and the grant goes to the launcher, once. `redundanet service status` and `redundanet service uninstall` do what they say.
 
 ### Linux laptop or desktop
 

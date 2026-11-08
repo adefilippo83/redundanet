@@ -170,7 +170,7 @@
   "ig.install.next": "열린 <a href=\"join.html\">참여 양식</a>에 회원 이름과 기여 용량을 추가한 뒤 GitHub에서 이슈를 여세요. 관리자가 당신이 포함된 매니페스트에 서명하면 당신의 기기들이 허용되고 <code>redundanet status</code>가 그렇게 표시합니다.",
   "ig.install.long": "이 페이지는 짧은 안내입니다. 모든 옵션과 수동 방법을 담은 긴 안내는 GitHub의 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.md\">docs/install.md</a>입니다.",
   "ig.mac.intro": "Apple silicon은 실제 네트워크에서 테스트했습니다. Intel 빌드는 테스트 스위트를 통과하지만 아직 거기서 실행된 적은 없습니다. 위의 한 줄로 설치되고 페이지가 열립니다. 서비스는 로그인 시 시작되는 launchd 에이전트입니다.",
-  "ig.mac.fda": "<strong>전체 디스크 접근 권한.</strong> 문서, 데스크탑, 다운로드 폴더를 백업하는 서비스에는 에이전트에 대한 전체 디스크 접근 권한이 필요합니다. 보호된 폴더라면 <code>backup add</code>가 알려 줍니다. 시스템 설정의 개인정보 보호 및 보안에서 <code>redundanet</code>에 권한을 부여한 뒤 백업을 다시 실행하세요.",
+  "ig.mac.fda": "<strong>전체 디스크 접근 권한.</strong> 문서, 데스크탑, 다운로드를 백업하는 서비스에는 에이전트에 대한 전체 디스크 접근 권한이 필요합니다. 폴더가 보호되어 있으면 <code>backup add</code>가 알려 줍니다. 시스템 설정의 개인정보 보호 및 보안에서 <code>redundanet</code>에 허용한 뒤 백업을 다시 실행하세요. 한 번 허용하면 유지됩니다. 서비스는 절대 바뀌지 않는 런처를 통해 에이전트를 실행하므로 macOS가 업데이트 때마다 다시 묻지 않습니다.",
   "ig.mac.gatekeeper": "공증이 아직 활성화되지 않았습니다. 스크립트가 받은 복사본에는 격리 표시가 없어 바로 실행됩니다. 브라우저로 내려받은 복사본은 macOS가 먼저 개인정보 보호 및 보안에서 허용하라고 요청합니다.",
   "ig.mac.data": "데이터 디렉터리: <code>~/Library/Application Support/redundanet</code>. 바이너리는 그 안의 <code>bin</code>에 있습니다.",
   "ig.win.intro": "Windows 빌드는 테스트 스위트를 통과하지만 아직 실제 네트워크에서 실행된 적은 없습니다. <a href=\"download.html\">다운로드 페이지</a>에서 <code>redundanet-&lt;version&gt;-windows-amd64.zip</code>을 받아 그 페이지에 나온 대로 sha256을 확인하세요. 압축을 풀고 그 폴더를 PATH에 추가하거나 그 폴더에서 실행한 뒤, 터미널에서 명령 두 개를 실행하세요. 서비스(실패 시 재시작되는 로그온 작업)와 나머지를 안내하는 페이지입니다.",
