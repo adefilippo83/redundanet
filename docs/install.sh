@@ -6,7 +6,8 @@
 #       a laptop or desktop: installs the newest stable release as
 #       bin/redundanet in your data directory, where the agent can replace
 #       it when it updates itself, links /usr/local/bin/redundanet to it,
-#       and says what comes next (`redundanet setup`)
+#       installs the agent as a service that starts at login, and opens its
+#       page in your browser, which walks you through the rest
 #
 #   curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 #       a Linux storage node, as root: downloads the same way, then runs
@@ -216,13 +217,45 @@ main() {
     *":$(dirname "$installed"):"*) cmd=redundanet ;;
     *) cmd=$installed; note "note: $(dirname "$installed") is not on your PATH; the commands below use the full path" ;;
   esac
-  cat <<TXT
+
+  # The agent as a service that starts at login: without an identity it
+  # serves its page alone, with the setup, and the page walks the member
+  # through the rest. A service installed earlier is left as it is.
+  if "$installed" service status 2>/dev/null | grep -q '"installed": true'; then
+    note "a service is installed already; $cmd service install points it at this binary if it runs another"
+  else
+    set -- service install
+    [ "$channel" = stable ] || set -- "$@" --channel "$channel"
+    if "$installed" "$@" >/dev/null 2>&1 </dev/null; then
+      note "the agent runs as a service that starts at login"
+    else
+      note "warning: the service could not be installed; $cmd service install says why"
+    fi
+  fi
+  # The page: the agent needs a moment to come up.
+  n=0
+  while [ $n -lt 15 ]; do
+    if link=$("$installed" open 2>/dev/null </dev/null | head -n 1) && [ -n "$link" ]; then
+      break
+    fi
+    link=""; n=$((n + 1)); sleep 1
+  done
+  if [ -n "$link" ]; then
+    cat <<TXT
+
+the page is open in your browser and walks you through the rest: your identity,
+then the join request. If it did not open, this link does, once, for two minutes:
+  $link
+A new link any time: $cmd open. In a terminal instead: $cmd setup
+TXT
+  else
+    cat <<TXT
 
 next, on this computer:
-  $cmd setup                # your identity, the service, the join request and the page, step by step
-It asks whether you are new here, have your recovery phrase, or have another
-device of yours nearby to pair with. Run it again any time to see where things stand.
+  $cmd open                 # the page, which walks you through identity and join request
+  $cmd setup                # the same, in this terminal
 TXT
+  fi
 }
 
 main "$@"

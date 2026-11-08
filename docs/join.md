@@ -6,11 +6,7 @@ Joining takes an identity on your laptop, a form on the website, and a pull requ
 
 ## 1. Your identity, on your laptop
 
-```bash
-redundanet setup
-```
-
-Its first question is which case you are in; as a new member, choose the first. It shows a twelve-word phrase once and asks for three of the words back. Write the phrase down and keep it like a passport: it is your member key, every device you ever certify comes from it, and nobody can recover it for you. It prints your member key (52 characters) and this laptop's device key, installs the service, and opens the join form of step 3 with the key filled in. By hand, the same is `redundanet identity init` (`--passphrase` seals the identity file on disk), `redundanet service install` and `redundanet join-request`.
+The page the installer opened asks which case you are in; as a new member, choose the first. It shows a twelve-word phrase once and asks for three of the words back. Write the phrase down and keep it like a passport: it is your member key, every device you ever certify comes from it, and nobody can recover it for you. The page then shows your member key (52 characters) and this laptop's device key, and links to the join form of step 3 with the key filled in. In a terminal, `redundanet setup` does the same; by hand, `redundanet identity init` (`--passphrase` seals the identity file on disk), `redundanet service install` and `redundanet join-request`.
 
 The network needs no step of yours: its name, its hub, the operator keys and where the signed manifest is served are built into the binary, and the agent fetches the manifest the first time it needs it. `redundanet network status` shows what your device believes about the network. Your device is not admitted yet: that happens when the manifest lists you, and `redundanet status` says "not in the manifest yet" until then.
 
