@@ -66,7 +66,10 @@ compute placement health and to schedule repairs.
 
 Because the device connects to the hub, the hub also sees the public IP
 address and port the connection comes from. It uses them to introduce the
-device to its peers and writes them in its own log. Hub logs and the hub's
+device to its peers and writes them in its own log. When two devices of a
+member pair through the hub, the hub relays their sealed frames for a few
+minutes and sees only the two addresses and that a pairing happened, not
+the keys or the identity inside. Hub logs and the hub's
 placement table (which server holds which share, with sizes and times) stay
 on the hub operator's machine, under that operator's retention.
 

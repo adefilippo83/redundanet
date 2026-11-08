@@ -57,6 +57,11 @@ systemctl daemon-reload && systemctl enable --now redundanet-hub
 journalctl -u redundanet-hub -f
 ```
 
+The status page also answers `/pair/`: the mailbox through which two
+devices of a member pair when they cannot reach each other (a room per
+pairing, derived from the code; sealed frames the hub cannot read; ten
+minutes). Caddy proxies every path, so nothing to configure.
+
 ## Firewall
 
 Both layers of the host firewall need 8443, UDP and TCP:

@@ -28,6 +28,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
+	"github.com/adefilippo83/redundanet/agent/internal/pairing"
 	"github.com/adefilippo83/redundanet/agent/internal/ratelimit"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 	"github.com/adefilippo83/redundanet/agent/internal/repair"
@@ -241,10 +242,14 @@ func runHub(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The pairing mailbox outlives a self-update handover like the census:
+	// a pairing in progress is not lost when the bundle restarts.
+	pairRelay := pairing.NewRelay(rc.log)
 	start := func() (*bundle, error) {
 		bctx, cancel := context.WithCancel(ctx)
 		col, err := collector.New(collector.Config{Device: rc.device, Signer: hubKey, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
-			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Legacy: *legacy, Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log})
+			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Legacy: *legacy, Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log,
+			Pair: pairRelay})
 		if err != nil {
 			cancel()
 			return nil, err

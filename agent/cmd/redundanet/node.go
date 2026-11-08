@@ -113,7 +113,7 @@ func nodeInstall(args []string) error {
 	// Pairing, as the service user so the identity is its own: the code
 	// shows here, the member's other device answers it.
 	fmt.Println()
-	fmt.Printf("On a device of yours that has its identity and reaches this node, with the phrase at hand:\n  redundanet device pair%s --storage <the code shown below>\n\n", networkArg(*network))
+	fmt.Printf("On a device of yours that has its identity, with the phrase at hand (on this network or anywhere: the hub relays the exchange):\n  redundanet device pair%s --storage <the code shown below>\n\n", networkArg(*network))
 	if err := asServiceUser(rep.Binary, "identity", "pair", "--network", *network, "--data-dir", node.DataDir); err != nil {
 		return fmt.Errorf("pairing did not complete (%w); run the install again for a new code, or install.sh finish with a certificate file", err)
 	}

@@ -111,10 +111,14 @@ from the secret: open, the new device's key, the offer (the identity as
 `identity certify` makes it, plus the network descriptor), done. Only the
 holders of the code can take part, a wrong code opens nothing, three
 failed connections end the code, and it is good for ten minutes and one
-device. The two must reach each other: the same network, or a public IPv6
-path. The new device then holds its identity and the network, and installs
-its service. The headless flows (`install.sh`, the Pi image) stay for
-machines without a second device beside them.
+device. The two reach each other directly on the same network or, failing
+that, through a hub: the code names the hubs' status pages, each hub keeps
+a mailbox per pairing under `/pair/` (a room derived from the code's secret,
+a queue per direction, ten minutes), and the same sealed frames travel
+through it, so the hub learns only that a pairing happened and from which
+addresses. The new device then holds its identity and the network, and
+installs its service. The headless flows (`install.sh`, the Pi image) stay
+for machines without a second device of the member at all.
 
 The settings live in `backup.yaml` of the data directory and change from
 the local page's Settings card, from the commands above, or by hand: the

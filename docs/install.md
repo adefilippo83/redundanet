@@ -40,15 +40,15 @@ curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 
 The same download and checks as above, then `redundanet node install`: the service user `redundanet3`, the data directory `/var/lib/redundanet3` (identity, manifest copy, census state, `versions/` for updates), the binary at `/var/lib/redundanet3/bin/redundanet` owned by the service user so the updater can rename a new version into place, the unit `redundanet-agent`, the settings in `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`), the share store in `/mnt/storage/redundanet3` with the unit drop-in that makes it writable for the confined service, and a pairing code on the screen. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident; `--allow-root-disk` on `node install` overrides that knowingly. The node needs at least 10 GiB free above its floor. `--channel early` is accepted here too.
 
-On your laptop, on the same network as the node, with the phrase at hand:
+On your laptop, with the phrase at hand, on the same network as the node or anywhere else:
 
 ```bash
 redundanet device pair --storage <the code>
 ```
 
-The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. Your laptop records the node (key, host name, roles) in `devices.yaml` in its data directory, so `redundanet setup` and `redundanet join-request` put it in the join form; the node prints its `storage:` lines too. It contributes only once the maintainer lists it under `storage:` in the manifest.
+The two reach each other directly on the same network, or through the hub when they cannot: the hub relays the same sealed frames and learns nothing but that a pairing happened. The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. Your laptop records the node (key, host name, roles) in `devices.yaml` in its data directory, so `redundanet setup` and `redundanet join-request` put it in the join form; the node prints its `storage:` lines too. It contributes only once the maintainer lists it under `storage:` in the manifest.
 
-No laptop on the node's network? The runbook's script keeps the certificate-file flow over SSH: [../agent/deploy/node/README.md](../agent/deploy/node/README.md).
+No laptop at all, or a node that cannot reach the hub over HTTPS? The runbook's script keeps the certificate-file flow over SSH: [../agent/deploy/node/README.md](../agent/deploy/node/README.md).
 
 On a node, name the full path in every command and run the ones that talk to the running agent as root:
 
@@ -71,13 +71,13 @@ On the new device, after the one line, `redundanet setup` offers it as the third
 redundanet identity pair
 ```
 
-It shows a code and waits ten minutes. On a device of yours that already has its identity, on the same network, type the phrase when asked:
+It shows a code and waits ten minutes. On a device of yours that already has its identity, anywhere, type the phrase when asked:
 
 ```
 redundanet device pair <the code>
 ```
 
-Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes, and the two devices must be able to reach each other, on the same network or over public IPv6. With the phrase at hand and no other device nearby, `setup`'s second choice, or `redundanet identity init --from-phrase`, puts your identity on the new device directly. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.
+Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes. The two devices reach each other directly on the same network, or through the hub from anywhere: the code names the hub, and the hub relays the sealed frames without being able to read them. With the phrase at hand and no other device nearby, `setup`'s second choice, or `redundanet identity init --from-phrase`, puts your identity on the new device directly. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.
 
 ## Windows
 

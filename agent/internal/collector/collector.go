@@ -66,6 +66,9 @@ type Config struct {
 	Started      time.Time
 	Now          func() time.Time
 	Log          *slog.Logger
+	// Pair, when set, answers /pair/ on the status page: the hub's mailbox
+	// that relays a pairing between two devices that cannot reach each other.
+	Pair http.Handler
 }
 
 // entry is what the collector remembers about one device.
@@ -803,6 +806,11 @@ func httpFetch(ctx context.Context, url string) ([]byte, error) {
 // Handler serves the page at / and the JSON at /status.json.
 func (c *Collector) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if c.cfg.Pair != nil {
+		// Per method, so the pattern is more specific than the page's `GET /`.
+		mux.Handle("GET /pair/", c.cfg.Pair)
+		mux.Handle("POST /pair/", c.cfg.Pair)
+	}
 	mux.HandleFunc("GET /status.json", func(w http.ResponseWriter, r *http.Request) {
 		c.headers(w)
 		w.Header().Set("Content-Type", "application/json")
