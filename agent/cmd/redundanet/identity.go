@@ -76,7 +76,7 @@ func identityPath(dir string) string { return filepath.Join(dir, "identity") }
 
 func commonFlags(fs *flag.FlagSet) (dir *string, network *string) {
 	dir = fs.String("data-dir", "", "data directory (default: the platform's user config directory, or $REDUNDANET_DATA_DIR)")
-	network = fs.String("network", "", "network name, as in the manifest")
+	network = fs.String("network", defaultNetwork(), "network name, as in the manifest")
 	return
 }
 
@@ -143,6 +143,7 @@ func identityInit(args []string) error {
 	}
 	fmt.Printf("Identity written to %s\n", path)
 	printState(st)
+	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
 }
 
@@ -219,9 +220,9 @@ func identityDeviceKey(args []string) error {
 	fmt.Printf("network:    %s\n", *network)
 	fmt.Println()
 	fmt.Println("On a machine where you can type your phrase, run:")
-	fmt.Printf("  redundanet identity certify --network %s --device %s --storage > certificate\n", *network, dev.ID())
+	fmt.Printf("  redundanet identity certify%s --device %s --storage > certificate\n", networkArg(*network), dev.ID())
 	fmt.Println("then copy the certificate file here and run:")
-	fmt.Printf("  redundanet identity accept-certificate --network %s certificate\n", *network)
+	fmt.Printf("  redundanet identity accept-certificate%s certificate\n", networkArg(*network))
 	return nil
 }
 
@@ -343,7 +344,7 @@ func identityPair(args []string) error {
 	defer l.Close()
 	fmt.Printf("device key: %s\n\n", dev.ID())
 	fmt.Println("On a device of yours that already has its identity, within", wait.String(), "and on a network that reaches this one, run:")
-	fmt.Printf("  redundanet device pair --network %s %s\n", *network, l.Code())
+	fmt.Printf("  redundanet device pair%s %s\n", networkArg(*network), l.Code())
 	fmt.Println("add --storage there if this device contributes disk. Waiting...")
 	ctx, cancel := context.WithTimeout(context.Background(), *wait)
 	defer cancel()
@@ -360,14 +361,25 @@ func identityPair(args []string) error {
 	}
 	fmt.Printf("Identity written to %s\n", identityPath(d))
 	printState(&st)
+	// The network: the descriptor the offer carried, else the one built into
+	// this binary when it is the network paired for. A descriptor that is the
+	// built-in one, from either source, is followed across releases like a
+	// seeded one; any other is pinned.
+	var desc *membership.Descriptor
 	if offer.Descriptor != "" {
-		desc, err := membership.ParseDescriptor(offer.Descriptor)
-		if err != nil {
+		if desc, err = membership.ParseDescriptor(offer.Descriptor); err != nil {
 			return fmt.Errorf("the offer's network descriptor: %w", err)
 		}
+	} else if b, err := builtinDescriptor(); err == nil && b.Network == *network {
+		desc = b
+	}
+	if desc != nil {
 		m, err := membership.Open(membership.Config{DataDir: d, Descriptor: desc, Version: version.Version, Log: quietLog()})
 		if err != nil {
 			return err
+		}
+		if version.Network != "" && (offer.Descriptor == "" || offer.Descriptor == version.Network) {
+			_ = os.WriteFile(filepath.Join(d, builtinMarker), []byte(version.Network), 0o644)
 		}
 		jctx, jcancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer jcancel()
@@ -378,7 +390,7 @@ func identityPair(args []string) error {
 			fmt.Printf("joined %s: manifest revision %d\n", ms.Network, ms.Revision)
 		}
 	}
-	fmt.Printf("next: redundanet service install --network %s\n", *network)
+	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
 }
 
@@ -389,7 +401,7 @@ func identityAcceptCertificate(args []string) error {
 		return err
 	}
 	if *network == "" || fs.NArg() != 1 {
-		return errors.New("usage: identity accept-certificate --network NAME <file>")
+		return errors.New("usage: identity accept-certificate [--network NAME] <file>")
 	}
 	d, err := dataDir(*dir)
 	if err != nil {

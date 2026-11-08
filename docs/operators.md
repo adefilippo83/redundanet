@@ -93,13 +93,13 @@ The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UD
 
 The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. The earlier publish to the fly.io app of the old product (`--publish`, `--publish-token-file`) is a handover kept for a short time and then removed from the unit; its fly side is in the legacy hub runbook, [legacy/bootstrap-hub.md](legacy/bootstrap-hub.md), section "RedundaNet 3 status under /v3/". The hub also mirrors the RedundaNet 2 status page (`--legacy-status`) so today's nodes stay visible beside the new devices until the old grid stops.
 
-The network descriptor that new members join with is printed from the manifest:
+The network descriptor (name, hubs, operator keys, where the signed manifest is served) is built into every binary, as `Network` in `agent/internal/version/version.go`, so members never see it: every `--network` flag defaults to its name and a device that never joined by hand is seeded from it. It is printed from the manifest:
 
 ```bash
 redundanet network descriptor --manifest manifests/manifest.yaml --repository https://raw.githubusercontent.com/adefilippo83/redundanet/main
 ```
 
-Print a new one whenever the hubs or the operator keys change, and publish it on the join page.
+When the hubs or the operator keys change, put the new descriptor in `version.go` in the same change; a test in `agent/cmd/redundanet` fails until it matches the manifest. Devices on the built-in network follow it with the next release; a device that joined with a descriptor given by hand keeps that one until `redundanet network join` (no argument, back to the built-in one) or a new descriptor is run on it.
 
 ## Repair, by hand
 
@@ -111,7 +111,7 @@ To drill it on a live network, drop one share on purpose, as the service user be
 sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet storage drop --storage-path /mnt/storage STORAGE_INDEX SHARE_NUMBER
 ```
 
-The census reports the loss within seconds and the hub issues a task at once. `redundanet object check --network redundanet CAP` from any device of the owner prints the storage index and the holders to pick from.
+The census reports the loss within seconds and the hub issues a task at once. `redundanet object check CAP` from any device of the owner prints the storage index and the holders to pick from.
 
 ## Diagnostics from a member
 

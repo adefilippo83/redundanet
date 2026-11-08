@@ -6,11 +6,17 @@
 #   install.sh finish CERTIFICATE     accepts the member's certificate made on another machine, joins, starts
 #   install.sh storage                grants the store under STORAGE_PATH to a node installed earlier
 #
-# prepare downloads the release named VERSION from GitHub and checks it
-# against the sha256 in releases/index.yaml on main. pair needs a device of
-# the member that can reach this node (`redundanet device pair --storage`
+# The short way since 3.0.4 is `redundanet node install`, which the one-line
+# installer runs: curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
+# This script makes the same layout step by step and keeps the certificate
+# flow. prepare downloads the release named VERSION from GitHub and checks
+# it against the sha256 in releases/index.yaml on main. pair needs a device
+# of the member that can reach this node (`redundanet device pair --storage`
 # there, with the phrase); finish needs the file the member made with
 # `redundanet identity certify` instead, for a node reached over SSH only.
+# The network is built into the binary (3.0.6 and later): finish joins it
+# with no descriptor to fetch, and the hints below name --network only for
+# another one.
 #
 # An image build (rpi-image/) runs prepare with ARCHIVE=<file> to install an
 # archive it verified itself, since the signed index lists a release only
@@ -28,6 +34,9 @@ UNIT=/etc/systemd/system/redundanet-agent.service
 ENV=/etc/redundanet3/agent.env
 RAW=https://raw.githubusercontent.com/$REPO/main
 here=$(cd "$(dirname "$0")" && pwd)
+# netflag goes into the commands printed for the member's laptop: nothing
+# for the network built into the binary, the flag for any other.
+netflag=""; [ "$NETWORK" = redundanet ] || netflag="--network $NETWORK "
 
 die() { echo "install.sh: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root"
@@ -103,7 +112,7 @@ prepare() {
   echo "== device key of this node (certify it on your laptop):"
   sudo -u redundanet3 "$BIN" identity device-key --network "$NETWORK" --data-dir "$DATA"
   echo
-  echo "on the laptop:  redundanet identity certify --network $NETWORK --device <KEY> --storage > $(hostname).cert"
+  echo "on the laptop:  redundanet identity certify ${netflag}--device <KEY> --storage > $(hostname).cert"
   echo "then here:      install.sh finish $(hostname).cert"
 }
 
@@ -116,7 +125,7 @@ pair() {
   [ -f "$ENV" ] && . "$ENV"
   [ ! -f "$DATA/identity" ] || die "this node already has an identity"
   echo "On a device of yours that has its identity and reaches this node, with the phrase at hand:"
-  echo "  redundanet device pair --network $NETWORK --storage <the code shown below>"
+  echo "  redundanet device pair ${netflag}--storage <the code shown below>"
   echo
   sudo -u redundanet3 "$BIN" identity pair --network "$NETWORK" --data-dir "$DATA" --wait "${PAIR_WAIT:-10m}" || die "pairing did not complete; run install.sh pair again for a new code, or use finish with a certificate file"
   systemctl enable --now redundanet-agent
@@ -134,10 +143,13 @@ finish() {
   chown redundanet3 "$tmp"
   sudo -u redundanet3 "$BIN" identity accept-certificate --network "$NETWORK" --data-dir "$DATA" "$tmp/cert"
   shred -u "$cert" 2>/dev/null || rm -f "$cert"
-  curl -fsSL -o "$tmp/manifest.yaml" "$RAW/manifests/manifest.yaml"
-  local desc
-  desc=$(sudo -u redundanet3 "$BIN" network descriptor --manifest "$tmp/manifest.yaml" --repository "$RAW")
-  sudo -u redundanet3 "$BIN" network join --data-dir "$DATA" "$desc"
+  # The descriptor is built into the binary; an older binary needs it spelled out.
+  sudo -u redundanet3 "$BIN" network join --data-dir "$DATA" || {
+    curl -fsSL -o "$tmp/manifest.yaml" "$RAW/manifests/manifest.yaml"
+    local desc
+    desc=$(sudo -u redundanet3 "$BIN" network descriptor --manifest "$tmp/manifest.yaml" --repository "$RAW")
+    sudo -u redundanet3 "$BIN" network join --data-dir "$DATA" "$desc"
+  }
   systemctl enable --now redundanet-agent
   sleep 3
   systemctl --no-pager --lines=5 status redundanet-agent || true

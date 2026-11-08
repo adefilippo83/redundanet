@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
@@ -17,7 +18,10 @@ import (
 
 // The network commands handle the descriptor: operators print one for an
 // invite link, a device joins with one, and status shows what the device
-// currently believes about its network.
+// currently believes about its network. A build carries the descriptor of
+// its own network (version.Network): it is the default of every --network
+// flag, `network join` takes it when no descriptor is given, and a device
+// that never joined by hand joins it the first time it needs the network.
 func runNetwork(args []string) error {
 	if len(args) == 0 {
 		return errors.New("network: a subcommand is needed: descriptor, join, status")
@@ -72,12 +76,19 @@ func networkJoin(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return errors.New("usage: network join <descriptor>")
-	}
-	d, err := membership.ParseDescriptor(fs.Arg(0))
-	if err != nil {
-		return err
+	var d *membership.Descriptor
+	var err error
+	switch fs.NArg() {
+	case 0:
+		if d, err = builtinDescriptor(); err != nil {
+			return fmt.Errorf("usage: network join <descriptor>: %w", err)
+		}
+	case 1:
+		if d, err = membership.ParseDescriptor(fs.Arg(0)); err != nil {
+			return err
+		}
+	default:
+		return errors.New("usage: network join [descriptor]")
 	}
 	dd, err := dataDir(*dir)
 	if err != nil {
@@ -89,6 +100,12 @@ func networkJoin(args []string) error {
 	m, err := membership.Open(membership.Config{DataDir: dd, Descriptor: d, Version: version.Version, Log: quietLog()})
 	if err != nil {
 		return err
+	}
+	// A descriptor given by hand is pinned; the built-in one follows releases.
+	if fs.NArg() == 0 {
+		_ = os.WriteFile(filepath.Join(dd, builtinMarker), []byte(version.Network), 0o644)
+	} else {
+		_ = os.Remove(filepath.Join(dd, builtinMarker))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -104,7 +121,7 @@ func networkJoin(args []string) error {
 
 func networkStatus(args []string) error {
 	fs := flag.NewFlagSet("network status", flag.ContinueOnError)
-	dir, _ := commonFlags(fs)
+	dir, network := commonFlags(fs)
 	refresh := fs.Bool("refresh", false, "fetch before printing")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -113,7 +130,9 @@ func networkStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	m, err := membership.Open(membership.Config{DataDir: dd, Version: version.Version, Log: quietLog()})
+	cfg := membershipConfig(dd, *network)
+	cfg.Log = quietLog()
+	m, err := membership.Open(cfg)
 	if err != nil {
 		return err
 	}
@@ -129,8 +148,10 @@ func networkStatus(args []string) error {
 
 // openMembership is what agent and hub use: the descriptor and the last
 // good manifest from the data directory, refreshed in the background.
-func openMembership(ctx context.Context, dd string, onApply func(*manifest.Manifest)) (*membership.Membership, error) {
-	m, err := membership.Open(membership.Config{DataDir: dd, Version: version.Version, OnApply: onApply})
+func openMembership(ctx context.Context, dd, network string, onApply func(*manifest.Manifest)) (*membership.Membership, error) {
+	cfg := membershipConfig(dd, network)
+	cfg.OnApply = onApply
+	m, err := membership.Open(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +160,67 @@ func openMembership(ctx context.Context, dd string, onApply func(*manifest.Manif
 		return nil, fmt.Errorf("no manifest for %s yet and the first fetch failed: %s", m.Descriptor().Network, m.Status().LastError)
 	}
 	return m, nil
+}
+
+// builtinMarker, beside the saved descriptor, holds the built-in descriptor
+// the device was seeded from. Present, it says the device never joined by
+// hand, so a release that carries a changed descriptor (a new hub, a
+// rotated operator key) is followed; absent, the descriptor given to
+// `network join` or handed over by pairing is pinned until the next one.
+const builtinMarker = "network.builtin"
+
+// membershipConfig opens the network a device joined: the descriptor saved
+// in the data directory, or, when there is none for the built-in network
+// or the saved one came from an earlier build, the built-in descriptor,
+// which membership.Open then saves, so the device is joined from here on.
+func membershipConfig(dd, network string) membership.Config {
+	cfg := membership.Config{DataDir: dd, Version: version.Version}
+	d, err := builtinDescriptor()
+	if err != nil || d.Network != network {
+		return cfg
+	}
+	seeded, _ := os.ReadFile(filepath.Join(dd, builtinMarker))
+	if _, err := os.Stat(filepath.Join(dd, membership.DescriptorFile)); err == nil {
+		if len(seeded) == 0 || string(seeded) == version.Network {
+			return cfg // joined by hand, or seeded from this very descriptor
+		}
+	}
+	cfg.Descriptor = d
+	_ = os.MkdirAll(dd, 0o700)
+	_ = os.WriteFile(filepath.Join(dd, builtinMarker), []byte(version.Network), 0o644)
+	return cfg
+}
+
+// builtinDescriptor is the network this build belongs to, or an error for a
+// build without one.
+func builtinDescriptor() (*membership.Descriptor, error) {
+	if version.Network == "" {
+		return nil, errors.New("this build has no network built in")
+	}
+	d, err := membership.ParseDescriptor(version.Network)
+	if err != nil {
+		return nil, fmt.Errorf("the network built into this binary: %w", err)
+	}
+	return d, nil
+}
+
+// defaultNetwork is the name of the built-in network, the default of every
+// --network flag; empty in a build without one, where the flag is required.
+func defaultNetwork() string {
+	d, err := builtinDescriptor()
+	if err != nil {
+		return ""
+	}
+	return d.Network
+}
+
+// networkArg is " --network NAME" for a command printed as a next step, or
+// nothing when NAME is the built-in network, which needs no flag.
+func networkArg(network string) string {
+	if network == defaultNetwork() {
+		return ""
+	}
+	return " --network " + network
 }
 
 // quietLog keeps the one-shot commands' output to what they print.

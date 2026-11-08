@@ -5,29 +5,29 @@ Every command of the `redundanet` binary, version 3.0.0. `redundanet help` print
 Two flags are accepted by most commands:
 
 - `--data-dir DIR`: the data directory (default: the platform's user config directory under `redundanet/`, or `$REDUNDANET_DATA_DIR`).
-- `--network NAME`: the network name, as in the manifest.
+- `--network NAME`: the network name, as in the manifest. The default is the network built into the binary, `redundanet`, so the flag is typed only for another network.
 
 Exit status is 0 on success, 1 on an error, 2 for a usage error.
 
 ## Member commands
 
 ```
-redundanet identity init --network NAME [--storage] [--passphrase] [--yes]
+redundanet identity init [--storage] [--passphrase] [--yes]
 ```
 New member on this device: shows the twelve-word phrase, checks three words back, writes the identity file (device key, member secret, certificate) and prints the member key, its display code and the device key. `--storage` adds the storage role. `--passphrase` seals the file. `--yes` skips the three words (scripts only).
 
 ```
-redundanet identity show --network NAME
-redundanet identity check --network NAME        # the phrase you type must derive this device's member key; nothing is written
-redundanet identity pair --network NAME [--wait 10m]   # new device: shows a one-time code and waits for a device of yours to certify it
-redundanet device pair --network NAME [--storage] CODE # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
+redundanet identity show
+redundanet identity check                # the phrase you type must derive this device's member key; nothing is written
+redundanet identity pair [--wait 10m]    # new device: shows a one-time code and waits for a device of yours to certify it
+redundanet device pair [--storage] CODE  # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
 Member key, its ten-group display code, device key, roles, certificate date and serial.
 
 ```
-redundanet network join <descriptor>
+redundanet network join [descriptor]
 ```
-Pins the descriptor's operator keys, fetches the manifest and its signature, verifies them and keeps the pair on disk.
+Joins the network built into the binary or, with a descriptor, the one it names: pins its operator keys, fetches the manifest and its signature, verifies them and keeps the pair on disk. Nobody has to run it for the built-in network: a device that never joined by hand is seeded from the built-in descriptor the first time the agent, `network status` or pairing needs it, and follows that descriptor across releases. A descriptor given here is pinned until the next one.
 
 ```
 redundanet network status [--refresh]
@@ -35,7 +35,7 @@ redundanet network status [--refresh]
 What the device believes about its network, as JSON; `--refresh` fetches first.
 
 ```
-redundanet service install --network NAME [--channel early]
+redundanet service install [--network NAME] [--channel early]
 redundanet service status
 redundanet service uninstall
 ```
@@ -103,17 +103,17 @@ The version, platform and Go version of this binary.
 ## Device commands
 
 ```
-redundanet identity device-key --network NAME
+redundanet identity device-key
 ```
 On a headless node: makes the device key, keeps it pending, prints it and the two commands that follow.
 
 ```
-redundanet identity certify --network NAME --device KEY [--storage] [--serial N] > file
+redundanet identity certify --device KEY [--storage] [--serial N] > file
 ```
 Where the phrase is typed: asks for the phrase, certifies the device key, writes the certificate and the member secret to standard output. `--storage` grants the storage role. Copy the file to the device over SSH and delete both copies after acceptance.
 
 ```
-redundanet identity accept-certificate --network NAME <file>
+redundanet identity accept-certificate <file>
 ```
 Back on the device: checks the certificate against the pending key and the network, writes the identity file, removes the pending key.
 
@@ -147,10 +147,10 @@ Checks the signature against the file. Without `--trust` it uses the operators l
 ```
 redundanet network descriptor [--manifest manifests/manifest.yaml] --repository URL
 ```
-Prints the network descriptor (name, hubs, operator keys, where the manifest is served) for invite links and the join page. `URL` is the base under which `manifests/manifest.yaml` and `manifest.sig` are served, for example `https://raw.githubusercontent.com/OWNER/REPO/main`.
+Prints the network descriptor (name, hubs, operator keys, where the manifest is served) for invite links and for the one built into the binary, `Network` in `agent/internal/version`, which a test keeps equal to the manifest. `URL` is the base under which `manifests/manifest.yaml` and `manifest.sig` are served, for example `https://raw.githubusercontent.com/OWNER/REPO/main`.
 
 ```
-redundanet hub --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
+redundanet hub [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
                [--manifest FILE --sig FILE] [--status-every 1m] [--probation] [--probation-peers KEYS] [-v]
 ```
@@ -163,7 +163,7 @@ redundanet storage drop [--storage-path DIR] [--reason TEXT] STORAGE_INDEX SHARE
 This node's own share store, beside the running agent; run as the service user. `has` reports the owner, descriptor and complete and partial shares held. `drop` removes one share on purpose, with the reason recorded in the log; the census tells the hub within seconds, which is how repair is drilled. `--storage-floor-gb N` (default 10) is accepted for symmetry with the agent.
 
 ```
-redundanet object put|get|has|check|repair|delete --network NAME [--out FILE] [--timeout 30s] FILE|CAP
+redundanet object put|get|has|check|repair|delete [--network NAME] [--out FILE] [--timeout 30s] FILE|CAP
 ```
 Drives the engine by hand on a standalone endpoint with the device's identity and manifest. `put FILE` stores a file and prints its read capability; `get CAP` writes it to standard output or `--out`; `has FILE` says whether the member already stores that content; `check CAP` prints the storage index, the health and the holders; `repair CAP` is the owner's repair; `delete CAP` sends delete tokens to every server. `--timeout` is per server operation.
 
@@ -182,7 +182,7 @@ Signs the release index; writes `index.sig` beside it. Flow: [../releases/README
 ## Node commands
 
 ```
-redundanet agent --network NAME [--data-dir DIR] [--api 127.0.0.1:4470] [--storage-path DIR] [--storage-floor-gb 10]
+redundanet agent [--network NAME] [--data-dir DIR] [--api 127.0.0.1:4470] [--storage-path DIR] [--storage-floor-gb 10]
                  [--channel stable|early] [--no-update] [--portmap] [--tcp-only] [--connect KEY,...] [--listen :0]
                  [--manifest FILE --sig FILE] [--status-every 1m] [--loopback-candidates] [--probation] [--probation-peers KEYS] [-v]
 ```

@@ -48,20 +48,29 @@ func devicePair(args []string) error {
 		return err
 	}
 	if *network == "" || fs.NArg() != 1 {
-		return errors.New("usage: device pair --network NAME [--storage] <code shown by the new device>")
+		return errors.New("usage: device pair [--network NAME] [--storage] <code shown by the new device>")
 	}
 	d, err := dataDir(*dir)
 	if err != nil {
 		return err
 	}
+	// The descriptor handed over: the one this device joined with, else the
+	// network built into this binary when that is the one.
 	descriptor := ""
-	if desc, err := membership.LoadDescriptor(filepath.Join(d, "network.yaml")); err == nil {
+	desc, err := membership.LoadDescriptor(filepath.Join(d, membership.DescriptorFile))
+	if err != nil || desc.Network != *network {
+		desc, err = builtinDescriptor()
+		if err != nil || desc.Network != *network {
+			desc = nil
+		}
+	}
+	if desc != nil {
 		if descriptor, err = desc.Encode(); err != nil {
 			descriptor = ""
 		}
 	}
 	if descriptor == "" {
-		fmt.Fprintln(os.Stderr, "this device has no network descriptor on disk; the new device will need `network join` by hand")
+		fmt.Fprintln(os.Stderr, "this device has no descriptor for that network; the new device will need `network join <descriptor>` by hand")
 	}
 	seed, err := readPhrase()
 	if err != nil {

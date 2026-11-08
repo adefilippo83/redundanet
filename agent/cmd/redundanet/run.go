@@ -120,7 +120,7 @@ func loadRuntime(ctx context.Context, dir, network, mPath, sigPath string, verbo
 	rc := &runtimeConfig{state: st, tlsID: tlsID, device: dev.ID(), log: lg, logs: ring, dataDir: d, started: time.Now()}
 
 	if mPath == "" {
-		m, err := openMembership(ctx, d, onApply)
+		m, err := openMembership(ctx, d, network, onApply)
 		if err != nil {
 			return nil, err
 		}

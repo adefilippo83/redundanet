@@ -18,9 +18,10 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
-// Files kept in the data directory.
+// Files kept in the data directory. DescriptorFile is exported so the
+// commands can tell whether a device has joined a network by hand.
 const (
-	fileDescriptor  = "network.yaml"
+	DescriptorFile  = "network.yaml"
 	fileManifest    = "manifest.yaml"
 	fileSignature   = "manifest.sig"
 	fileRevocations = "revocations.cbor"
@@ -90,11 +91,11 @@ func Open(cfg Config) (*Membership, error) {
 	}
 	m := &Membership{cfg: cfg, log: cfg.Log.With("component", "membership"), seen: map[identity.Key]bool{}}
 	if cfg.Descriptor != nil {
-		if err := SaveDescriptor(filepath.Join(cfg.DataDir, fileDescriptor), cfg.Descriptor); err != nil {
+		if err := SaveDescriptor(filepath.Join(cfg.DataDir, DescriptorFile), cfg.Descriptor); err != nil {
 			return nil, err
 		}
 	} else {
-		d, err := LoadDescriptor(filepath.Join(cfg.DataDir, fileDescriptor))
+		d, err := LoadDescriptor(filepath.Join(cfg.DataDir, DescriptorFile))
 		if err != nil {
 			return nil, fmt.Errorf("no network descriptor: join a network first (%w)", err)
 		}

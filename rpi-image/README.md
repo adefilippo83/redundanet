@@ -38,7 +38,7 @@ same image but has not been measured.
 3. **Certify** on a computer where you can type your recovery phrase:
 
    ```bash
-   redundanet identity certify --network redundanet --device <KEY> --storage > redundanet-node.cert
+   redundanet identity certify --device <KEY> --storage > redundanet-node.cert
    ```
 
    The file carries your member secret: it is for this card only.

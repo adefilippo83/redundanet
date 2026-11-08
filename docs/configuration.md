@@ -121,7 +121,7 @@ Removing the data directory removes everything the agent knows; `redundanet serv
 
 ## Channels
 
-`stable` is the default and where 3.0.0 lives; `early` gets pre-releases first. A laptop chooses at `redundanet service install --network redundanet [--channel early]`; a node sets `CHANNEL` in `agent.env`. `redundanet update check|apply|status [--channel early]` query and drive the updater by hand.
+`stable` is the default and where 3.0.0 lives; `early` gets pre-releases first. A laptop chooses at `redundanet service install [--channel early]`; a node sets `CHANNEL` in `agent.env`. `redundanet update check|apply|status [--channel early]` query and drive the updater by hand.
 
 ## The local API
 

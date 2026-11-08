@@ -52,7 +52,7 @@ redundanet network descriptor --manifest manifests/manifest.yaml --repository ht
     An operator prints the network descriptor: name, hubs, operator keys,
     where the signed manifest is served. It goes into invite links.
 
-redundanet device revoke --network NAME --device KEY [--serial N]
+redundanet device revoke --device KEY [--serial N]
     Any device of the member, with the phrase: signs a revocation record
     and hands it to the running agent, which applies it here and sends it
     to every storage server and hub within seconds; the record is printed
@@ -60,16 +60,22 @@ redundanet device revoke --network NAME --device KEY [--serial N]
     was not reachable. Serial 0, the default, covers every certificate of
     the device, the case of a lost one.
 
-redundanet network join <descriptor>
-    A device pins the descriptor's operator keys, fetches the manifest and
-    its signature, verifies them and keeps the pair on disk.
+redundanet network join [descriptor]
+    Joins the network built into the binary (version.Network) or the one a
+    descriptor names: pins its operator keys, fetches the manifest and its
+    signature, verifies them and keeps the pair on disk. Nobody runs it for
+    the built-in network: a device that never joined by hand is seeded from
+    the built-in descriptor when the agent, `network status` or pairing
+    first needs it, and follows that descriptor across releases; a
+    descriptor given here is pinned. Every --network flag defaults to the
+    built-in network's name.
 
 redundanet network status [--refresh]
 
-redundanet hub   --network NAME [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
+redundanet hub   [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
                  [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
-redundanet agent --network NAME [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
-redundanet object put|get|has|check|repair|delete --network NAME FILE|CAP
+redundanet agent [--network NAME] [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
+redundanet object put|get|has|check|repair|delete [--network NAME] FILE|CAP
 redundanet storage has|drop [--storage-path DIR] STORAGE_INDEX [SHARE_NUMBER]
 redundanet backup add NAME FOLDER... | remove NAME | list | run [NAME] | verify | cleanup [--dry-run] [--force] | rebalance
 redundanet backup limit [--upload KBPS] [--download KBPS]   # bandwidth caps on this device's mesh traffic, 0 for none
@@ -252,7 +258,7 @@ redundanet status [--json]      # what the running agent sees, through its local
 redundanet open                 # the local page, through a one-time link that logs the browser in
 redundanet logs [-n 100]
 
-redundanet service install --network NAME [--channel early]  # this binary, as a user service that starts at login
+redundanet service install [--network NAME] [--channel early]  # this binary, as a user service that starts at login
 redundanet node install --storage-path DIR [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]   # Linux, as root: a storage node laid out, paired and started
 redundanet node status | uninstall
 redundanet service status | uninstall
@@ -328,27 +334,27 @@ until then those jobs are skipped and the binaries ship unsigned.
 ## Identity commands
 
 ```
-redundanet identity init --network NAME [--storage] [--passphrase]
+redundanet identity init [--storage] [--passphrase]
     New member on this device: shows the phrase, checks three words, writes
     the identity file (device key, member secret, certificate).
 
-redundanet identity show --network NAME
-redundanet identity check --network NAME
+redundanet identity show
+redundanet identity check
     Types the phrase and says whether it is the one this device was
     certified under; nothing is written. The check to run after writing
     the phrase down, and whenever in doubt.
-redundanet identity pair --network NAME [--wait 10m]
+redundanet identity pair [--wait 10m]
     The new device's side of pairing: makes its device key, shows a
     one-time code and waits. Nothing is typed here but the command.
-redundanet device pair --network NAME [--storage] CODE
+redundanet device pair [--storage] CODE
     The existing device's side, with the phrase: reaches the new device
     through the code, certifies its key and hands over the identity and
     the network descriptor, sealed under the code. The phrase never moves.
     Member key, its ten-group display code, device key, roles.
 
-redundanet identity device-key --network NAME            (on a headless node)
-redundanet identity certify --network NAME --device KEY [--storage] > file   (where the phrase is typed)
-redundanet identity accept-certificate --network NAME file   (back on the node)
+redundanet identity device-key            (on a headless node)
+redundanet identity certify --device KEY [--storage] > file   (where the phrase is typed)
+redundanet identity accept-certificate file   (back on the node)
     The headless flow of the RFC: the node makes its own key, the member
     certifies it on a laptop, the certificate travels back as a file. The
     phrase never reaches the node; the file carries the member secret and is

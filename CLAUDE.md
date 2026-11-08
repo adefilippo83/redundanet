@@ -16,7 +16,13 @@ owner. Membership is `manifests/manifest.yaml` plus `manifest.sig`, signed
 offline by the maintainer's operator key; agents fetch it every five minutes.
 Releases are listed in `releases/index.yaml` plus `index.sig`, signed offline
 by the release key embedded in every build; the agent self-updates from it
-with probation and rollback. Design: `rfcs/0001-redundanet-3.md`; the
+with probation and rollback. The live network's descriptor (name, hub,
+operator keys, manifest URL) is built into the binary too
+(`agent/internal/version`): every `--network` flag defaults to it and a
+device that never joined by hand is seeded from it, so `--network` and
+`network join <descriptor>` appear in docs only for another network.
+`docs/install.sh`, served at redundanet.com/install.sh, is the one-line
+installer. Design: `rfcs/0001-redundanet-3.md`; the
 package map: `agent/README.md`. `spike/` is the measured prototype that
 preceded it and is not edited.
 
