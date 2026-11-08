@@ -69,7 +69,7 @@ func runService(args []string) error {
 		fmt.Println("service removed")
 		return nil
 	case "status":
-		b, _ := json.MarshalIndent(service.Query(""), "", "  ")
+		b, _ := json.MarshalIndent(serviceStatus(), "", "  ")
 		fmt.Println(string(b))
 		return nil
 	}

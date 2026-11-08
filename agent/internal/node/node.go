@@ -235,6 +235,29 @@ func Inspect(cfg Config) Status {
 	return st
 }
 
+// ServiceState is the system unit's state: installed when its file is in
+// place, running when systemd says so. selfCgroup is the asking process's
+// own cgroup, /proc/self/cgroup; the agent running under the unit finds the
+// unit's name there and knows it runs without asking systemd, which the
+// confined service may not be allowed to.
+func ServiceState(cfg Config, selfCgroup string) (installed, running bool, state string) {
+	if _, err := os.Stat(filepath.Join(cfg.path(unitDir), UnitName)); err != nil {
+		return false, false, ""
+	}
+	if strings.Contains(selfCgroup, "/"+UnitName) {
+		return true, true, "active"
+	}
+	state = "inactive"
+	if cfg.Run != nil {
+		if out, err := cfg.Run("systemctl", "is-active", UnitName); err == nil {
+			state = strings.TrimSpace(out)
+		} else if s := strings.TrimSpace(out); s != "" {
+			state = strings.Fields(s)[0]
+		}
+	}
+	return true, state == "active", state
+}
+
 // StorageEntry is the manifest lines that list this node under storage:,
 // for the join request or the pull request.
 func StorageEntry(device, name string) string {

@@ -130,3 +130,27 @@ func TestStorageEntry(t *testing.T) {
 		t.Fatalf("%q", s)
 	}
 }
+
+func TestServiceState(t *testing.T) {
+	cfg, rec := scratch(t)
+	if installed, _, _ := ServiceState(cfg, ""); installed {
+		t.Fatal("a missing unit reads as installed")
+	}
+	if _, err := Install(cfg); err != nil {
+		t.Fatal(err)
+	}
+	// The agent itself, under the unit: running, systemd not asked.
+	before := len(rec.calls)
+	if installed, running, state := ServiceState(cfg, "0::/system.slice/redundanet-agent.service\n"); !installed || !running || state != "active" || len(rec.calls) != before {
+		t.Fatalf("under the unit: %v %v %q, %d calls", installed, running, state, len(rec.calls)-before)
+	}
+	// Another process: systemd decides.
+	rec.active = "active"
+	if _, running, _ := ServiceState(cfg, "0::/user.slice/session-1.scope\n"); !running {
+		t.Fatal("an active unit reads as stopped")
+	}
+	rec.active = "inactive"
+	if installed, running, state := ServiceState(cfg, ""); !installed || running || state != "inactive" {
+		t.Fatalf("a stopped unit: %v %v %q", installed, running, state)
+	}
+}

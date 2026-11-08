@@ -31,7 +31,6 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/ratelimit"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 	"github.com/adefilippo83/redundanet/agent/internal/repair"
-	"github.com/adefilippo83/redundanet/agent/internal/service"
 	"github.com/adefilippo83/redundanet/agent/internal/shareproto"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
@@ -82,7 +81,7 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		st := w.Status()
 		s.Repair = &st
 	}
-	sv := service.Query("")
+	sv := serviceStatus()
 	s.Service = &sv
 	return s
 }
