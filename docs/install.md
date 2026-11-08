@@ -17,16 +17,16 @@ Options: `--channel early` installs the newest release of either channel, `--ver
 Then, on a laptop or desktop:
 
 ```bash
-redundanet identity init        # your recovery phrase, shown once: write it down
-redundanet service install      # the agent, as a service that starts at login
-redundanet open                 # the local page in your browser
+redundanet setup
 ```
 
-`identity init` shows a twelve-word phrase once and never again. Write it down and keep it like a passport: your member key comes from it, and so does every device you certify. There is no reset. `--passphrase` seals the identity file on disk.
+It walks the device through everything, in order, and can be run again at any time; each step says what is already done and does what is missing. It checks that the binary sits where the agent can update it. It makes your identity when there is none, asking which case you are in: new here (a twelve-word phrase, shown once and never again: write it down and keep it like a passport, your member key comes from it and so does every device you certify, and there is no reset), an existing member with the recovery phrase at hand (typed here, this device gets a certificate of its own), or a member with another device nearby to pair with (the phrase stays there). It fetches the network's manifest and says whether you are listed in it yet. It installs the service, which starts at login, and waits for it to run. While you are not listed, it opens the join form on the website filled in from this device. Last, it opens the local page. `--storage` gives this device the storage role, `--channel early` the early update channel, `--print` prints the links instead of opening the browser.
+
+By hand, the same is three commands: `redundanet identity init` (`--from-phrase` for an existing member, `--passphrase` to seal the identity file on disk), `redundanet service install`, `redundanet open`. `redundanet join-request` opens the filled-in join form on its own.
 
 The network is built into the binary: its name, its hub, the operator keys that sign the manifest and where the manifest is served. There is nothing to paste and no `--network` flag to type; the agent fetches the signed manifest the first time it needs it, and `redundanet network status` shows what it got. A device that never joined by hand follows the built-in descriptor across releases, so a new hub or a rotated operator key reaches it with the next release. Another network, or one handed to you out of band, is joined with `redundanet network join <descriptor>` and pinned from then on; see [operators.md](operators.md).
 
-Then send your join request: [join.md](join.md). Your devices are admitted once the maintainer has signed the manifest with you in it.
+Then send the join request `setup` opened: [join.md](join.md). Your devices are admitted once the maintainer has signed the manifest with you in it; `redundanet status` and the local page say "listed in the manifest" from then on.
 
 ### macOS
 
@@ -52,7 +52,7 @@ On your laptop, on the same network as the node, with the phrase at hand:
 redundanet device pair --storage <the code>
 ```
 
-The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. It prints the `storage:` lines for your join request, and contributes only once the maintainer lists it under `storage:` in the manifest.
+The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. Your laptop records the node (key, host name, roles) in `devices.yaml` in its data directory, so `redundanet setup` and `redundanet join-request` put it in the join form; the node prints its `storage:` lines too. It contributes only once the maintainer lists it under `storage:` in the manifest.
 
 No laptop on the node's network? The runbook's script keeps the certificate-file flow over SSH: [../agent/deploy/node/README.md](../agent/deploy/node/README.md).
 
@@ -71,7 +71,7 @@ Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm
 
 ## A second device, without the phrase
 
-On the new device, after the one line:
+On the new device, after the one line, `redundanet setup` offers it as the third choice; by hand:
 
 ```
 redundanet identity pair
@@ -83,16 +83,14 @@ It shows a code and waits ten minutes. On a device of yours that already has its
 redundanet device pair <the code>
 ```
 
-Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes, and the two devices must be able to reach each other, on the same network or over public IPv6. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.
+Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes, and the two devices must be able to reach each other, on the same network or over public IPv6. With the phrase at hand and no other device nearby, `setup`'s second choice, or `redundanet identity init --from-phrase`, puts your identity on the new device directly. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.
 
 ## Windows
 
 The Windows build passes the test suite but has not run on the live network yet. Take `redundanet-<version>-windows-amd64.zip` from the newest release on the [download page](https://redundanet.com/download.html) and check its sha256 as described there; the binary inside is `redundanet-<version>-windows-amd64\redundanet.exe`. Put it somewhere on your PATH, open a terminal and run `redundanet version`. The data directory is `%AppData%\redundanet`. Then:
 
 ```powershell
-redundanet identity init
-redundanet service install     # a logon task with restart on failure
-redundanet open
+redundanet setup               # the service it installs is a logon task with restart on failure
 ```
 
 The Windows binary carries a version resource (product name and version in its properties) and is unsigned for now; see the download page.

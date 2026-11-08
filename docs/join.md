@@ -7,20 +7,20 @@ Joining takes an identity on your laptop, a form on the website, and a pull requ
 ## 1. Your identity, on your laptop
 
 ```bash
-redundanet identity init
+redundanet setup
 ```
 
-It shows a twelve-word phrase once and asks for three of the words back. Write the phrase down and keep it like a passport: it is your member key, every device you ever certify comes from it, and nobody can recover it for you. The command prints your member key (52 characters) and this laptop's device key. Say `--passphrase` to seal the identity file on disk.
+Its first question is which case you are in; as a new member, choose the first. It shows a twelve-word phrase once and asks for three of the words back. Write the phrase down and keep it like a passport: it is your member key, every device you ever certify comes from it, and nobody can recover it for you. It prints your member key (52 characters) and this laptop's device key, installs the service, and opens the join form of step 3 with the key filled in. By hand, the same is `redundanet identity init` (`--passphrase` seals the identity file on disk), `redundanet service install` and `redundanet join-request`.
 
-The network needs no step of yours: its name, its hub, the operator keys and where the signed manifest is served are built into the binary, and the agent fetches the manifest the first time it needs it. `redundanet network status` shows what your device believes about the network. Your device is not admitted yet: that happens when the manifest lists you.
+The network needs no step of yours: its name, its hub, the operator keys and where the signed manifest is served are built into the binary, and the agent fetches the manifest the first time it needs it. `redundanet network status` shows what your device believes about the network. Your device is not admitted yet: that happens when the manifest lists you, and `redundanet status` says "not in the manifest yet" until then.
 
 ## 2. If you contribute disk: prepare your storage node
 
-A member who contributes disk lists at least one storage device. Prepare the node now so you have its device key for the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". The node prints its device key and name once paired, and `sudo /var/lib/redundanet3/bin/redundanet status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
+A member who contributes disk lists at least one storage device. Prepare the node now, before the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". Pairing records the node on your laptop, so `redundanet setup` and `redundanet join-request` fill its key and name into the form; the node prints them too, and `sudo /var/lib/redundanet3/bin/redundanet status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
 
 ## 3. The form
 
-Fill the form at <https://redundanet.com/join.html>. It opens a GitHub issue, so you need a GitHub account; your GitHub login, lowercased, is your member name unless you choose another lowercase name. Names are lowercase letters, digits and hyphens.
+Fill the form at <https://redundanet.com/join.html>; `redundanet setup` and `redundanet join-request` open it with your member key and your storage node already in place, so you add the member name and the contribution. It opens a GitHub issue, so you need a GitHub account; your GitHub login, lowercased, is your member name unless you choose another lowercase name. Names are lowercase letters, digits and hyphens.
 
 The issue title is `[Join Request] Member: <name>` and the body starts with the heading `## RedundaNet 3 membership` followed by a Markdown table with exactly these rows:
 
@@ -47,14 +47,13 @@ Nothing leaves the page until you open the issue on GitHub; the website loads no
 
 A member without a storage device needs `contribution_gb: 0` with an `allocation_gb` and a `sponsor` (another member or the reserve), which the maintainer sets.
 
-## 5. Service and first backup
+## 5. First backup
 
 ```bash
-redundanet service install
 redundanet backup add NAME FOLDER
 ```
 
-The service starts at login and runs the first backup two minutes after it starts, then daily. `redundanet backup list` follows it; `redundanet open` shows the local page. On macOS a folder under Documents, Desktop or Downloads needs Full Disk Access for the agent; `backup add` says so. Everything about sets and restores: [backups.md](backups.md).
+The service `setup` installed starts at login and runs the first backup two minutes after it starts, then daily. `redundanet backup list` follows it; `redundanet open` shows the local page. On macOS a folder under Documents, Desktop or Downloads needs Full Disk Access for the agent; `backup add` says so. Everything about sets and restores: [backups.md](backups.md).
 
 ## Your allocation
 
@@ -62,7 +61,7 @@ Your allocation is derived from your contribution and the encoding overhead: con
 
 ## More devices
 
-Every device of yours is certified from the phrase. Do not run `identity init` on a second device: that makes a new member. Pair it instead, without moving the phrase: on the new device `redundanet identity pair` shows a one-time code; on a device of yours that has its identity, on the same network, `redundanet device pair <code>` asks for the phrase, certifies the new device and hands it the identity and the network. Add `--storage` if the new device contributes disk. Devices need no manifest change: servers accept any device whose certificate chains to a listed member.
+Every device of yours is certified from the phrase. On a second device, `redundanet setup` offers the two ways: pairing, without moving the phrase (on the new device `redundanet identity pair` shows a one-time code; on a device of yours that has its identity, on the same network, `redundanet device pair <code>` asks for the phrase, certifies the new device and hands it the identity and the network; add `--storage` if the new device contributes disk), or typing the phrase on the new device (`redundanet identity init --from-phrase`). A plain `identity init` on a second device would make a new member. Devices need no manifest change: servers accept any device whose certificate chains to a listed member.
 
 For a device reached over SSH only, the certificate file does the same in three commands:
 

@@ -412,9 +412,9 @@
         <div class="requirements">
             <h3>&#9881; <span data-i18n="join.before.title">Before you fill the form</span></h3>
             <ol>
-                <li><span data-i18n="join.before.s1"><a href="installation.html">Install the agent</a> on your laptop and create your identity. The phrase is shown once; write it down. The command prints your <strong>member key</strong> (52 characters) and this device's key. The network is built into the binary: nothing to join by hand.</span>
+                <li><span data-i18n="join.before.s1"><a href="installation.html">Install the agent</a> on your laptop and run <code>setup</code>. It creates your identity (the phrase is shown once; write it down), installs the service and opens this form with your <strong>member key</strong> (52 characters) and your storage node already filled in. The network is built into the binary: nothing to join by hand.</span>
                     <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
-redundanet identity init</code></pre></li>
+redundanet setup</code></pre></li>
                 <li data-i18n="join.before.s3">If you contribute disk, <a href="installation.html#node">prepare your storage node</a> first so you have its <strong>device key</strong>. Pick a name for it (lowercase letters, digits and hyphens).</li>
                 <li data-i18n="join.before.s4">You need a GitHub account. Your GitHub login, lowercased, is your member name unless you choose another lowercase name.</li>
                 <li data-i18n="join.before.s5">A RedundaNet 2 member also makes the legacy attestation; see the <a href="migration.html">migration guide</a>.</li>
@@ -535,9 +535,8 @@ redundanet identity init</code></pre></li>
                 <li data-i18n="join.after.s1">A workflow validates the request and opens a pull request adding you under <code>members:</code> (name, key, contribution, join date, status active, and the legacy PGP attestation when given) and your node under <code>storage:</code> (member, device, name, UDP port when given), raising the manifest revision by one.</li>
                 <li data-i18n="join.after.s2">The maintainer reviews, signs <code>manifest.sig</code> offline with the operator key, and merges.</li>
                 <li data-i18n="join.after.s3">Every agent applies the new revision within five minutes. Your devices are admitted from then on.</li>
-                <li><span data-i18n="join.after.s4">Install the service and add a backup set:</span>
-                    <pre><code>redundanet service install
-redundanet backup add NAME FOLDER</code></pre></li>
+                <li><span data-i18n="join.after.s4">Add a backup set; the service <code>setup</code> installed runs it daily:</span>
+                    <pre><code>redundanet backup add NAME FOLDER</code></pre></li>
             </ol>
             <p data-i18n="join.after.more">The long form: <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/join.md">docs/join.md</a>. Your node appears on the <a href="https://hub.redundanet.com/">status page</a> under your name.</p>
         </div>
@@ -568,6 +567,19 @@ redundanet backup add NAME FOLDER</code></pre></li>
 
         var form = document.getElementById("joinForm");
         var formError = document.getElementById("formError");
+
+        // `redundanet setup` and `redundanet join-request` open this page with
+        // the device's keys in the query string; the fields take them so the
+        // member reviews instead of copying. Only empty fields are filled.
+        (function prefill() {
+            var q = new URLSearchParams(window.location.search);
+            [["name", "memberName"], ["key", "memberKey"], ["gb", "contributionGb"],
+             ["device", "deviceKey"], ["devicename", "deviceName"], ["udp", "udpPort"]].forEach(function (pair) {
+                var v = q.get(pair[0]);
+                var el = document.getElementById(pair[1]);
+                if (v !== null && el && !el.value) el.value = v.trim();
+            });
+        })();
 
         function val(id) { return document.getElementById(id).value.trim(); }
         function mark(id, bad) {

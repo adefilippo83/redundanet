@@ -37,18 +37,18 @@ On macOS and Linux, one line installs the newest release, checked against the si
 curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
-- macOS and Linux laptops: `redundanet service install` then installs a user service that starts at login (launchd on macOS, a systemd user unit on Linux).
-- Windows: take the zip from the [download page](https://redundanet.com/download.html); the same command installs a logon task.
+- macOS and Linux laptops: `redundanet setup` then makes your identity, installs a user service that starts at login (launchd on macOS, a systemd user unit on Linux) and opens the join form filled in.
+- Windows: take the zip from the [download page](https://redundanet.com/download.html); the same `redundanet setup` installs a logon task.
 - Linux storage node: `curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage` lays the agent out under `/var/lib/redundanet3` as a system service and shows a pairing code for your laptop. The phrase never reaches the node.
 
 Step by step, per platform, and the way by hand: [docs/install.md](docs/install.md).
 
 ## Join
 
-Install the agent on your laptop, create your identity, then fill the form at [redundanet.com/join.html](https://redundanet.com/join.html). The network itself is built into the binary, so there is nothing to join by hand. The form opens a GitHub issue; a workflow turns it into a pull request; the maintainer reviews, signs the manifest and merges. Your devices are admitted within five minutes of the merge.
+Install the agent on your laptop and run `redundanet setup`: it creates your identity and opens the form at [redundanet.com/join.html](https://redundanet.com/join.html) with your key in it. The network itself is built into the binary, so there is nothing to join by hand. The form opens a GitHub issue; a workflow turns it into a pull request; the maintainer reviews, signs the manifest and merges. Your devices are admitted within five minutes of the merge.
 
 ```bash
-redundanet identity init
+redundanet setup
 ```
 
 The whole flow, including what a storage node needs: [docs/join.md](docs/join.md).
