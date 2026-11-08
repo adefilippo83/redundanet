@@ -10,29 +10,32 @@ A Raspberry Pi can boot the ready-made image instead, which ships this
 layout with a first boot that hands the device key over on the SD card:
 [rpi-image/README.md](../../../rpi-image/README.md).
 
-Since 3.0.4 the binary lays the node out itself and pairs it, as root, one
-command on the node and one on the laptop:
+The short way is one line as root on the node and one command on the
+laptop. The line downloads the newest release, checks it against the
+signed index and runs `redundanet node install`, which lays the node out
+and shows a pairing code; the laptop, on the node's network and with the
+phrase at hand, certifies the node through the code:
 
 ```bash
-curl -fsSL -o redundanet.tgz https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.4/redundanet-3.0.4-linux-arm64.tar.gz   # or linux-amd64; check the sha256 against releases/index.yaml
-tar -xzf redundanet.tgz --strip-components=1
-sudo ./redundanet node install --storage-path /mnt/storage       # lays the node out, shows a pairing code, starts the service once paired
-redundanet device pair --network redundanet --storage <code>     # on the laptop, with the phrase
+curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage   # on the node
+redundanet device pair --storage <code>                                            # on the laptop
 ```
 
 `node install` refuses a storage path that is not a mount point unless
 told `--allow-root-disk`, keeps `agent.env` and the identity on a second
 run, and prints the `storage:` lines to send for the manifest once paired;
 `node status` and `node uninstall` go with it (the data directory and the
-store stay). `install.sh` below makes the same layout from a script, which
-the Pi image uses, and keeps the certificate-file flow.
+store stay). The network is built into the binary: the node joins it on
+its own, and `--network` is only for another one. `install.sh` below makes
+the same layout from a script, which the Pi image uses, and keeps the
+certificate-file flow for a node the laptop cannot reach.
 
-Two ways to certify the node, both keeping the phrase on the laptop. With
-the laptop on the node's network, pairing is two commands after `prepare`:
+With the laptop on the node's network, pairing is two commands after
+`prepare`:
 
 ```bash
-sudo bash install.sh pair                                        # on the node: shows a code and waits
-redundanet device pair --network redundanet --storage <code>     # on the laptop, with the phrase
+sudo bash install.sh pair                        # on the node: shows a code and waits
+redundanet device pair --storage <code>          # on the laptop, with the phrase
 ```
 
 The node joins and starts by itself. For a node reached over SSH only, the
@@ -43,10 +46,10 @@ RFC's headless flow):
 # 1. on the node, as root: user, directories, binary, unit; prints the device key
 curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
 curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/redundanet-agent.service
-sudo STORAGE_PATH=/mnt/storage CHANNEL=stable bash install.sh prepare 3.0.0
+sudo STORAGE_PATH=/mnt/storage CHANNEL=stable bash install.sh prepare 3.0.6
 
 # 2. on the laptop: certify the node's device key with the member key
-redundanet identity certify --network redundanet --device <KEY> --storage > node.cert
+redundanet identity certify --device <KEY> --storage > node.cert
 scp node.cert node:
 
 # 3. on the node: accept, join, start; the certificate file is destroyed afterwards
@@ -54,8 +57,8 @@ sudo bash install.sh finish node.cert
 ```
 
 `prepare` checks the download against the sha256 in `releases/index.yaml`
-on main. `finish` joins the network with the descriptor derived from the
-manifest on main and enables `redundanet-agent.service`.
+on main. `finish` joins the network built into the binary and enables
+`redundanet-agent.service`.
 
 The store lives in `STORAGE_PATH/redundanet3`, owned by the service user,
 and a unit drop-in (`redundanet-agent.service.d/storage.conf`) makes it

@@ -31,24 +31,27 @@ Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon M
 
 ## Install
 
-Download the archive for your platform from the [release page](https://github.com/adefilippo83/redundanet/releases/tag/agent%2Fv3.0.0), check its sha256 against `releases/index.yaml`, and put the `redundanet` binary on your PATH.
+On macOS and Linux, one line installs the newest release, checked against the signed release index:
 
-- macOS and Linux laptops: `redundanet service install --network redundanet` installs a user service that starts at login (launchd on macOS, a systemd user unit on Linux).
-- Windows: the same command installs a logon task.
-- Linux storage node: a three-step headless install with `install.sh` puts the agent under `/var/lib/redundanet3` as a system service. The phrase never reaches the node.
+```bash
+curl -fsSL https://redundanet.com/install.sh | sh
+```
 
-Step by step, per platform: [docs/install.md](docs/install.md).
+- macOS and Linux laptops: `redundanet service install` then installs a user service that starts at login (launchd on macOS, a systemd user unit on Linux).
+- Windows: take the zip from the [download page](https://redundanet.com/download.html); the same command installs a logon task.
+- Linux storage node: `curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage` lays the agent out under `/var/lib/redundanet3` as a system service and shows a pairing code for your laptop. The phrase never reaches the node.
+
+Step by step, per platform, and the way by hand: [docs/install.md](docs/install.md).
 
 ## Join
 
-Install the agent on your laptop, create your identity, join the network with its public descriptor, then fill the form at [redundanet.com/join.html](https://redundanet.com/join.html). The form opens a GitHub issue; a workflow turns it into a pull request; the maintainer reviews, signs the manifest and merges. Your devices are admitted within five minutes of the merge.
+Install the agent on your laptop, create your identity, then fill the form at [redundanet.com/join.html](https://redundanet.com/join.html). The network itself is built into the binary, so there is nothing to join by hand. The form opens a GitHub issue; a workflow turns it into a pull request; the maintainer reviews, signs the manifest and merges. Your devices are admitted within five minutes of the merge.
 
 ```bash
-redundanet identity init --network redundanet
-redundanet network join <descriptor>
+redundanet identity init
 ```
 
-The descriptor and the whole flow, including what a storage node needs: [docs/join.md](docs/join.md).
+The whole flow, including what a storage node needs: [docs/join.md](docs/join.md).
 
 ## Backups and restores
 

@@ -412,10 +412,9 @@
         <div class="requirements">
             <h3>&#9881; <span data-i18n="join.before.title">Before you fill the form</span></h3>
             <ol>
-                <li><span data-i18n="join.before.s1"><a href="installation.html">Install the agent</a> on your laptop and create your identity. The phrase is shown once; write it down. The command prints your <strong>member key</strong> (52 characters) and this device's key.</span>
-                    <pre><code>redundanet identity init --network redundanet</code></pre></li>
-                <li><span data-i18n="join.before.s2">Join the network with the public descriptor from the <a href="installation.html#before">install page</a>.</span>
-                    <pre><code>redundanet network join &lt;descriptor&gt;</code></pre></li>
+                <li><span data-i18n="join.before.s1"><a href="installation.html">Install the agent</a> on your laptop and create your identity. The phrase is shown once; write it down. The command prints your <strong>member key</strong> (52 characters) and this device's key. The network is built into the binary: nothing to join by hand.</span>
+                    <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
+redundanet identity init</code></pre></li>
                 <li data-i18n="join.before.s3">If you contribute disk, <a href="installation.html#node">prepare your storage node</a> first so you have its <strong>device key</strong>. Pick a name for it (lowercase letters, digits and hyphens).</li>
                 <li data-i18n="join.before.s4">You need a GitHub account. Your GitHub login, lowercased, is your member name unless you choose another lowercase name.</li>
                 <li data-i18n="join.before.s5">A RedundaNet 2 member also makes the legacy attestation; see the <a href="migration.html">migration guide</a>.</li>
@@ -469,7 +468,7 @@
                     <div class="form-group" id="g-deviceKey">
                         <label for="deviceKey" data-i18n="join.form.devkey.label">Device key</label>
                         <input type="text" id="deviceKey" name="deviceKey" class="mono" autocomplete="off" spellcheck="false" placeholder="52 lowercase base32 characters" data-i18n-placeholder="join.form.key.ph" pattern="[a-z2-7]{52}">
-                        <p class="hint" data-i18n="join.form.devkey.hint">Printed by <code>install.sh prepare</code> on the node.</p>
+                        <p class="hint" data-i18n="join.form.devkey.hint">Printed by the node once it is paired, and again by <code>sudo /var/lib/redundanet3/bin/redundanet status</code> on it.</p>
                         <p class="error-message" data-i18n="join.form.devkey.err">A device key is exactly 52 characters from a-z and 2-7, and is required when the contribution is above 0.</p>
                     </div>
 
@@ -537,7 +536,7 @@
                 <li data-i18n="join.after.s2">The maintainer reviews, signs <code>manifest.sig</code> offline with the operator key, and merges.</li>
                 <li data-i18n="join.after.s3">Every agent applies the new revision within five minutes. Your devices are admitted from then on.</li>
                 <li><span data-i18n="join.after.s4">Install the service and add a backup set:</span>
-                    <pre><code>redundanet service install --network redundanet
+                    <pre><code>redundanet service install
 redundanet backup add NAME FOLDER</code></pre></li>
             </ol>
             <p data-i18n="join.after.more">The long form: <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/join.md">docs/join.md</a>. Your node appears on the <a href="https://hub.redundanet.com/">status page</a> under your name.</p>

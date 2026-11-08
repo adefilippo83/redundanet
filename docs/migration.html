@@ -345,9 +345,9 @@
 
             <section id="identity">
                 <h2 data-i18n="mig.identity.title">1. Identity on your laptop</h2>
-                <p data-i18n="mig.identity.desc">Only the laptop ever holds your phrase. <a href="installation.html">Install the agent</a> there, create your identity and join the network with the public descriptor from the install page.</p>
-                <pre><code>redundanet identity init --network redundanet      # the phrase, shown once; prints your member key
-redundanet network join &lt;descriptor&gt;</code></pre>
+                <p data-i18n="mig.identity.desc">Only the laptop ever holds your phrase. <a href="installation.html">Install the agent</a> there with one line and create your identity; the network is built into the binary, nothing to join by hand.</p>
+                <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
+redundanet identity init      # the phrase, shown once; prints your member key</code></pre>
             </section>
 
             <section id="attestation">
@@ -359,24 +359,18 @@ redundanet network join &lt;descriptor&gt;</code></pre>
 
             <section id="request">
                 <h2 data-i18n="mig.request.title">3. The join request</h2>
-                <p data-i18n="mig.request.desc">Fill the <a href="join.html">join form</a> with your member name, your member key, the disk you contribute, and, in the RedundaNet 2 section, the fingerprint and the signature. If you contribute disk, the form also wants your node's device key, which step 4 prints; most members do step 4's <code>prepare</code> first and send one request.</p>
+                <p data-i18n="mig.request.desc">Fill the <a href="join.html">join form</a> with your member name, your member key, the disk you contribute, and, in the RedundaNet 2 section, the fingerprint and the signature. If you contribute disk, the form also wants your node's device key, which step 4 prints; most members do step 4 first and send one request.</p>
                 <p data-i18n="mig.request.after">A workflow validates the request and opens a pull request; the maintainer signs the manifest offline and merges; every agent applies it within five minutes.</p>
             </section>
 
             <section id="nodes">
                 <h2 data-i18n="mig.nodes.title">4. The agent on each node</h2>
-                <p data-i18n="mig.nodes.desc">The <a href="installation.html#node">storage node flow</a>: <code>install.sh prepare</code> on the node prints its device key, you certify it on your laptop, and <code>install.sh finish</code> joins and starts the service. The agent runs beside the Docker stack on the host's network and stores shares under <code>STORAGE_PATH/redundanet3</code>.</p>
-                <pre><code># on the node, as root
-curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/install.sh
-curl -fsSLO https://raw.githubusercontent.com/adefilippo83/redundanet/main/agent/deploy/node/redundanet-agent.service
-sudo STORAGE_PATH=/mnt/storage bash install.sh prepare 3.0.0
+                <p data-i18n="mig.nodes.desc">The <a href="installation.html#node">storage node flow</a>: one line as root on the node lays the agent out as a system service and shows a pairing code; your laptop, on the node's network, certifies it through the code, and the node joins and starts by itself. The agent runs beside the Docker stack on the host's network and stores shares under <code>STORAGE_PATH/redundanet3</code>. For a node your laptop cannot reach, the runbook's certificate file over SSH does the same.</p>
+                <pre><code># on the node, as root, with the storage disk mounted
+curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 
-# on your laptop
-redundanet identity certify --network redundanet --device &lt;KEY&gt; --storage &gt; node.cert
-scp node.cert node:
-
-# on the node
-sudo bash install.sh finish node.cert</code></pre>
+# on your laptop, with the phrase
+redundanet device pair --storage &lt;code&gt;</code></pre>
                 <p data-i18n="mig.nodes.runbook">The runbook: <a href="https://github.com/adefilippo83/redundanet/blob/main/agent/deploy/node/README.md">agent/deploy/node/README.md</a>. The node appears on the <a href="https://hub.redundanet.com/">status page</a> under your name once the manifest lists it.</p>
             </section>
 
