@@ -6,7 +6,7 @@
 #       a laptop or desktop: installs the newest stable release as
 #       bin/redundanet in your data directory, where the agent can replace
 #       it when it updates itself, links /usr/local/bin/redundanet to it,
-#       and says what comes next
+#       and says what comes next (`redundanet setup`)
 #
 #   curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 #       a Linux storage node, as root: downloads the same way, then runs
@@ -219,11 +219,9 @@ main() {
   cat <<TXT
 
 next, on this computer:
-  $cmd identity init        # your recovery phrase, shown once: write it down
-  $cmd service install      # the agent, as a service that starts at login
-  $cmd open                 # the local page in your browser
-then send your join request: https://redundanet.com/join.html
-A second device of a member runs $cmd identity pair instead of identity init.
+  $cmd setup                # your identity, the service, the join request and the page, step by step
+It asks whether you are new here, have your recovery phrase, or have another
+device of yours nearby to pair with. Run it again any time to see where things stand.
 TXT
 }
 

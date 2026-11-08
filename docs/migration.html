@@ -345,9 +345,9 @@
 
             <section id="identity">
                 <h2 data-i18n="mig.identity.title">1. Identity on your laptop</h2>
-                <p data-i18n="mig.identity.desc">Only the laptop ever holds your phrase. <a href="installation.html">Install the agent</a> there with one line and create your identity; the network is built into the binary, nothing to join by hand.</p>
+                <p data-i18n="mig.identity.desc">Only the laptop ever holds your phrase. <a href="installation.html">Install the agent</a> there with one line and run <code>setup</code>: choose a new identity, and it prints your member key, installs the service and opens the join form; the network is built into the binary, nothing to join by hand.</p>
                 <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
-redundanet identity init      # the phrase, shown once; prints your member key</code></pre>
+redundanet setup              # the phrase, shown once; prints your member key</code></pre>
             </section>
 
             <section id="attestation">
