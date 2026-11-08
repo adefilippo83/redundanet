@@ -358,8 +358,13 @@ jobs:
   # here holds a key; the pull request waits for `scripts/sign.sh release`
   # on the maintainer's laptop, which rebuilds the same revision on its own,
   # signs it with the offline release key, merges and undrafts.
+  # The signing jobs are skipped until their secrets exist, and GitHub skips
+  # every job downstream of a skipped one unless it says otherwise: without
+  # this condition the job never ran and the maintainer's sign.sh opened the
+  # pull request itself. It runs whenever the release job succeeded.
   index-pr:
     needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
