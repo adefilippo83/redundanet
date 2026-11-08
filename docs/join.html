@@ -418,6 +418,7 @@ redundanet setup</code></pre></li>
                 <li data-i18n="join.before.s3">If you contribute disk, <a href="installation.html#node">prepare your storage node</a> first so you have its <strong>device key</strong>. Pick a name for it (lowercase letters, digits and hyphens).</li>
                 <li data-i18n="join.before.s4">You need a GitHub account. Your GitHub login, lowercased, is your member name unless you choose another lowercase name.</li>
                 <li data-i18n="join.before.s5">A RedundaNet 2 member also makes the legacy attestation; see the <a href="migration.html">migration guide</a>.</li>
+                <li data-i18n="join.before.s6">Already a member, adding a storage node? Pair it from your laptop, then <code>redundanet join-request</code> opens this form in that mode with the node's certificate as proof; or choose that case below and paste the certificate the node prints with <code>identity show --certificate</code>.</li>
             </ol>
         </div>
 
@@ -436,6 +437,18 @@ redundanet setup</code></pre></li>
             <h3 data-i18n="join.form.title">Join request</h3>
             <form id="joinForm" novalidate>
                 <div class="form-error" id="formError" role="alert"></div>
+
+                <fieldset>
+                    <legend data-i18n="join.form.mode.legend">Who is asking</legend>
+                    <div class="checkbox-group">
+                        <input type="radio" id="modeMember" name="mode" value="member" checked>
+                        <label for="modeMember" data-i18n="join.form.mode.member">A new member, with or without a storage node</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="radio" id="modeDevice" name="mode" value="device">
+                        <label for="modeDevice" data-i18n="join.form.mode.device">A member already listed, adding a storage node</label>
+                    </div>
+                </fieldset>
 
                 <fieldset>
                     <legend data-i18n="join.form.member.legend">Member</legend>
@@ -457,7 +470,8 @@ redundanet setup</code></pre></li>
                     <div class="form-group" id="g-contributionGb">
                         <label for="contributionGb" data-i18n="join.form.gb.label">Contribution, in GB *</label>
                         <input type="number" id="contributionGb" name="contributionGb" min="0" step="1" inputmode="numeric" placeholder="0" required>
-                        <p class="hint" data-i18n="join.form.gb.hint">The disk you contribute on your storage node, as a whole number. 0 is allowed: a member without a storage device is sponsored by another member or by the reserve, and the maintainer sets the allocation.</p>
+                        <p class="hint" id="gbDeviceHint" data-i18n="join.form.gb.devhint" hidden>Your new total, or leave it empty to keep the current one.</p>
+                        <p class="hint" id="gbMemberHint" data-i18n="join.form.gb.hint">The disk you contribute on your storage node, as a whole number. 0 is allowed: a member without a storage device is sponsored by another member or by the reserve, and the maintainer sets the allocation.</p>
                         <p class="error-message" data-i18n="join.form.gb.err">A whole number, 0 or more.</p>
                     </div>
                 </fieldset>
@@ -489,7 +503,17 @@ redundanet setup</code></pre></li>
                     </div>
                 </fieldset>
 
-                <fieldset>
+                <fieldset id="fs-cert" hidden>
+                    <legend data-i18n="join.form.cert.legend">The node's certificate</legend>
+                    <div class="form-group" id="g-certificate">
+                        <label for="certificate" data-i18n="join.form.cert.label">Device certificate *</label>
+                        <textarea id="certificate" name="certificate" class="mono" rows="4" spellcheck="false" placeholder="one line of letters, digits, hyphens and underscores" data-i18n-placeholder="join.form.cert.ph"></textarea>
+                        <p class="hint" data-i18n="join.form.cert.hint">The proof that the node is yours. <code>redundanet join-request</code> on the laptop that paired it fills it in; <code>sudo /var/lib/redundanet3/bin/redundanet identity show --certificate</code> on the node prints it. The workflow checks that your member key signed it for this device with the storage role.</p>
+                        <p class="error-message" data-i18n="join.form.cert.err">Paste the certificate as the node printed it: one line of letters, digits, hyphens and underscores.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset id="fs-legacy">
                     <legend data-i18n="join.form.legacy.legend">RedundaNet 2 members only</legend>
 
                     <div class="form-group" id="g-legacyFingerprint">
@@ -564,21 +588,40 @@ redundanet setup</code></pre></li>
         var NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
         var KEY_RE = /^[a-z2-7]{52}$/;
         var FP_RE = /^[A-Fa-f0-9]{40}$/;
+        var CERT_RE = /^[A-Za-z0-9_-]{64,4096}$/;
 
         var form = document.getElementById("joinForm");
         var formError = document.getElementById("formError");
+
+        // Two requests share the form: a new member's, and a listed member's
+        // for a storage node, which carries the node's certificate instead of
+        // the member key and the legacy attestation.
+        function deviceMode() { return document.getElementById("modeDevice").checked; }
+        function applyMode() {
+            var device = deviceMode();
+            document.getElementById("g-memberKey").hidden = device;
+            document.getElementById("fs-legacy").hidden = device;
+            document.getElementById("fs-cert").hidden = !device;
+            document.getElementById("gbDeviceHint").hidden = !device;
+            document.getElementById("gbMemberHint").hidden = device;
+            document.getElementById("contributionGb").required = !device;
+        }
+        document.getElementById("modeMember").addEventListener("change", applyMode);
+        document.getElementById("modeDevice").addEventListener("change", applyMode);
 
         // `redundanet setup` and `redundanet join-request` open this page with
         // the device's keys in the query string; the fields take them so the
         // member reviews instead of copying. Only empty fields are filled.
         (function prefill() {
             var q = new URLSearchParams(window.location.search);
+            if (q.get("mode") === "device") document.getElementById("modeDevice").checked = true;
             [["name", "memberName"], ["key", "memberKey"], ["gb", "contributionGb"],
-             ["device", "deviceKey"], ["devicename", "deviceName"], ["udp", "udpPort"]].forEach(function (pair) {
+             ["device", "deviceKey"], ["devicename", "deviceName"], ["udp", "udpPort"], ["cert", "certificate"]].forEach(function (pair) {
                 var v = q.get(pair[0]);
                 var el = document.getElementById(pair[1]);
                 if (v !== null && el && !el.value) el.value = v.trim();
             });
+            applyMode();
         })();
 
         function val(id) { return document.getElementById(id).value.trim(); }
@@ -606,19 +649,22 @@ redundanet setup</code></pre></li>
             var terms = document.getElementById("acceptTerms").checked;
 
             var gb = /^\d+$/.test(gbRaw) ? parseInt(gbRaw, 10) : NaN;
-            var contributes = gb > 0;
-            var hasSig = sig.length > 0;
+            var device = deviceMode();
+            var cert = document.getElementById("certificate").value.replace(/\s+/g, "");
+            var contributes = device || gb > 0;
+            var hasSig = !device && sig.length > 0;
             var sigOk = !hasSig || (/-----BEGIN PGP SIGNATURE-----/.test(sig) && /-----END PGP SIGNATURE-----/.test(sig));
 
             var ok = true;
             ok = mark("memberName", !NAME_RE.test(memberName)) && ok;
-            ok = mark("memberKey", !KEY_RE.test(memberKey)) && ok;
-            ok = mark("contributionGb", isNaN(gb)) && ok;
+            ok = mark("memberKey", !device && !KEY_RE.test(memberKey)) && ok;
+            ok = mark("contributionGb", device ? (gbRaw && isNaN(gb)) : isNaN(gb)) && ok;
             ok = mark("deviceKey", (contributes && !deviceKey) || (deviceKey && !KEY_RE.test(deviceKey))) && ok;
             ok = mark("deviceName", (contributes && !deviceName) || (deviceName && !NAME_RE.test(deviceName))) && ok;
             ok = mark("udpPort", udpPort && !(/^\d+$/.test(udpPort) && +udpPort >= 1024 && +udpPort <= 65535)) && ok;
-            ok = mark("legacyFingerprint", (fp && !FP_RE.test(fp)) || (fp && !hasSig)) && ok;
-            ok = mark("legacySignature", !sigOk || (hasSig && !fp)) && ok;
+            ok = mark("certificate", device && !CERT_RE.test(cert)) && ok;
+            ok = mark("legacyFingerprint", !device && ((fp && !FP_RE.test(fp)) || (fp && !hasSig))) && ok;
+            ok = mark("legacySignature", !device && (!sigOk || (hasSig && !fp))) && ok;
             ok = mark("acceptTerms", !terms) && ok;
 
             if (!ok) {
@@ -630,8 +676,29 @@ redundanet setup</code></pre></li>
                 return;
             }
 
-            var title = "[Join Request] Member: " + memberName;
-            var body =
+            var title, body;
+            if (device) {
+                title = "[Join Request] Storage device: " + deviceName + " for " + memberName;
+                body =
+                    "## RedundaNet 3 storage device\n\n" +
+                    "| Field | Value |\n" +
+                    "|-------|-------|\n" +
+                    "| Member name | " + cell(memberName) + " |\n" +
+                    "| Device key | " + cell(deviceKey) + " |\n" +
+                    "| Device name | " + cell(deviceName) + " |\n" +
+                    "| UDP port | " + cell(udpPort) + " |\n" +
+                    "| Contribution GB | " + (isNaN(gb) ? "" : gb) + " |\n" +
+                    "| Notes | " + cell(notes) + " |\n" +
+                    "\n## Device certificate\n\n```\n" + cert + "\n```\n";
+                window.location.href = "https://github.com/" + GITHUB_REPO + "/issues/new?" + new URLSearchParams({
+                    labels: "join-request",
+                    title: title,
+                    body: body
+                }).toString();
+                return;
+            }
+            title = "[Join Request] Member: " + memberName;
+            body =
                 "## RedundaNet 3 membership\n\n" +
                 "| Field | Value |\n" +
                 "|-------|-------|\n" +

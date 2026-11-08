@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -51,6 +53,8 @@ func runIdentity(args []string) error {
 		return identityDeviceKey(rest)
 	case "certify":
 		return identityCertify(rest)
+	case "verify-certificate":
+		return identityVerifyCertificate(args[1:])
 	case "accept-certificate":
 		return identityAcceptCertificate(rest)
 	}
@@ -166,6 +170,7 @@ func identityInit(args []string) error {
 func identityShow(args []string) error {
 	fs := flag.NewFlagSet("identity show", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
+	cert := fs.Bool("certificate", false, "print this device's certificate instead, as one line: the proof the join form takes when a member adds a storage node")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -177,7 +182,84 @@ func identityShow(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *cert {
+		s, err := encodeCertificate(&st.Certificate)
+		if err != nil {
+			return err
+		}
+		fmt.Println(s)
+		return nil
+	}
 	printState(st)
+	return nil
+}
+
+// encodeCertificate is the certificate as one line of text, base64url of
+// its encoding: what devices.yaml records, what the join form carries, and
+// what verify-certificate reads back.
+func encodeCertificate(sc *identity.SignedCertificate) (string, error) {
+	b, err := sc.Encode()
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// certificateInfo is what verify-certificate prints: the facts a reviewer
+// or the join workflow needs, never the signature itself.
+type certificateInfo struct {
+	Network  string   `json:"network"`
+	Member   string   `json:"member"`
+	Device   string   `json:"device"`
+	Roles    []string `json:"roles"`
+	Serial   uint64   `json:"serial"`
+	IssuedAt string   `json:"issued_at"`
+}
+
+// decodeCertificate reads the one-line form and verifies the member's
+// signature; it says nothing about the manifest.
+func decodeCertificate(s string) (*identity.SignedCertificate, error) {
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(s))
+	if err != nil {
+		return nil, fmt.Errorf("certificate: not base64url: %w", err)
+	}
+	return identity.DecodeCertificate(b)
+}
+
+// identityVerifyCertificate checks a certificate given as a file (or - for
+// standard input) and prints what it certifies as JSON. The join workflow
+// runs it on the certificate a member attaches when adding a storage node,
+// then checks the member and device keys against the manifest itself.
+func identityVerifyCertificate(args []string) error {
+	fs := flag.NewFlagSet("identity verify-certificate", flag.ContinueOnError)
+	_, network := commonFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: identity verify-certificate [--network NAME] FILE|-")
+	}
+	var raw []byte
+	var err error
+	if fs.Arg(0) == "-" {
+		raw, err = io.ReadAll(io.LimitReader(os.Stdin, 1<<16))
+	} else {
+		raw, err = os.ReadFile(fs.Arg(0))
+	}
+	if err != nil {
+		return err
+	}
+	sc, err := decodeCertificate(string(raw))
+	if err != nil {
+		return err
+	}
+	c := sc.Certificate
+	if *network != "" && c.Network != *network {
+		return fmt.Errorf("the certificate is for network %q, not %q", c.Network, *network)
+	}
+	info := certificateInfo{Network: c.Network, Member: c.Member.String(), Device: c.Device.String(), Roles: c.Roles, Serial: c.Serial, IssuedAt: c.IssuedAt.UTC().Format(time.RFC3339)}
+	b, _ := json.MarshalIndent(info, "", "  ")
+	fmt.Println(string(b))
 	return nil
 }
 

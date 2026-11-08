@@ -23,17 +23,30 @@ import (
 // and clicks instead of copying keys.
 const joinFormURL = "https://redundanet.com/join.html"
 
-// joinPrefill is what the form can be handed.
+// joinPrefill is what the form can be handed: a new member's request, or,
+// with Device set, a listed member's request to add a storage node, which
+// carries the node's certificate as the proof the join workflow verifies.
 type joinPrefill struct {
+	Device         bool   // the form's "add a storage node" mode
+	MemberName     string // known once the manifest lists the member
 	MemberKey      string
 	ContributionGB *int // nil leaves the field to the member
 	DeviceKey      string
 	DeviceName     string
+	Certificate    string
 }
 
 func joinRequestURL(p joinPrefill) string {
 	q := url.Values{}
-	q.Set("key", p.MemberKey)
+	if p.Device {
+		q.Set("mode", "device")
+	}
+	if p.MemberName != "" {
+		q.Set("name", p.MemberName)
+	}
+	if p.MemberKey != "" {
+		q.Set("key", p.MemberKey)
+	}
 	if p.ContributionGB != nil {
 		q.Set("gb", strconv.Itoa(*p.ContributionGB))
 	}
@@ -43,7 +56,33 @@ func joinRequestURL(p joinPrefill) string {
 	if p.DeviceName != "" {
 		q.Set("devicename", p.DeviceName)
 	}
+	if p.Certificate != "" {
+		q.Set("cert", p.Certificate)
+	}
 	return joinFormURL + "?" + q.Encode()
+}
+
+// devicePrefill is a listed member's request to add a storage node: the
+// first storage device on record that the manifest does not list, with its
+// certificate when the record has one (a node paired before 3.0.8 has none;
+// `identity show --certificate` on the node prints it). Nil when every
+// recorded storage device is listed.
+func devicePrefill(m *manifest.Manifest, member identity.Key, devices []pairedDevice) *joinPrefill {
+	listed := map[string]bool{}
+	for _, s := range m.Storage {
+		listed[s.Device.String()] = true
+	}
+	sd := storageDeviceNotIn(devices, listed)
+	if sd == nil {
+		return nil
+	}
+	p := &joinPrefill{Device: true, MemberKey: member.String(), DeviceKey: sd.Device, DeviceName: sd.Name, Certificate: sd.Certificate}
+	for _, mem := range m.Members {
+		if mem.Key == member {
+			p.MemberName = mem.Name
+		}
+	}
+	return p
 }
 
 // prefillFor builds the join request for an identity: its member key, the
@@ -117,17 +156,33 @@ func runJoinRequest(args []string) error {
 	if err != nil {
 		return fmt.Errorf("this device has no identity yet (%w); run redundanet setup", err)
 	}
+	devices, _ := loadDevices(d)
 	m, err := membership.Open(membershipConfig(d, *network))
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		m.Refresh(ctx)
 		cancel()
-		if memberListed(m.Manifest(), st.Member) {
-			fmt.Printf("member %s is already listed in manifest revision %d; nothing to request\n", st.Member.Short(), m.Status().Revision)
+		if man := m.Manifest(); memberListed(man, st.Member) {
+			// A listed member has nothing to request but a storage node the
+			// manifest does not list yet.
+			p := devicePrefill(man, st.Member, devices)
+			if p == nil {
+				fmt.Printf("member %s is listed in manifest revision %d and so is every storage node paired from here; nothing to request\n", st.Member.Short(), m.Status().Revision)
+				return nil
+			}
+			link := joinRequestURL(*p)
+			fmt.Println(link)
+			if p.Certificate == "" {
+				fmt.Fprintf(os.Stderr, "the form adds storage node %s to member %s; it needs the node's certificate as proof, which `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` prints on the node\n", p.DeviceName, p.MemberName)
+			} else {
+				fmt.Fprintf(os.Stderr, "the form adds storage node %s to member %s, with the node's certificate as proof; review it, then open the issue on GitHub\n", p.DeviceName, p.MemberName)
+			}
+			if !*noBrowser {
+				openInBrowser(link)
+			}
 			return nil
 		}
 	}
-	devices, _ := loadDevices(d)
 	link := joinRequestURL(prefillFor(st, devices))
 	fmt.Println(link)
 	fmt.Fprintln(os.Stderr, "the form is filled in from this device; review it, fill the member name and the contribution, then open the issue on GitHub")

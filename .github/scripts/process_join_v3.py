@@ -6,13 +6,26 @@ ISSUE_BODY, the issue number in ISSUE_NUMBER and the applicant's GitHub login
 in ISSUE_AUTHOR. The parsing, the checks and the manifest edit live here so
 they are unit-tested (tests/unit/test_process_join_v3.py).
 
-The issue body is what the join form (docs/join.html) produces: the heading
-`## RedundaNet 3 membership`, a Markdown table with the rows Member name,
-Member key, Contribution GB, Device key, Device name, UDP port, Legacy GPG
-fingerprint and Notes, and, for a RedundaNet 2 member, a section
-`## Legacy signature` with an armored PGP detached signature over the member
-key string. The script appends a `members:` entry and, when the member
-contributes disk, a `storage:` entry, and raises `revision` by one.
+The issue body is what the join form (docs/join.html) produces. A new
+member's request: the heading `## RedundaNet 3 membership`, a Markdown table
+with the rows Member name, Member key, Contribution GB, Device key, Device
+name, UDP port, Legacy GPG fingerprint and Notes, and, for a RedundaNet 2
+member, a section `## Legacy signature` with an armored PGP detached
+signature over the member key string. The script appends a `members:` entry
+and, when the member contributes disk, a `storage:` entry, and raises
+`revision` by one.
+
+A listed member's request to add a storage node: the heading
+`## RedundaNet 3 storage device`, a table with Member name, Device key,
+Device name, UDP port, Contribution GB (the member's new total, optional)
+and Notes, and a section `## Device certificate` with the node's certificate
+as `redundanet identity show --certificate` prints it (one line, base64url).
+The certificate is the proof: `redundanet identity verify-certificate`
+checks the member's signature over it, and the script checks that the
+member key is the one the manifest lists under that name, that the device
+key is the one in the table and that the certificate grants the storage
+role. The script appends the `storage:` entry, rewrites the member's
+`contribution_gb` when a new total was given, and raises `revision` by one.
 
 SECURITY: the body is attacker-controlled (anyone can open an issue). Every
 value is validated against a closed charset before it is written anywhere:
@@ -34,7 +47,9 @@ import json
 import os
 import re
 import secrets
+import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -45,6 +60,7 @@ import validate_v3_members as legacy
 import yaml
 
 MARKER = "## RedundaNet 3 membership"
+DEVICE_MARKER = "## RedundaNet 3 storage device"
 ROW_NAME = "member name"
 ROW_KEY = "member key"
 ROW_CONTRIBUTION = "contribution gb"
@@ -63,6 +79,10 @@ KEY_RE = re.compile(r"^[a-z2-7]{52}$")
 FINGERPRINT_RE = re.compile(r"^[0-9A-F]{40}$")
 PRINTABLE_RE = re.compile(r"^[\x20-\x7e]*$")
 LEGACY_HEADING_RE = re.compile(r"^#+\s*legacy signature\s*$", re.IGNORECASE)
+CERT_HEADING_RE = re.compile(r"^#+\s*device certificate\s*$", re.IGNORECASE)
+# A certificate as `identity show --certificate` prints it: base64url, one line.
+CERT_RE = re.compile(r"^[A-Za-z0-9_-]{64,4096}$")
+AGENT_DIR = Path(__file__).resolve().parents[2] / "agent"
 MAX_CONTRIBUTION_GB = 1_000_000
 # The agent's rule: a forwarded port is never a privileged one.
 MIN_UDP_PORT, MAX_UDP_PORT = 1024, 65535
@@ -105,6 +125,29 @@ class JoinResult:
     legacy: str = ""
 
 
+@dataclass
+class DeviceRequest:
+    """The validated content of a listed member's request to add a storage node."""
+
+    member: str
+    device_key: str
+    device_name: str
+    certificate: str
+    udp_port: int | None = None
+    contribution_gb: int | None = None  # the member's new total; None keeps it
+
+
+@dataclass
+class DeviceResult:
+    """Outcome of processing a storage device request."""
+
+    success: bool
+    error: str = ""
+    request: DeviceRequest | None = None
+    revision: int = 0
+    member_key: str = ""
+
+
 def set_output(**kwargs: str) -> None:
     """Write step outputs with the random-delimiter heredoc form so a value can
     never inject extra output lines, even if it somehow contained newlines."""
@@ -134,7 +177,13 @@ def _lines(body: str) -> list[str]:
     return body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
-def parse_table(body: str) -> dict[str, str]:
+def is_device_request(body: str) -> bool:
+    """Whether the body carries the storage device heading rather than the
+    membership one; the device heading wins when both are present."""
+    return any(line.strip() == DEVICE_MARKER for line in _lines(body))
+
+
+def parse_table(body: str, marker: str = MARKER) -> dict[str, str]:
     """Field -> value of the table under the marker.
 
     Field names are lowercased with any bold markers or backticks removed;
@@ -143,9 +192,9 @@ def parse_table(body: str) -> dict[str, str]:
     """
     lines = _lines(body)
     try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == MARKER)
+        start = next(i for i, line in enumerate(lines) if line.strip() == marker)
     except StopIteration:
-        raise JoinError(f"the issue body has no `{MARKER}` heading") from None
+        raise JoinError(f"the issue body has no `{marker}` heading") from None
     rows: dict[str, str] = {}
     for line in lines[start + 1 :]:
         stripped = line.strip()
@@ -166,8 +215,37 @@ def parse_table(body: str) -> dict[str, str]:
             value = ""
         rows.setdefault(name, value)
     if not rows:
-        raise JoinError("no table found under the membership heading")
+        raise JoinError(f"no table found under the `{marker}` heading")
     return rows
+
+
+def parse_certificate(body: str) -> str:
+    """The one-line certificate under the `## Device certificate` heading,
+    with code fences and whitespace removed; refused unless it is base64url
+    of a plausible length. Verification is the agent's job."""
+    lines = _lines(body)
+    try:
+        start = next(i for i, line in enumerate(lines) if CERT_HEADING_RE.match(line.strip()))
+    except StopIteration:
+        raise JoinError(
+            "the issue body has no `## Device certificate` section; "
+            "`redundanet identity show --certificate` on the node prints it"
+        ) from None
+    parts: list[str] = []
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            break
+        if not stripped or stripped.startswith("```"):
+            continue
+        parts.append(stripped.strip("`"))
+    certificate = "".join(parts)
+    if not CERT_RE.fullmatch(certificate):
+        raise JoinError(
+            "the device certificate is not the one-line base64url text "
+            "`redundanet identity show --certificate` prints"
+        )
+    return certificate
 
 
 def parse_signature(body: str) -> str | None:
@@ -379,6 +457,273 @@ def check_manifest(req: JoinRequest, manifest: Any, author: str | None = None) -
             f"{req.name} is the member name of RedundaNet 2 nodes: file the request from "
             "that GitHub account, or add the Legacy GPG fingerprint and the Legacy signature"
         )
+
+
+# --- a listed member's storage device -----------------------------------------
+
+
+def parse_device_request(body: str) -> DeviceRequest:
+    """Parse and validate a storage device request; raises JoinError with the reason."""
+    rows = parse_table(body, DEVICE_MARKER)
+    missing = [row for row in (ROW_NAME, ROW_DEVICE_KEY, ROW_DEVICE_NAME) if not rows.get(row)]
+    if missing:
+        raise JoinError("the table is missing the row(s): " + ", ".join(missing))
+    req = DeviceRequest(
+        member=parse_name(rows[ROW_NAME], "Member name"),
+        device_key=parse_key(rows[ROW_DEVICE_KEY], "Device key"),
+        device_name=parse_name(rows[ROW_DEVICE_NAME], "Device name"),
+        certificate=parse_certificate(body),
+    )
+    if rows.get(ROW_UDP_PORT):
+        req.udp_port = parse_port(rows[ROW_UDP_PORT])
+    if rows.get(ROW_CONTRIBUTION):
+        req.contribution_gb = parse_contribution(rows[ROW_CONTRIBUTION])
+    return req
+
+
+def verify_certificate_with_go(certificate: str, network: str) -> dict[str, Any]:
+    """Have the agent verify the certificate: it decodes the one-line form,
+    checks the member's signature and prints what the certificate says. The
+    workflow has Go set up; the checkout's own agent is the verifier, so a
+    format change ships with its check."""
+    with tempfile.NamedTemporaryFile("w", suffix=".cert", delete=False) as f:
+        f.write(certificate)
+        path = f.name
+    try:
+        run = subprocess.run(
+            [
+                "go",
+                "run",
+                "./cmd/redundanet",
+                "identity",
+                "verify-certificate",
+                "--network",
+                network,
+                path,
+            ],
+            cwd=AGENT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+        )
+    finally:
+        Path(path).unlink(missing_ok=True)
+    if run.returncode != 0:
+        reason = run.stderr.strip().splitlines()[-1] if run.stderr.strip() else "no reason given"
+        raise JoinError(
+            "the device certificate does not verify: " + reason.removeprefix("redundanet: ")
+        )
+    try:
+        info = json.loads(run.stdout)
+    except json.JSONDecodeError as err:
+        raise JoinError(f"the certificate check printed no usable result: {err}") from None
+    return info
+
+
+def check_device_request(req: DeviceRequest, manifest: Any, info: dict[str, Any]) -> str:
+    """The member exists, the certificate is theirs and for this device with
+    the storage role, and the device is new. Returns the member key."""
+    if not isinstance(manifest, dict) or manifest.get("schema") != 3:
+        raise JoinError("the manifest is not a RedundaNet 3 manifest (schema: 3)")
+    members = _entries(manifest, "members")
+    member = next((m for m in members if str(m.get("name")) == req.member), None)
+    if member is None:
+        raise JoinError(
+            f"no member named {req.member} is in the manifest; a new member sends the "
+            "membership request instead, with the node in it"
+        )
+    key = str(member.get("key", "")).strip().lower()
+    network = str((manifest.get("network") or {}).get("name", ""))
+    if str(info.get("network", "")) != network:
+        raise JoinError(
+            f"the certificate is for network {shown(str(info.get('network', '')))}, not {network}"
+        )
+    if str(info.get("member", "")).lower() != key:
+        raise JoinError(
+            f"the certificate was issued by another member key, not the one the manifest "
+            f"lists for {req.member}; pair the node from a device of that member"
+        )
+    if str(info.get("device", "")).lower() != req.device_key:
+        raise JoinError("the certificate is for another device than the Device key row names")
+    roles = info.get("roles") or []
+    if "storage" not in roles:
+        raise JoinError(
+            "the certificate grants no storage role; pair the node again with "
+            "`redundanet device pair --storage`"
+        )
+    keys: dict[str, str] = {}
+    for what, entries, field in (
+        ("operator", _entries(manifest, "operators"), "key"),
+        ("hub", _entries(manifest, "hubs"), "key"),
+        ("member", members, "key"),
+        ("storage device", _entries(manifest, "storage"), "device"),
+    ):
+        for entry in entries:
+            keys[str(entry.get(field, "")).strip().lower()] = f"{what} {entry.get('name')}"
+    if req.device_key in keys:
+        raise JoinError(
+            f"Device key is already in the manifest as the key of {keys[req.device_key]}"
+        )
+    taken = {str(s.get("name")) for s in _entries(manifest, "storage")} | {
+        str(h.get("name")) for h in _entries(manifest, "hubs")
+    }
+    if req.device_name in taken:
+        raise JoinError(
+            f"a storage device or hub named {req.device_name} already exists; pick another device name"
+        )
+    return key
+
+
+def render_device_storage(req: DeviceRequest, indent: str) -> list[str]:
+    """The `storage:` entry for the member's new device."""
+    lines = [
+        f"{indent}- member: {yaml_scalar(req.member)}",
+        f"{indent}  device: {yaml_scalar(req.device_key)}",
+        f"{indent}  name: {yaml_scalar(req.device_name)}",
+    ]
+    if req.udp_port:
+        lines.append(f"{indent}  udp_port: {req.udp_port}")
+    return lines
+
+
+def expected_device_storage(req: DeviceRequest) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "member": req.member,
+        "device": req.device_key,
+        "name": req.device_name,
+    }
+    if req.udp_port:
+        entry["udp_port"] = req.udp_port
+    return entry
+
+
+def set_member_contribution(text: str, name: str, gb: int) -> str:
+    """Rewrite one member's `contribution_gb` in the text of the top-level
+    `members:` list, touching nothing else."""
+    lines = text.split("\n")
+    try:
+        start = next(i for i, line in enumerate(lines) if re.fullmatch(r"members:\s*(#.*)?", line))
+    except StopIteration:
+        raise EditError("no top-level `members:` list") from None
+    in_member = False
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if line and not line[0].isspace():
+            break  # the next top-level key
+        item = re.fullmatch(r"(\s*)- name:\s*(.+?)\s*", line)
+        if item:
+            in_member = yaml.safe_load(item.group(2)) == name
+            continue
+        if not in_member:
+            continue
+        field = re.fullmatch(r"(\s+contribution_gb:[ \t]*)(\d+)([ \t]*(?:#.*)?)", line)
+        if field:
+            lines[i] = f"{field.group(1)}{gb}{field.group(3)}"
+            return "\n".join(lines)
+    raise EditError(f"member {name} has no `contribution_gb:` line to rewrite")
+
+
+def verify_device_roundtrip(data: Any, req: DeviceRequest, revision: int) -> None:
+    if not isinstance(data, dict):
+        raise EditError("the edited manifest is not a mapping")
+    if data.get("revision") != revision:
+        raise EditError(f"revision read back as {data.get('revision')!r}, not {revision}")
+    devices = [s for s in _entries(data, "storage") if str(s.get("name")) == req.device_name]
+    if len(devices) != 1 or dict(devices[0]) != expected_device_storage(req):
+        raise EditError(f"the storage entry read back as {devices!r}")
+    if req.contribution_gb is not None:
+        member = next(m for m in _entries(data, "members") if str(m.get("name")) == req.member)
+        if member.get("contribution_gb") != req.contribution_gb:
+            raise EditError(f"contribution_gb read back as {member.get('contribution_gb')!r}")
+
+
+def process_device(
+    issue_body: str,
+    manifest_path: Path,
+    verify_certificate: Callable[[str, str], dict[str, Any]] = verify_certificate_with_go,
+) -> DeviceResult:
+    """Parse a storage device request and add the device to the manifest on
+    disk. The file is written only after every check passed."""
+    try:
+        req = parse_device_request(issue_body)
+        text = manifest_path.read_text()
+        data = yaml.safe_load(text)
+        network = (
+            str(((data or {}).get("network") or {}).get("name", ""))
+            if isinstance(data, dict)
+            else ""
+        )
+        info = verify_certificate(req.certificate, network)
+        key = check_device_request(req, data, info)
+        new_text = append_items(text, "storage", lambda indent: render_device_storage(req, indent))
+        if req.contribution_gb is not None:
+            new_text = set_member_contribution(new_text, req.member, req.contribution_gb)
+        new_text, revision = bump_revision(new_text)
+        verify_device_roundtrip(yaml.safe_load(new_text), req, revision)
+    except JoinError as err:
+        return DeviceResult(success=False, error=str(err))
+    except (EditError, yaml.YAMLError, OSError) as err:
+        return DeviceResult(success=False, error=f"could not update the manifest: {err}")
+    manifest_path.write_text(new_text)
+    return DeviceResult(success=True, request=req, revision=revision, member_key=key)
+
+
+def compose_device_pr(req: DeviceRequest, issue_number: str, revision: int) -> dict[str, str]:
+    """Title, body and commit message of the pull request for a storage device."""
+    device = f"`{req.device_name}` (`{req.device_key}`)"
+    if req.udp_port:
+        device += f", UDP port {req.udp_port}"
+    contribution = (
+        f"now {req.contribution_gb} GB" if req.contribution_gb is not None else "unchanged"
+    )
+    body = f"""## RedundaNet 3 storage device
+
+This PR adds a storage device of member `{req.member}` to the RedundaNet 3 manifest as revision {revision}: the `storage:` entry{" and the member's new `contribution_gb`" if req.contribution_gb is not None else ""}.
+
+| Field | Value |
+|-------|-------|
+| **Member** | `{req.member}` |
+| **Storage device** | {device} |
+| **Contribution** | {contribution} |
+| **Proof** | the node's certificate: issued by the member's key, for this device, with the storage role (verified by `redundanet identity verify-certificate`) |
+
+### Maintainer checklist
+- [ ] Review the entry{" and the contribution" if req.contribution_gb is not None else ""}
+- [ ] On the laptop with the operator key: `scripts/sign.sh manifest join-request/{issue_number}`. It checks out this branch, shows the manifest diff, checks that the revision rises and validates, signs, pushes `manifests/manifest.sig`, waits for the checks and merges; every agent applies revision {revision} within five minutes.
+
+The `validate` check on this PR runs the Python and Go validators inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
+
+Closes #{issue_number}
+
+---
+*Auto-generated from storage device request #{issue_number}*
+"""
+    return {
+        "pr_title": f"Add storage device {req.device_name} for member {req.member} (Issue #{issue_number})",
+        "pr_body": body,
+        "commit_message": (
+            f"Add storage device {req.device_name} of member {req.member} to the RedundaNet 3 "
+            f"manifest (revision {revision})"
+        ),
+    }
+
+
+def compose_device_next_steps(req: DeviceRequest, revision: int) -> str:
+    """The closing comment on a storage device issue; the workflow fills in {PR_URL}."""
+    return f"""**Storage device request processed.**
+
+Storage device `{req.device_name}` of member `{req.member}` goes into the RedundaNet 3 manifest as revision {revision}.
+
+**Pull Request**: {{PR_URL}}
+
+This issue is being closed. What happens next:
+
+1. The maintainer reviews, signs `manifest.sig` offline with the operator key, and merges. Every agent applies the new revision within five minutes.
+2. The node is admitted from then on and appears on the status page under your name: {STATUS_PAGE}
+3. On the node, `sudo /var/lib/redundanet3/bin/redundanet status` shows it; on your laptop, `redundanet setup` shows nothing left to request.
+
+*Thank you for contributing to RedundaNet!*"""
 
 
 # --- editing the manifest text ------------------------------------------------
@@ -670,6 +1015,33 @@ def main() -> int:
 
     # Do NOT echo the untrusted issue body to the log: a line that begins
     # with `::` would be interpreted as a workflow command.
+    if is_device_request(issue_body):
+        print(f"Processing issue #{issue_number} as a RedundaNet 3 storage device request")
+        device = process_device(issue_body, Path("manifests/manifest.yaml"))
+        if not device.success or device.request is None:
+            print("::error::" + device.error)
+            set_output(success="false", error=device.error)
+            return 1
+        dreq = device.request
+        print(f"Member: {dreq.member} ({device.member_key})")
+        print(f"Storage device: {dreq.device_name} ({dreq.device_key})")
+        print(f"Manifest revision: {device.revision}")
+        set_output(
+            success="true",
+            member_name=dreq.member,
+            member_key=device.member_key,
+            contribution_gb=str(dreq.contribution_gb if dreq.contribution_gb is not None else ""),
+            device_key=dreq.device_key,
+            device_name=dreq.device_name,
+            udp_port=str(dreq.udp_port or ""),
+            legacy="",
+            revision=str(device.revision),
+            next_steps=compose_device_next_steps(dreq, device.revision),
+            **compose_device_pr(dreq, issue_number, device.revision),
+        )
+        print("Done!")
+        return 0
+
     print(f"Processing issue #{issue_number} as a RedundaNet 3 membership request")
 
     result = process(issue_body, Path("manifests/manifest.yaml"), author=author)

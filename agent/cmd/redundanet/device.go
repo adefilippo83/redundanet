@@ -86,11 +86,13 @@ func devicePair(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	var issued *identity.SignedCertificate
 	dev, name, err := pairing.Pair(ctx, fs.Arg(0), *network, func(device identity.Key, _ string) (*pairing.Offer, error) {
 		sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: device, Roles: roles, IssuedAt: time.Now(), Serial: *serial})
 		if err != nil {
 			return nil, err
 		}
+		issued = sc
 		st := identity.State{Network: *network, Member: sc.Certificate.Member, MemberSecret: seed.Secret(), Certificate: *sc}
 		b, err := identity.Marshal(&st)
 		if err != nil {
@@ -101,9 +103,11 @@ func devicePair(args []string) error {
 	if err != nil {
 		return err
 	}
-	// On record here, so the join request can name the storage node without
-	// its key being copied by hand.
-	if err := recordDevice(d, pairedDevice{Device: dev.String(), Name: name, Roles: roles, PairedAt: time.Now()}); err != nil {
+	// On record here, with its certificate, so the join request can name the
+	// storage node and prove it is the member's without anything copied by
+	// hand.
+	cert, _ := encodeCertificate(issued)
+	if err := recordDevice(d, pairedDevice{Device: dev.String(), Name: name, Roles: roles, Certificate: cert, PairedAt: time.Now()}); err != nil {
 		fmt.Fprintln(os.Stderr, "could not record the device:", err)
 	}
 	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", dev.Short(), seed.MemberKey().Short(), strings.Join(roles, ", "))

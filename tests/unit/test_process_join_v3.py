@@ -721,3 +721,271 @@ class TestOutputs:
         text = outputs.read_text()
         assert "\nfalse\n" in text and "heading" in text
         assert manifest_path.read_text() == MANIFEST
+
+
+# --- a listed member adds a storage node ---------------------------------------
+
+FALCON_KEY = "ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa"
+CERT = "Q" * 96
+
+
+def device_body(
+    member: str = "adefilippo83",
+    device_key: str | None = None,
+    device_name: str = "nas-2",
+    udp_port: str = "",
+    contribution: str = "",
+    notes: str = "",
+    cert: str | None = CERT,
+) -> str:
+    body = f"""## RedundaNet 3 storage device
+
+| Field | Value |
+|-------|-------|
+| Member name | {member} |
+| Device key | {device_key or new_key()} |
+| Device name | {device_name} |
+| UDP port | {udp_port} |
+| Contribution GB | {contribution} |
+| Notes | {notes} |
+"""
+    if cert is not None:
+        body += f"\n## Device certificate\n\n```\n{cert}\n```\n"
+    return body
+
+
+def verifier(
+    member: str = MEMBER_KEY,
+    device: str | None = None,
+    roles: tuple[str, ...] = ("client", "storage"),
+    network: str = "redundanet",
+):
+    """A stand-in for the agent's verify-certificate: what a valid certificate
+    for the given facts would say. `device` None means: the Device key row."""
+    seen: list[tuple[str, str]] = []
+
+    def verify(certificate: str, net: str) -> dict:
+        seen.append((certificate, net))
+        rows = verify.rows  # type: ignore[attr-defined]
+        return {
+            "network": network,
+            "member": member,
+            "device": device or rows,
+            "roles": list(roles),
+            "serial": 7,
+            "issued_at": "2026-11-08T12:00:00Z",
+        }
+
+    verify.seen = seen  # type: ignore[attr-defined]
+    verify.rows = ""  # type: ignore[attr-defined]
+    return verify
+
+
+def run_device(body: str, path: Path, verify=None) -> v3.DeviceResult:
+    if verify is None:
+        verify = verifier()
+    if not verify.rows:
+        verify.rows = v3.parse_table(body, v3.DEVICE_MARKER)["device key"]
+    return v3.process_device(body, path, verify_certificate=verify)
+
+
+class TestDeviceRequest:
+    def test_detects_the_kind(self):
+        assert v3.is_device_request(device_body())
+        assert not v3.is_device_request(issue_body())
+
+    def test_parse(self):
+        key = new_key()
+        req = v3.parse_device_request(
+            device_body(device_key=key, udp_port="4471", contribution="2500")
+        )
+        assert req == v3.DeviceRequest(
+            member="adefilippo83",
+            device_key=key,
+            device_name="nas-2",
+            certificate=CERT,
+            udp_port=4471,
+            contribution_gb=2500,
+        )
+        assert v3.parse_device_request(device_body()).contribution_gb is None
+
+    def test_parse_refusals(self):
+        with pytest.raises(v3.JoinError, match="Device certificate"):
+            v3.parse_device_request(device_body(cert=None))
+        with pytest.raises(v3.JoinError, match="base64url"):
+            v3.parse_device_request(device_body(cert="not a certificate!"))
+        with pytest.raises(v3.JoinError, match="missing the row"):
+            v3.parse_device_request(device_body(device_name=""))
+        with pytest.raises(v3.JoinError, match="Member name"):
+            v3.parse_device_request(device_body(member="Not Valid"))
+
+    def test_certificate_fenced_or_bare(self):
+        bare = device_body(cert=None) + "\n## Device certificate\n\n" + CERT + "\n"
+        assert v3.parse_device_request(bare).certificate == CERT
+        split = (
+            device_body(cert=None)
+            + "\n## Device certificate\n\n```\n"
+            + CERT[:40]
+            + "\n"
+            + CERT[40:]
+            + "\n```\n"
+        )
+        assert v3.parse_device_request(split).certificate == CERT
+
+    def test_storage_entry_appended_textually(self, manifest_path: Path):
+        key = new_key()
+        verify = verifier()
+        result = run_device(device_body(device_key=key, udp_port="4471"), manifest_path, verify)
+        assert result.success, result.error
+        assert result.revision == 5 and result.member_key == MEMBER_KEY
+        assert verify.seen == [(CERT, "redundanet")]
+        new_text = manifest_path.read_text()
+        block = "\n".join(v3.render_device_storage(result.request, "  ")) + "\n"
+        assert block in new_text
+        assert new_text.replace(block, "") == MANIFEST.replace("revision: 4", "revision: 5")
+        data = yaml.safe_load(new_text)
+        assert data["storage"][-1] == {
+            "member": "adefilippo83",
+            "device": key,
+            "name": "nas-2",
+            "udp_port": 4471,
+        }
+        assert data["members"][0]["contribution_gb"] == 1800
+
+    def test_new_contribution_rewrites_the_members_line(self, manifest_path: Path):
+        result = run_device(device_body(contribution="2500"), manifest_path)
+        assert result.success, result.error
+        new_text = manifest_path.read_text()
+        assert "    contribution_gb: 2500\n" in new_text and "contribution_gb: 1800" not in new_text
+        block = "\n".join(v3.render_device_storage(result.request, "  ")) + "\n"
+        assert new_text.replace(block, "") == MANIFEST.replace(
+            "revision: 4", "revision: 5"
+        ).replace("contribution_gb: 1800", "contribution_gb: 2500")
+
+    def test_refusals_leave_the_file_untouched(self, manifest_path: Path):
+        cases = [
+            (device_body(member="nobody"), verifier(), "no member named nobody"),
+            (device_body(), verifier(member=new_key()), "another member key"),
+            (device_body(), verifier(device=new_key()), "another device"),
+            (device_body(), verifier(roles=("client",)), "no storage role"),
+            (device_body(), verifier(network="othernet"), "network"),
+            (device_body(device_key=FALCON_KEY), verifier(), "already in the manifest"),
+            (device_body(device_name="falcon"), verifier(), "already exists"),
+        ]
+        for body, verify, message in cases:
+            result = run_device(body, manifest_path, verify)
+            assert not result.success and message in result.error, (message, result.error)
+            assert manifest_path.read_text() == MANIFEST
+
+    def test_set_member_contribution_on_the_live_manifest(self, tmp_path: Path):
+        text = (REPO_ROOT / "manifests" / "manifest.yaml").read_text()
+        before = yaml.safe_load(text)
+        target = before["members"][-1]
+        new_text = v3.set_member_contribution(text, target["name"], target["contribution_gb"] + 1)
+        after = yaml.safe_load(new_text)
+        assert after["members"][-1]["contribution_gb"] == target["contribution_gb"] + 1
+        after["members"][-1]["contribution_gb"] = target["contribution_gb"]
+        assert after == before
+        with pytest.raises(v3.EditError):
+            v3.set_member_contribution(text, "nobody", 1)
+
+    def test_outputs(self):
+        req = v3.parse_device_request(device_body(device_name="nas-9", contribution="900"))
+        pr = v3.compose_device_pr(req, "42", 7)
+        assert pr["pr_title"] == "Add storage device nas-9 for member adefilippo83 (Issue #42)"
+        assert (
+            "revision 7" in pr["pr_body"]
+            and "now 900 GB" in pr["pr_body"]
+            and "Closes #42" in pr["pr_body"]
+        )
+        assert "nas-9" in pr["commit_message"]
+        steps = v3.compose_device_next_steps(req, 7)
+        assert "{PR_URL}" in steps and "nas-9" in steps
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="the Go toolchain is not installed")
+class TestDeviceRequestWithTheAgent:
+    """The seam the workflow relies on: a certificate the agent made, checked
+    by the agent's own verify-certificate, then the manifest edit."""
+
+    def test_real_certificate(self, tmp_path: Path):
+        agent = REPO_ROOT / "agent"
+        data_dir = tmp_path / "node"
+        env = {**os.environ, "GOFLAGS": "-mod=mod"}
+        subprocess.run(
+            [
+                "go",
+                "run",
+                "./cmd/redundanet",
+                "identity",
+                "init",
+                "--yes",
+                "--storage",
+                "--network",
+                "redundanet",
+                "--data-dir",
+                str(data_dir),
+            ],
+            cwd=agent,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=600,
+        )
+        shown = subprocess.run(
+            [
+                "go",
+                "run",
+                "./cmd/redundanet",
+                "identity",
+                "show",
+                "--network",
+                "redundanet",
+                "--data-dir",
+                str(data_dir),
+            ],
+            cwd=agent,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=600,
+        ).stdout
+        member = next(
+            line.split()[-1] for line in shown.splitlines() if line.startswith("member key:")
+        )
+        device = next(
+            line.split()[-1] for line in shown.splitlines() if line.startswith("device key:")
+        )
+        cert = subprocess.run(
+            [
+                "go",
+                "run",
+                "./cmd/redundanet",
+                "identity",
+                "show",
+                "--certificate",
+                "--network",
+                "redundanet",
+                "--data-dir",
+                str(data_dir),
+            ],
+            cwd=agent,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=600,
+        ).stdout.strip()
+
+        path = tmp_path / "manifest.yaml"
+        path.write_text(MANIFEST.replace(MEMBER_KEY, member))
+        result = v3.process_device(device_body(device_key=device, cert=cert), path)
+        assert result.success, result.error
+        assert yaml.safe_load(path.read_text())["storage"][-1]["device"] == device
+
+        tampered = cert[:-4] + ("AAAA" if not cert.endswith("AAAA") else "BBBB")
+        path.write_text(MANIFEST.replace(MEMBER_KEY, member))
+        result = v3.process_device(device_body(device_key=device, cert=tampered), path)
+        assert not result.success and "does not verify" in result.error
