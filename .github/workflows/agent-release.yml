@@ -381,6 +381,9 @@ jobs:
           cache-dependency-path: agent/go.sum
       - name: the release as it is on GitHub, checked, into the index
         id: index
+        # The workflow's runs default to agent/; this step's paths are the
+        # repository's (releases/, agent/).
+        working-directory: ${{ github.workspace }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
