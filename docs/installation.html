@@ -308,28 +308,6 @@
             color: var(--text);
         }
 
-        .descriptor {
-            position: relative;
-        }
-
-        .copy-btn {
-            display: none;
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            padding: 4px 10px;
-            font-size: 0.8rem;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            background: var(--bg-dark);
-            color: var(--text);
-            cursor: pointer;
-        }
-
-        .copy-btn:hover {
-            border-color: var(--primary);
-        }
-
         /* Footer */
         footer {
             padding: 40px 0;
@@ -382,13 +360,13 @@
     <main class="container">
         <div class="page-header">
             <h1 data-i18n="ig.header.title">Install</h1>
-            <p data-i18n="ig.header.subtitle">One binary, four commands, and the agent runs as a service at login. A Linux storage node takes three more. Then your first backup set.</p>
+            <p data-i18n="ig.header.subtitle">One line installs the agent. Three commands make it yours and start it at login. A Linux storage node is one line and a pairing code. Then your first backup set.</p>
         </div>
 
         <nav class="toc" aria-label="On this page">
             <h2 data-i18n="ig.toc.title">On this page</h2>
             <ul>
-                <li><a href="#before" data-i18n="ig.toc.before">Before you start</a></li>
+                <li><a href="#install" data-i18n="ig.toc.install">One line, three commands</a></li>
                 <li><a href="#macos">macOS</a></li>
                 <li><a href="#windows">Windows</a></li>
                 <li><a href="#linux" data-i18n="ig.toc.linux">Linux laptop or desktop</a></li>
@@ -401,43 +379,38 @@
         </nav>
 
         <div class="guide">
-            <section id="before">
-                <h2 data-i18n="ig.before.title">Before you start</h2>
-                <ol>
-                    <li data-i18n="ig.before.s1">Get the archive for your platform from the <a href="download.html">download page</a> and check its sha256 against the signed release index, as that page shows.</li>
-                    <li data-i18n="ig.before.s2">Every device joins the network with the same public descriptor. It is public data: the network name, the hub, the operator keys and where the signed manifest is served. Copy it from here when a command below says <code>&lt;descriptor&gt;</code>.</li>
-                </ol>
-                <div class="descriptor">
-                    <button type="button" class="copy-btn" data-copy="descriptor" data-i18n="ig.before.copy">Copy</button>
-                    <pre class="wrap"><code id="descriptor">rn3:net:pGRodWJzgaJja2V5WCALOLHwmTWbWj-e7yw_Sp8-0D0_janLDwPqi3cCmLIqmmVyZWxheXAyLjI5LjQ2LjI0OTo4NDQzZ25ldHdvcmtqcmVkdW5kYW5ldGlvcGVyYXRvcnOBWCCC5I2B84PJ_b6cZwPgHWAHQ2kTTn_Z86TZrcnx3M_6NWpyZXBvc2l0b3J5eD5odHRwczovL3Jhdy5naXRodWJ1c2VyY29udGVudC5jb20vYWRlZmlsaXBwbzgzL3JlZHVuZGFuZXQvbWFpbg</code></pre>
-                </div>
-                <div class="note" data-i18n="ig.before.phrase"><strong>The phrase.</strong> <code>redundanet identity init</code> shows a twelve-word phrase once and never again. Write it down and keep it like a password: your member key comes from it, and so does every device you certify. There is no reset. <code>--passphrase</code> seals the identity file on disk.</div>
-                <p data-i18n="ig.before.long">This page is the short form. The long one, with every option, is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.md">docs/install.md</a> on GitHub.</p>
+            <section id="install">
+                <h2 data-i18n="ig.install.title">One line, three commands</h2>
+                <p data-i18n="ig.install.intro">On macOS and Linux, one line finds your platform, downloads the newest release, checks it against the signed release index and installs it. Then three commands: your identity, the service, the page.</p>
+                <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
+
+redundanet identity init        # your recovery phrase, shown once: write it down
+redundanet service install      # the agent, as a service that starts at login
+redundanet open                 # the local page in your browser</code></pre>
+                <ul>
+                    <li data-i18n="ig.install.script">The script is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh">docs/install.sh</a> in the repository, short enough to read first. It refuses a download whose sha256 or size differs from the signed index, puts the binary in your data directory where the agent can update it, links <code>/usr/local/bin/redundanet</code> to it (the one step that asks for your password), and has the installed binary check the index's signature itself.</li>
+                    <li data-i18n="ig.install.network">The network is built into the binary: its name, its hub, the operator keys and where the signed manifest is served. Nothing to paste and no flag to type; the agent fetches the manifest the first time it needs it.</li>
+                    <li data-i18n="ig.install.phrase"><strong>The phrase.</strong> <code>redundanet identity init</code> shows a twelve-word phrase once and never again. Write it down and keep it like a password: your member key comes from it, and so does every device you certify. There is no reset. <code>--passphrase</code> seals the identity file on disk.</li>
+                    <li data-i18n="ig.install.next">Then <a href="join.html">send your join request</a>; your devices are admitted once the maintainer has signed the manifest with you in it. A second device of a member is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.md#a-second-device-without-the-phrase">paired</a> instead of initialised.</li>
+                    <li data-i18n="ig.install.long">This page is the short form. The long one, with every option and the way by hand, is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.md">docs/install.md</a> on GitHub.</li>
+                </ul>
             </section>
 
             <section id="macos">
                 <h2>macOS</h2>
-                <p data-i18n="ig.mac.intro">Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. Unpack the archive, put the binary on your PATH, and run the four commands.</p>
-                <pre><code>tar -xzf redundanet-*-darwin-arm64.tar.gz --strip-components=1
-sudo mv redundanet /usr/local/bin/redundanet
-
-redundanet identity init --network redundanet      # the phrase, shown once
-redundanet network join &lt;descriptor&gt;
-redundanet service install --network redundanet    # a launchd agent, starts at login
-redundanet open                                    # the local page in your browser</code></pre>
+                <p data-i18n="ig.mac.intro">Apple silicon is tested on the live network; the Intel build passes the test suite but has not run there yet. The one line above installs it; the service is a launchd agent that starts at login.</p>
                 <ul>
                     <li data-i18n="ig.mac.fda"><strong>Full Disk Access.</strong> A service that backs up Documents, Desktop or Downloads needs Full Disk Access for the agent. <code>backup add</code> says so when a folder is guarded: grant it to <code>redundanet</code> in System Settings, Privacy &amp; Security, then run the backup again.</li>
-                    <li data-i18n="ig.mac.gatekeeper">Notarization is not active yet, so macOS may ask you to allow the binary under Privacy &amp; Security on first run. Check the sha256 against the signed index first.</li>
-                    <li data-i18n="ig.mac.data">Data directory: <code>~/Library/Application Support/redundanet</code>.</li>
+                    <li data-i18n="ig.mac.gatekeeper">Notarization is not active yet. A copy the script fetched carries no quarantine mark and runs at once; one a browser downloaded makes macOS ask you to allow it under Privacy &amp; Security first.</li>
+                    <li data-i18n="ig.mac.data">Data directory: <code>~/Library/Application Support/redundanet</code>; the binary is in its <code>bin</code>.</li>
                 </ul>
             </section>
 
             <section id="windows">
                 <h2>Windows</h2>
-                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. The zip holds <code>redundanet-&lt;version&gt;-windows-amd64\redundanet.exe</code>. Unpack it, add that folder to your PATH or run from it, then the same four commands in a terminal.</p>
-                <pre><code>redundanet identity init --network redundanet
-redundanet network join &lt;descriptor&gt;
-redundanet service install --network redundanet    # a logon task, restarts on failure
+                <p data-i18n="ig.win.intro">The Windows build passes the test suite but has not run on the live network yet. Take <code>redundanet-&lt;version&gt;-windows-amd64.zip</code> from the <a href="download.html">download page</a> and check its sha256 as that page shows. Unpack it, add the folder to your PATH or run from it, then the same three commands in a terminal.</p>
+                <pre><code>redundanet identity init
+redundanet service install     # a logon task, restarts on failure
 redundanet open</code></pre>
                 <ul>
                     <li data-i18n="ig.win.unsigned">The binary is not code-signed yet, so Windows may warn before it runs. Check the sha256 against the signed index first.</li>
@@ -448,16 +421,9 @@ redundanet open</code></pre>
 
             <section id="linux">
                 <h2 data-i18n="ig.linux.title">Linux laptop or desktop</h2>
-                <p data-i18n="ig.linux.intro">x86-64 and ARM64 are tested on the live network, including Raspberry Pi 5. For a machine you sit at: unpack, place on PATH, the four commands. The service is a systemd user unit that starts at login.</p>
-                <pre><code>tar -xzf redundanet-*-linux-amd64.tar.gz --strip-components=1
-sudo mv redundanet /usr/local/bin/redundanet
-
-redundanet identity init --network redundanet
-redundanet network join &lt;descriptor&gt;
-redundanet service install --network redundanet    # a systemd user unit
-redundanet open</code></pre>
+                <p data-i18n="ig.linux.intro">x86-64 and ARM64 are tested on the live network, including Raspberry Pi 5. For a machine you sit at: the one line above, then the three commands. The service is a systemd user unit that starts at login and keeps running when you log out.</p>
                 <ul>
-                    <li data-i18n="ig.linux.data">Data directory: <code>~/.config/redundanet</code>.</li>
+                    <li data-i18n="ig.linux.data">Data directory: <code>~/.config/redundanet</code>; the binary is in its <code>bin</code>.</li>
                     <li data-i18n="ig.linux.node">For a headless machine that contributes disk, use the storage node flow below instead.</li>
                 </ul>
             </section>
@@ -465,14 +431,12 @@ redundanet open</code></pre>
             <section id="node">
                 <h2 data-i18n="ig.node.title">Linux storage node</h2>
                 <p>A Raspberry Pi can skip the steps below: each stable release carries a ready-to-boot image with the agent installed as a storage node. Flash it, boot it, certify the key it leaves on the SD card, put the certificate back. The guide is <a href="https://github.com/adefilippo83/redundanet/blob/main/rpi-image/README.md">rpi-image/README.md</a>.</p>
-                <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: a device of yours certifies it through a one-time code. Two steps, the first as root on the node, the second on your laptop on the same network.</p>
+                <p data-i18n="ig.node.intro">A storage node is a Linux machine, usually headless, that holds other members' shares. It runs the agent as a system service under its own user, and it never holds your phrase: a device of yours certifies it through a one-time code. One line as root on the node, one command on your laptop on the same network.</p>
                 <h3 data-i18n="ig.node.s1">1. On the node: install</h3>
-                <pre><code># download the linux-arm64 or linux-amd64 archive from the Download page and check its sha256 against the index
-tar -xzf redundanet-*-linux-*.tar.gz --strip-components=1
-sudo ./redundanet node install --storage-path /mnt/storage</code></pre>
-                <p data-i18n="ig.node.s1.desc"><code>node install</code> creates the service user, the directories and the unit, puts the binary in place and shows a <strong>pairing code</strong>. <code>--storage-path</code> is the disk you contribute, mounted; the share store goes in its <code>redundanet3</code> directory, and a path that is not a mount point is refused, so shares never land on the system disk. A storage node needs at least 10 GiB free above its floor.</p>
+                <pre><code>curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage</code></pre>
+                <p data-i18n="ig.node.s1.desc">The same download and checks, then <code>redundanet node install</code>: it creates the service user, the directories and the unit, puts the binary in place and shows a <strong>pairing code</strong>. <code>/mnt/storage</code> is the disk you contribute, mounted; the share store goes in its <code>redundanet3</code> directory, and a path that is not a mount point is refused, so shares never land on the system disk. A storage node needs at least 10 GiB free above its floor.</p>
                 <h3 data-i18n="ig.node.s2">2. On your laptop: pair</h3>
-                <pre><code>redundanet device pair --network redundanet --storage &lt;code&gt;</code></pre>
+                <pre><code>redundanet device pair --storage &lt;code&gt;</code></pre>
                 <p data-i18n="ig.node.s2.desc">With your phrase, your laptop certifies the node through the code and hands it the network. The node starts by itself and prints the <code>storage:</code> lines for your <a href="join.html">join request</a>; it counts once the maintainer has signed the manifest with them.</p>
                 <p data-i18n="ig.node.alt">No laptop on the node's network? The runbook's script makes the same layout with a certificate file copied over SSH.</p>
                 <ul>
@@ -568,24 +532,5 @@ redundanet version</code></pre>
     </footer>
 
     <script src="/i18n/i18n.js"></script>
-    <script>
-    // The copy button only appears when the clipboard is available; the
-    // descriptor is plain text in the page without it.
-    (function () {
-        if (!navigator.clipboard) return;
-        document.querySelectorAll("[data-copy]").forEach(function (btn) {
-            var target = document.getElementById(btn.getAttribute("data-copy"));
-            if (!target) return;
-            btn.style.display = "inline-block";
-            btn.addEventListener("click", function () {
-                navigator.clipboard.writeText(target.textContent.trim()).then(function () {
-                    var was = btn.innerHTML;
-                    btn.textContent = "✓";
-                    setTimeout(function () { btn.innerHTML = was; }, 1500);
-                });
-            });
-        });
-    })();
-    </script>
 </body>
 </html>

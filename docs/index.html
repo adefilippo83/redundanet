@@ -762,9 +762,9 @@
                         <div class="join-step-number">1</div>
                         <h4 data-i18n="joinp.s1.title">Install and create your identity</h4>
                     </div>
-                    <p data-i18n="joinp.s1.desc">Install the agent on your laptop. The phrase is shown once; write it down. Then join the network with the public descriptor from the install page.</p>
-                    <pre><code>redundanet identity init --network redundanet
-redundanet network join &lt;descriptor&gt;</code></pre>
+                    <p data-i18n="joinp.s1.desc">One line installs the agent on your laptop; one command creates your identity. The phrase is shown once; write it down. The network is built in: nothing to paste.</p>
+                    <pre><code>curl -fsSL https://redundanet.com/install.sh | sh
+redundanet identity init</code></pre>
                 </div>
 
                 <div class="join-step">
@@ -772,7 +772,7 @@ redundanet network join &lt;descriptor&gt;</code></pre>
                         <div class="join-step-number">2</div>
                         <h4 data-i18n="joinp.s2.title">Prepare a storage node, if you contribute disk</h4>
                     </div>
-                    <p data-i18n="joinp.s2.desc">A Linux machine with at least 10 GiB free. Three commands, one of them on your laptop, give you the node's device key for the form.</p>
+                    <p data-i18n="joinp.s2.desc">A Linux machine with at least 10 GiB free. One line on the node and one command on your laptop pair it and give you its device key for the form.</p>
                     <a href="installation.html#node" class="btn btn-secondary" data-i18n="joinp.s2.btn">Storage node setup &#8594;</a>
                 </div>
 

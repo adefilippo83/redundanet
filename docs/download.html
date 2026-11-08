@@ -368,12 +368,13 @@
     <main class="container">
         <div class="page-header">
             <h1><span data-i18n="dl.header.title">Download RedundaNet</span> <span data-rn-version>3.0.0</span></h1>
-            <p data-i18n="dl.header.subtitle">One static binary per platform. No installer, no containers, no runtime to add. Verify it against the signed release index, then let it update itself.</p>
+            <p data-i18n="dl.header.subtitle">One static binary per platform. No containers, no runtime to add. One line installs it on macOS and Linux, or take the archive here and verify it against the signed release index yourself. Then it updates itself.</p>
         </div>
 
         <nav class="toc" aria-label="On this page">
             <h2 data-i18n="dl.toc.title">On this page</h2>
             <ul>
+                <li><a href="#quick" data-i18n="dl.toc.quick">One line</a></li>
                 <li><a href="#builds" data-i18n="dl.toc.builds">Builds</a></li>
                 <li><a href="#verify" data-i18n="dl.toc.verify">Verify a download</a></li>
                 <li><a href="#channels" data-i18n="dl.toc.channels">Channels</a></li>
@@ -383,6 +384,12 @@
         </nav>
 
         <div class="guide">
+            <section id="quick">
+                <h2 data-i18n="dl.quick.title">One line</h2>
+                <p data-i18n="dl.quick.desc">On macOS and Linux, one line finds your platform, downloads the newest stable release, refuses it unless its sha256 and size match the signed index, and installs it where the agent can update it. The <a href="installation.html">install page</a> continues from there; the script is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh">docs/install.sh</a>.</p>
+                <pre><code>curl -fsSL https://redundanet.com/install.sh | sh</code></pre>
+            </section>
+
             <section id="builds">
                 <h2 data-i18n="dl.builds.title">Builds</h2>
                 <p data-i18n="dl.builds.intro">Release <code>agent/v3.0.0</code> on GitHub carries five archives and a <code>sha256sums.txt</code>. Each archive holds one folder with the <code>redundanet</code> binary (<code>redundanet.exe</code> on Windows).</p>
@@ -434,7 +441,7 @@
                 <div class="statement" data-i18n="platform.statement">
                     Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
                 </div>
-                <p data-i18n="dl.builds.next">Downloaded? The <a href="installation.html">install page</a> takes it from here: put the binary on your PATH, create your identity, join the network, install the service.</p>
+                <p data-i18n="dl.builds.next">Downloaded by hand? The <a href="installation.html">install page</a> takes it from here: put the binary where the agent can update it, create your identity, install the service.</p>
             </section>
 
             <section id="verify">
@@ -483,7 +490,8 @@ curl -fsSL https://raw.githubusercontent.com/adefilippo83/redundanet/main/releas
                 </table>
                 </div>
                 <pre><code># a laptop, on the early channel
-redundanet service install --network redundanet --channel early
+curl -fsSL https://redundanet.com/install.sh | sh -s -- --channel early
+redundanet service install --channel early
 
 # a Linux storage node: CHANNEL in /etc/redundanet3/agent.env, then
 sudo systemctl restart redundanet-agent</code></pre>

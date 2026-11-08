@@ -6,19 +6,13 @@ On a RedundaNet 2 node both programs exist: the Python `redundanet` on PATH is t
 
 ## 1. Your identity, on your laptop
 
-Install the agent on your laptop ([install.md](install.md)) and run:
+Install the agent on your laptop ([install.md](install.md), one line) and run:
 
 ```bash
-redundanet identity init --network redundanet
+redundanet identity init
 ```
 
-It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key. Then pin the network:
-
-```bash
-redundanet network join <descriptor>
-```
-
-The descriptor is in [join.md](join.md), step 2.
+It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key. The network is built into the binary; there is nothing to join by hand.
 
 ## 2. The attestation that you are you
 
@@ -32,7 +26,7 @@ If the key lives on the node, run the command there over SSH. The workflow verif
 
 ## 3. The agent on each node
 
-Follow the three steps of [install.md](install.md), "Linux storage node": `install.sh prepare` on the node prints its device key, you certify it on your laptop with `redundanet identity certify --network redundanet --device <KEY> --storage`, copy the certificate over, and `install.sh finish` accepts it, joins and starts `redundanet-agent.service`. The agent runs on the host beside the Docker stack, on the host's network, with no access to the containers. From then on it updates itself from the signed release index with probation and rollback, and the node appears on the RedundaNet 3 status page under your name once the manifest lists it.
+Follow [install.md](install.md), "Linux storage node": one line as root on the node lays the agent out and shows a pairing code, and `redundanet device pair --storage <code>` on your laptop, on the node's network, certifies it; the node joins and starts `redundanet-agent.service` by itself. For a node your laptop cannot reach, the runbook's certificate file over SSH does the same ([../agent/deploy/node/README.md](../agent/deploy/node/README.md)). The agent runs on the host beside the Docker stack, on the host's network, with no access to the containers. From then on it updates itself from the signed release index with probation and rollback, and the node appears on the RedundaNet 3 status page under your name once the manifest lists it.
 
 Do this on every node before the join request, so each node's device key and name can go in it.
 
