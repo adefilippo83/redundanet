@@ -70,6 +70,7 @@ main.narrow { max-width: 720px; margin: 0 auto; padding: 24px; flex: none }
 .callout p { overflow-wrap: anywhere }
 .callout-bad { background: var(--bad-bg) } .callout-bad h2 { color: var(--bad) }
 .callout-warn { background: var(--warn-bg) } .callout-warn h2 { color: var(--warn) }
+.callout-ok { background: var(--ok-bg) } .callout-ok h2 { color: var(--ok) }
 .callout-info { background: var(--info-bg) } .callout-info h2 { color: var(--accent) }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px }
 .tile { display: flex; flex-direction: column; gap: 6px }
@@ -119,6 +120,9 @@ summary { cursor: pointer; min-height: 32px; color: var(--accent); font-weight: 
 .rows li { display: flex; flex-wrap: wrap; gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--line) }
 .rows .when { flex: 0 0 110px; font-size: 14px }
 .rows .what { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere }
+.crumbs { overflow-wrap: anywhere }
+.plain { list-style: none; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere }
+a.dir { font-weight: 600 }
 .scroll { overflow-x: auto }
 table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 14px }
 th, td { text-align: left; padding: 8px; border-top: 1px solid var(--line); vertical-align: top }

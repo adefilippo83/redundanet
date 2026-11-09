@@ -14,6 +14,8 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
 	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
+	"github.com/adefilippo83/redundanet/agent/internal/engine"
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
 	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
@@ -71,7 +73,35 @@ func TestPreview(t *testing.T) {
 		}
 		return s
 	}
-	cfg := Config{Addr: addr, DataDir: t.TempDir(), Logs: buf, Log: lg, Version: "3.0.12", Snapshot: snap,
+	// The restore view reads a real backup: a small tree backed up on the
+	// engine fake, which the runner behind the page lists and restores.
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	dataDir := t.TempDir()
+	db, err := localdb.Open(dataDir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, err := jobs.New(jobs.Config{DataDir: dataDir, Engine: engine.NewFake(member, device, 2, 3), DB: db, Member: member, Device: device})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := filepath.Join(t.TempDir(), "Documents")
+	for name, size := range map[string]int{"notes.txt": 4000, "budget-2026.ods": 38000, "Taxes/2025-return.pdf": 1200000, "Taxes/receipts.zip": 840000, "Letters/landlord.odt": 22000} {
+		_ = os.MkdirAll(filepath.Dir(filepath.Join(tree, name)), 0o755)
+		_ = os.WriteFile(filepath.Join(tree, name), make([]byte, size), 0o644)
+	}
+	if err := runner.AddSet(backup.Set{Name: "documents", Folders: []string{tree}}); err != nil {
+		t.Fatal(err)
+	}
+	runner.RunSet(context.Background(), runner.Status().Sets[0], snapshot.DefaultRetention)
+	base := snap
+	snap = func() Snapshot {
+		s := base()
+		s.Device, s.Jobs.Restore = device.String(), runner.Status().Restore
+		return s
+	}
+	cfg := Config{Addr: addr, DataDir: dataDir, Jobs: runner, Logs: buf, Log: lg, Version: "3.0.12", Snapshot: snap,
 		Actions: Actions{CheckUpdate: func(context.Context) (string, error) { return "", nil }, ApplyUpdate: func(context.Context) error { return errors.New("this is the preview") },
 			RetryUpdate: func(context.Context, string) error { return nil }, SetChannel: func(string) error { return nil }}}
 	if state == "setup" {
@@ -91,6 +121,9 @@ func TestPreview(t *testing.T) {
 			Cancel: func() { phase = SetupStatus{Phase: "choose"} },
 			Status: func() SetupStatus { return phase },
 		}
+	}
+	if state == "setup" {
+		cfg.Jobs = nil
 	}
 	srv, err := Start(context.Background(), cfg)
 	if err != nil {

@@ -21,7 +21,7 @@ type view struct {
 	Name string // the template and the dictionary prefix
 }
 
-var views = []view{{"/", "overview"}, {"/backups", "backups"}, {"/network", "network"}, {"/settings", "settings"}, {"/advanced", "advanced"}}
+var views = []view{{"/", "overview"}, {"/backups", "backups"}, {"/restore", "restore"}, {"/network", "network"}, {"/settings", "settings"}, {"/advanced", "advanced"}}
 
 func viewAt(path string) (view, bool) {
 	for _, v := range views {
@@ -104,6 +104,7 @@ type pageData struct {
 	Verify   []option
 	Cleanup  []option
 	Logs     []logbuf.Line
+	Restore  *restoreData // the restore view only
 }
 
 // joinURL is where a member not listed yet sends the request.
@@ -112,7 +113,7 @@ const joinURL = "https://redundanet.com/join.html"
 func buildPage(snap Snapshot, v view, l tr) pageData {
 	d := pageData{Snapshot: snap, tr: l, View: v.Name, Back: v.Path, Lang: string(l), Langs: Languages}
 	for _, x := range views {
-		if (x.Name == "backups" && snap.Jobs == nil) || (x.Name == "settings" && snap.Jobs == nil && snap.Update == nil) {
+		if ((x.Name == "backups" || x.Name == "restore") && snap.Jobs == nil) || (x.Name == "settings" && snap.Jobs == nil && snap.Update == nil) {
 			continue
 		}
 		d.Nav = append(d.Nav, navItem{Path: x.Path, Label: l.T("nav." + x.Name), Current: x.Name == v.Name})
