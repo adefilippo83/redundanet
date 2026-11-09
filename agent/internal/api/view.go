@@ -105,6 +105,14 @@ type pageData struct {
 	Cleanup  []option
 	Logs     []logbuf.Line
 	Restore  *restoreData // the restore view only
+	Paired   []deviceView // the devices this one paired, with how each is reached now
+}
+
+// deviceView is a paired device and its connection at the moment.
+type deviceView struct {
+	Device
+	Short string
+	Link  string // direct, relay or "" for none
 }
 
 // joinURL is where a member not listed yet sends the request.
@@ -127,6 +135,21 @@ func buildPage(snap Snapshot, v view, l tr) pageData {
 		}
 	}
 	d.Overview = buildOverview(snap, d.Online, l)
+	for _, dev := range snap.Devices {
+		dv := deviceView{Device: dev, Short: short(dev.Key)}
+		if t := snap.Transport; t != nil {
+			for _, sess := range t.Sessions {
+				switch {
+				case sess.Peer != dev.Key:
+				case sess.Direct != "":
+					dv.Link = "direct"
+				case sess.Relay:
+					dv.Link = "relay"
+				}
+			}
+		}
+		d.Paired = append(d.Paired, dv)
+	}
 	if j := snap.Jobs; j != nil {
 		for _, s := range j.Sets {
 			sv := setView{Set: s, Excluded: strings.Join(s.Excludes, ", ")}
@@ -182,7 +205,13 @@ func buildOverview(s Snapshot, online string, l tr) overviewData {
 	add := func(i issue) { o.Issues = append(o.Issues, i) }
 
 	if s.Admission == "waiting" {
-		add(issue{Kind: "warn", Title: l.T("issue.waiting.title"), Text: l.T("issue.waiting.text"), Href: joinURL, Label: l.T("issue.waiting.button")})
+		href := joinURL
+		if s.JoinURL != "" {
+			href = s.JoinURL // the form filled in from this device
+		}
+		add(issue{Kind: "warn", Title: l.T("issue.waiting.title"), Text: l.T("issue.waiting.text"), Href: href, Label: l.T("issue.waiting.button")})
+	} else if s.JoinURL != "" {
+		add(issue{Kind: "info", Title: l.T("issue.node.title", s.JoinDevice), Text: l.T("issue.node.text"), Href: s.JoinURL, Label: l.T("issue.node.button")})
 	}
 	if online == "down" {
 		add(issue{Kind: "bad", Title: l.T("issue.offline.title"), Text: l.T("issue.offline.text")})

@@ -54,7 +54,21 @@ type Snapshot struct {
 	Repair     *repair.Status     `json:"repair,omitempty"` // a storage node's repair worker
 	Service    *service.Status    `json:"service,omitempty"`
 	Placement  *Placement         `json:"placement,omitempty"` // how the network spreads an object, from the manifest
-	Generated  time.Time          `json:"generated"`
+	Devices    []Device           `json:"devices,omitempty"`   // the devices this one paired, from its record
+	// JoinURL is the join form filled in from this device, when there is
+	// something to ask for: membership, or a paired storage node the
+	// manifest does not list (JoinDevice names it). For the page only.
+	JoinURL    string    `json:"-"`
+	JoinDevice string    `json:"-"`
+	Generated  time.Time `json:"generated"`
+}
+
+// Device is a device this one paired for its member.
+type Device struct {
+	Key      string    `json:"device"`
+	Name     string    `json:"name,omitempty"`
+	Roles    []string  `json:"roles"`
+	PairedAt time.Time `json:"paired_at"`
 }
 
 // Placement is the network's encoding as the page explains it: an object
@@ -75,6 +89,10 @@ type Actions struct {
 	// Revoke applies a member's signed device revocation here and sends it
 	// to every storage server and hub: the direct path of "Losing a device".
 	Revoke func(ctx context.Context, r *identity.SignedRevocation) (RevokeReport, error)
+	// PairDevice certifies a new device of the member from the recovery
+	// phrase and the code that device shows, and hands it its identity.
+	// The phrase is used for this and kept nowhere.
+	PairDevice func(ctx context.Context, code, phrase string, storage bool) (Device, error)
 }
 
 // RevokeReport is how far a revocation got right away; the signed
@@ -171,6 +189,9 @@ var static embed.FS
 // script from the agent's own origin, requests back to it, forms posted to
 // it, and nothing inline, framed or from another origin.
 const contentPolicy = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+
+// pairTimeout bounds how long the page waits for the new device to answer.
+const pairTimeout = 90 * time.Second
 
 // liveHeader marks the page's own refresh of a view: it reads the same
 // view again and must not use up the message of the last action.
@@ -1020,6 +1041,25 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runPageAction(r *http.Request, name string, l tr) (msg string, bad bool) {
 	fail := func(key string, err error) (string, bool) { return l.T(key, err.Error()), true }
 	switch name {
+	case "device-pair":
+		if s.actions().PairDevice == nil {
+			return l.T("msg.pair.off"), true
+		}
+		code, phrase := strings.TrimSpace(r.FormValue("code")), r.FormValue("phrase")
+		if code == "" || strings.TrimSpace(phrase) == "" {
+			return l.T("msg.pair.incomplete"), true
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), pairTimeout)
+		defer cancel()
+		d, err := s.actions().PairDevice(ctx, code, phrase, r.FormValue("storage") == "on")
+		if err != nil {
+			return fail("msg.pair.failed", err)
+		}
+		who := d.Name
+		if who == "" {
+			who = short(d.Key)
+		}
+		return l.T("msg.pair.done", who), false
 	case "update-check", "update-apply", "update-retry", "settings-channel":
 		if s.actions().CheckUpdate == nil && name == "update-check" || s.actions().ApplyUpdate == nil && name == "update-apply" ||
 			s.actions().RetryUpdate == nil && name == "update-retry" || s.actions().SetChannel == nil && name == "settings-channel" {
