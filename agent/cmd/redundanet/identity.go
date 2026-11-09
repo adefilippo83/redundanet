@@ -527,9 +527,21 @@ func pairingListener(d, network string, dev identity.Key, keep bool) (*pairing.L
 	if b, err := os.ReadFile(path); err == nil {
 		var st pairingState
 		if json.Unmarshal(b, &st) == nil && st.Port > 0 {
-			if l, err := pairing.Resume(network, dev, fmt.Sprintf(":%d", st.Port), relays, st.Secret); err == nil {
-				return l, nil
+			// The port may still be closing from the previous run (Windows
+			// keeps it a moment), so a few tries before the kept code is
+			// given up for a new one.
+			var lastErr error
+			for attempt := 0; attempt < 8; attempt++ {
+				if attempt > 0 {
+					time.Sleep(500 * time.Millisecond)
+				}
+				l, err := pairing.Resume(network, dev, fmt.Sprintf(":%d", st.Port), relays, st.Secret)
+				if err == nil {
+					return l, nil
+				}
+				lastErr = err
 			}
+			fmt.Fprintf(os.Stderr, "the kept code's port %d is not available (%v); making a new code\n", st.Port, lastErr)
 		}
 	}
 	l, err := pairing.Listen(network, dev, "", relays)
