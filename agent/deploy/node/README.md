@@ -7,8 +7,8 @@ and rollback. A storage node also serves shares of the native grid from
 `STORAGE_PATH/redundanet3`.
 
 A Raspberry Pi can boot the ready-made image instead, which ships this
-layout with a first boot that hands the device key over on the SD card:
-[rpi-image/README.md](../../../rpi-image/README.md).
+layout with a first boot that shows a pairing code on the SD card and a
+storage disk found by its label: [rpi-image/README.md](../../../rpi-image/README.md).
 
 The short way is one line as root on the node and one command on the
 laptop. The line downloads the newest release, checks it against the
@@ -66,6 +66,11 @@ The store lives in `STORAGE_PATH/redundanet3`, owned by the service user,
 and a unit drop-in (`redundanet-agent.service.d/storage.conf`) makes it
 writable for the confined service; `prepare` sets both up. A node installed
 before the store existed gets them with `sudo bash install.sh storage`.
+`sudo bash install.sh disk /dev/sdX` makes a storage disk of a whole
+device: ext4 labeled `REDUNDANET`, an `/etc/fstab` line that mounts it at
+`STORAGE_PATH` whenever it is attached, the store directory, and the agent
+started. Everything on the device is destroyed, so the device name is asked
+back unless `--yes`.
 
 Layout: `/var/lib/redundanet3` (identity, manifest copy, census state,
 `versions/` for updates), `/var/lib/redundanet3/bin/redundanet` (the binary,

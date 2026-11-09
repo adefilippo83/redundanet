@@ -5,6 +5,7 @@
 #   install.sh pair                   shows a pairing code; a device of the member on this network certifies the node, then it joins and starts
 #   install.sh finish CERTIFICATE     accepts the member's certificate made on another machine, joins, starts
 #   install.sh storage                grants the store under STORAGE_PATH to a node installed earlier
+#   install.sh disk DEVICE [--yes]    makes DEVICE the storage disk: ext4 labeled REDUNDANET, mounted at STORAGE_PATH whenever attached; destroys what is on it
 #
 # The short way since 3.0.4 is `redundanet node install`, which the one-line
 # installer runs: curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
@@ -21,7 +22,9 @@
 # An image build (rpi-image/) runs prepare with ARCHIVE=<file> to install an
 # archive it verified itself, since the signed index lists a release only
 # once the maintainer has signed it, and NO_DEVICE_KEY=1 to stop before the
-# device key, which every booted image must make for itself.
+# device key, which every booted image must make for itself. The image also
+# carries the fstab line `disk` adds, so a disk labeled REDUNDANET mounts on
+# its own, and runs the agent only while it is mounted.
 set -euo pipefail
 
 REPO=${REPO:-adefilippo83/redundanet}
@@ -128,7 +131,7 @@ pair() {
   echo "  redundanet device pair ${netflag}--storage <the code shown below>"
   echo
   sudo -u redundanet3 "$BIN" identity pair --network "$NETWORK" --data-dir "$DATA" --wait "${PAIR_WAIT:-10m}" || die "pairing did not complete; run install.sh pair again for a new code, or use finish with a certificate file"
-  systemctl enable --now redundanet-agent
+  systemctl enable --now redundanet-agent || echo "paired, but the agent could not start yet (no storage disk mounted?): systemctl status redundanet-agent"
   sleep 3
   systemctl --no-pager --lines=5 status redundanet-agent || true
   echo
@@ -157,10 +160,57 @@ finish() {
   echo "the agent as it sees itself: sudo $BIN status"
 }
 
+# disk: the whole device becomes one ext4 filesystem labeled REDUNDANET,
+# which an /etc/fstab line mounts at STORAGE_PATH whenever it is attached
+# (the Pi image carries the line already; it is added here otherwise), then
+# the store directory and the agent. Everything on the device is destroyed,
+# so the device name is asked back unless --yes. ext4, because the store's
+# files belong to the service user, which exFAT and NTFS cannot express.
+disk() {
+  local dev=${1:-} yes=${2:-}
+  [ -n "$dev" ] || die "disk needs the device, for example /dev/sda (lsblk lists them)"
+  [ -b "$dev" ] || die "$dev is not a block device"
+  [ -f "$ENV" ] && . "$ENV"
+  local rootdev rootdisk
+  rootdev=$(findmnt -rn -o SOURCE / 2>/dev/null || true)
+  rootdisk=$(lsblk -no PKNAME "$rootdev" 2>/dev/null | head -n 1 || true)
+  if [ "$rootdev" = "$dev" ] || { [ -n "$rootdisk" ] && [ "/dev/$rootdisk" = "$dev" ]; }; then
+    die "$dev holds the system; pick the storage disk"
+  fi
+  if lsblk -rno MOUNTPOINT "$dev" 2>/dev/null | grep -q .; then
+    die "$dev, or a partition of it, is mounted; unmount it first"
+  fi
+  echo "this destroys everything on $dev:"
+  lsblk -o NAME,SIZE,MODEL,FSTYPE,LABEL "$dev"
+  if [ "$yes" != --yes ]; then
+    printf 'type the device name to confirm: '
+    local answer; read -r answer
+    [ "$answer" = "$dev" ] || die "not confirmed"
+  fi
+  systemctl stop redundanet-agent 2>/dev/null || true
+  wipefs -a "$dev" >/dev/null
+  mkfs.ext4 -q -F -L REDUNDANET -m 1 "$dev"
+  grep -q '^LABEL=REDUNDANET ' /etc/fstab || echo "LABEL=REDUNDANET $STORAGE_PATH auto defaults,nofail,x-systemd.device-timeout=10 0 2" >> /etc/fstab
+  [ -d "$STORAGE_PATH" ] || install -d -m 0755 "$STORAGE_PATH"
+  systemctl daemon-reload
+  udevadm settle 2>/dev/null || true
+  mount "$STORAGE_PATH" 2>/dev/null || mount -L REDUNDANET "$STORAGE_PATH"
+  storage_grant
+  echo "$dev is the storage disk, labeled REDUNDANET and mounted at $STORAGE_PATH, at every boot and whenever it is plugged in"
+  if [ -f "$DATA/identity" ]; then
+    systemctl start redundanet-agent && echo "agent started with the store"
+  else
+    echo "the agent starts once the node is paired"
+  fi
+  # The Pi image's status writer, when this is the image.
+  [ -x /usr/local/lib/redundanet3/status.sh ] && /usr/local/lib/redundanet3/status.sh >/dev/null 2>&1 || true
+}
+
 case "${1:-}" in
   prepare) prepare "${2:-}" ;;
   pair) pair ;;
   finish) finish "${2:-}" ;;
   storage) [ -f "$ENV" ] && . "$ENV"; storage_grant; systemctl daemon-reload; systemctl restart redundanet-agent; echo "agent restarted with the store" ;;
-  *) sed -n '2,11p' "$0"; exit 2 ;;
+  disk) disk "${2:-}" "${3:-}" ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
 esac

@@ -3,6 +3,7 @@ package pairing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -104,5 +105,41 @@ func TestPairRefusesAnotherNetworkAndBadCodes(t *testing.T) {
 	}
 	if _, _, err := Pair(ctx, (&Code{Version: version, Addrs: []string{"127.0.0.1:1"}, Secret: make([]byte, secretBytes)}).String(), "testnet", nil); err == nil || !errors.Is(err, errUnreachable) && !strings.Contains(err.Error(), "could not be reached") {
 		t.Fatalf("an unreachable address: %v", err)
+	}
+}
+
+// A device that shows its code in a file, such as the Pi image, listens
+// again after a restart with the secret and port it kept, and the code it
+// showed before still completes the exchange.
+func TestResumeKeepsTheCode(t *testing.T) {
+	dev, _ := identity.NewDeviceKey()
+	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, secret, port := l.Code(), l.Secret(), l.Port()
+	l.Close()
+	if _, err := Resume("testnet", dev.ID(), "127.0.0.1:0", nil, []byte("short")); err == nil {
+		t.Fatal("a secret of the wrong length was accepted")
+	}
+	again, err := Resume("testnet", dev.ID(), fmt.Sprintf("127.0.0.1:%d", port), nil, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	if again.Code() != code {
+		t.Fatalf("resumed code %q, the first was %q", again.Code(), code)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := again.Wait(ctx); done <- err }()
+	if _, _, err := Pair(ctx, code, "testnet", func(identity.Key, string) (*Offer, error) {
+		return &Offer{State: []byte("the identity")}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

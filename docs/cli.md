@@ -31,10 +31,10 @@ New member on this device: shows the twelve-word phrase, checks three words back
 ```
 redundanet identity show [--certificate]   # --certificate prints this device's certificate as one line, the proof a storage device request carries
 redundanet identity check                # the phrase you type must derive this device's member key; nothing is written
-redundanet identity pair [--wait 10m]    # new device: shows a one-time code and waits for a device of yours to certify it
+redundanet identity pair [--wait 10m] [--code-file PATH]   # new device: shows a one-time code and waits for a device of yours to certify it; --code-file also writes the code to PATH and keeps the same code across runs until pairing completes
 redundanet device pair [--storage] CODE  # existing device, with the phrase: certifies the new device through its code and hands over the identity and the network
 ```
-Member key, its ten-group display code, device key, roles, certificate date and serial. The two devices reach each other directly on the same network or, when they cannot, through a hub: the code names the hubs' status pages, and `device pair` tries the direct addresses first, then each hub's mailbox under `/pair/`, with the same sealed frames either way. `device pair` also records the new device (key, host name, roles, certificate) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form.
+Member key, its ten-group display code, device key, roles, certificate date and serial. The two devices reach each other directly on the same network or, when they cannot, through a hub: the code names the hubs' status pages, and `device pair` tries the direct addresses first, then each hub's mailbox under `/pair/`, with the same sealed frames either way. `device pair` also records the new device (key, host name, roles, certificate) in `devices.yaml` in the data directory, where `setup` and `join-request` find the storage node for the join form. `identity pair --code-file PATH` is for a device whose code is read from a file rather than a screen, the Raspberry Pi image's boot partition: the code's secret and port are kept in `pairing.state` in the data directory, so the next run shows the same code, and both files go once pairing completes.
 
 ```
 redundanet identity verify-certificate [--network NAME] FILE|-

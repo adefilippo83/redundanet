@@ -1,0 +1,8 @@
+[Unit]
+Description=RedundaNet 3 image: write how the node stands to the boot partition and the console
+Documentation=https://github.com/adefilippo83/redundanet/tree/main/rpi-image
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/redundanet3/status.sh

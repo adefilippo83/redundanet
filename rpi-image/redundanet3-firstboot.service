@@ -1,12 +1,15 @@
 [Unit]
-Description=RedundaNet 3 image: make this node's device key and show it
+Description=RedundaNet 3 image: show a pairing code until a device of the member pairs this node
 Documentation=https://github.com/adefilippo83/redundanet/tree/main/rpi-image
-After=local-fs.target
+After=network-online.target
+Wants=network-online.target
 ConditionPathExists=!/var/lib/redundanet3/identity
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/local/lib/redundanet3/firstboot.sh
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

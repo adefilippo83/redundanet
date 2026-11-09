@@ -1,0 +1,11 @@
+[Unit]
+Description=RedundaNet 3 image: refresh redundanet-status.txt after boot and every five minutes
+Documentation=https://github.com/adefilippo83/redundanet/tree/main/rpi-image
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

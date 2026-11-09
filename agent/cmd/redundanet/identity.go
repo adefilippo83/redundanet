@@ -446,6 +446,7 @@ func identityPair(args []string) error {
 	fs := flag.NewFlagSet("identity pair", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
 	wait := fs.Duration("wait", 10*time.Minute, "how long the code stays valid")
+	codeFile := fs.String("code-file", "", "also write the code to this file, for a device whose code is read from a file rather than a screen; the same code is then shown again after a restart, until pairing completes")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -460,11 +461,16 @@ func identityPair(args []string) error {
 	if err != nil {
 		return err
 	}
-	l, err := pairing.Listen(*network, dev.ID(), "", pairingRelays(d, *network))
+	l, err := pairingListener(d, *network, dev.ID(), *codeFile != "")
 	if err != nil {
 		return err
 	}
 	defer l.Close()
+	if *codeFile != "" {
+		if err := os.WriteFile(*codeFile, []byte(l.Code()+"\n"), 0o600); err != nil {
+			return fmt.Errorf("writing the code file: %w", err)
+		}
+	}
 	fmt.Printf("device key: %s\n\n", dev.ID())
 	fmt.Println("On a device of yours that already has its identity, within", wait.String()+", run (on this network or anywhere: the hub relays the exchange when the two cannot reach each other):")
 	fmt.Printf("  redundanet device pair%s %s\n", networkArg(*network), l.Code())
@@ -482,6 +488,10 @@ func identityPair(args []string) error {
 	if err := acceptState(d, *network, dev, &st); err != nil {
 		return err
 	}
+	if *codeFile != "" {
+		_ = os.Remove(*codeFile)
+		_ = os.Remove(filepath.Join(d, pairingStateFile))
+	}
 	fmt.Printf("Identity written to %s\n", identityPath(d))
 	printState(&st)
 	if msg, err := joinFromOffer(d, *network, offer.Descriptor); err != nil {
@@ -491,6 +501,50 @@ func identityPair(args []string) error {
 	}
 	fmt.Printf("next: redundanet service install%s\n", networkArg(*network))
 	return nil
+}
+
+// pairingStateFile keeps a code's secret and port between runs of
+// `identity pair --code-file`: a device that shows its code in a file
+// shows the same one after a restart, until pairing completes and the file
+// goes. The secret stays in the data directory, as private as the pending
+// device key beside it.
+const pairingStateFile = "pairing.state"
+
+type pairingState struct {
+	Secret []byte `json:"secret"`
+	Port   int    `json:"port"`
+}
+
+// pairingListener makes the code's listener: a fresh code, or with keep,
+// the code kept from an earlier run when there is one and its port is
+// still free, else a fresh one that is kept for the next run.
+func pairingListener(d, network string, dev identity.Key, keep bool) (*pairing.Listener, error) {
+	relays := pairingRelays(d, network)
+	if !keep {
+		return pairing.Listen(network, dev, "", relays)
+	}
+	path := filepath.Join(d, pairingStateFile)
+	if b, err := os.ReadFile(path); err == nil {
+		var st pairingState
+		if json.Unmarshal(b, &st) == nil && st.Port > 0 {
+			if l, err := pairing.Resume(network, dev, fmt.Sprintf(":%d", st.Port), relays, st.Secret); err == nil {
+				return l, nil
+			}
+		}
+	}
+	l, err := pairing.Listen(network, dev, "", relays)
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(pairingState{Secret: l.Secret(), Port: l.Port()})
+	if err == nil {
+		err = os.WriteFile(path, b, 0o600)
+	}
+	if err != nil {
+		_ = l.Close()
+		return nil, fmt.Errorf("keeping the code for the next run: %w", err)
+	}
+	return l, nil
 }
 
 // pairingRelays is where the hubs relay a pairing for two devices that
