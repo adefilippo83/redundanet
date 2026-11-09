@@ -97,4 +97,12 @@ When the manifest declares a k-of-n transition, each device converts the objects
 
 ## The local page
 
-`redundanet open` opens the local page on `127.0.0.1:4470` in the browser through a one-time link that works for two minutes. It shows the device's state, the backup sets with their last run, the restore tests, and has the diagnostics button. It is never on the LAN; a headless node is reached over an SSH tunnel.
+`redundanet open` opens the local page on `127.0.0.1:4470` in the browser through a one-time link that works for two minutes. It is never on the LAN; a headless node is reached over an SSH tunnel. It has five views:
+
+- **Overview**: one sentence on how the backup stands (protected, backing up, needs attention, first backup still to run, nothing backed up yet), then what needs you, each with its button or link: a folder the system does not let the agent read, a failed backup, a failed restore test, a used-up allocation, no connection to a hub, a membership not signed yet, an update to install or one that failed. Below that, the last backup, the last restore test, your space against your allocation, how the network spreads a file (the manifest's k-of-n), and recent activity.
+- **Backups**: one card per set with its folders, its last run and its progress, `Back up now`, its exclusions, and `Remove this folder`; a form that adds a folder under a new name (the form never replaces a set, `redundanet backup add` does); the restore tests with `Run a test now`.
+- **Devices and network**: this device's keys and roles, the member list's revision, the hubs and the connections to other devices.
+- **Settings**: schedule, versions to keep, bandwidth caps, update channel, `Check now`.
+- **Advanced**: the diagnostics bundle, the service, repair, cleanup, conversion, the data folder and the log.
+
+The page is in English, German, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian and Chinese: it follows the browser's language until you choose another in its menu, which a cookie on `127.0.0.1` remembers. Reasons the agent gives for a failure are shown as the agent words them, in English. The parts that change (progress, status, the log) refresh by themselves every few seconds; with scripts off the page works the same and is refreshed by hand. A restore is started from the command line for now.

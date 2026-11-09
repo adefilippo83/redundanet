@@ -65,6 +65,9 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		Roles: rc.state.Certificate.Certificate.Roles, Generated: time.Now()}
 	if m := rc.current(); m != nil {
 		s.Network = m.Network.Name
+		if e := m.Network.Encoding; e.K > 0 && e.N > 0 {
+			s.Placement = &api.Placement{K: e.K, N: e.N, Servers: len(m.Storage)}
+		}
 		s.Admission = "waiting"
 		if memberListed(m, rc.state.Member) {
 			s.Admission = "listed"
