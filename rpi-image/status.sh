@@ -18,7 +18,7 @@ if findmnt -rn "$STORAGE_PATH" >/dev/null 2>&1; then
 else
   disk="disk: nothing mounted at $STORAGE_PATH. The agent waits for a disk labeled REDUNDANET: over SSH, sudo redundanet-install disk /dev/sda formats one (everything on it is destroyed); an ext4 disk already labeled so mounts on its own"
 fi
-if systemctl is-active -q redundanet-agent; then
+if systemctl is-active -q redundanet-agent 2>/dev/null; then
   agent="agent: running, $("$BIN" version 2>/dev/null)"
 else
   agent="agent: $(systemctl is-active redundanet-agent 2>/dev/null); it runs while the disk is mounted"

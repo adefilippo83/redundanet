@@ -96,9 +96,11 @@ docker run --rm --platform "$PLATFORM" -v "$WORK:/work:ro" -e VERSION="$VERSION"
   grep -q "^paired:" /boot/firmware/redundanet-status.txt && grep -q "^disk: nothing mounted" /boot/firmware/redundanet-status.txt && grep -q "^agent:" /boot/firmware/redundanet-status.txt || { echo "FAIL: status file"; cat /boot/firmware/redundanet-status.txt; exit 1; }
   rm -f /var/lib/redundanet3/identity
   echo "status: paired node without its disk reported: ok"
-  # disk: refuses what is not a device
-  bash /usr/local/lib/redundanet3/install.sh disk 2>&1 | grep -q "needs the device" || { echo "FAIL: disk without a device"; exit 1; }
-  bash /usr/local/lib/redundanet3/install.sh disk /dev/null 2>&1 | grep -q "not a block device" || { echo "FAIL: disk on a non-device"; exit 1; }
+  # disk: refuses what is not a device (it exits 1 on purpose, so no pipeline under pipefail)
+  out=$(bash /usr/local/lib/redundanet3/install.sh disk 2>&1 || true)
+  case "$out" in *"needs the device"*) ;; *) echo "FAIL: disk without a device: $out"; exit 1 ;; esac
+  out=$(bash /usr/local/lib/redundanet3/install.sh disk /dev/null 2>&1 || true)
+  case "$out" in *"not a block device"*) ;; *) echo "FAIL: disk on a non-device: $out"; exit 1 ;; esac
   echo "disk: refuses a missing or wrong device: ok"
 '
 ok "provisioning, first boot, status and disk checks"
