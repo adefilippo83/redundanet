@@ -69,7 +69,7 @@ The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 
 
 ## Raspberry Pi
 
-Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it once, certify the device key it leaves on the SD card's boot partition, put the certificate back there, and the Pi joins: the steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: the one line above picks the `linux-arm64` release on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
+Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it, and pair it from a device of yours with the code it writes to the SD card's boot partition (`redundanet device pair --storage <code>`, from anywhere: the hub relays the exchange; the code is the same after every reboot until the Pi is paired). Give it a disk labeled `REDUNDANET`: the Pi mounts it on its own and runs the agent only while it is mounted, so shares never land on the SD card; `sudo redundanet-install disk /dev/sda` over SSH formats one. The steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: the one line above picks the `linux-arm64` release on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
 
 ## A second device, without the phrase
 

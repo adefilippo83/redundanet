@@ -1,7 +1,8 @@
 # A Raspberry Pi OS image that boots as a RedundaNet 3 storage node: the
-# agent binary, its service user and unit, and a first boot that makes the
-# node's device key and hands it to the member through the boot partition
-# (rpi-image/README.md). No Docker, no Python: nothing of RedundaNet 2.
+# agent binary, its service user and unit, a first boot that shows a pairing
+# code on the boot partition until a device of the member pairs the node,
+# and a storage disk found by its label, REDUNDANET (rpi-image/README.md).
+# No Docker, no Python: nothing of RedundaNet 2.
 #
 # Built after each stable agent release (a tag agent/vX.Y.Z without a
 # pre-release suffix) once that release's archives exist, by running the
@@ -61,17 +62,26 @@ jobs:
           commands: |
             # The checkout is copied into the image and is the working directory.
             install -d -m 0755 /usr/local/lib/redundanet3
-            install -m 0755 rpi-image/firstboot.sh rpi-image/certificate.sh agent/deploy/node/install.sh /usr/local/lib/redundanet3/
+            install -m 0755 rpi-image/firstboot.sh rpi-image/status.sh agent/deploy/node/install.sh /usr/local/lib/redundanet3/
             install -m 0644 agent/deploy/node/redundanet-agent.service /usr/local/lib/redundanet3/
-            install -m 0644 rpi-image/redundanet3-firstboot.service rpi-image/redundanet3-certificate.service rpi-image/redundanet3-certificate.path /etc/systemd/system/
+            install -m 0644 rpi-image/redundanet3-firstboot.service rpi-image/redundanet3-status.service rpi-image/redundanet3-status.timer /etc/systemd/system/
+            install -d -m 0755 /etc/systemd/system/redundanet-agent.service.d /etc/systemd/system/mnt-storage.mount.d
+            install -m 0644 rpi-image/agent-disk.conf /etc/systemd/system/redundanet-agent.service.d/disk.conf
+            install -m 0644 rpi-image/mount-agent.conf /etc/systemd/system/mnt-storage.mount.d/agent.conf
             ln -sf /usr/local/lib/redundanet3/install.sh /usr/local/sbin/redundanet-install
+            # The storage disk, by its label: mounted whenever it is attached.
             install -d -m 0755 /mnt/storage
+            echo 'LABEL=REDUNDANET /mnt/storage auto defaults,nofail,x-systemd.device-timeout=10 0 2' >> /etc/fstab
             # The node installer, with the archive verified above and no device
             # key: every booted card makes its own.
             ARCHIVE="$PWD/asset/${{ steps.rel.outputs.asset }}" NO_DEVICE_KEY=1 STORAGE_PATH=/mnt/storage CHANNEL=stable \
               bash /usr/local/lib/redundanet3/install.sh prepare "${{ steps.rel.outputs.version }}"
             /var/lib/redundanet3/bin/redundanet version
-            systemctl enable redundanet3-firstboot.service redundanet3-certificate.path ssh
+            # prepare made the store directory under the mount point, on the card;
+            # the store belongs on the disk, and nothing may land here meanwhile.
+            rmdir /mnt/storage/redundanet3
+            chattr +i /mnt/storage || true
+            systemctl enable redundanet3-firstboot.service redundanet3-status.timer ssh
             id redundanet >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo redundanet
             echo "redundanet:redundanet" | chpasswd
             echo redundanet > /etc/hostname

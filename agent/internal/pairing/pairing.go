@@ -116,6 +116,23 @@ type Listener struct {
 // which the exchange also runs, for an existing device that cannot reach
 // this one; none means direct only.
 func Listen(network string, dev identity.Key, bind string, relays []string) (*Listener, error) {
+	return listen(network, dev, bind, relays, nil)
+}
+
+// Resume listens again with the secret of a code made earlier, on the port
+// that code carried (bind as ":port"), so the same code stays valid across
+// restarts: for a device that shows its code in a file rather than on a
+// screen, such as the Raspberry Pi image's boot partition, read on another
+// computer while the device is off. The addresses in the code are this
+// device's current ones; the relays carry the exchange if they changed.
+func Resume(network string, dev identity.Key, bind string, relays []string, secret []byte) (*Listener, error) {
+	if len(secret) != secretBytes {
+		return nil, fmt.Errorf("pairing: the secret must be %d bytes, not %d", secretBytes, len(secret))
+	}
+	return listen(network, dev, bind, relays, secret)
+}
+
+func listen(network string, dev identity.Key, bind string, relays []string, secret []byte) (*Listener, error) {
 	if bind == "" {
 		bind = ":0"
 	}
@@ -123,10 +140,12 @@ func Listen(network string, dev identity.Key, bind string, relays []string) (*Li
 	if err != nil {
 		return nil, err
 	}
-	secret := make([]byte, secretBytes)
-	if _, err := rand.Read(secret); err != nil {
-		_ = ln.Close()
-		return nil, err
+	if secret == nil {
+		secret = make([]byte, secretBytes)
+		if _, err := rand.Read(secret); err != nil {
+			_ = ln.Close()
+			return nil, err
+		}
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	var addrs []string
@@ -145,6 +164,10 @@ func Listen(network string, dev identity.Key, bind string, relays []string) (*Li
 
 // Code is what to show.
 func (l *Listener) Code() string { return l.code.String() }
+
+// Secret and Port are what Resume needs to show the same code again.
+func (l *Listener) Secret() []byte { return l.code.Secret }
+func (l *Listener) Port() int      { return l.ln.Addr().(*net.TCPAddr).Port }
 
 // Close stops listening.
 func (l *Listener) Close() error { return l.ln.Close() }
