@@ -53,7 +53,16 @@ type Snapshot struct {
 	Jobs       *jobs.Status       `json:"jobs,omitempty"`
 	Repair     *repair.Status     `json:"repair,omitempty"` // a storage node's repair worker
 	Service    *service.Status    `json:"service,omitempty"`
+	Placement  *Placement         `json:"placement,omitempty"` // how the network spreads an object, from the manifest
 	Generated  time.Time          `json:"generated"`
+}
+
+// Placement is the network's encoding as the page explains it: an object
+// is split into N shares on distinct storage devices and any K rebuild it.
+type Placement struct {
+	K       int `json:"k"`
+	N       int `json:"n"`
+	Servers int `json:"servers"` // storage devices the manifest lists
 }
 
 // Actions are the state changes the API can trigger.
@@ -135,23 +144,37 @@ type SetupStatus struct {
 
 // Server is the running API.
 type Server struct {
-	cfg       Config
-	log       *slog.Logger
-	auth      *auth
-	ln        net.Listener
-	srv       *http.Server
-	tmpl      *template.Template
-	tmplSetup *template.Template
-	started   time.Time
-	runtime   atomic.Pointer[Runtime]
+	cfg     Config
+	log     *slog.Logger
+	auth    *auth
+	ln      net.Listener
+	srv     *http.Server
+	tmpl    *template.Template
+	started time.Time
+	runtime atomic.Pointer[Runtime]
 
 	mu        sync.Mutex
-	lastMsg   string   // the outcome of the last action, shown once on the page
+	lastFlash *flash   // the outcome of the last action, shown once on the page
 	lastWords []string // a new member's phrase, shown once on the page after Begin
 }
 
 //go:embed templates/page.html templates/setup.html
 var templates embed.FS
+
+// The page's stylesheet and script, served from the agent itself: the
+// content policy lets the page load nothing from anywhere else.
+//
+//go:embed static/app.css static/app.js
+var static embed.FS
+
+// contentPolicy is what the browser may do on the page: styles and one
+// script from the agent's own origin, requests back to it, forms posted to
+// it, and nothing inline, framed or from another origin.
+const contentPolicy = "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+
+// liveHeader marks the page's own refresh of a view: it reads the same
+// view again and must not use up the message of the last action.
+const liveHeader = "X-RedundaNet-Live"
 
 // Attach hands the server its runtime: from here the page and the API
 // serve the running agent instead of the wizard. The browser session made
@@ -214,15 +237,11 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmpl, err := template.New("page.html").Funcs(template.FuncMap{"short": short, "since": since, "lastIndex": func(v []transport.Event) int { return len(v) - 1 }}).ParseFS(templates, "templates/page.html")
+	tmpl, err := parseTemplates()
 	if err != nil {
 		return nil, err
 	}
-	tmplSetup, err := template.New("setup.html").Funcs(template.FuncMap{"inc": func(i int) int { return i + 1 }}).ParseFS(templates, "templates/setup.html")
-	if err != nil {
-		return nil, err
-	}
-	s := &Server{cfg: cfg, log: cfg.Log.With("component", "api"), auth: newAuth(token), tmpl: tmpl, tmplSetup: tmplSetup, started: time.Now()}
+	s := &Server{cfg: cfg, log: cfg.Log.With("component", "api"), auth: newAuth(token), tmpl: tmpl, started: time.Now()}
 	if cfg.Snapshot != nil {
 		s.runtime.Store(&Runtime{Snapshot: cfg.Snapshot, Actions: cfg.Actions, Jobs: cfg.Jobs, Logs: cfg.Logs})
 	} else if cfg.Setup == nil {
@@ -239,6 +258,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
+	mux.HandleFunc("GET /static/{file}", s.static)
 	mux.HandleFunc("GET /diagnostics.zip", s.diagnostics)
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /action/{name}", s.pageAction)
@@ -296,7 +316,8 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", contentPolicy)
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -762,41 +783,79 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-type pageData struct {
-	Snapshot
-	CSRF    string
-	Message string
-	Logs    []logbuf.Line
+func parseTemplates() (*template.Template, error) {
+	return template.New("page").Funcs(template.FuncMap{
+		"short":     short,
+		"inc":       func(i int) int { return i + 1 },
+		"lastIndex": func(v []transport.Event) int { return len(v) - 1 },
+	}).ParseFS(templates, "templates/page.html", "templates/setup.html")
 }
 
-func (s *Server) page(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+// static serves the page's stylesheet and script. They hold no secret, so
+// the page that says how to open a session can use them too.
+func (s *Server) static(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("file")
+	b, err := static.ReadFile("static/" + name)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	switch filepath.Ext(name) {
+	case ".css":
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	case ".js":
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	}
+	_, _ = w.Write(b)
+}
+
+// takeFlash is the message of the last action, once.
+func (s *Server) takeFlash(keep bool) (*flash, []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, words := s.lastFlash, s.lastWords
+	if !keep {
+		s.lastFlash, s.lastWords = nil, nil
+	}
+	return f, words
+}
+
+func (s *Server) setFlash(text string, bad bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastFlash = nil
+	if text != "" {
+		s.lastFlash = &flash{Text: text, Bad: bad}
+	}
+}
+
+func (s *Server) page(w http.ResponseWriter, r *http.Request) {
+	v, known := viewAt(r.URL.Path)
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
+	l := tr(langOf(r))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	sess, ok := s.auth.sessionOf(r)
 	if !ok {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(w, "<!doctype html><title>RedundaNet</title><p style=\"font-family:system-ui;margin:3em\">Open this page with <code>redundanet open</code>, which prints a one-time link.</p>")
+		_, _ = fmt.Fprintf(w, "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>RedundaNet</title><link rel=\"stylesheet\" href=\"/static/app.css\"><main class=\"narrow\"><section class=\"card\"><h1>RedundaNet</h1><p>%s</p><p class=\"code\">redundanet open</p></section></main>", template.HTMLEscapeString(l.T("session.open")))
 		return
 	}
-	s.mu.Lock()
-	msg := s.lastMsg
-	s.lastMsg = ""
-	words := s.lastWords
-	s.lastWords = nil
-	s.mu.Unlock()
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The page's own refresh reads a view without using up what is shown
+	// once: the message of the last action, a new member's phrase.
+	f, words := s.takeFlash(r.Header.Get(liveHeader) != "")
 	if s.rt() == nil {
-		s.setupPage(w, sess, msg, words)
+		s.setupPage(w, sess, l, f, words)
 		return
 	}
-	data := pageData{Snapshot: s.snapshot(), CSRF: sess.csrf, Message: msg}
-	if s.logs() != nil {
-		data.Logs = s.logs().Last(40)
+	data := buildPage(s.snapshot(), v, l)
+	data.CSRF, data.Flash = sess.csrf, f
+	if s.logs() != nil && v.Name == "advanced" {
+		data.Logs = s.logs().Last(60)
 	}
-	if err := s.tmpl.Execute(w, data); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, "page", data); err != nil {
 		s.log.Error("page", "err", err)
 	}
 }
@@ -804,24 +863,28 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 // setupData is what the wizard's page renders.
 type setupData struct {
 	SetupStatus
+	tr
+	Lang    string
+	Langs   []Language
+	Back    string
 	Version string
 	CSRF    string
-	Message string
+	Flash   *flash
 	Words   []string // present only on the page right after Begin
 }
 
 // setupPage is the wizard: the device has no identity yet. The phrase is
 // rendered once, from the one-shot store Begin filled; a reload shows the
 // confirmation step without it, as the RFC wants the phrase shown once.
-func (s *Server) setupPage(w http.ResponseWriter, sess session, msg string, words []string) {
-	data := setupData{Version: s.cfg.Version, CSRF: sess.csrf, Message: msg, Words: words}
+func (s *Server) setupPage(w http.ResponseWriter, sess session, l tr, f *flash, words []string) {
+	data := setupData{tr: l, Lang: string(l), Langs: Languages, Back: "/", Version: s.cfg.Version, CSRF: sess.csrf, Flash: f, Words: words}
 	if s.cfg.Setup != nil && s.cfg.Setup.Status != nil {
 		data.SetupStatus = s.cfg.Setup.Status()
 	}
 	if data.Phase == "" {
 		data.Phase = "choose"
 	}
-	if err := s.tmplSetup.Execute(w, data); err != nil {
+	if err := s.tmpl.ExecuteTemplate(w, "setup", data); err != nil {
 		s.log.Error("setup page", "err", err)
 	}
 }
@@ -843,12 +906,14 @@ func (s *Server) setupAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this device has its identity already", http.StatusConflict)
 		return
 	}
+	l := tr(langOf(r))
 	var msg string
+	bad := true
 	switch r.PathValue("name") {
 	case "begin":
 		words, _, err := s.cfg.Setup.Begin(r.FormValue("storage") == "on")
 		if err != nil {
-			msg = "could not start: " + err.Error()
+			msg = l.T("msg.setup.begin", err.Error())
 			break
 		}
 		s.mu.Lock()
@@ -858,17 +923,17 @@ func (s *Server) setupAction(w http.ResponseWriter, r *http.Request) {
 		if err := s.cfg.Setup.Confirm([]string{r.FormValue("w1"), r.FormValue("w2"), r.FormValue("w3")}); err != nil {
 			msg = err.Error()
 		} else {
-			msg = "identity written; the agent is starting"
+			msg, bad = l.T("msg.setup.written"), false
 		}
 	case "restore":
 		if err := s.cfg.Setup.Restore(r.FormValue("phrase"), r.FormValue("storage") == "on"); err != nil {
 			msg = err.Error()
 		} else {
-			msg = "identity restored on this device; the agent is starting"
+			msg, bad = l.T("msg.setup.restored"), false
 		}
 	case "pair":
 		if _, err := s.cfg.Setup.Pair(); err != nil {
-			msg = "pairing could not start: " + err.Error()
+			msg = l.T("msg.setup.pair", err.Error())
 		}
 	case "cancel":
 		s.cfg.Setup.Cancel()
@@ -876,9 +941,7 @@ func (s *Server) setupAction(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.mu.Lock()
-	s.lastMsg = msg
-	s.mu.Unlock()
+	s.setFlash(msg, bad)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -918,64 +981,114 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing or wrong CSRF token", http.StatusForbidden)
 		return
 	}
-	var msg string
-	switch r.PathValue("name") {
-	case "update-check":
-		if s.actions().CheckUpdate == nil {
-			msg = "updates are not configured in this build"
-			break
+	// An action returns to the view its form was on; anything but one of
+	// the page's own paths goes to the overview.
+	back := "/"
+	if v, ok := viewAt(r.FormValue("back")); ok {
+		back = v.Path
+	}
+	l := tr(langOf(r))
+	name := r.PathValue("name")
+	if name == "language" {
+		if code := r.FormValue("lang"); knownLang(code) {
+			http.SetCookie(w, &http.Cookie{Name: langCookie, Value: code, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 365 * 24 * 3600})
 		}
+		http.Redirect(w, r, back, http.StatusSeeOther)
+		return
+	}
+	msg, bad := s.runPageAction(r, name, l)
+	if msg == "" && bad {
+		http.NotFound(w, r)
+		return
+	}
+	s.setFlash(msg, bad)
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// runPageAction does what a form of the page asks and says how it went, in
+// the reader's language; the reason of a failure is the agent's own text.
+// An unknown action answers "" and true.
+func (s *Server) runPageAction(r *http.Request, name string, l tr) (msg string, bad bool) {
+	fail := func(key string, err error) (string, bool) { return l.T(key, err.Error()), true }
+	switch name {
+	case "update-check", "update-apply", "update-retry", "settings-channel":
+		if s.actions().CheckUpdate == nil && name == "update-check" || s.actions().ApplyUpdate == nil && name == "update-apply" ||
+			s.actions().RetryUpdate == nil && name == "update-retry" || s.actions().SetChannel == nil && name == "settings-channel" {
+			return l.T("msg.noupdates"), true
+		}
+	default:
+		if s.jobs() == nil {
+			switch name {
+			case "backup-run", "backup-verify", "backup-add", "backup-remove", "settings-schedule", "settings-retention", "settings-bandwidth", "settings-excludes":
+				return l.T("msg.nojobs"), true
+			}
+			return "", true
+		}
+	}
+	switch name {
+	case "update-check":
 		v, err := s.actions().CheckUpdate(r.Context())
 		switch {
 		case err != nil:
-			msg = "update check failed: " + err.Error()
+			return fail("msg.check.failed", err)
 		case v == "":
-			msg = "no newer release on your channel"
-		default:
-			msg = "release " + v + " is available"
+			return l.T("msg.check.none"), false
 		}
+		return l.T("msg.check.available", v), false
 	case "update-apply":
-		if s.actions().ApplyUpdate == nil {
-			msg = "updates are not configured in this build"
-			break
-		}
 		if err := s.actions().ApplyUpdate(r.Context()); err != nil {
-			msg = "update failed: " + err.Error()
-		} else {
-			msg = "update started: the agent restarts when the new version passes probation"
+			return fail("msg.apply.failed", err)
 		}
+		return l.T("msg.apply.started"), false
+	case "update-retry":
+		v := r.FormValue("version")
+		if err := s.actions().RetryUpdate(r.Context(), v); err != nil {
+			return fail("msg.retry.failed", err)
+		}
+		return l.T("msg.retry.done", v), false
+	case "settings-channel":
+		if err := s.actions().SetChannel(r.FormValue("channel")); err != nil {
+			return fail("msg.notsaved", err)
+		}
+		return l.T("msg.saved"), false
 	case "backup-run":
-		if s.jobs() == nil {
-			msg = "this device runs no backup jobs"
-			break
-		}
 		s.jobs().RunNow(r.FormValue("set"))
-		msg = "backup requested; progress shows below"
+		return l.T("msg.backup.requested"), false
 	case "backup-verify":
-		if s.jobs() == nil {
-			msg = "this device runs no backup jobs"
-			break
-		}
 		s.jobs().RunNow("verify")
-		msg = "restore test requested"
-	case "settings-schedule", "settings-retention", "settings-bandwidth":
-		if s.jobs() == nil {
-			msg = "this device runs no backup jobs"
-			break
+		return l.T("msg.verify.requested"), false
+	case "backup-add":
+		set := backup.Set{Name: strings.TrimSpace(r.FormValue("name")), Folders: []string{strings.TrimSpace(r.FormValue("folder"))}}
+		if set.Name == "" || set.Folders[0] == "" {
+			return l.T("msg.add.incomplete"), true
 		}
+		for _, cur := range s.jobs().Status().Sets {
+			if cur.Name == set.Name {
+				// AddSet replaces a set of the same name, which is right for the
+				// command line and a surprise in a form that says "add".
+				return l.T("msg.add.exists", set.Name), true
+			}
+		}
+		if err := s.jobs().AddSet(set); err != nil {
+			return fail("msg.add.failed", err)
+		}
+		return l.T("msg.add.done", set.Name), false
+	case "backup-remove":
+		set := r.FormValue("set")
+		if err := s.jobs().RemoveSet(set); err != nil {
+			return fail("msg.notsaved", err)
+		}
+		return l.T("msg.remove.done", set), false
+	case "settings-schedule", "settings-retention", "settings-bandwidth":
 		in, err := settingsFromForm(r)
 		if err != nil {
-			msg = "not saved: " + err.Error()
-			break
+			return fail("msg.notsaved", err)
 		}
-		if msg, err = s.applySettings(in); err != nil {
-			msg = "not saved: " + err.Error()
+		if _, err := s.applySettings(in); err != nil {
+			return fail("msg.notsaved", err)
 		}
+		return l.T("msg.saved"), false
 	case "settings-excludes":
-		if s.jobs() == nil {
-			msg = "this device runs no backup jobs"
-			break
-		}
 		var excludes []string
 		for _, e := range strings.Split(r.FormValue("excludes"), ",") {
 			if e = strings.TrimSpace(e); e != "" {
@@ -983,39 +1096,11 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := s.jobs().SetExcludes(r.FormValue("set"), excludes); err != nil {
-			msg = "not saved: " + err.Error()
-		} else {
-			msg = "excludes of " + r.FormValue("set") + " saved"
+			return fail("msg.notsaved", err)
 		}
-	case "settings-channel":
-		if s.actions().SetChannel == nil {
-			msg = "updates are not configured in this build"
-			break
-		}
-		if err := s.actions().SetChannel(r.FormValue("channel")); err != nil {
-			msg = "not saved: " + err.Error()
-		} else {
-			msg = "channel " + r.FormValue("channel") + "; the next check uses it"
-		}
-	case "update-retry":
-		if s.actions().RetryUpdate == nil {
-			msg = "updates are not configured in this build"
-			break
-		}
-		v := r.FormValue("version")
-		if err := s.actions().RetryUpdate(r.Context(), v); err != nil {
-			msg = "retry failed: " + err.Error()
-		} else {
-			msg = v + " may be installed again at the next check"
-		}
-	default:
-		http.NotFound(w, r)
-		return
+		return l.T("msg.saved"), false
 	}
-	s.mu.Lock()
-	s.lastMsg = msg
-	s.mu.Unlock()
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	return "", true
 }
 
 // settingsFromForm reads the settings forms of the page: a field left
@@ -1068,22 +1153,6 @@ func short(s string) string {
 		return s[:8]
 	}
 	return s
-}
-
-func since(t time.Time) string {
-	if t.IsZero() {
-		return "never"
-	}
-	d := time.Since(t).Round(time.Second)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%d min ago", int(d.Minutes()))
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%d h ago", int(d.Hours()))
-	}
-	return t.Format("2006-01-02")
 }
 
 // ReadClientConfig finds the running agent's address and token in the data

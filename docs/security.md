@@ -49,7 +49,7 @@ The data is unreadable to everyone, by design; there is no escrow and nobody can
 
 ## The local page and the browser
 
-The agent serves its API and page on `127.0.0.1:4470` only, never on the LAN. A web page you visit could post to `127.0.0.1`, so: `redundanet open` prints a one-time link that works for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every change carries a CSRF token; the API answers only requests whose Host is loopback and, for changes, whose Origin is the page itself; no GET changes anything. Another user or process on the same machine can connect to the port but needs the bearer token, kept in a file only the agent's user can read. A headless node is reached over an SSH tunnel.
+The agent serves its API and page on `127.0.0.1:4470` only, never on the LAN. A web page you visit could post to `127.0.0.1`, so: `redundanet open` prints a one-time link that works for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every change carries a CSRF token; the API answers only requests whose Host is loopback and, for changes, whose Origin is the page itself; no GET changes anything. The page's content policy lets the browser load one stylesheet and one script, both served by the agent itself, and nothing inline or from another origin; the script only refreshes the page's status from the agent and sends the language menu. Another user or process on the same machine can connect to the port but needs the bearer token, kept in a file only the agent's user can read. A headless node is reached over an SSH tunnel.
 
 ## Self-update
 
