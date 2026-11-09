@@ -852,6 +852,15 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 	}
 	data := buildPage(s.snapshot(), v, l)
 	data.CSRF, data.Flash = sess.csrf, f
+	// The restore view reads the network; its own refresh, which only
+	// follows a running restore, does not.
+	if v.Name == "restore" {
+		if r.Header.Get(liveHeader) == "" {
+			data.Restore = s.restoreView(r, data.Device)
+		} else {
+			data.Restore = &restoreData{}
+		}
+	}
 	if s.logs() != nil && v.Name == "advanced" {
 		data.Logs = s.logs().Last(60)
 	}
@@ -1019,7 +1028,7 @@ func (s *Server) runPageAction(r *http.Request, name string, l tr) (msg string, 
 	default:
 		if s.jobs() == nil {
 			switch name {
-			case "backup-run", "backup-verify", "backup-add", "backup-remove", "settings-schedule", "settings-retention", "settings-bandwidth", "settings-excludes":
+			case "backup-run", "backup-verify", "backup-add", "backup-remove", "restore-start", "settings-schedule", "settings-retention", "settings-bandwidth", "settings-excludes":
 				return l.T("msg.nojobs"), true
 			}
 			return "", true
@@ -1079,6 +1088,12 @@ func (s *Server) runPageAction(r *http.Request, name string, l tr) (msg string, 
 			return fail("msg.notsaved", err)
 		}
 		return l.T("msg.remove.done", set), false
+	case "restore-start":
+		target, err := s.startRestore(r)
+		if err != nil {
+			return fail("msg.restore.failed", err)
+		}
+		return l.T("msg.restore.started", target), false
 	case "settings-schedule", "settings-retention", "settings-bandwidth":
 		in, err := settingsFromForm(r)
 		if err != nil {

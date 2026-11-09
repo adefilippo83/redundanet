@@ -34,7 +34,7 @@
 <main>
 <p id="gone" class="flash flash-bad" role="alert" hidden>{{.T "session.gone"}}</p>
 {{with .Flash}}<p class="flash {{if .Bad}}flash-bad{{else}}flash-ok{{end}}" role="status">{{.Text}}</p>{{end}}
-{{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else}}{{template "advanced" .}}{{end}}
+{{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "restore"}}{{template "restore" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else}}{{template "advanced" .}}{{end}}
 </main>
 </div>
 </body>
@@ -282,4 +282,62 @@
   <pre id="log" data-live tabindex="0">{{range .Logs}}{{.Time.Format "15:04:05"}} {{.Level}} {{.Msg}} {{.Attrs}}
 {{end}}</pre>
 </section>
+{{end}}
+
+{{define "restore"}}
+<div class="head"><h1>{{.T "restore.title"}}</h1><p class="muted">{{.T "restore.intro"}}</p></div>
+
+<div id="restoring" data-live class="stack">{{with .Jobs}}{{with .Restore}}
+<section class="callout {{if .Running}}callout-info{{else if .Err}}callout-bad{{else}}callout-ok{{end}}">
+  <div class="grow">
+    {{if .Running}}<h2>{{$.T "restore.running.title"}}</h2><p>{{$.T "restore.to" .Target}}</p><progress aria-label="{{$.T "restore.running.title"}}"></progress>
+    {{else if .Err}}<h2>{{$.T "restore.failed.title"}}</h2><p>{{.Err}}</p>
+    {{else if .Report}}<h2>{{if .Report.Exceptions}}{{$.T "restore.exceptions.title"}}{{else}}{{$.T "restore.done.title"}}{{end}}</h2>
+    <p>{{$.T "restore.done.text" .Report.Files ($.Bytes .Report.Bytes)}} {{$.T "restore.to" .Target}}</p>
+    {{if .Report.Exceptions}}<details><summary>{{$.T "restore.exceptions" (len .Report.Exceptions)}}</summary><ul class="plain">{{range .Report.Exceptions}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
+  </div>
+</section>{{end}}{{end}}</div>
+
+{{with .Restore}}
+{{if .Err}}<p class="flash flash-bad" role="alert">{{$.T "restore.unreadable"}} {{.Err}}</p>{{end}}
+
+{{if not .Browsing}}
+{{if lt .Answered .Servers}}<p class="muted">{{$.T "restore.partial" .Answered .Servers}}</p>{{end}}
+{{range .Devices}}<section class="card">
+  <div><h2>{{if .This}}{{$.T "restore.thisdevice"}}{{else}}{{$.T "restore.otherdevice"}}{{end}}</h2><code class="path">{{.Short}}</code></div>
+  {{if .Err}}<p class="muted">{{.Err}}</p>{{end}}
+  {{if .Versions}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "restore.version"}}</th><th>{{$.T "restore.set"}}</th><th>{{$.T "fact.files"}}</th><th>{{$.T "fact.size"}}</th></tr></thead>
+    <tbody>{{range .Versions}}<tr><td><a href="{{.Href}}">{{.At.Local.Format "2006-01-02 15:04"}}</a>{{if .Partial}} <span class="warn">{{$.T "restore.partialversion"}}</span>{{end}}</td><td>{{.Set}}</td><td>{{.Files}}</td><td>{{$.Bytes .Bytes}}</td></tr>{{end}}</tbody>
+  </table></div>{{end}}
+</section>{{else}}{{if not .Err}}<section class="card"><p class="muted">{{$.T "restore.nothing"}}</p></section>{{end}}{{end}}
+
+{{else}}
+<section class="card">
+  <div><h2>{{$.T "restore.versionof" .When}}</h2>
+  <p class="crumbs">{{range $i, $c := .Crumbs}}{{if $i}}<span aria-hidden="true"> / </span>{{end}}<a href="{{.Href}}">{{if $i}}{{.Label}}{{else}}{{$.T "restore.top"}}{{end}}</a>{{end}}</p></div>
+  {{if .IsFile}}<p>{{$.T "restore.onefile" .Here ($.Bytes .Bytes)}}</p>
+  {{else if .Entries}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "restore.name"}}</th><th>{{$.T "fact.size"}}</th><th>{{$.T "restore.changed"}}</th></tr></thead>
+    <tbody>{{range .Entries}}<tr>
+      <td>{{if .Href}}<a href="{{.Href}}"{{if .Dir}} class="dir"{{end}}>{{.Name}}{{if .Dir}}/{{end}}</a>{{else}}{{.Name}}{{end}}{{if .Skipped}} <span class="warn">{{$.T "restore.skipped" .Skipped}}</span>{{end}}</td>
+      <td>{{if .Dir}}{{$.T "restore.dirsize" .Files ($.Bytes .Bytes)}}{{else if not .Skipped}}{{$.Bytes .Bytes}}{{end}}</td>
+      <td>{{if not .At.IsZero}}{{.At.Local.Format "2006-01-02 15:04"}}{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>
+  {{else if not .Err}}<p class="muted">{{$.T "restore.empty"}}</p>{{end}}
+</section>
+
+{{if not .Err}}<section class="card card-new">
+  <h2>{{if .IsFile}}{{$.T "restore.this.file"}}{{else if .Root}}{{$.T "restore.this.folder" .Here}}{{else}}{{$.T "restore.this.all"}}{{end}}</h2>
+  <form method="post" action="/action/restore-start" class="fields">{{template "csrf" $}}
+    <input type="hidden" name="device" value="{{.Device}}"><input type="hidden" name="snapshot" value="{{.Snapshot}}"><input type="hidden" name="root" value="{{.Root}}"><input type="hidden" name="sub" value="{{.Sub}}">
+    <label class="wide">{{$.T "restore.folder"}}<input name="folder" value="{{.Folder}}" required autocomplete="off" spellcheck="false" class="mono"></label>
+    <button class="btn primary">{{$.T "restore.button"}}</button>
+    <label class="check full"><input type="checkbox" name="overwrite"><span>{{$.T "restore.overwrite"}}</span></label>
+    <p class="muted full">{{$.T "restore.hint"}}</p>
+  </form>
+</section>{{end}}
+{{end}}
+{{end}}
 {{end}}
