@@ -293,7 +293,11 @@ fits its channel, or the manifest's `min_version` requires one, it
 downloads the asset, checks its hash and size, closes its own endpoint,
 starts the candidate as `agent --probation` on the same identity, and waits
 up to two minutes for the candidate to report that every hub answered and
-every peer the agent had came back. Only then is the new binary renamed
+the peers the agent had came back: all of them, or after thirty seconds
+every storage device among them and at least half of all, so a laptop that
+went to sleep meanwhile does not fail the update (`peersBack` in
+`cmd/redundanet`; the hub's probation applies the same rule to its
+connected devices). Only then is the new binary renamed
 into place, the old one kept beside it as `redundanet.old`, and the agent
 exits so the service starts the new version. A candidate that fails is
 recorded and never retried; the agent restarts its endpoint and carries on.

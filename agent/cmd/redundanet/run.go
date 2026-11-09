@@ -187,7 +187,7 @@ func runHub(args []string) error {
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising hub")
-	probationPeers := fs.String("probation-peers", "", "device keys the candidate must see connected to pass probation")
+	probationPeers := fs.String("probation-peers", "", "device keys the previous hub had; the candidate passes when they are back: all of them, or after 30 s every storage device among them and at least half of all")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -308,7 +308,7 @@ func runHub(args []string) error {
 	current := func() *bundle { mu.Lock(); defer mu.Unlock(); return cur }
 
 	if *probation {
-		return runHubProbation(ctx, func() hub.Status { return current().h.Status() }, wanted)
+		return runHubProbation(ctx, func() hub.Status { return current().h.Status() }, wanted, storageDevices(rc.current()))
 	}
 
 	if !*noUpdate && *mPath == "" {
@@ -388,35 +388,84 @@ func runHub(args []string) error {
 	return nil
 }
 
-// hubHealthy is a candidate hub's health: it is serving, and every device
-// the previous hub had is back on a channel.
-func hubHealthy(st hub.Status, peers []identity.Key) bool {
+// A candidate, hub or agent, has probationDeadline to prove itself. It
+// passes as soon as every device the previous process had is back; after
+// probationGrace it also passes with every storage device among them back
+// and at least half of all, since a laptop may have closed its lid in the
+// meantime and must not fail the update for good. Storage devices are
+// always on, so one that stays away points at the candidate.
+const (
+	probationDeadline = 110 * time.Second
+	probationGrace    = 30 * time.Second
+)
+
+// peersBack applies that rule: wanted are the devices to see again, have
+// the ones seen now, storage the devices the manifest lists under storage.
+// It also returns the devices still missing, for the message when the
+// deadline passes.
+func peersBack(wanted []identity.Key, have map[string]bool, storage map[string]bool, elapsed time.Duration) (bool, []string) {
+	var missing []string
+	storageMissing := false
+	for _, p := range wanted {
+		if k := p.String(); !have[k] {
+			if storage[k] {
+				missing = append(missing, p.Short()+" (storage)")
+				storageMissing = true
+			} else {
+				missing = append(missing, p.Short())
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return true, nil
+	}
+	if elapsed < probationGrace || storageMissing {
+		return false, missing
+	}
+	back := len(wanted) - len(missing)
+	return back >= (len(wanted)+1)/2, missing
+}
+
+// storageDevices is the set of device keys the manifest lists under
+// storage, as strings; empty when there is no manifest yet.
+func storageDevices(m *manifest.Manifest) map[string]bool {
+	out := map[string]bool{}
+	if m == nil {
+		return out
+	}
+	for _, s := range m.Storage {
+		out[s.Device.String()] = true
+	}
+	return out
+}
+
+// hubHealthy is a candidate hub's health: it is serving, and the devices
+// the previous hub had are back on a channel, by the rule above.
+func hubHealthy(st hub.Status, peers []identity.Key, storage map[string]bool, elapsed time.Duration) (bool, []string) {
 	have := map[string]bool{}
 	for _, c := range st.Clients {
 		have[c.Device] = true
 	}
-	for _, p := range peers {
-		if !have[p.String()] {
-			return false
-		}
-	}
-	return true
+	return peersBack(peers, have, storage, elapsed)
 }
 
 // runHubProbation is the candidate hub's side of a self-update.
-func runHubProbation(ctx context.Context, status func() hub.Status, peers []identity.Key) error {
-	deadline := time.After(110 * time.Second)
+func runHubProbation(ctx context.Context, status func() hub.Status, peers []identity.Key, storage map[string]bool) error {
+	start := time.Now()
+	deadline := time.After(probationDeadline)
 	t := time.NewTicker(500 * time.Millisecond)
 	defer t.Stop()
+	var missing []string
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return errors.New("probation: the devices did not come back within the deadline")
+			return fmt.Errorf("probation: %d of %d devices did not come back within the deadline: %s", len(missing), len(peers), strings.Join(missing, ", "))
 		case <-t.C:
 		}
-		if hubHealthy(status(), peers) {
+		var ok bool
+		if ok, missing = hubHealthy(status(), peers, storage, time.Since(start)); ok {
 			fmt.Println(probationOK)
 			<-ctx.Done() // keep serving until the supervisor stops us
 			return nil
@@ -441,7 +490,7 @@ func runAgent(args []string) error {
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
-	probationPeers := fs.String("probation-peers", "", "device keys the candidate must reach to pass probation")
+	probationPeers := fs.String("probation-peers", "", "device keys the previous agent had sessions with; the candidate passes when it reaches them: all, or after 30 s every storage device among them and at least half of all")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -732,7 +781,7 @@ func runAgent(args []string) error {
 	}()
 
 	if *probation {
-		return runProbation(ctx, ep, wanted)
+		return runProbation(ctx, ep, wanted, storageDevices(rc.current()))
 	}
 
 	go runner.Run(ctx)
@@ -1118,22 +1167,31 @@ func (p *manifestPolicy) OwnerCap(owner identity.Key) int64 {
 
 // runProbation is the candidate's side: healthy means every hub channel is
 // up and every peer named is connected, within the supervisor's deadline.
-func runProbation(ctx context.Context, ep *transport.Endpoint, peers []identity.Key) error {
-	deadline := time.After(110 * time.Second)
+// runProbation is the candidate agent's side of a self-update: every hub
+// answers, and the peers the previous agent had are back, by the rule
+// peersBack applies.
+func runProbation(ctx context.Context, ep *transport.Endpoint, peers []identity.Key, storage map[string]bool) error {
+	start := time.Now()
+	deadline := time.After(probationDeadline)
 	t := time.NewTicker(500 * time.Millisecond)
 	defer t.Stop()
+	var missing []string
+	hubsUp := false
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return errors.New("probation: not healthy within the deadline")
+			if !hubsUp {
+				return errors.New("probation: not every hub answered within the deadline")
+			}
+			return fmt.Errorf("probation: %d of %d peers did not come back within the deadline: %s", len(missing), len(peers), strings.Join(missing, ", "))
 		case <-t.C:
 		}
 		st := ep.Status()
-		ok := len(st.Hubs) > 0
+		hubsUp = len(st.Hubs) > 0
 		for _, h := range st.Hubs {
-			ok = ok && h.Up
+			hubsUp = hubsUp && h.Up
 		}
 		have := map[string]bool{}
 		for _, s := range st.Sessions {
@@ -1141,10 +1199,8 @@ func runProbation(ctx context.Context, ep *transport.Endpoint, peers []identity.
 				have[s.Peer] = true
 			}
 		}
-		for _, p := range peers {
-			ok = ok && have[p.String()]
-		}
-		if ok {
+		var ok bool
+		if ok, missing = peersBack(peers, have, storage, time.Since(start)); ok && hubsUp {
 			fmt.Println(probationOK)
 			<-ctx.Done() // keep serving until the supervisor stops us
 			return nil
