@@ -43,7 +43,7 @@ The Go module is `agent/`; the table in [../agent/README.md](../agent/README.md)
 | `internal/service` | The per-user service: launchd, a systemd user unit, a Windows logon task |
 | `internal/api`, `internal/logbuf` | The local HTTP API and page, with the browser guards; the last 500 log records |
 | `internal/wire`, `internal/transport`, `internal/hub`, `internal/portmap` | The hub channel protocol, the mesh endpoint (QUIC, relay, hole punching), hub mode, port mapping |
-| `internal/collector` | The hub's status collector: census, placement table, repair scheduler, status page and `status.json` |
+| `internal/collector` | The hub's status collector: census, placement table, repair scheduler, status page and `status.json`. The page opens with one line (everything stored is fully placed; repairing or waiting for a device; some objects need attention), then devices, storage, members and objects; it is one self-contained document with the look of the agent's page, no script, in English |
 | `internal/object`, `internal/store`, `internal/shareproto` | The object format (encryption, erasure coding, descriptors, capabilities), the share store, the storage protocol |
 | `internal/engine` | The client engine over the storage protocol: put, get, has, check, repair, roots, delete tokens |
 | `internal/snapshot`, `internal/backup`, `internal/restore`, `internal/jobs` | Snapshots and retention, the backup job, restores and the restore test, the scheduler |
