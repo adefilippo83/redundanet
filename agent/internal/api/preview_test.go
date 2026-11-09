@@ -60,7 +60,9 @@ func TestPreview(t *testing.T) {
 			Membership: &membership.Status{Network: "redundanet", Revision: 6, SignedAt: now.Add(-50 * time.Hour), Members: 2, Hubs: 1, LastFetch: now.Add(-2 * time.Minute)},
 			Update:     &update.Status{Enabled: true, Running: "3.0.12", Channel: "stable", LastCheck: now.Add(-12 * time.Minute)},
 			Repair:     &repair.Status{Done: 9}, Service: &service.Status{Installed: true, Running: true, Path: "/Users/sample/Library/LaunchAgents/org.redundanet.redundanet.plist"},
-			Placement: &Placement{K: 2, N: 3, Servers: 3}, Jobs: j, Generated: now}
+			Placement: &Placement{K: 2, N: 3, Servers: 3}, Jobs: j, Generated: now,
+			Devices: []Device{{Key: "ne6ftzx2aaaaaaaa", Name: "falcon", Roles: []string{"client", "storage"}, PairedAt: now.Add(-90 * time.Hour)}, {Key: "ikpijbsqaaaaaaaa", Name: "pi-attic", Roles: []string{"client", "storage"}, PairedAt: now.Add(-20 * time.Hour)}},
+			JoinURL: "https://redundanet.com/join.html?mode=device&devicename=pi-attic", JoinDevice: "pi-attic"}
 		switch state {
 		case "running":
 			j.Runs[0].Running, j.Runs[0].Progress = true, &backup.Progress{Phase: "publishing", Files: 1200 + int64(time.Since(now).Seconds())*37, Uploaded: 48_000_000 + int64(time.Since(now).Seconds())*2_000_000}
@@ -103,7 +105,10 @@ func TestPreview(t *testing.T) {
 	}
 	cfg := Config{Addr: addr, DataDir: dataDir, Jobs: runner, Logs: buf, Log: lg, Version: "3.0.12", Snapshot: snap,
 		Actions: Actions{CheckUpdate: func(context.Context) (string, error) { return "", nil }, ApplyUpdate: func(context.Context) error { return errors.New("this is the preview") },
-			RetryUpdate: func(context.Context, string) error { return nil }, SetChannel: func(string) error { return nil }}}
+			RetryUpdate: func(context.Context, string) error { return nil }, SetChannel: func(string) error { return nil },
+			PairDevice: func(context.Context, string, string, bool) (Device, error) {
+				return Device{}, errors.New("this is the preview: nothing is paired and the words went nowhere")
+			}}}
 	if state == "setup" {
 		phase := SetupStatus{Phase: "choose"}
 		cfg.Snapshot = nil

@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -20,6 +22,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/jobs"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
+	"github.com/adefilippo83/redundanet/agent/internal/logbuf"
 	"github.com/adefilippo83/redundanet/agent/internal/membership"
 	"github.com/adefilippo83/redundanet/agent/internal/snapshot"
 	"github.com/adefilippo83/redundanet/agent/internal/transport"
@@ -285,5 +288,97 @@ func TestFoldersFromThePage(t *testing.T) {
 	req, _ := http.NewRequest("GET", base+"/api/status", nil)
 	if err := json.Unmarshal([]byte(read(browser.Do(req))), &st); err != nil || st.Jobs == nil {
 		t.Fatalf("the JSON API with the page's session: %v", err)
+	}
+}
+
+// Pairing a device from the page: the code and the words reach the action
+// and nothing else; the words are in no page, no message and no log line.
+func TestPairingFromThePage(t *testing.T) {
+	const phrase = "alpha bravo charlie delta echo foxtrot golf hotel india juliett kilo lima"
+	dir := t.TempDir()
+	logs := logbuf.New(slog.NewTextHandler(io.Discard, nil), 200)
+	var gotCode, gotPhrase string
+	var gotStorage bool
+	fail := true
+	paired := []Device{{Key: "ne6ftzx2aaaaaaaaaaaa", Name: "falcon", Roles: []string{"client", "storage"}, PairedAt: time.Now().Add(-3 * time.Hour)}, {Key: "ikpijbsqaaaaaaaaaaaa", Roles: []string{"client"}, PairedAt: time.Now()}}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	srv, err := Start(ctx, Config{Addr: "127.0.0.1:0", DataDir: dir, Logs: logs, Log: slog.New(logs),
+		Snapshot: func() Snapshot {
+			return Snapshot{Device: "dev", Member: "mem", Admission: "listed", Devices: paired, JoinURL: "https://redundanet.com/join.html?mode=device&devicename=falcon", JoinDevice: "falcon",
+				Transport: &transport.Status{Sessions: []transport.SessionStatus{{Peer: "ne6ftzx2aaaaaaaaaaaa", Relay: true, Direct: "192.168.1.4:5"}}}}
+		},
+		Actions: Actions{PairDevice: func(_ context.Context, code, words string, storage bool) (Device, error) {
+			gotCode, gotPhrase, gotStorage = code, words, storage
+			if fail {
+				return Device{}, errors.New("the new device did not answer")
+			}
+			return Device{Key: "abcdefghijklmnop", Roles: []string{"client"}}, nil
+		}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := os.ReadFile(filepath.Join(dir, tokenFile))
+	link, err := NewClient(srv.Addr(), strings.TrimSpace(string(tok))).LoginLink(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, _ := cookiejar.New(nil)
+	browser := &http.Client{Jar: jar}
+	base := "http://" + srv.Addr()
+	read := func(r *http.Response, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "%!") || strings.Contains(string(b), "foxtrot") {
+			t.Fatalf("a page with a broken text or with the words: %s", firstLines(string(b)))
+		}
+		return string(b)
+	}
+	page := read(browser.Get(link))
+	csrf := extract(page, `name="csrf" value="`, `"`)
+	// The overview says the paired storage node still needs its request.
+	if !strings.Contains(page, "Storage device falcon is not in the member list yet") || !strings.Contains(page, "join.html?mode=device&amp;devicename=falcon") {
+		t.Fatalf("overview: %s", firstLines(page))
+	}
+	page = read(browser.Get(base + "/network"))
+	for _, want := range []string{"falcon", "client, storage", ">direct<", "ikpijbsq", ">not connected<", "/action/device-pair", `name="phrase"`, `autocomplete="off"`} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("the devices view lacks %q", want)
+		}
+	}
+	post := func(v url.Values) string {
+		t.Helper()
+		v.Set("back", "/network")
+		return read(browser.PostForm(base+"/action/device-pair", v))
+	}
+	// No token, no action; half a form, no action.
+	if r, _ := browser.PostForm(base+"/action/device-pair", url.Values{"code": {"rn3:pair:x"}, "phrase": {phrase}}); r.StatusCode != http.StatusForbidden || gotPhrase != "" {
+		t.Fatalf("pairing without the CSRF token: %d", r.StatusCode)
+	}
+	if p := post(url.Values{"csrf": {csrf}, "code": {"rn3:pair:x"}, "phrase": {"  "}}); !strings.Contains(p, "The code and the twelve words are both needed.") || gotCode != "" {
+		t.Fatalf("half a form: %s", firstLines(p))
+	}
+	if p := post(url.Values{"csrf": {csrf}, "code": {" rn3:pair:x "}, "phrase": {phrase}, "storage": {"on"}}); !strings.Contains(p, "The device was not paired: the new device did not answer") {
+		t.Fatalf("a failed pairing: %s", firstLines(p))
+	}
+	if gotCode != "rn3:pair:x" || gotPhrase != phrase || !gotStorage {
+		t.Fatalf("what the action got: %q %v", gotCode, gotStorage)
+	}
+	fail = false
+	if p := post(url.Values{"csrf": {csrf}, "code": {"rn3:pair:y"}, "phrase": {phrase}}); !strings.Contains(p, "abcdefgh is paired.") || gotStorage {
+		t.Fatalf("a pairing: %s", firstLines(p))
+	}
+	for _, line := range logs.Last(200) {
+		if strings.Contains(line.Msg+line.Attrs, "foxtrot") {
+			t.Fatalf("the words are in the log: %s %s", line.Msg, line.Attrs)
+		}
+	}
+	// A device without the action (a hub, a build without it) says so.
+	srv.Attach(Runtime{Snapshot: func() Snapshot { return Snapshot{} }})
+	if p := post(url.Values{"csrf": {csrf}, "code": {"c"}, "phrase": {phrase}}); !strings.Contains(p, "Pairing from the page is off on this device.") {
+		t.Fatalf("pairing where it is off: %s", firstLines(p))
 	}
 }

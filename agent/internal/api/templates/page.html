@@ -152,10 +152,31 @@
 {{define "network"}}
 <div class="head"><h1>{{.T "network.title"}}</h1><p class="muted">{{.T "network.intro"}}</p></div>
 
+<section id="devices" data-live class="card">
+  <div><h2>{{.T "devices.title"}}</h2><p class="muted">{{.T "devices.intro"}}</p></div>
+  {{if .Paired}}<div class="scroll"><table>
+    <thead><tr><th>{{.T "devices.name"}}</th><th>{{.T "device.roles"}}</th><th>{{.T "devices.paired"}}</th><th>{{.T "devices.link"}}</th></tr></thead>
+    <tbody>{{range .Paired}}<tr><td><strong>{{if .Name}}{{.Name}}{{else}}{{.Short}}{{end}}</strong><br><code>{{.Short}}</code></td><td>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</td><td>{{$.Since .PairedAt}}</td>
+      <td>{{if eq .Link "direct"}}<span class="ok">{{$.T "link.direct"}}</span>{{else if eq .Link "relay"}}<span class="ok">{{$.T "link.relay"}}</span>{{else}}<span class="muted">{{$.T "link.none"}}</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="muted">{{.T "devices.none"}}</p>{{end}}
+  {{if and .JoinURL .JoinDevice}}<p><a href="{{.JoinURL}}">{{.T "issue.node.title" .JoinDevice}}</a> {{.T "issue.node.text"}}</p>{{end}}
+</section>
+
+<section class="card card-new">
+  <div><h2>{{.T "pair.title"}}</h2><p class="muted">{{.T "pair.intro"}}</p></div>
+  <form method="post" action="/action/device-pair" class="fields" autocomplete="off">{{template "csrf" .}}
+    <label class="full">{{.T "pair.code"}}<input name="code" required autocomplete="off" autocapitalize="none" spellcheck="false" class="mono" placeholder="rn3:pair:"></label>
+    <label class="full">{{.T "pair.phrase"}}<textarea name="phrase" rows="2" required autocomplete="off" autocapitalize="none" spellcheck="false"></textarea></label>
+    <label class="check grow"><input type="checkbox" name="storage"><span>{{.T "pair.storage"}}</span></label>
+    <button class="btn primary">{{.T "pair.button"}}</button>
+    <p class="muted full">{{.T "pair.warn"}}</p>
+  </form>
+</section>
+
 <section class="card">
   <h2>{{.T "device.title"}}</h2>
   <dl class="facts">
-    <div><dt>{{.T "device.status"}}</dt><dd>{{if eq .Admission "listed"}}<span class="ok">{{.T "device.listed"}}</span>{{else if eq .Admission "waiting"}}<span class="warn">{{.T "device.waiting"}}</span> <a href="https://redundanet.com/join.html">{{.T "issue.waiting.button"}}</a>{{else}}–{{end}}</dd></div>
+    <div><dt>{{.T "device.status"}}</dt><dd>{{if eq .Admission "listed"}}<span class="ok">{{.T "device.listed"}}</span>{{else if eq .Admission "waiting"}}<span class="warn">{{.T "device.waiting"}}</span> <a href="{{if .JoinURL}}{{.JoinURL}}{{else}}https://redundanet.com/join.html{{end}}">{{.T "issue.waiting.button"}}</a>{{else}}–{{end}}</dd></div>
     <div><dt>{{.T "device.roles"}}</dt><dd>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</dd></div>
     <div class="full"><dt>{{.T "device.member"}}</dt><dd><code>{{.Member}}</code><br><span class="muted">{{.MemberCode}}</span></dd></div>
     <div class="full"><dt>{{.T "device.key"}}</dt><dd><code>{{.Device}}</code></dd></div>
