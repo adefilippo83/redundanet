@@ -24,9 +24,12 @@ func TestPairFromThePage(t *testing.T) {
 	// A new device waits with its code, over loopback here.
 	newcomer := func() (*pairing.Listener, string, identity.Key) {
 		t.Helper()
-		var dev identity.Key
-		dev[0] = 5
-		l, err := pairing.Listen("testnet", dev, "127.0.0.1:0", nil)
+		key, err := identity.NewDeviceKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dev := key.ID()
+		l, err := pairing.Listen("testnet", key, "127.0.0.1:0", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

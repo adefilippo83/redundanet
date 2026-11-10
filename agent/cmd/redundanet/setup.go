@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -190,7 +189,7 @@ func runSetup(args []string) error {
 // ask reads one line from the terminal.
 func ask(prompt string) string {
 	fmt.Print(prompt)
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, _ := stdin.ReadString('\n')
 	return strings.TrimSpace(line)
 }
 

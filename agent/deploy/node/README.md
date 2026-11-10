@@ -19,7 +19,7 @@ cannot reach each other), certifies the node through the code:
 
 ```bash
 curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage   # on the node
-redundanet device pair --storage <code>                                            # on the laptop
+redundanet device pair --storage                                                   # on the laptop: asks for the code the node shows
 ```
 
 `node install` refuses a storage path that is not a mount point unless
@@ -36,7 +36,7 @@ With a laptop of the member anywhere, pairing is two commands after
 
 ```bash
 sudo bash install.sh pair                        # on the node: shows a code and waits
-redundanet device pair --storage <code>          # on the laptop, with the phrase
+redundanet device pair --storage                 # on the laptop: asks for the code, then the phrase
 ```
 
 The node joins and starts by itself. For a node with no laptop of the

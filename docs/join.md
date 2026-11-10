@@ -57,7 +57,7 @@ Your allocation is derived from your contribution and the encoding overhead: con
 
 ## Adding a storage node later
 
-A listed member adds a storage node without a new membership request. Pair the node from your laptop as in [install.md](install.md), "Linux storage node" (one line on the node, `redundanet device pair --storage <code>` on the laptop), then on the laptop:
+A listed member adds a storage node without a new membership request. Pair the node from your laptop as in [install.md](install.md), "Linux storage node" (one line on the node, `redundanet device pair --storage` on the laptop, which asks for the node's code), then on the laptop:
 
 ```bash
 redundanet join-request
@@ -69,7 +69,7 @@ The issue the form opens has the title `[Join Request] Storage device: <name> fo
 
 ## More devices
 
-Every device of yours is certified from the phrase. On a second device, `redundanet setup` offers the two ways: pairing, without moving the phrase (on the new device `redundanet identity pair` shows a one-time code; on a device of yours that has its identity, on the same network or anywhere else (the hub relays the exchange when the two cannot reach each other), the page's "Add a device" form under Devices and network takes the code and the phrase, or in a terminal `redundanet device pair <code>` asks for the phrase, certifies the new device and hands it the identity and the network; add `--storage` if the new device contributes disk), or typing the phrase on the new device (`redundanet identity init --from-phrase`). A plain `identity init` on a second device would make a new member. Devices need no manifest change: servers accept any device whose certificate chains to a listed member.
+Every device of yours is certified from the phrase. On a second device, `redundanet setup` offers the two ways: pairing, without moving the phrase (on the new device `redundanet identity pair` shows a one-time code; on a device of yours that has its identity, on the same network or anywhere else (the hub relays the exchange when the two cannot reach each other), the page's "Add a device" form under Devices and network takes the code and the phrase, or in a terminal `redundanet device pair` asks for the code and the phrase, certifies the new device and hands it the identity and the network; add `--storage` if the new device contributes disk), or typing the phrase on the new device (`redundanet identity init --from-phrase`). A plain `identity init` on a second device would make a new member. Devices need no manifest change: servers accept any device whose certificate chains to a listed member.
 
 For a device reached over SSH only, the certificate file does the same in three commands:
 

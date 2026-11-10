@@ -143,7 +143,7 @@ func (st *setupState) pair() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	l, err := pairing.Listen(st.network, dev.ID(), "", pairingRelays(st.d, st.network))
+	l, err := pairing.Listen(st.network, dev, "", pairingRelays(st.d, st.network))
 	if err != nil {
 		return "", err
 	}

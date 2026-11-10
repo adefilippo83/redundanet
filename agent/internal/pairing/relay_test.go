@@ -25,7 +25,7 @@ func TestPairThroughTheRelay(t *testing.T) {
 	hub := httptest.NewServer(relay)
 	defer hub.Close()
 	dev, _ := identity.NewDeviceKey()
-	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", []string{hub.URL})
+	l, err := Listen("testnet", dev, "127.0.0.1:0", []string{hub.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestRelayRefusals(t *testing.T) {
 	old := httptest.NewServer(http.NotFoundHandler())
 	defer old.Close()
 	dev, _ := identity.NewDeviceKey()
-	l, err := Listen("testnet", dev.ID(), "127.0.0.1:0", []string{old.URL})
+	l, err := Listen("testnet", dev, "127.0.0.1:0", []string{old.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,13 +91,13 @@ func TestRelayRefusals(t *testing.T) {
 	hub := httptest.NewServer(relay)
 	defer hub.Close()
 	right, _ := identity.NewDeviceKey()
-	l2, err := Listen("testnet", right.ID(), "127.0.0.1:0", []string{hub.URL})
+	l2, err := Listen("testnet", right, "127.0.0.1:0", []string{hub.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer l2.Close()
 	rc, _ := Parse(l2.Code())
-	wrong := &Code{Version: version, Addrs: []string{"127.0.0.1:1"}, Secret: make([]byte, secretBytes), Relays: rc.Relays}
+	wrong := &Code{Version: version, Addrs: []string{"127.0.0.1:1"}, Secret: make([]byte, secretBytes), Relays: rc.Relays, Device: rc.Device}
 	called := false
 	_, _, err = Pair(ctx, wrong.String(), "testnet", func(identity.Key, string) (*Offer, error) { called = true; return nil, nil })
 	if err == nil || called {
@@ -220,8 +220,20 @@ func TestCodeVersionOneStillParses(t *testing.T) {
 	if err != nil || back.Version != 1 || len(back.Relays) != 0 {
 		t.Fatalf("version 1: %+v %v", back, err)
 	}
-	if _, err := Parse((&Code{Version: version + 1, Addrs: c.Addrs, Secret: c.Secret}).String()); err == nil {
-		t.Fatal("a code from the future parsed")
+	var dev identity.Key
+	dev[0] = 1
+	if _, err := Parse((&Code{Version: version + 1, Addrs: c.Addrs, Secret: c.Secret, Device: dev}).String()); err == nil || !strings.Contains(err.Error(), "update this device") {
+		t.Fatalf("a code from the future: %v", err)
+	}
+	// From version 3 a code names the new device's key, and an older one does not.
+	if _, err := Parse((&Code{Version: version, Addrs: c.Addrs, Secret: c.Secret}).String()); err == nil {
+		t.Fatal("a version 3 code without the device key parsed")
+	}
+	if _, err := Parse((&Code{Version: 2, Addrs: c.Addrs, Secret: c.Secret, Device: dev}).String()); err == nil {
+		t.Fatal("a version 2 code with a device key parsed")
+	}
+	if back, err := Parse((&Code{Version: version, Addrs: c.Addrs, Secret: c.Secret, Device: dev}).String()); err != nil || !back.Bound() || back.Device != dev {
+		t.Fatalf("version 3: %+v %v", back, err)
 	}
 }
 

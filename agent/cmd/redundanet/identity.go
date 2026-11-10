@@ -461,7 +461,7 @@ func identityPair(args []string) error {
 	if err != nil {
 		return err
 	}
-	l, err := pairingListener(d, *network, dev.ID(), *codeFile != "")
+	l, err := pairingListener(d, *network, dev, *codeFile != "")
 	if err != nil {
 		return err
 	}
@@ -473,8 +473,10 @@ func identityPair(args []string) error {
 	}
 	fmt.Printf("device key: %s\n\n", dev.ID())
 	fmt.Println("On a device of yours that already has its identity, within", wait.String()+", run (on this network or anywhere: the hub relays the exchange when the two cannot reach each other):")
-	fmt.Printf("  redundanet device pair%s %s\n", networkArg(*network), l.Code())
-	fmt.Println("add --storage there if this device contributes disk. Waiting...")
+	fmt.Printf("  redundanet device pair%s\n", networkArg(*network))
+	fmt.Println("add --storage there if this device contributes disk. It asks for this code, then for your phrase:")
+	fmt.Printf("\n  %s\n\n", l.Code())
+	fmt.Println("The code is for your eyes until the pairing is done. Waiting...")
 	ctx, cancel := context.WithTimeout(context.Background(), *wait)
 	defer cancel()
 	offer, err := l.Wait(ctx)
@@ -518,7 +520,7 @@ type pairingState struct {
 // pairingListener makes the code's listener: a fresh code, or with keep,
 // the code kept from an earlier run when there is one and its port is
 // still free, else a fresh one that is kept for the next run.
-func pairingListener(d, network string, dev identity.Key, keep bool) (*pairing.Listener, error) {
+func pairingListener(d, network string, dev *identity.DeviceKey, keep bool) (*pairing.Listener, error) {
 	relays := pairingRelays(d, network)
 	if !keep {
 		return pairing.Listen(network, dev, "", relays)
@@ -700,7 +702,7 @@ func printPhrase(words []string) {
 // confirmPhrase asks for three words at random positions, the RFC's check
 // that the phrase was written down.
 func confirmPhrase(words []string) error {
-	in := bufio.NewReader(os.Stdin)
+	in := stdin
 	for _, i := range threeIndices(len(words)) {
 		for attempt := 0; ; attempt++ {
 			fmt.Printf("Word %d: ", i+1)
@@ -768,9 +770,23 @@ func readSecret(prompt string) ([]byte, error) {
 		fmt.Fprintln(os.Stderr)
 		return b, err
 	}
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, err := stdin.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	return []byte(strings.TrimRight(line, "\r\n")), nil
+}
+
+// stdin is the one buffered reader of the input for answers read a line
+// at a time, so two answers piped in one after the other both arrive.
+var stdin = bufio.NewReader(os.Stdin)
+
+// readLine asks for one line that is not a secret from the person typing.
+func readLine(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	line, err := stdin.ReadString('\n')
+	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
