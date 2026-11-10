@@ -152,7 +152,7 @@ func runRelease(args []string) error {
 			return err
 		}
 		fmt.Printf("release key written to %s\n", *path)
-		fmt.Printf("public key, to embed in builds (-X .../version.ReleaseKey=): %s\n", k.Public())
+		fmt.Printf("public key, to write into agent/internal/version (ReleaseKey): %s\n", k.Public())
 		return nil
 	case "add":
 		// No key here: CI and the maintainer's script both use it to put a

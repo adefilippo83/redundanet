@@ -3,24 +3,28 @@
 # the offline keys. The keys are read from files and handed to the
 # redundanet binary built from main; nothing here sends them anywhere.
 #
-#   scripts/sign.sh release VERSION   check the draft release agent/vVERSION, build the index
-#                                     revision that adds it, sign, merge, undraft
+#   scripts/sign.sh release VERSION   check the draft release agent/vVERSION, build it again
+#                                     here from the tag and compare, build the index revision
+#                                     that adds it, sign, merge, undraft
 #   scripts/sign.sh manifest [PR]     sign the manifest of a pull request, or of the current
 #                                     branch, and merge it once CI is green
 #
 # Options before the mode: --dry-run checks everything and signs nothing;
-# --yes skips the one confirmation. Keys: RELEASE_KEY and OPERATOR_KEY name
+# --yes skips the one confirmation; --trust-github signs a release without
+# building it here, which leaves the signature vouching for whatever the
+# build service produced. Keys: RELEASE_KEY and OPERATOR_KEY name
 # the files, by default ~/.redundanet/release.key and ~/.redundanet/operator.key.
 set -euo pipefail
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 die() { echo "sign.sh: $*" >&2; exit 1; }
 say() { printf '\n== %s\n' "$*"; }
 
-yes=0 dry=0
+yes=0 dry=0 trust=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes) yes=1; shift ;;
+    --trust-github) trust=1; shift ;;
     --dry-run) dry=1; shift ;;
     -h|--help) usage ;;
     *) break ;;
@@ -103,6 +107,44 @@ sign_release() {
   done < "$tmp/sizes"
   echo "tag on main, one workflow run, $(wc -l < "$tmp/sizes" | tr -d ' ') archives the size the release says"
 
+  # Everything above compares GitHub with GitHub. This is the check that
+  # does not: the tag's source, which is on main, is built here with the
+  # tag's own scripts/build-agent.sh, and every binary inside an archive
+  # must equal the one built here, byte for byte. Only then does the
+  # signature say "this source", not "whatever the release holds". The
+  # source is a clone, so the build sees a clean tree at the tag as the
+  # workflow did.
+  if [ "$trust" = 1 ]; then
+    echo
+    echo "WARNING: --trust-github: the archives are not compared with a build made here."
+    echo "The signature will vouch for whatever the build service produced."
+  else
+    say "the same binaries, built here from $tag"
+    git clone -q -c advice.detachedHead=false --branch "$tag" "$root" "$tmp/src"
+    [ "$(git -C "$tmp/src" rev-parse HEAD)" = "$(git rev-parse "refs/tags/$tag^{commit}")" ] || die "the clone is not at $tag"
+    [ -x "$tmp/src/scripts/build-agent.sh" ] || die "$tag has no scripts/build-agent.sh: it predates the rebuild check; cut a new version, or sign with --trust-github"
+    "$tmp/src/scripts/build-agent.sh" "$version" "$tmp/built" >/dev/null
+    mkdir "$tmp/unpacked"
+    local archive checked=0
+    for archive in "$tmp/assets"/*.tar.gz "$tmp/assets"/*.zip; do
+      case "$archive" in
+        *.zip) unzip -q "$archive" -d "$tmp/unpacked" ;;
+        *) tar -xzf "$archive" -C "$tmp/unpacked" ;;
+      esac
+    done
+    local dir name bin
+    for dir in "$tmp/built"/redundanet-*/; do
+      name=$(basename "$dir")
+      bin=redundanet; case "$name" in *-windows-*) bin=redundanet.exe ;; esac
+      [ -f "$tmp/unpacked/$name/$bin" ] || die "$name: the release has no such binary"
+      [ "$(find "$tmp/unpacked/$name" -type f | wc -l | tr -d ' ')" = 1 ] || die "$name: the archive holds more than the binary"
+      cmp -s "$dir$bin" "$tmp/unpacked/$name/$bin" || die "$name: the binary on the release is not the one this source builds. Do not sign. (A binary that was code signed after the build differs too; see releases/README.md.)"
+      checked=$((checked + 1))
+    done
+    [ "$checked" = "$(wc -l < "$tmp/sizes" | tr -d ' ')" ] || die "$checked binaries built here, $(wc -l < "$tmp/sizes" | tr -d ' ') archives on the release"
+    echo "$checked binaries on the release equal the ones built here from $tag"
+  fi
+
   say "the index revision, built here on the current main"
   git switch -q -C "$branch" origin/main
   made_branch=$branch
@@ -130,7 +172,7 @@ sign_release() {
     pr=$(gh pr view "$branch" --json number --jq .number)
   fi
   wait_checks "$pr"
-  gh pr merge "$pr" --merge --delete-branch
+  gh pr merge "$pr" --merge --delete-branch --match-head-commit "$(git rev-parse HEAD)"
   gh release edit "$tag" --draft=false >/dev/null
   git switch -q main
   git merge -q --ff-only origin/main 2>/dev/null || git pull -q --ff-only
@@ -168,7 +210,7 @@ sign_manifest() {
   if [ -n "$pr" ]; then
     git push -q
     wait_checks "$pr"
-    gh pr merge "$pr" --merge --delete-branch
+    gh pr merge "$pr" --merge --delete-branch --match-head-commit "$(git rev-parse HEAD)"
     git switch -q main
     git merge -q --ff-only origin/main 2>/dev/null || git pull -q --ff-only
     finished=1

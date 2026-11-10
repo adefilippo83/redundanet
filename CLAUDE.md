@@ -68,6 +68,12 @@ commits. Never weaken that chain.
 - **Nothing in the manifest can name a release, and nothing in the release
   index can admit a member.** Keep the operator key and the release key
   separate.
+- **What a binary trusts is in source, and a release build is one script.**
+  The release key, the index address and the network descriptor are in
+  `agent/internal/version`; never set them from a repository variable, a
+  secret or a workflow input. `scripts/build-agent.sh` is the whole build
+  and takes only the version, so the maintainer's rebuild matches CI byte
+  for byte: nothing in it may depend on the machine, the path or the time.
 - **Agents apply only a signed manifest with a higher revision.** Every
   manifest edit raises `revision` by one; `redundanet validate --manifest
   manifests/manifest.yaml` must pass (CI runs it, and the legacy validator
@@ -102,7 +108,9 @@ commits. Never weaken that chain.
    secrets exist; until then the binaries ship unsigned and the index is
    the verification. A second run for a tag stops at its first step.
 3. Maintainer runs `scripts/sign.sh release X.Y.Z` on the laptop with the
-   release key: it rechecks, rebuilds the revision on main with
+   release key: it rechecks, builds the tag again with the tag's
+   `scripts/build-agent.sh` and refuses unless every binary on the release
+   equals the one built there, rebuilds the revision on main with
    `redundanet release add`, signs, merges and undrafts. Manifest pull
    requests the same way with `scripts/sign.sh manifest PR`. The keys never
    go into CI or a server. See `releases/README.md`.
