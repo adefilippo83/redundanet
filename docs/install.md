@@ -46,7 +46,7 @@ A storage node contributes disk and runs the agent as a system service, headless
 curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 ```
 
-The same download and checks as above, then `redundanet node install`: the service user `redundanet3`, the data directory `/var/lib/redundanet3` (identity, manifest copy, census state, `versions/` for updates), the binary at `/var/lib/redundanet3/bin/redundanet` owned by the service user so the updater can rename a new version into place, the unit `redundanet-agent`, the settings in `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`), the share store in `/mnt/storage/redundanet3` with the unit drop-in that makes it writable for the confined service, and a pairing code on the screen. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident; `--allow-root-disk` on `node install` overrides that knowingly. The node needs at least 10 GiB free above its floor. `--channel early` is accepted here too.
+The same download and checks as above, then `redundanet node install`: the service user `redundanet3`, the data directory `/var/lib/redundanet3` (identity, manifest copy, census state, `versions/` for updates), the binary at `/var/lib/redundanet3/bin/redundanet` owned by the service user so the updater can rename a new version into place, a second copy at `/usr/local/bin/redundanet3` owned by root, which is the one you run (`sudo redundanet3 ...`), the unit `redundanet-agent`, the settings in `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`), the share store in `/mnt/storage/redundanet3` with the unit drop-in that makes it writable for the confined service, and a pairing code on the screen. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident; `--allow-root-disk` on `node install` overrides that knowingly. The node needs at least 10 GiB free above its floor. `--channel early` is accepted here too.
 
 On your laptop, with the phrase at hand, on the same network as the node or anywhere else:
 
@@ -63,11 +63,11 @@ No laptop at all, or a node that cannot reach the hub over HTTPS? The runbook's 
 On a node, name the full path in every command and run the ones that talk to the running agent as root:
 
 ```bash
-sudo /var/lib/redundanet3/bin/redundanet status
-sudo /var/lib/redundanet3/bin/redundanet logs -n 100
+sudo redundanet3 status
+sudo redundanet3 logs -n 100
 ```
 
-The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print` and open the link it prints. To change the channel, edit `CHANNEL` in `/etc/redundanet3/agent.env` and `systemctl restart redundanet-agent`.
+The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo redundanet3 open --print` and open the link it prints. To change the channel, edit `CHANNEL` in `/etc/redundanet3/agent.env` and `systemctl restart redundanet-agent`.
 
 ## Raspberry Pi
 

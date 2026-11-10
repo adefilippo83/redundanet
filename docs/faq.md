@@ -48,4 +48,4 @@ Not in 3.0.0. The schedule and the retention policy are edited in `backup.yaml` 
 Create your identity on your laptop, sign the member key with one of your nodes' GPG keys, put the agent on each node, send the join request, make native backup sets for what `backup-sync` pushed to the old grid, pass a restore test, and retire the Docker stack with `migrate-node` once the stop date is announced. Step by step: [migration.md](migration.md). The old grid stays live until that date.
 
 **Why are there two programs called `redundanet`?**
-The Python package `redundanet` on PyPI is the RedundaNet 2 command line tool. RedundaNet 3 is one Go binary from the GitHub releases. On a RedundaNet 2 node both exist: the Python one on PATH, the Go one at `/var/lib/redundanet3/bin/redundanet`.
+The Python package `redundanet` on PyPI is the RedundaNet 2 command line tool. RedundaNet 3 is one Go binary from the GitHub releases. On a RedundaNet 2 node both exist: the Python one on PATH as `redundanet`, the Go one as `redundanet3` (`/usr/local/bin/redundanet3` for you, `/var/lib/redundanet3/bin/redundanet` for the service).

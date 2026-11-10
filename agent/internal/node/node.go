@@ -23,7 +23,12 @@ const (
 	UnitName   = "redundanet-agent.service"
 	unitDir    = "/etc/systemd/system"
 	sysctlFile = "/etc/sysctl.d/90-redundanet-agent.conf"
-	storeDir   = "redundanet3" // under the storage path
+	// OperatorBinary is the copy of the binary that root owns and that
+	// every command on the node is run from. The one under DataDir is the
+	// service's: the service user owns it, so that the updater can replace
+	// it, and for the same reason root does not run it.
+	OperatorBinary = "/usr/local/bin/redundanet3"
+	storeDir       = "redundanet3" // under the storage path
 )
 
 //go:embed redundanet-agent.service
@@ -53,10 +58,14 @@ type Config struct {
 type Report struct {
 	UserMade bool
 	EnvKept  bool // agent.env existed and was left as it was
-	Binary   string
-	Unit     string
-	Store    string
-	Steps    []string
+	// BinaryKept is set when the install ran from the operator's copy and
+	// the service already had a binary: the service's, which updates
+	// itself, is not replaced by the operator's, which may be older.
+	BinaryKept bool
+	Binary     string
+	Unit       string
+	Store      string
+	Steps      []string
 }
 
 func (c *Config) path(p string) string {
@@ -115,13 +124,37 @@ func Install(cfg Config) (*Report, error) {
 		return nil, err
 	}
 	rep.Binary = filepath.Join(bin, "redundanet")
-	if err := copyFile(cfg.Exe, rep.Binary, 0o755); err != nil {
+	// The operator's copy first, root's own, from the binary that runs
+	// this install. When that binary is the operator's copy itself, it
+	// stays, and so does a binary the service already has.
+	op := cfg.path(OperatorBinary)
+	// A link there, as the laptop installer makes one, is not root's copy.
+	fromOperator := false
+	if fi, err := os.Lstat(op); err == nil && fi.Mode().IsRegular() {
+		fromOperator = sameFile(cfg.Exe, op)
+	}
+	if !fromOperator {
+		if err := os.MkdirAll(filepath.Dir(op), 0o755); err != nil {
+			return nil, err
+		}
+		if err := copyFile(cfg.Exe, op, 0o755); err != nil {
+			return nil, fmt.Errorf("node: putting the operator's copy in place: %w", err)
+		}
+		step("the command for this node's operator at %s, owned by root", OperatorBinary)
+	}
+	if _, err := os.Stat(rep.Binary); err == nil && fromOperator {
+		rep.BinaryKept = true
+	} else if err := copyFile(cfg.Exe, rep.Binary, 0o755); err != nil {
 		return nil, fmt.Errorf("node: putting the binary in place: %w", err)
 	}
-	if _, err := cfg.Run("chown", "-R", User+":"+User, data); err != nil {
+	if _, err := cfg.Run("chown", "-hR", User+":"+User, data); err != nil {
 		return nil, fmt.Errorf("node: chown %s: %w", data, err)
 	}
-	step("binary at %s, data in %s, owned by %s", rep.Binary, DataDir, User)
+	if rep.BinaryKept {
+		step("the service's binary at %s kept as it is, data in %s, owned by %s", rep.Binary, DataDir, User)
+	} else {
+		step("the service's binary at %s, data in %s, owned by %s", rep.Binary, DataDir, User)
+	}
 
 	// Settings, kept when present.
 	env := cfg.path(EnvFile)
@@ -264,6 +297,20 @@ func StorageEntry(device, name string) string {
 	return fmt.Sprintf("storage:\n  - member: <your member name>\n    device: %s\n    name: %s\n", device, name)
 }
 
+// sameFile reports whether two paths name one file.
+func sameFile(a, b string) bool {
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	return err == nil && os.SameFile(fa, fb)
+}
+
+// copyFile puts a copy in place by a temporary name and a rename. The
+// directory may belong to the service user while root does the copying:
+// the temporary name must not exist when it is opened, so a link planted
+// under it is removed, never followed.
 func copyFile(src, dst string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -271,7 +318,8 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	}
 	defer in.Close()
 	tmp := dst + ".new"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	_ = os.Remove(tmp)
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}

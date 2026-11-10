@@ -39,7 +39,10 @@ curl -fsSL -o /tmp/rn.tgz "https://github.com/adefilippo83/redundanet/releases/d
 echo "<sha256 from releases/index.yaml>  /tmp/rn.tgz" | sha256sum -c
 install -d -o redundanet3 -g redundanet3 -m 0750 /var/lib/redundanet3/bin
 tar -xzf /tmp/rn.tgz -C /tmp && install -o redundanet3 -g redundanet3 -m 0755 "$(find /tmp -path '*linux-amd64/redundanet' | head -1)" /var/lib/redundanet3/bin/redundanet
-/var/lib/redundanet3/bin/redundanet version
+# a copy root owns, for the commands you run as root: the one above is the
+# hub's own, which its user can replace
+install -o root -g root -m 0755 "$(find /tmp -path '*linux-amd64/redundanet' | head -1)" /usr/local/bin/redundanet3
+redundanet3 version
 
 # the hub's identity: prints the device key that goes into the manifest
 sudo -u redundanet3 /var/lib/redundanet3/bin/redundanet identity init --yes --data-dir /var/lib/redundanet3

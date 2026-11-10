@@ -13,6 +13,7 @@ set -uo pipefail
 . /etc/redundanet3/agent.env
 DATA=/var/lib/redundanet3
 BIN=$DATA/bin/redundanet
+CMD=/usr/local/bin/redundanet3 # the copy root owns and runs; BIN is the service's
 BOOT=/boot/firmware
 CODE=$BOOT/redundanet-pairing-code.txt
 LOG=/run/redundanet3-pair.log
@@ -21,10 +22,10 @@ netflag=""; [ "$NETWORK" = redundanet ] || netflag="--network $NETWORK "
 
 [ -f "$DATA/identity" ] && exit 0
 # The help exits non-zero, so no pipeline here (pipefail).
-help=$("$BIN" identity pair -h 2>&1 || true)
+help=$("$CMD" identity pair -h 2>&1 || true)
 case "$help" in
   *code-file*) ;;
-  *) echo "firstboot: $("$BIN" version) cannot keep a pairing code across boots; this image needs the agent 3.0.12 or later" >&2; exit 1 ;;
+  *) echo "firstboot: $("$CMD" version) cannot keep a pairing code across boots; this image needs the agent 3.0.12 or later" >&2; exit 1 ;;
 esac
 
 # show puts the code where the member finds it.

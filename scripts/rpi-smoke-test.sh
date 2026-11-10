@@ -63,7 +63,10 @@ docker run --rm --platform "$PLATFORM" -v "$WORK:/work:ro" -e VERSION="$VERSION"
   ARCHIVE=/work/redundanet-$VERSION-linux-arm64.tar.gz NO_DEVICE_KEY=1 STORAGE_PATH=/mnt/storage CHANNEL=stable \
     bash /usr/local/lib/redundanet3/install.sh prepare "$VERSION" | tail -2
   test -x /var/lib/redundanet3/bin/redundanet || { echo "FAIL: no binary"; exit 1; }
-  /var/lib/redundanet3/bin/redundanet version | grep -q "redundanet $VERSION (linux/arm64" || { echo "FAIL: version"; exit 1; }
+  # root runs the copy it owns, never the one the service user owns
+  test -x /usr/local/bin/redundanet3 && [ "$(stat -c %U /usr/local/bin/redundanet3)" = root ] && [ ! -L /usr/local/bin/redundanet3 ] || { echo "FAIL: no root-owned copy for the operator"; exit 1; }
+  [ "$(stat -c %U /var/lib/redundanet3/bin/redundanet)" = redundanet3 ] || { echo "FAIL: the service binary is not owned by the service user"; exit 1; }
+  /usr/local/bin/redundanet3 version | grep -q "redundanet $VERSION (linux/arm64" || { echo "FAIL: version"; exit 1; }
   grep -q "^STORAGE_PATH=/mnt/storage$" /etc/redundanet3/agent.env || { echo "FAIL: agent.env"; exit 1; }
   test -d /mnt/storage/redundanet3 && grep -q ReadWritePaths=/mnt/storage/redundanet3 /etc/systemd/system/redundanet-agent.service.d/storage.conf || { echo "FAIL: store grant"; exit 1; }
   test ! -e /var/lib/redundanet3/identity && test ! -e /var/lib/redundanet3/device-key.pending || { echo "FAIL: the image build made a key"; exit 1; }

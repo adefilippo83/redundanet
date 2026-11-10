@@ -193,8 +193,11 @@ only. Hub changes additionally need `fly deploy`. Nodes pick up images via
 - The agent's page (`agent/internal/api`) is in the website's ten languages: a text added to `locales/en.json` is added to the nine others in the same change (`TestDictionaries` fails otherwise), and the page takes no inline style or script (its content policy forbids them).
 - No em dashes in user-facing prose (maintainer preference). The legacy
   rules above are quoted as written.
-- Commands meant for a storage node are written with the full path,
-  `sudo /var/lib/redundanet3/bin/redundanet`; on a laptop, bare `redundanet`.
+- Commands meant for a storage node are written `sudo redundanet3`, the
+  copy root owns at `/usr/local/bin/redundanet3`; on a laptop, bare
+  `redundanet`. Root never runs `/var/lib/redundanet3/bin/redundanet`: the
+  service user owns that file so the updater can replace it. The name ends
+  in 3 because a RedundaNet 2 node has the Python `redundanet` on PATH.
 
 ## AI assistance policy
 

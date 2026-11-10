@@ -97,6 +97,6 @@ func runMigrateNode(args []string) error {
 		}
 		fmt.Printf("the agent is up, device %s, %d hub(s) connected; the status page keeps this node\n", st.Device, up)
 	}
-	fmt.Println("to undo: sudo redundanet migrate-node --rollback")
+	fmt.Println("to undo: sudo redundanet3 migrate-node --rollback")
 	return nil
 }

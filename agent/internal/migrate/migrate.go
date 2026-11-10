@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -98,17 +99,8 @@ func NewPlan(cfg Config, agent *Agent) (*Plan, error) {
 	if _, err := os.Stat(composeFile); err != nil {
 		return nil, fmt.Errorf("no RedundaNet 2 stack here: %s: %w", composeFile, err)
 	}
-	p := &Plan{Compose: []string{"docker", "compose", "-p", cfg.Project, "-f", composeFile}}
-	overrides := 0
-	for _, name := range overrideNames {
-		if f := filepath.Join(cfg.ComposeDir, name); exists(f) {
-			p.Compose = append(p.Compose, "-f", f)
-			overrides++
-		}
-	}
-	if exists(cfg.EnvFile) {
-		p.Compose = append(p.Compose, "--env-file", cfg.EnvFile)
-	}
+	compose, overrides := composeCommand(cfg)
+	p := &Plan{Compose: compose}
 	if overrides == 0 {
 		p.Notes = append(p.Notes, "no override file beside the compose file: this stack has no storage disk bind-mount of its own")
 	}
@@ -161,6 +153,52 @@ func NewPlan(cfg Config, agent *Agent) (*Plan, error) {
 		"the agent keeps running as it is; the share directories go on the network's stop date, not today",
 	}
 	return p, nil
+}
+
+// composeCommand is the compose command for this node's stack, up to the
+// subcommand, built from where the stack's files are: the compose file,
+// every override beside it, the env file. The plan and the rollback both
+// build it here; neither takes it from a file.
+func composeCommand(cfg Config) (cmd []string, overrides int) {
+	cmd = []string{"docker", "compose", "-p", cfg.Project, "-f", filepath.Join(cfg.ComposeDir, "docker-compose.yml")}
+	for _, name := range overrideNames {
+		if f := filepath.Join(cfg.ComposeDir, name); exists(f) {
+			cmd = append(cmd, "-f", f)
+			overrides++
+		}
+	}
+	if exists(cfg.EnvFile) {
+		cmd = append(cmd, "--env-file", cfg.EnvFile)
+	}
+	return cmd, overrides
+}
+
+// serviceName is what a compose service may be called. A name from the
+// marker is put on a command line root runs, and the marker is in a
+// directory the service user owns, so nothing that could be read as an
+// option, a path or a second word gets there.
+var serviceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`)
+
+// writeNew writes a file root creates in a directory another user owns:
+// under a temporary name that must not exist, so a link planted there is
+// never followed, then renamed into place.
+func writeNew(path string, data []byte, mode os.FileMode) error {
+	tmp := path + ".new"
+	_ = os.Remove(tmp)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // down is the compose command that stops and removes the whole stack.
@@ -246,11 +284,17 @@ func Apply(cfg Config, p *Plan, agent *Agent, force bool) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(cfg.DataDir, Marker), append(data, '\n'), 0o644)
+	return writeNew(filepath.Join(cfg.DataDir, Marker), append(data, '\n'), 0o644)
 }
 
 // Rollback starts the services the marker names, together and tinc
 // first, and forgets the migration. The stack's files never left.
+//
+// The marker lies in the agent's data directory, which the service user
+// owns, and this runs as root. So the marker is believed for one thing
+// only, the names of the services, each checked; the command itself is
+// built again from the stack's files, as the plan built it. The command
+// line the marker records is for the reader of the file.
 func Rollback(cfg Config) error {
 	path := filepath.Join(cfg.DataDir, Marker)
 	data, err := os.ReadFile(path)
@@ -258,13 +302,22 @@ func Rollback(cfg Config) error {
 		return fmt.Errorf("this node is not marked migrated: %w", err)
 	}
 	var m marker
-	if err := json.Unmarshal(data, &m); err != nil || len(m.Compose) < 2 {
+	if err := json.Unmarshal(data, &m); err != nil || m.At.IsZero() {
 		return fmt.Errorf("%s is not a migration marker", path)
 	}
 	if len(m.Services) == 0 {
 		return fmt.Errorf("%s names no services (written before the stack's profiles were handled); start the stack by hand with the Python CLI's recreate, naming tinc and the Tahoe services together, then remove the marker", path)
 	}
-	start := up(m.Compose, m.Services)
+	for _, s := range m.Services {
+		if !serviceName.MatchString(s) {
+			return fmt.Errorf("%s names %q, which is not the name of a compose service; start the stack by hand with the Python CLI's recreate, then remove the marker", path, s)
+		}
+	}
+	if !exists(filepath.Join(cfg.ComposeDir, "docker-compose.yml")) {
+		return fmt.Errorf("no RedundaNet 2 stack at %s to start", cfg.ComposeDir)
+	}
+	compose, _ := composeCommand(cfg)
+	start := up(compose, m.Services)
 	if _, err := cfg.Run(start[0], start[1:]...); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}

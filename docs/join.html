@@ -485,7 +485,7 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
                     <div class="form-group" id="g-deviceKey">
                         <label for="deviceKey" data-i18n="join.form.devkey.label">Device key</label>
                         <input type="text" id="deviceKey" name="deviceKey" class="mono" autocomplete="off" spellcheck="false" placeholder="52 lowercase base32 characters" data-i18n-placeholder="join.form.key.ph" pattern="[a-z2-7]{52}">
-                        <p class="hint" data-i18n="join.form.devkey.hint">Printed by the node once it is paired, and again by <code>sudo /var/lib/redundanet3/bin/redundanet status</code> on it.</p>
+                        <p class="hint" data-i18n="join.form.devkey.hint">Printed by the node once it is paired, and again by <code>sudo redundanet3 status</code> on it.</p>
                         <p class="error-message" data-i18n="join.form.devkey.err">A device key is exactly 52 characters from a-z and 2-7, and is required when the contribution is above 0.</p>
                     </div>
 
@@ -511,7 +511,7 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
                     <div class="form-group" id="g-certificate">
                         <label for="certificate" data-i18n="join.form.cert.label">Device certificate *</label>
                         <textarea id="certificate" name="certificate" class="mono" rows="4" spellcheck="false" placeholder="one line of letters, digits, hyphens and underscores" data-i18n-placeholder="join.form.cert.ph"></textarea>
-                        <p class="hint" data-i18n="join.form.cert.hint">The proof that the node is yours. <code>redundanet join-request</code> on the laptop that paired it fills it in; <code>sudo /var/lib/redundanet3/bin/redundanet identity show --certificate</code> on the node prints it. The workflow checks that your member key signed it for this device with the storage role.</p>
+                        <p class="hint" data-i18n="join.form.cert.hint">The proof that the node is yours. <code>redundanet join-request</code> on the laptop that paired it fills it in; <code>sudo redundanet3 identity show --certificate</code> on the node prints it. The workflow checks that your member key signed it for this device with the storage role.</p>
                         <p class="error-message" data-i18n="join.form.cert.err">Paste the certificate as the node printed it: one line of letters, digits, hyphens and underscores.</p>
                     </div>
                 </fieldset>

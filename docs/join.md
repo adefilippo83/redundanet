@@ -12,7 +12,7 @@ The network needs no step of yours: its name, its hub, the operator keys and whe
 
 ## 2. If you contribute disk: prepare your storage node
 
-A member who contributes disk lists at least one storage device. Prepare the node now, before the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". Pairing records the node on your laptop, so `redundanet setup` and `redundanet join-request` fill its key and name into the form; the node prints them too, and `sudo /var/lib/redundanet3/bin/redundanet status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
+A member who contributes disk lists at least one storage device. Prepare the node now, before the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". Pairing records the node on your laptop, so `redundanet setup` and `redundanet join-request` fill its key and name into the form; the node prints them too, and `sudo redundanet3 status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
 
 ## 3. The form
 
@@ -63,7 +63,7 @@ A listed member adds a storage node without a new membership request. Pair the n
 redundanet join-request
 ```
 
-It opens the same form in its "add a storage node" mode with your member name, the node's key and name, and the node's certificate filled in; add the UDP port if you forward one and your new total contribution if it changes, then open the issue. The certificate is the proof: your member key signed it for this device with the storage role when you paired, and the workflow verifies that with `redundanet identity verify-certificate` before it checks the keys against the manifest and opens the pull request. A node paired before 3.0.8 has no certificate on your laptop; `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` on the node prints it, for the form's certificate field.
+It opens the same form in its "add a storage node" mode with your member name, the node's key and name, and the node's certificate filled in; add the UDP port if you forward one and your new total contribution if it changes, then open the issue. The certificate is the proof: your member key signed it for this device with the storage role when you paired, and the workflow verifies that with `redundanet identity verify-certificate` before it checks the keys against the manifest and opens the pull request. A node paired before 3.0.8 has no certificate on your laptop; `sudo redundanet3 identity show --certificate` on the node prints it, for the form's certificate field.
 
 The issue the form opens has the title `[Join Request] Storage device: <name> for <member>` and a body with the heading `## RedundaNet 3 storage device`, a table with the rows `Member name`, `Device key`, `Device name`, `UDP port` (optional), `Contribution GB` (optional, the new total) and `Notes`, and a section `## Device certificate` holding the one-line certificate. The workflow adds the node under `storage:`, rewrites your `contribution_gb` when you gave a new total, raises the revision, and the maintainer signs and merges as for a new member.
 
