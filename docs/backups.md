@@ -50,7 +50,7 @@ Caps apply at once, survive restarts, and show in `backup list` and on the local
 
 ## What a run does
 
-The agent walks the folders, honouring the excludes. A file it has seen (same path, size, modification time, change time and file id) costs nothing; a changed or new file is hashed, and content the member already stored on any device costs no upload. Each run also re-hashes a rolling share of unchanged files, so a file that defeats every timestamp is still caught. Every object is encrypted on the device, erasure coded and sent as shares to storage servers across members. The run ends by publishing a signed root that names the new snapshot.
+The agent walks the folders, honouring the excludes. A file it has seen (same path, size, modification time, change time and file id) costs nothing; a changed or new file is hashed, and content the member already stored on any device costs no upload. Whether it is stored is not taken on a server's word: a server must produce the object's descriptor, signed by one of the member's devices, and each server is believed for no more shares than placement gives one server; where that does not add up to enough shares, the file is uploaded. Each run also re-hashes a rolling share of unchanged files, so a file that defeats every timestamp is still caught. Every object is encrypted on the device, erasure coded and sent as shares to storage servers across members. The run ends by publishing a signed root that names the new snapshot.
 
 A run that is interrupted still publishes what it had as a partial snapshot, marked as such, and continues next time.
 
@@ -73,7 +73,7 @@ redundanet restore start DEVICE SNAPSHOT [PATH] --to DIR [--overwrite]
 redundanet restore status
 ```
 
-A restore runs in the background. Files are written under temporary names and renamed when complete, with modification time and mode set after the data. Without `--overwrite`, a file that exists is left alone and the restored copy is written beside it with `.restored` added to its name, listed as an exception. Names the target cannot hold (invalid UTF-8 on Windows, reserved names, forbidden characters) are mapped to an escaped form and each one is reported; a restore ends "complete with exceptions" when something could not be restored as it was, and `restore status` lists each exception. Restores read any k shares of each object and verify them before writing.
+A restore runs in the background. Files are written under temporary names and renamed when complete, with modification time and permission bits set after the data; ownership and the set-user-ID, set-group-ID and sticky bits are not restored. Nothing is written outside the folder given: an entry whose name would lead out of it (a `..`, or a separator in a name below the top) is not restored and is listed as an exception, and a symlink in the restored tree is recreated as a link but never written through. Without `--overwrite`, a file that exists is left alone and the restored copy is written beside it with `.restored` added to its name, listed as an exception. Names the target cannot hold (invalid UTF-8 on Windows, reserved names, forbidden characters) are mapped to an escaped form and each one is reported; a restore ends "complete with exceptions" when something could not be restored as it was, and `restore status` lists each exception. Restores read any k shares of each object and verify them before writing.
 
 ## Restore tests
 
