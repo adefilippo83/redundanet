@@ -22,6 +22,7 @@
   "dl.toc.updates": "自动更新",
   "dl.quick.title": "一行命令",
   "dl.quick.desc": "一行命令会识别你的平台，下载最新的稳定版本，若 sha256 和大小与签名索引不符则拒绝，并把它安装到代理可以自行更新的位置：在 macOS 和 Linux 上用终端，在 Windows 上用 PowerShell。<a href=\"installation.html\">安装页面</a>从那里继续；脚本是 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh\">docs/install.sh</a> 和 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1\">docs/install.ps1</a>。",
+  "dl.quick.trust": "首次安装信任 GitHub 和本网站：脚本不检查索引的签名。安装后的代理会检查签名，此后的每次更新都会经过验证。",
   "dl.builds.title": "构建版本",
   "dl.builds.intro": "GitHub 上的发布 <code>agent/v3.0.0</code> 包含五个压缩包和一个 <code>sha256sums.txt</code>。每个压缩包里是一个文件夹，内含 <code>redundanet</code> 二进制文件（Windows 上为 <code>redundanet.exe</code>）。",
   "dl.builds.col.platform": "平台",

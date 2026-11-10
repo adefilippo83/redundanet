@@ -22,6 +22,7 @@
   "dl.toc.updates": "Aggiornamento automatico",
   "dl.quick.title": "Una riga",
   "dl.quick.desc": "Una riga riconosce la tua piattaforma, scarica la release stabile più recente, la rifiuta se sha256 e dimensione non corrispondono all'indice firmato e la installa dove l'agente può aggiornarla: in un terminale su macOS e Linux, in PowerShell su Windows. La <a href=\"installation.html\">pagina di installazione</a> prosegue da lì; gli script sono <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh\">docs/install.sh</a> e <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1\">docs/install.ps1</a>.",
+  "dl.quick.trust": "Una prima installazione si fida di GitHub e di questo sito: lo script non controlla la firma dell'indice. L'agente installato lo fa, e ogni aggiornamento successivo viene verificato.",
   "dl.builds.title": "Build",
   "dl.builds.intro": "La release <code>agent/v3.0.0</code> su GitHub contiene cinque archivi e un file <code>sha256sums.txt</code>. Ogni archivio contiene una cartella con il binario <code>redundanet</code> (<code>redundanet.exe</code> su Windows).",
   "dl.builds.col.platform": "Piattaforma",

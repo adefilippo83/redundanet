@@ -22,6 +22,7 @@
   "dl.toc.updates": "自動更新",
   "dl.quick.title": "1 行で",
   "dl.quick.desc": "1 行でプラットフォームを判別し、最新の安定版をダウンロードし、sha256 とサイズが署名付きインデックスと一致しなければ拒否し、エージェントが更新できる場所にインストールします。macOS と Linux ではターミナルで、Windows では PowerShell で。続きは<a href=\"installation.html\">インストールページ</a>へ。スクリプトは <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh\">docs/install.sh</a> と <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1\">docs/install.ps1</a> です。",
+  "dl.quick.trust": "初回のインストールは GitHub とこのウェブサイトを信頼します。スクリプトはインデックスの署名を確認しません。インストールされたエージェントが署名を確認し、それ以降の更新はすべて検証されます。",
   "dl.builds.title": "ビルド",
   "dl.builds.intro": "GitHub のリリース <code>agent/v3.0.0</code> には 5 つのアーカイブと <code>sha256sums.txt</code> があります。各アーカイブにはフォルダーが 1 つ入っており、その中に <code>redundanet</code> バイナリ（Windows では <code>redundanet.exe</code>）があります。",
   "dl.builds.col.platform": "プラットフォーム",

@@ -31,7 +31,7 @@ Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon M
 
 ## Install
 
-One line installs the newest release, checked against the signed release index. In a terminal on macOS and Linux:
+One line installs the newest release, checked against the release index; the installed agent verifies the index's signature from then on ([what a first install trusts](docs/security.md)). In a terminal on macOS and Linux:
 
 ```bash
 curl -fsSL https://redundanet.com/install.sh | sh
