@@ -97,6 +97,17 @@ func TestNamesStayInsideTheTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := below(t, base)
+	for _, p := range got {
+		if !strings.HasPrefix(p, "a/b/target/") {
+			t.Fatalf("%s was written outside the target (all files: %v)", p, got)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		// Separators and trailing dots in a name are replaced there before
+		// the name is judged, so these entries are restored under mapped
+		// names, inside the target, instead of being refused.
+		return
+	}
 	if len(got) != 1 || got[0] != "a/b/target/src/kept.txt" {
 		t.Fatalf("files after the restore: %v", got)
 	}
