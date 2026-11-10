@@ -1,0 +1,137 @@
+/* The agent's page. Served by the agent itself: no font, image or script
+   comes from anywhere else, and the content policy forbids inline styles,
+   so every rule lives here. Colours follow redundanet.com. */
+:root {
+  --bg: #f8fafc; --card: #ffffff; --sunk: #eef2f7; --line: #d5dde8; --fg: #0f172a; --muted: #475569;
+  --accent: #4338ca; --btn: #4f46e5; --btn-fg: #ffffff;
+  --ok: #15803d; --warn: #92400e; --bad: #b91c1c;
+  --ok-bg: #dcfce7; --warn-bg: #fef3c7; --bad-bg: #fee2e2; --info-bg: #e0e7ff;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a; --card: #1e293b; --sunk: #162033; --line: #334155; --fg: #f8fafc; --muted: #a3b2c7;
+    --accent: #a5b4fc;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #fca5a5;
+    --ok-bg: #12351f; --warn-bg: #3a2c0b; --bad-bg: #451a1a; --info-bg: #262b5e;
+  }
+}
+* { box-sizing: border-box }
+html { -webkit-text-size-adjust: 100% }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif }
+h1, h2, p, dl, dd, ol, ul, fieldset { margin: 0; padding: 0 }
+h1 { font-size: 26px; line-height: 1.2; font-weight: 700; text-wrap: balance }
+h2 { font-size: 17px; font-weight: 600 }
+a { color: var(--accent) }
+a:hover { color: var(--fg) }
+code, .mono, .path, pre, .code { font-family: var(--mono); font-size: 13px }
+code { word-break: break-all }
+[hidden] { display: none !important }
+:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px }
+.muted { color: var(--muted) }
+.ok { color: var(--ok) } .warn { color: var(--warn) } .bad { color: var(--bad) }
+.grow { flex: 1 1 240px; min-width: 0 }
+.stack { display: flex; flex-direction: column; gap: 12px }
+.stack:empty { display: none }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px }
+
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 24px; border-bottom: 1px solid var(--line) }
+.brand { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none }
+.brand-text { display: flex; flex-direction: column; line-height: 1.3 }
+.brand-text strong { font-size: 17px }
+.brand-text .muted { font-size: 13px }
+.logo { width: 36px; height: 36px; border-radius: 9px; background: var(--btn); color: var(--btn-fg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px }
+.pill { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600 }
+.pill-ok { background: var(--ok-bg); color: var(--ok) }
+.pill-bad { background: var(--bad-bg); color: var(--bad) }
+.lang { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted) }
+.js .nojs { display: none }
+
+.shell { display: flex; flex-wrap: wrap; gap: 24px; padding: 24px; max-width: 1240px; margin: 0 auto }
+nav { flex: 1 1 190px; display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start }
+nav a { flex: 1 1 150px; display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 10px; color: var(--fg); text-decoration: none; font-weight: 500 }
+nav a:hover { background: var(--sunk) }
+nav a[aria-current] { background: var(--btn); color: var(--btn-fg) }
+main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px }
+main.narrow { max-width: 720px; margin: 0 auto; padding: 24px; flex: none }
+.head { display: flex; flex-direction: column; gap: 4px }
+
+.card, .tile, .hero, .callout { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px }
+.card { display: flex; flex-direction: column; gap: 14px }
+.card-new { border-style: dashed }
+.hero { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 24px }
+.hero .grow { display: flex; flex-direction: column; gap: 4px }
+.hero-icon { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; background: var(--sunk); color: var(--muted) }
+.hero-protected .hero-icon { background: var(--ok-bg); color: var(--ok) }
+.hero-attention .hero-icon { background: var(--bad-bg); color: var(--bad) }
+.hero-running .hero-icon { background: var(--info-bg); color: var(--accent) }
+.callout { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 16px 20px }
+.callout h2 { font-size: 15px }
+.callout p { overflow-wrap: anywhere }
+.callout-bad { background: var(--bad-bg) } .callout-bad h2 { color: var(--bad) }
+.callout-warn { background: var(--warn-bg) } .callout-warn h2 { color: var(--warn) }
+.callout-ok { background: var(--ok-bg) } .callout-ok h2 { color: var(--ok) }
+.callout-info { background: var(--info-bg) } .callout-info h2 { color: var(--accent) }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px }
+.tile { display: flex; flex-direction: column; gap: 6px }
+.tile h2 { font-size: 14px; font-weight: 500; color: var(--muted) }
+.big { font-size: 24px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums }
+.tile .muted { font-size: 14px }
+
+progress, meter { width: 100%; height: 8px; margin: 6px 0; border: 0; border-radius: 999px; overflow: hidden; background: var(--sunk); accent-color: var(--btn); appearance: none; -webkit-appearance: none }
+progress::-webkit-progress-bar, meter::-webkit-meter-bar { background: var(--sunk); border: 0; border-radius: 999px; height: 8px }
+progress::-webkit-progress-value, meter::-webkit-meter-optimum-value { background: #6366f1; border-radius: 999px }
+progress::-moz-progress-bar, meter::-moz-meter-bar { background: #6366f1; border-radius: 999px }
+progress:indeterminate { background: linear-gradient(90deg, var(--sunk) 0 35%, #6366f1 35% 65%, var(--sunk) 65%) 0 0 / 300% 100%; animation: slide 1.6s linear infinite }
+progress:indeterminate::-webkit-progress-bar { background: transparent }
+progress:indeterminate::-moz-progress-bar { background: transparent }
+@keyframes slide { from { background-position: 100% 0 } to { background-position: 0 0 } }
+@media (prefers-reduced-motion: reduce) { progress:indeterminate { animation: none; background-position: 50% 0 } }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap }
+.btn:hover { background: var(--sunk); color: var(--fg) }
+.btn.primary { background: var(--btn); border-color: transparent; color: var(--btn-fg) }
+.btn.primary:hover { background: #4338ca; color: var(--btn-fg) }
+.btn.danger { color: var(--bad) }
+.btn.small { min-height: 36px; padding: 0 10px; font-weight: 500 }
+
+.fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px }
+.fields label, .stack > label { flex: 1 1 170px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted) }
+.fields label.wide { flex: 3 1 280px }
+.fields .full { flex: 1 1 100% }
+input, select, textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; min-height: 44px; padding: 0 12px; width: 100% }
+textarea { padding: 10px 12px; font-family: var(--mono); font-size: 14px; resize: vertical }
+.lang select { width: auto; min-height: 40px; background: var(--card) }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height: 0; padding: 0; flex: none; accent-color: #6366f1 }
+label.check { flex-direction: row; align-items: center; gap: 10px; min-height: 44px; color: var(--fg); font-size: 15px }
+fieldset { border: 0 }
+legend { padding: 0; font-size: 14px; color: var(--muted) }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 16px }
+.facts .full { grid-column: 1 / -1 }
+.facts dt { font-size: 13px; color: var(--muted) }
+.facts dd { font-weight: 600; overflow-wrap: anywhere }
+.facts dd code { font-weight: 400 }
+.path { display: block; color: var(--muted) }
+details { border-top: 1px solid var(--line); padding-top: 10px }
+details[open] { display: flex; flex-direction: column; gap: 12px }
+summary { cursor: pointer; min-height: 32px; color: var(--accent); font-weight: 500 }
+.rows { list-style: none; display: flex; flex-direction: column }
+.rows li { display: flex; flex-wrap: wrap; gap: 2px 16px; padding: 8px 0; border-top: 1px solid var(--line) }
+.rows .when { flex: 0 0 110px; font-size: 14px }
+.rows .what { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere }
+.crumbs { overflow-wrap: anywhere }
+.plain { list-style: none; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere }
+a.dir { font-weight: 600 }
+.scroll { overflow-x: auto }
+table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 14px }
+th, td { text-align: left; padding: 8px; border-top: 1px solid var(--line); vertical-align: top }
+thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 13px }
+pre { margin: 0; background: var(--sunk); border-radius: 10px; padding: 14px; font-size: 12.5px; line-height: 1.6; overflow: auto; max-height: 340px }
+.flash { padding: 12px 16px; border-radius: 10px; font-weight: 500; overflow-wrap: anywhere }
+.flash-ok { background: var(--info-bg) }
+.flash-bad { background: var(--bad-bg); color: var(--bad) }
+.words { list-style-position: inside; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; font-family: var(--mono); font-size: 16px }
+.words li { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px }
+.code { font-size: 15px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; word-break: break-all; user-select: all }
+@media (max-width: 520px) { .top, .shell { padding-left: 16px; padding-right: 16px } }

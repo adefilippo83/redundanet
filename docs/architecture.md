@@ -20,7 +20,7 @@ RedundaNet 3 as it runs today. The design is [RFC 0001](../rfcs/0001-redundanet-
 
 ## A backup, end to end
 
-Scan the folders, honouring excludes. For each changed file: hash it, ask the local database and then the servers whether the member already stores that content, and if not split it into segments, encrypt each with a per-object key derived from the member secret and the content, erasure code the ciphertext into n shares, and send each share to a distinct server over a mesh stream signed by the device, placing across members. Write the directory objects bottom-up and the snapshot index as objects of the same kind. Publish a signed root that names the new snapshot, sealed under the member's root key and confirmed by a majority of servers. Reading is the reverse from any k shares, verified against the signed share roots. Servers never see a key, a name or a plaintext byte.
+Scan the folders, honouring excludes. For each changed file: hash it, ask the local database and then the servers whether the member already stores that content (a server's yes counts only with the descriptor the member's device signed, and for no more shares than placement gives one server), and if not split it into segments, encrypt each with a per-object key derived from the member secret and the content, erasure code the ciphertext into n shares, and send each share to a distinct server over a mesh stream signed by the device, placing across members. Write the directory objects bottom-up and the snapshot index as objects of the same kind. Publish a signed root that names the new snapshot, sealed under the member's root key and confirmed by a majority of servers. Reading is the reverse from any k shares, verified against the signed share roots. Servers never see a key, a name or a plaintext byte.
 
 ## How devices connect
 
@@ -43,7 +43,7 @@ The Go module is `agent/`; the table in [../agent/README.md](../agent/README.md)
 | `internal/service` | The per-user service: launchd, a systemd user unit, a Windows logon task |
 | `internal/api`, `internal/logbuf` | The local HTTP API and page, with the browser guards; the last 500 log records |
 | `internal/wire`, `internal/transport`, `internal/hub`, `internal/portmap` | The hub channel protocol, the mesh endpoint (QUIC, relay, hole punching), hub mode, port mapping |
-| `internal/collector` | The hub's status collector: census, placement table, repair scheduler, status page and `status.json` |
+| `internal/collector` | The hub's status collector: census, placement table, repair scheduler, status page and `status.json`. The page opens with one line (everything stored is fully placed; repairing or waiting for a device; some objects need attention), then devices, storage, members and objects; it is one self-contained document with the look of the agent's page, no script, in English |
 | `internal/object`, `internal/store`, `internal/shareproto` | The object format (encryption, erasure coding, descriptors, capabilities), the share store, the storage protocol |
 | `internal/engine` | The client engine over the storage protocol: put, get, has, check, repair, roots, delete tokens |
 | `internal/snapshot`, `internal/backup`, `internal/restore`, `internal/jobs` | Snapshots and retention, the backup job, restores and the restore test, the scheduler |

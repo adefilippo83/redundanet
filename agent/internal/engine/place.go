@@ -177,3 +177,49 @@ func health(vc object.VerifyCap, k, n int, p *presence, servers []server) *Healt
 	h.Placed = len(h.Shares) >= n
 	return h
 }
+
+// vouched is the share numbers the holders are believed for when their
+// answer decides that nothing needs sending. A has answer carries no
+// proof, so each server counts for no more share numbers than placement
+// gives one server, ceil(n / S): on a network where that is below k, no
+// single server's word makes an object stored. Servers that claim least
+// are counted first, so an honest holder's shares are not displaced by a
+// server that claims them all. A legitimate holder of more than its part,
+// as after a refusal elsewhere, is believed for its part only; the cost
+// is that the rest is offered to the other servers again.
+func vouched(h *Health, servers int) []uint8 {
+	if servers < 1 {
+		return nil
+	}
+	maxPer := (h.N + servers - 1) / servers
+	devs := make([]identity.Key, 0, len(h.Holders))
+	for dev := range h.Holders {
+		devs = append(devs, dev)
+	}
+	sort.Slice(devs, func(i, j int) bool {
+		if a, b := len(h.Holders[devs[i]]), len(h.Holders[devs[j]]); a != b {
+			return a < b
+		}
+		return devs[i].Less(devs[j])
+	})
+	seen := map[uint8]bool{}
+	var out []uint8
+	for _, dev := range devs {
+		shares := append([]uint8(nil), h.Holders[dev]...)
+		sort.Slice(shares, func(i, j int) bool { return shares[i] < shares[j] })
+		taken := 0
+		for _, s := range shares {
+			if taken == maxPer {
+				break
+			}
+			if int(s) >= h.N || seen[s] {
+				continue
+			}
+			seen[s] = true
+			out = append(out, s)
+			taken++
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}

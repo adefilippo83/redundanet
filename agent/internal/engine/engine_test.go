@@ -111,6 +111,8 @@ type serverNode struct {
 	pol    *policy
 	srv    *shareproto.Server
 	ep     *transport.Endpoint
+	lieMu  sync.Mutex
+	lie    func(object.StorageIndex) *shareproto.Presence // a dishonest answer to has; see lying_test.go
 }
 
 func (g *grid) allow(p identity.Peer) error {
@@ -176,7 +178,7 @@ func newGrid(t *testing.T) (*grid, *member, *member) {
 		pol := &policy{m: g.m, self: m.dev.ID(), hubs: map[identity.Key]bool{g.hubKey: true}, caps: map[identity.Key]int64{}}
 		srv := shareproto.NewServer(st, pol, g.log)
 		node := &serverNode{member: m, store: st, pol: pol, srv: srv}
-		node.ep = g.endpoint(t, m, srv.Handle)
+		node.ep = g.endpoint(t, m, node.handle)
 		g.servers[m.dev.ID()] = node
 	}
 	return g, alice, bob

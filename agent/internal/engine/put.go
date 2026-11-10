@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -57,8 +58,10 @@ func (e *Native) Put(ctx context.Context, r io.Reader, size int64) (object.ReadC
 		return object.ReadCap{}, err
 	}
 	hl := health(rc.Verify(), int(p.K), int(p.N), pres, servers)
-	if hl.Placed {
-		_ = e.cfg.DB.RememberObject(localdb.Object{PlaintextHash: ph, Params: p, Cap: rc, Placed: len(hl.Shares)})
+	// Nothing is sent only when the servers vouch for every share number,
+	// each for no more than its part: see vouched.
+	if v := vouched(hl, len(servers)); len(v) >= int(p.N) {
+		_ = e.cfg.DB.RememberObject(localdb.Object{PlaintextHash: ph, Params: p, Cap: rc, Placed: len(v)})
 		return rc, nil
 	}
 	sd, err := object.Sign(enc.Descriptor, e.cfg.Device, e.cfg.Cert)
@@ -80,11 +83,14 @@ func (e *Native) Put(ctx context.Context, r io.Reader, size int64) (object.ReadC
 
 // send places the share numbers the grid lacks: one encoding pass feeds a
 // stream per share; a share a server refused is retried on another, once.
-// It returns the distinct complete share numbers afterwards.
+// What the grid has is what the servers vouch for (see vouched), so a
+// server that claims every share does not keep the others from getting
+// theirs. It returns the distinct share numbers vouched for or stored by
+// this call.
 func (e *Native) send(ctx context.Context, enc *object.Encoded, sd *object.SignedDescriptor, hl *Health, servers []server) []uint8 {
 	n := int(enc.Params.N)
 	have := map[uint8]bool{}
-	for _, s := range hl.Shares {
+	for _, s := range vouched(hl, len(servers)) {
 		have[s] = true
 	}
 	held := map[identity.Key]int{}
@@ -154,7 +160,11 @@ func (e *Native) send(ctx context.Context, enc *object.Encoded, sd *object.Signe
 }
 
 // Has reports whether the member already stores these bytes: the local
-// database first, then the servers.
+// database first, then the servers. A server's answer alone is not taken:
+// the object counts as stored only under a descriptor that a holder
+// produces and that this member signed for exactly this object, which no
+// server can make up for bytes that were never uploaded, and only when
+// the servers vouch for k share numbers, each for no more than its part.
 func (e *Native) Has(ctx context.Context, ph object.Hash, size int64) (object.ReadCap, bool, error) {
 	servers, p, err := e.servers()
 	if err != nil {
@@ -165,24 +175,60 @@ func (e *Native) Has(ctx context.Context, ph object.Hash, size int64) (object.Re
 	}
 	key := object.DeriveKey(e.conv, ph, p)
 	pres := e.presence(ctx, key.StorageIndex(), servers)
-	// The descriptor hash is whatever the holders agree on.
-	var dh object.Hash
+	// Every descriptor hash a server names is a candidate, in a fixed
+	// order; the servers' word decides nothing about which one is right.
+	seen := map[object.Hash]bool{}
+	var offered []object.Hash
 	for _, pr := range pres.Pres {
-		if pr != nil && len(pr.Complete) > 0 && !pr.Tombstoned {
-			dh = pr.DescriptorHash
-			break
+		if pr != nil && len(pr.Complete) > 0 && !pr.Tombstoned && !seen[pr.DescriptorHash] {
+			seen[pr.DescriptorHash] = true
+			offered = append(offered, pr.DescriptorHash)
 		}
 	}
-	if dh == (object.Hash{}) {
-		return object.ReadCap{}, false, nil
+	sort.Slice(offered, func(i, j int) bool { return bytes.Compare(offered[i][:], offered[j][:]) < 0 })
+	for _, dh := range offered {
+		rc := object.ReadCap{Key: key, DescriptorHash: dh, Size: uint64(size)}
+		hl := health(rc.Verify(), int(p.K), int(p.N), pres, servers)
+		v := vouched(hl, len(servers))
+		if len(v) < int(p.K) || !e.described(ctx, rc, p, hl) {
+			continue
+		}
+		_ = e.cfg.DB.RememberObject(localdb.Object{PlaintextHash: ph, Params: p, Cap: rc, Placed: len(v)})
+		return rc, true, nil
 	}
-	rc := object.ReadCap{Key: key, DescriptorHash: dh, Size: uint64(size)}
-	hl := health(rc.Verify(), int(p.K), int(p.N), pres, servers)
-	if !hl.Readable {
-		return object.ReadCap{}, false, nil
+	return object.ReadCap{}, false, nil
+}
+
+// described reports whether a holder produces the descriptor the
+// capability names, signed by a device of this member for this object:
+// the proof that the object was uploaded. Each holder is asked once.
+func (e *Native) described(ctx context.Context, rc object.ReadCap, p object.Params, hl *Health) bool {
+	si := rc.Key.StorageIndex()
+	devs := make([]identity.Key, 0, len(hl.Holders))
+	for dev := range hl.Holders {
+		devs = append(devs, dev)
 	}
-	_ = e.cfg.DB.RememberObject(localdb.Object{PlaintextHash: ph, Params: p, Cap: rc, Placed: len(hl.Shares)})
-	return rc, true, nil
+	sort.Slice(devs, func(i, j int) bool { return devs[i].Less(devs[j]) })
+	for _, dev := range devs {
+		shares := hl.Holders[dev]
+		if len(shares) == 0 {
+			continue
+		}
+		cctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
+		sd, _, err := e.cfg.Client.GetInfo(cctx, dev, si, shares[0])
+		cancel()
+		if err != nil || sd == nil || sd.Verify(e.cfg.Network) != nil {
+			continue
+		}
+		d := &sd.Descriptor
+		if dh, err := d.Hash(); err != nil || dh != rc.DescriptorHash {
+			continue
+		}
+		if d.Owner == e.cfg.Member && d.StorageIndex == si && d.Size == rc.Size && d.Params() == p {
+			return true
+		}
+	}
+	return false
 }
 
 var errNoDescriptor = errors.New("engine: no server could give the descriptor")
