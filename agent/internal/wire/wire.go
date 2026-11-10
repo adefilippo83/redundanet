@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -53,6 +54,36 @@ const MaxFrame = 1 << 16
 // Hello announces a device's own address candidates.
 type Hello struct {
 	Locals []string `cbor:"locals"`
+}
+
+// MaxCandidates bounds the addresses a device announces for itself.
+const MaxCandidates = 32
+
+// Addrs keeps the entries of an address list that a punch may be sent to:
+// a literal IP address and a port, nothing that needs a name lookup, no
+// zone, no unspecified or multicast address and no relay address. It
+// drops repeats and keeps at most max entries, in order. The list comes
+// from another device, through the hub, so both check it.
+func Addrs(in []string, max int) []string {
+	out := make([]string, 0, min(len(in), max))
+	seen := map[netip.AddrPort]bool{}
+	for _, s := range in {
+		if len(out) >= max {
+			break
+		}
+		ap, err := netip.ParseAddrPort(s)
+		if err != nil || ap.Port() == 0 || ap.Addr().Zone() != "" {
+			continue
+		}
+		ap = netip.AddrPortFrom(ap.Addr().Unmap(), ap.Port())
+		a := ap.Addr()
+		if a.IsUnspecified() || a.IsMulticast() || IsRelayAddr(net.UDPAddrFromAddrPort(ap)) || seen[ap] {
+			continue
+		}
+		seen[ap] = true
+		out = append(out, ap.String())
+	}
+	return out
 }
 
 // Welcome tells a device how the hub sees it.

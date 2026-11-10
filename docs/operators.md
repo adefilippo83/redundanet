@@ -115,4 +115,4 @@ The census reports the loss within seconds and the hub issues a task at once. `r
 
 ## Diagnostics from a member
 
-Ask the member for `redundanet diagnostics`: a zip with versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with each folder as label plus hash, restore tests, error kinds and counts, a disk check and the last log lines with every path, URL and address redacted. It works with the agent down. Nothing is ever uploaded automatically; the member sends it by hand.
+Ask the member for `redundanet diagnostics`: a zip with versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with each folder as label plus hash, restore tests, error kinds and counts, a disk check and the last log lines with paths, URLs and addresses replaced by pattern (a path whole, by a short hash; the host name of a Linux journal is left out). It works with the agent down. Nothing is ever uploaded automatically; the member sends it by hand.

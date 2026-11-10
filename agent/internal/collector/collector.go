@@ -94,6 +94,11 @@ type Collector struct {
 	legacy      *Legacy
 	publishedAt time.Time
 	publishErr  string
+
+	pageMu   sync.Mutex // the served copy; never held with mu
+	pageAt   time.Time
+	pageJSON []byte
+	pageHTML []byte
 }
 
 //go:embed templates/status.html
@@ -812,18 +817,22 @@ func (c *Collector) Handler() http.Handler {
 		mux.Handle("POST /pair/", c.cfg.Pair)
 	}
 	mux.HandleFunc("GET /status.json", func(w http.ResponseWriter, r *http.Request) {
+		js, _, err := c.served()
+		if err != nil {
+			http.Error(w, "status could not be rendered", http.StatusInternalServerError)
+			return
+		}
 		c.headers(w)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(c.Status())
+		_, _ = w.Write(js)
 	})
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		html, err := c.render(c.Status())
+		_, html, err := c.served()
 		if err != nil {
-			c.log.Error("page", "err", err)
 			http.Error(w, "page could not be rendered", http.StatusInternalServerError)
 			return
 		}
@@ -832,6 +841,35 @@ func (c *Collector) Handler() http.Handler {
 		_, _ = w.Write(html)
 	})
 	return mux
+}
+
+// pageTTL is how long the listener answers from one computed status. The
+// page is public, so what a request costs must not be the whole
+// projection: however many ask, it is computed once in this long.
+const pageTTL = 5 * time.Second
+
+// served is the status as JSON and as the page, computed at most once per
+// pageTTL. Requests that arrive while it is being computed wait for that
+// one computation.
+func (c *Collector) served() (js, html []byte, err error) {
+	c.pageMu.Lock()
+	defer c.pageMu.Unlock()
+	now := c.cfg.Now()
+	if c.pageJSON != nil && !now.Before(c.pageAt) && now.Sub(c.pageAt) < pageTTL {
+		return c.pageJSON, c.pageHTML, nil
+	}
+	st := c.Status()
+	js, err = json.Marshal(st)
+	if err == nil {
+		js = append(js, '\n')
+		html, err = c.render(st)
+	}
+	if err != nil {
+		c.log.Error("page", "err", err)
+		return nil, nil, err
+	}
+	c.pageAt, c.pageJSON, c.pageHTML = now, js, html
+	return js, html, nil
 }
 
 // render is the page for a status.

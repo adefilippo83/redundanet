@@ -36,7 +36,7 @@ Backups run at most hourly, restore tests and cleanups at most daily; a changed 
 
 ## Your allocation
 
-Before every run the agent asks the storage servers what they hold for you and compares it, as the data it stands for, with the allocation the manifest gives you. The local page and `backup list` show "allocation: X of Y GB used". When the allocation is used up a run is refused and says so: prune snapshots with a shorter retention, or ask the operator for a larger allocation. The servers enforce a bound with headroom as well; this is the exact budget on your side.
+Before every run the agent asks the storage servers what they hold for you and compares it, as the data it stands for, with the allocation the manifest gives you. The local page and `backup list` show "allocation: X of Y GB used". When the allocation is used up a run is refused and says so: prune snapshots with a shorter retention, or ask the operator for a larger allocation. The servers enforce a bound with headroom as well; this is the exact budget on your side. A server's answer counts for at most what the manifest lets that server hold for you, so one server that reports too much cannot use up your allocation by itself, unless it is a large part of the whole network's storage.
 
 ## Bandwidth
 

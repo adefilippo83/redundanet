@@ -24,7 +24,7 @@ Scan the folders, honouring excludes. For each changed file: hash it, ask the lo
 
 ## How devices connect
 
-The agent reaches the hubs outbound (QUIC, or TLS over TCP when UDP is blocked). To reach a peer it asks a hub for the peer's address candidates; the device the hub names dials through the relay at once, both punch the candidates, and the dialer opens a direct connection on the first address that answers, ranked LAN, global IPv6, public IPv4. New streams take the direct connection while it lives and the relay otherwise. No inbound firewall rule is needed; a storage node may forward a UDP port (`udp_port` in the manifest) and the agent can ask the router for a mapping (`--portmap`). A device never dials itself: its own server is reached in process.
+The agent reaches the hubs outbound (QUIC, or TLS over TCP when UDP is blocked). To reach a peer it asks a hub for the peer's address candidates; the device the hub names dials through the relay at once, both punch the candidates, and the dialer opens a direct connection on the first address that answers, ranked LAN, global IPv6, public IPv4. A candidate is a literal address and port: the hub keeps at most 32 of the ones a device announces, a device punches at most 33 for a peer, and neither looks a name up. New streams take the direct connection while it lives and the relay otherwise. No inbound firewall rule is needed; a storage node may forward a UDP port (`udp_port` in the manifest) and the agent can ask the router for a mapping (`--portmap`). A device never dials itself: its own server is reached in process.
 
 ## Health and repair
 

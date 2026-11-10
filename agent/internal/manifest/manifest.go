@@ -696,6 +696,42 @@ func (m *Manifest) Allocation(name string) int {
 	return 0
 }
 
+// OwnerCap is the bytes one storage server allows an owner: the owner's
+// budget (its allocation times n/k) times this server's share of the
+// contribution times the headroom. A server's contribution is its
+// member's, divided among that member's storage devices. A server and the
+// device asking it both work it out from here, so they agree.
+func (m *Manifest) OwnerCap(owner, server identity.Key) int64 {
+	mem := m.MemberByKey(owner)
+	if mem == nil || m.Network.Encoding.K == 0 {
+		return 0
+	}
+	var total, mine int64
+	var serverMember string
+	devices := map[string]int{}
+	for _, s := range m.Storage {
+		devices[s.Member]++
+		if s.Device == server {
+			serverMember = s.Member
+		}
+	}
+	for _, x := range m.Members {
+		total += int64(x.ContributionGB)
+		if x.Name == serverMember && devices[serverMember] > 0 {
+			mine = int64(x.ContributionGB) / int64(devices[serverMember])
+		}
+	}
+	if total == 0 || mine == 0 {
+		return 0
+	}
+	headroom := int64(m.Network.QuotaHeadroom)
+	if headroom <= 0 {
+		headroom = 2
+	}
+	budget := int64(m.Allocation(mem.Name)) << 30 * int64(m.Network.Encoding.N) / int64(m.Network.Encoding.K)
+	return budget * mine / total * headroom
+}
+
 // MemberByKey finds a member by signing key.
 func (m *Manifest) MemberByKey(k identity.Key) *Member {
 	for i := range m.Members {

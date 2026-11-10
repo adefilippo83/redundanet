@@ -36,7 +36,7 @@ The agent checks the signed release index every hour, installs only what the ind
 Tell the maintainer. You are marked leaving in the manifest; servers keep your shares for the grace period (30 days by default) and then drop them. Then `redundanet service uninstall` and remove the data directory. Your member name and key stay in the repository's history.
 
 **Something is wrong. How do I report it?**
-Run `redundanet diagnostics`. It writes a zip with versions, the manifest revision, the service state, hubs and peers as counts, your backup sets with folders as label plus hash, restore tests, error kinds and counts, a disk check and the last log lines with every path, URL and address redacted. It works with the agent down. Open an issue on GitHub and attach it by hand; nothing is ever uploaded automatically.
+Run `redundanet diagnostics`. It writes a zip with versions, the manifest revision, the service state, hubs and peers as counts, your backup sets with folders as label plus hash, restore tests, error kinds and counts, a disk check and the last log lines with paths, URLs and addresses replaced (by pattern: have a look at `log.txt` in the zip first). It works with the agent down. Open an issue on GitHub and attach it by hand; nothing is ever uploaded automatically.
 
 **How do I know my backups are good?**
 Every week the agent restores a sample and compares it to the source; `redundanet backup list` shows the result and the streak, and so does the status page. `redundanet backup verify` runs a test now. A real restore to a scratch folder with `redundanet restore start` is the proof that counts.

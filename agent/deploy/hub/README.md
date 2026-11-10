@@ -62,6 +62,16 @@ devices of a member pair when they cannot reach each other (a room per
 pairing, derived from the code; sealed frames the hub cannot read; ten
 minutes). Caddy proxies every path, so nothing to configure.
 
+The page is public, so the hub bounds what a caller costs it. The status is
+computed once in five seconds however many ask. One source address opens at
+most eight pairing rooms at a time, and a room holds at most two full frames
+nobody has read. The hub tells sources apart by the address Caddy writes in
+`X-Forwarded-For`, which it reads only on a connection from loopback, and
+of which it takes the last address, the one Caddy itself saw, so a caller
+cannot choose it. Keep the page on `127.0.0.1` behind Caddy. With another
+proxy in front of Caddy every caller would share that proxy's address and
+its bound of eight. Without Caddy, every caller counts by its own address.
+
 ## Firewall
 
 Both layers of the host firewall need 8443, UDP and TCP:

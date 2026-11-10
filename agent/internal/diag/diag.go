@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"regexp"
 	"runtime"
@@ -165,12 +166,11 @@ func Hash(s string) string {
 }
 
 var (
-	url         = regexp.MustCompile(`[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
-	unixPath    = regexp.MustCompile(`(?:^|[\s"'=(,\[])(/[^\s"',:)\]]+)`)
-	windowsPath = regexp.MustCompile(`(?:[A-Za-z]:\\|\\\\)[^\s"',)\]]+`)
-	ipv4        = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b`)
-	ipv6        = regexp.MustCompile(`\[[0-9A-Fa-f:.]+\](?::\d{1,5})?`)
-	hostPort    = regexp.MustCompile(`\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+:\d{2,5}\b`)
+	url      = regexp.MustCompile(`[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
+	ipv4     = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b`)
+	ipv6     = regexp.MustCompile(`\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9._-]+)?\](?::\d{1,5})?`)
+	ipv6Bare = regexp.MustCompile(`[0-9A-Fa-f:.]{2,}(?:%[A-Za-z0-9._-]+)?`)
+	hostPort = regexp.MustCompile(`\b[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+:\d{2,5}\b`)
 )
 
 // Redact replaces every URL, path and address in a line. Paths keep a
@@ -180,14 +180,165 @@ func Redact(s string) string {
 		core := strings.TrimRight(u, ":,.;)")
 		return "<url>" + u[len(core):]
 	})
-	s = windowsPath.ReplaceAllStringFunc(s, func(p string) string { return "<path:" + Hash(p) + ">" })
-	s = unixPath.ReplaceAllStringFunc(s, func(m string) string {
-		i := strings.Index(m, "/")
-		return m[:i] + "<path:" + Hash(m[i:]) + ">"
-	})
+	s = redactPaths(s)
 	s = ipv6.ReplaceAllString(s, "<addr>")
 	s = ipv4.ReplaceAllString(s, "<addr>")
 	s = hostPort.ReplaceAllString(s, "<addr>")
+	return redactBareIPv6(s)
+}
+
+// redactPaths replaces each path with its hash. A folder or file name may
+// hold spaces, commas, colons and brackets, so where a path ends is taken
+// from where it stands, and when in doubt more is taken, not less:
+//
+//   - right after a quote, it runs to the closing quote;
+//   - elsewhere inside a quoted value, or in plain text, it runs to the
+//     first colon followed by a space (where an error's reason begins),
+//     to the closing quote, or to the end of the line;
+//   - as an unquoted key=value, which holds no space, it runs to the next
+//     space.
+func redactPaths(s string) string {
+	var b strings.Builder
+	quoted := false // inside a double-quoted value
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c == '"' && (i == 0 || s[i-1] != '\\') {
+			quoted = !quoted
+		}
+		if c == '\n' {
+			quoted = false
+		}
+		if !pathStart(s, i) {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		var prev byte
+		if i > 0 {
+			prev = s[i-1]
+		}
+		end := len(s)
+		if n := strings.IndexByte(s[i:], '\n'); n >= 0 {
+			end = i + n
+		}
+		switch {
+		case prev == '"' || prev == '\'':
+			if n := strings.IndexByte(s[i:end], prev); n >= 0 {
+				end = i + n
+			}
+		case prev == '=' && !quoted:
+			if n := strings.IndexAny(s[i:end], " \t"); n >= 0 {
+				end = i + n
+			}
+		default:
+			// The drive of a Windows path has a colon of its own, never
+			// followed by a space.
+			if n := strings.Index(s[i:end], ": "); n >= 0 {
+				end = i + n
+			}
+			if n := strings.IndexByte(s[i:end], '"'); n >= 0 {
+				end = i + n
+			}
+		}
+		path := strings.TrimRight(s[i:end], " \t\\:,;)]")
+		if path == "" {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		b.WriteString("<path:" + Hash(path) + ">")
+		i += len(path)
+	}
+	return b.String()
+}
+
+// pathStart reports whether a path begins at s[i]: a slash after the
+// start, a space, a quote or one of =(,[ and before a name; a drive
+// letter with :\ ; or the two backslashes of a network share.
+func pathStart(s string, i int) bool {
+	var prev byte = ' '
+	if i > 0 {
+		prev = s[i-1]
+	}
+	switch c := s[i]; {
+	case c == '/':
+		if !strings.ContainsRune(" \t\"'=(,[", rune(prev)) || i+1 >= len(s) {
+			return false
+		}
+		return !strings.ContainsRune(" \t\n\"'/", rune(s[i+1]))
+	case c == '\\':
+		return i+1 < len(s) && s[i+1] == '\\' && prev != '\\' && !wordByte(prev)
+	case (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'):
+		return !wordByte(prev) && strings.HasPrefix(s[i+1:], `:\`)
+	}
+	return false
+}
+
+func wordByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+// redactBareIPv6 replaces an IPv6 address written without brackets. A run
+// of hex digits and colons is one only when it parses as one, so a time
+// of day or a version stays.
+func redactBareIPv6(s string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range ipv6Bare.FindAllStringIndex(s, -1) {
+		tok := s[m[0]:m[1]]
+		core := strings.TrimRight(tok, ":.")
+		if strings.Count(core, ":") < 2 || (m[0] > 0 && wordByte(s[m[0]-1])) || (m[0]+len(core) < len(s) && wordByte(s[m[0]+len(core)])) {
+			continue
+		}
+		if a, err := netip.ParseAddr(core); err != nil || !a.Is6() {
+			continue
+		}
+		b.WriteString(s[last:m[0]])
+		b.WriteString("<addr>")
+		last = m[0] + len(core)
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// redactor is Redact for one bundle, which also knows this device's own
+// folders: whatever of them a line still shows after the patterns is
+// replaced as well, longest first.
+type redactor struct{ known []string }
+
+func newRedactor(in Input) redactor {
+	seen := map[string]bool{}
+	var r redactor
+	add := func(p string) {
+		p = strings.TrimRight(p, `/\`)
+		if len(p) < 4 || seen[p] {
+			return
+		}
+		seen[p] = true
+		r.known = append(r.known, p)
+	}
+	add(in.DataDir)
+	if home, err := os.UserHomeDir(); err == nil {
+		add(home)
+	}
+	if in.Jobs != nil {
+		for _, set := range in.Jobs.Sets {
+			for _, f := range set.Folders {
+				add(f)
+			}
+		}
+	}
+	sort.Slice(r.known, func(i, j int) bool { return len(r.known[i]) > len(r.known[j]) })
+	return r
+}
+
+func (r redactor) do(s string) string {
+	s = Redact(s)
+	for _, k := range r.known {
+		if strings.Contains(s, k) {
+			s = strings.ReplaceAll(s, k, "<path:"+Hash(k)+">")
+		}
+	}
 	return s
 }
 
@@ -197,20 +348,31 @@ func label(set, folder string) string { return set + ":" + Hash(folder) }
 // Summarise builds the allowlisted projection.
 func Summarise(in Input) Summary {
 	s := Summary{GeneratedAt: in.Now, Version: in.Version, Platform: runtime.GOOS + "/" + runtime.GOARCH, Go: runtime.Version(), Network: in.Network,
-		Device: in.Device, Member: in.Member, Roles: in.Roles, AgentUp: in.AgentUp, Uptime: in.Uptime, Manifest: in.Manifest, Update: in.Update, Repair: in.Repair}
+		Device: in.Device, Member: in.Member, Roles: in.Roles, AgentUp: in.AgentUp, Uptime: in.Uptime, Manifest: in.Manifest}
+	red := newRedactor(in).do
+	if in.Update != nil {
+		u := *in.Update
+		u.LastError = red(u.LastError)
+		s.Update = &u
+	}
+	if in.Repair != nil {
+		r := *in.Repair
+		r.Running, r.Last = red(r.Running), red(r.Last)
+		s.Repair = &r
+	}
 	if in.Service != nil {
 		sv := *in.Service
-		sv.Path, sv.Detail = Redact(sv.Path), Redact(sv.Detail)
+		sv.Path, sv.Detail = red(sv.Path), red(sv.Detail)
 		s.Service = &sv
 	}
 	if in.Membership != nil {
 		m := *in.Membership
-		m.LastError = Redact(m.LastError)
+		m.LastError = red(m.LastError)
 		s.Membership = &m
 	}
 	if t := in.Transport; t != nil {
 		for _, h := range t.Hubs {
-			s.Hubs = append(s.Hubs, HubSummary{Hub: h.Hub, Up: h.Up, Carrier: h.Carrier, Reconnects: h.Reconnects, LastError: Redact(h.LastError)})
+			s.Hubs = append(s.Hubs, HubSummary{Hub: h.Hub, Up: h.Up, Carrier: h.Carrier, Reconnects: h.Reconnects, LastError: red(h.LastError)})
 		}
 		p := &PeerSummary{}
 		for _, ss := range t.Sessions {
@@ -236,9 +398,9 @@ func Summarise(in Input) Summary {
 					continue
 				}
 				ss.Running = r.Running
-				ss.Error = Redact(r.LastErr)
+				ss.Error = red(r.LastErr)
 				for _, n := range r.Needs {
-					ss.Needs = append(ss.Needs, Redact(n))
+					ss.Needs = append(ss.Needs, red(n))
 				}
 				if r.Last != nil {
 					ss.LastAt = r.LastAt.UTC().Format(time.RFC3339)
@@ -258,7 +420,7 @@ func Summarise(in Input) Summary {
 		}
 		s.RestoreTest = rt
 		if c := j.LastCleanup; c != nil {
-			s.Cleanup = &CleanupSummary{At: c.At.UTC().Format(time.RFC3339), Reachable: c.Reachable, Listed: c.Listed, Garbage: c.Garbage, Tombstoned: c.Tombstoned, Error: Redact(c.Error)}
+			s.Cleanup = &CleanupSummary{At: c.At.UTC().Format(time.RFC3339), Reachable: c.Reachable, Listed: c.Listed, Garbage: c.Garbage, Tombstoned: c.Tombstoned, Error: red(c.Error)}
 		}
 	}
 	if in.DataDir != "" {
@@ -266,7 +428,7 @@ func Summarise(in Input) Summary {
 			s.Disks = append([]DiskSummary{{What: "data directory", Free: free, Total: total}}, s.Disks...)
 		}
 	}
-	s.Errors = countErrors(in.Lines, in.LogText)
+	s.Errors = countErrors(in.Lines, in.LogText, red)
 	return s
 }
 
@@ -274,18 +436,18 @@ var textLine = regexp.MustCompile(`level=(WARN|ERROR)\s+msg=("(?:[^"\\]|\\.)*"|\
 
 // countErrors tallies warnings and errors by message, from the agent's
 // lines and from the log text, newest sources first.
-func countErrors(lines []logbuf.Line, text string) []ErrorCount {
+func countErrors(lines []logbuf.Line, text string, red func(string) string) []ErrorCount {
 	counts := map[[2]string]int{}
 	for _, l := range lines {
 		if l.Level == "WARN" || l.Level == "ERROR" {
-			counts[[2]string{l.Level, Redact(l.Msg)}]++
+			counts[[2]string{l.Level, red(l.Msg)}]++
 		}
 	}
 	if len(lines) == 0 {
 		for _, line := range strings.Split(text, "\n") {
 			if m := textLine.FindStringSubmatch(line); m != nil {
 				msg := strings.Trim(m[2], `"`)
-				counts[[2]string{m[1], Redact(msg)}]++
+				counts[[2]string{m[1], red(msg)}]++
 			}
 		}
 	}
@@ -331,16 +493,17 @@ func Write(w io.Writer, in Input) error {
 	if err := add("summary.json", js); err != nil {
 		return err
 	}
+	red := newRedactor(in).do
 	var log strings.Builder
 	for _, l := range in.Lines {
-		fmt.Fprintf(&log, "%s %-5s %s %s\n", l.Time.UTC().Format(time.RFC3339), l.Level, Redact(l.Msg), clip(Redact(l.Attrs)))
+		fmt.Fprintf(&log, "%s %-5s %s %s\n", l.Time.UTC().Format(time.RFC3339), l.Level, red(l.Msg), clip(red(l.Attrs)))
 	}
 	if in.LogText != "" {
 		if log.Len() > 0 {
 			log.WriteString("\n---- service log ----\n")
 		}
 		for _, line := range strings.Split(in.LogText, "\n") {
-			log.WriteString(clip(Redact(line)))
+			log.WriteString(clip(red(line)))
 			log.WriteByte('\n')
 		}
 	}

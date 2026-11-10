@@ -113,6 +113,7 @@ type serverNode struct {
 	ep     *transport.Endpoint
 	lieMu  sync.Mutex
 	lie    func(object.StorageIndex) *shareproto.Presence // a dishonest answer to has; see lying_test.go
+	usage  *int64                                         // a dishonest answer to usage
 }
 
 func (g *grid) allow(p identity.Peer) error {

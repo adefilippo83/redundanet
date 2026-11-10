@@ -1143,43 +1143,13 @@ func (p *manifestPolicy) MemberStatus(k identity.Key) (bool, bool) {
 	return mem.Status == "active", mem.Status == "leaving"
 }
 
-// OwnerCap is the RFC's per-server bound: budget times this server's share
-// of the contribution times the headroom, where budget is the allocation
-// times n/k. This server's contribution is its member's, divided among
-// that member's storage devices.
+// OwnerCap is the RFC's per-server bound, by the manifest's formula.
 func (p *manifestPolicy) OwnerCap(owner identity.Key) int64 {
 	m := p.rc.current()
 	if m == nil {
 		return 0
 	}
-	mem := m.MemberByKey(owner)
-	if mem == nil || m.Network.Encoding.K == 0 {
-		return 0
-	}
-	var total, mine int64
-	var myMember string
-	devices := map[string]int{}
-	for _, s := range m.Storage {
-		devices[s.Member]++
-		if s.Device == p.rc.device {
-			myMember = s.Member
-		}
-	}
-	for _, x := range m.Members {
-		total += int64(x.ContributionGB)
-		if x.Name == myMember && devices[myMember] > 0 {
-			mine = int64(x.ContributionGB) / int64(devices[myMember])
-		}
-	}
-	if total == 0 || mine == 0 {
-		return 0
-	}
-	headroom := int64(m.Network.QuotaHeadroom)
-	if headroom <= 0 {
-		headroom = 2
-	}
-	budget := int64(m.Allocation(mem.Name)) << 30 * int64(m.Network.Encoding.N) / int64(m.Network.Encoding.K)
-	return budget * mine / total * headroom
+	return m.OwnerCap(owner, p.rc.device)
 }
 
 // runProbation is the candidate's side: healthy means every hub channel is
