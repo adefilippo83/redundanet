@@ -102,9 +102,9 @@ commits. Never weaken that chain.
 2. Maintainer tags `agent/vX.Y.Z` (or `-alpha.N`, `-beta.N`, `-rc.N`); the
    `agent release` workflow builds every target, opens a draft release with
    `sha256sums.txt` and the index fragment (plain version stable,
-   pre-release early), then its `index-pr` job checks the release as it is
-   on GitHub and opens `release/index-X.Y.Z` with the next index revision,
-   unsigned. Windows signing and macOS notarization run only once their
+   pre-release early). It does not touch the index: the pull request
+   `release/index-X.Y.Z` is opened by `scripts/sign.sh` in step 3, signed.
+   Windows signing and macOS notarization run only once their
    secrets exist; until then the binaries ship unsigned and the index is
    the verification. A second run for a tag stops at its first step.
 3. Maintainer runs `scripts/sign.sh release X.Y.Z` on the laptop with the

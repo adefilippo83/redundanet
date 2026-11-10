@@ -85,7 +85,7 @@ network:
 
 ## Releases
 
-Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it, checks it and opens the pull request that adds it to `releases/index.yaml`, unsigned; `scripts/sign.sh release X.Y.Z` on the laptop with the release key checks it again, builds it again from the tag and compares every binary with the release, signs, merges and publishes the draft. To withdraw a release, set `withdrawn: true`, raise the revision, sign again. All of it: [../releases/README.md](../releases/README.md). Nothing in the manifest can name a release.
+Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it and opens a draft release; `scripts/sign.sh release X.Y.Z` on the laptop with the release key checks it again, builds it again from the tag and compares every binary with the release, signs, merges and publishes the draft. To withdraw a release, set `withdrawn: true`, raise the revision, sign again. All of it: [../releases/README.md](../releases/README.md). Nothing in the manifest can name a release.
 
 ## The hub
 

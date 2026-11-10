@@ -14,18 +14,17 @@ To publish a release:
    pre-release, which sorts before the release it precedes. The `agent
    release` workflow builds the assets and opens a draft release with the
    index fragment; a plain version goes on the `stable` channel, a
-   pre-release on `early`. It then checks the release as it is on GitHub
-   (the tag on main, one workflow run for it, every archive matching the
-   fragment by sha256 and size) and opens a pull request,
-   `release/index-X.Y.Z`, that adds it to `index.yaml` as the next
-   revision, unsigned. No key is in CI.
+   pre-release on `early`. It stops there: the index is not touched by
+   the workflow, and no key is in CI.
 2. On the laptop with the release key, one command:
 
    ```
    scripts/sign.sh release X.Y.Z
    ```
 
-   It repeats every check on its own. Then it builds the release again:
+   It checks the release as it is on GitHub (still a draft, the tag on
+   main, one workflow run for it, every archive the size the release
+   says). Then it builds the release again:
    it clones the tag, runs the tag's own `scripts/build-agent.sh` (the
    script the workflow ran) and compares the binary inside every archive
    on the release with the one built on the laptop, byte for byte. A
@@ -33,8 +32,9 @@ To publish a release:
    the tagged source, not for whatever the release holds. It then rebuilds
    the revision on the current main with `redundanet release add` (built
    from main, never from the branch), shows what it will sign and asks,
-   then signs, pushes the signature to the pull request, merges it at
-   exactly that commit once CI is green and publishes the draft.
+   then signs, opens the pull request `release/index-X.Y.Z` with the
+   index and its signature, merges it at exactly that commit once CI is
+   green and publishes the draft.
    `--dry-run` stops before signing and is the way to try the comparison.
    The key file is `~/.redundanet/release.key` unless `RELEASE_KEY` names
    another.
