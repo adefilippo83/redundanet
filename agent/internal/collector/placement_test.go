@@ -20,6 +20,12 @@ func share(si byte, n uint8, owner identity.Key) wire.ShareEntry {
 	return e
 }
 
+func tombstone(si byte, owner identity.Key) wire.TombstoneEntry {
+	t := wire.TombstoneEntry{Owner: owner}
+	t.StorageIndex[0], t.DescriptorHash[0] = si, si
+	return t
+}
+
 func (w *world) heartbeat(dev identity.Key) {
 	w.c.Record(identity.Peer{Device: dev, Member: alice}, "udp", wire.Census{Roles: []string{identity.RoleStorage}})
 }
@@ -48,11 +54,13 @@ func TestPlacementRules(t *testing.T) {
 	// 1: fully placed, two shares per server. 2: three of four numbers on
 	// one server. 3: fully placed with one share number held twice. 4: one
 	// share only. 5: every number on one server, the other holds nothing.
-	// 6: one share on falcon and a tombstone on spare: deleted.
+	// 6: one share on falcon and a tombstone on both servers: deleted.
 	w.report(falcon, 1, share(1, 0, alice), share(1, 1, alice), share(2, 0, alice), share(2, 1, alice), share(2, 2, alice),
 		share(3, 0, alice), share(3, 1, alice), share(3, 2, alice), share(4, 0, bob), share(5, 0, alice), share(5, 1, alice), share(5, 2, alice), share(5, 3, alice), share(6, 0, alice))
 	w.report(spare, 1, share(1, 2, alice), share(1, 3, alice), share(3, 2, alice), share(3, 3, alice))
-	w.c.RecordShares(identity.Peer{Device: spare, Member: alice}, &wire.ShareCensus{Since: 1, Generation: 2, Tombstones: []wire.TombstoneEntry{{StorageIndex: [16]byte{6}, Owner: alice}}})
+	for _, dev := range []identity.Key{falcon, spare} {
+		w.c.RecordShares(identity.Peer{Device: dev, Member: alice}, &wire.ShareCensus{Since: 1, Generation: 2, Tombstones: []wire.TombstoneEntry{tombstone(6, alice)}})
+	}
 
 	objs, grid := objectsBySI(t, w)
 	if o := objs[1]; !o.Placed || len(o.Shares) != 4 || o.Spread != 2 || o.Target != 2 || o.Need != "" || !o.Readable {
@@ -117,7 +125,8 @@ func TestPlacementRules(t *testing.T) {
 	if o := objs[1]; o.Placed || len(o.Shares) != 2 || !o.Readable || !o.Reached || o.Need != "repair" || o.Target != 1 {
 		t.Fatalf("spare dead: %+v", o)
 	}
-	if grid.Servers != 1 || grid.Tombstoned != 0 {
+	// Object 6 stays deleted on the word of the one server left.
+	if grid.Servers != 1 || grid.Tombstoned != 1 {
 		t.Fatalf("spare dead: %+v", grid)
 	}
 	// The dead server's bytes are still on its disk: usage counts them.
@@ -212,6 +221,77 @@ func TestDescriptorConflictFollowsTheMajority(t *testing.T) {
 	objs, grid := objectsBySI(t, w)
 	if o := objs[1]; !o.Conflict || len(o.Shares) != 3 || o.Placed || grid.Conflicts != 1 {
 		t.Fatalf("conflict: %+v %+v", o, grid)
+	}
+}
+
+// A tombstone is one server's word. It takes an object out of repair
+// only when most of the servers concerned report it, for the object's own
+// owner and descriptor; one server alone cannot switch repair off for an
+// object the others hold.
+func TestATombstoneNeedsMostOfTheServersConcerned(t *testing.T) {
+	third := bobPC
+	m := demoManifest()
+	m.Storage = append(m.Storage, manifest.StorageDevice{Member: "bob", Device: third, Name: "third"})
+	w := newWorldWith(t, m, "", "", "")
+	for _, dev := range []identity.Key{falcon, spare, third} {
+		w.heartbeat(dev)
+	}
+	// 1: held by falcon and spare, a tombstone from third only.
+	// 2: held by all three, tombstones from two of them.
+	// 3: held by falcon, a tombstone from spare only: a tie is not most.
+	// 4: held by falcon and spare, tombstones from both for another owner.
+	// 5: held by falcon and spare, tombstones from both for another descriptor.
+	// 6: held by falcon, tombstones from spare and third, which hold nothing.
+	w.report(falcon, 1, share(1, 0, alice), share(2, 0, alice), share(3, 0, alice), share(4, 0, alice), share(5, 0, alice), share(6, 0, alice))
+	w.report(spare, 1, share(1, 1, alice), share(2, 1, alice), share(4, 1, alice), share(5, 1, alice))
+	w.report(third, 1, share(2, 2, alice))
+	other := tombstone(5, alice)
+	other.DescriptorHash[1] = 0xff
+	said := map[identity.Key][]wire.TombstoneEntry{
+		falcon: {tombstone(2, alice), tombstone(4, bob), other},
+		spare:  {tombstone(2, alice), tombstone(3, alice), tombstone(4, bob), other, tombstone(6, alice)},
+		third:  {tombstone(1, alice), tombstone(6, alice)},
+	}
+	for dev, ts := range said {
+		w.c.RecordShares(identity.Peer{Device: dev, Member: alice}, &wire.ShareCensus{Since: 1, Generation: 2, Tombstones: ts})
+	}
+	objs, grid := objectsBySI(t, w)
+	for si, want := range map[byte]bool{1: false, 2: true, 3: false, 4: false, 5: false, 6: true} {
+		o := objs[si]
+		if o.Tombstoned != want {
+			t.Errorf("object %d: tombstoned %v, want %v", si, o.Tombstoned, want)
+		}
+		if !want && o.Need == "" {
+			t.Errorf("object %d: out of repair on a tombstone that does not count", si)
+		}
+	}
+	if grid.Tombstoned != 2 {
+		t.Errorf("grid: %d tombstoned", grid.Tombstoned)
+	}
+}
+
+// A server has one vote on an object's descriptor however many rows it
+// reports under another one.
+func TestOneServerDoesNotOutvoteTheOthers(t *testing.T) {
+	third := bobPC
+	m := demoManifest()
+	m.Storage = append(m.Storage, manifest.StorageDevice{Member: "bob", Device: third, Name: "third"})
+	w := newWorldWith(t, m, "", "", "")
+	for _, dev := range []identity.Key{falcon, spare, third} {
+		w.heartbeat(dev)
+	}
+	var loud []wire.ShareEntry
+	for n := uint8(0); n < 4; n++ {
+		e := share(1, n, alice)
+		e.DescriptorHash[1] = 0xff
+		loud = append(loud, e)
+	}
+	w.report(falcon, 1, share(1, 0, alice))
+	w.report(spare, 1, share(1, 1, alice))
+	w.report(third, 1, loud...)
+	objs, _ := objectsBySI(t, w)
+	if o := objs[1]; !o.Conflict || o.Hash[1] != 0 || len(o.Shares) != 2 || o.Placed {
+		t.Fatalf("object: %+v", o)
 	}
 }
 
