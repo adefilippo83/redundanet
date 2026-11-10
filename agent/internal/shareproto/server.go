@@ -306,7 +306,14 @@ func (s *Server) put(peer identity.Peer, st wire.Stream, req *Request) error {
 	} else {
 		var usage int64
 		var uerr error
-		if k, n, ok := s.pol.Converting(); ok {
+		// During a transition the shares under the retiring encoding count
+		// for nothing, so that a member near budget can store under the new
+		// one before the old is gone. That holds for a share under the new
+		// encoding only: a share that itself comes under the retiring one
+		// is measured against everything the owner holds, or signing
+		// descriptors with the old k and n would be storage without a
+		// limit until the deadline.
+		if k, n, ok := s.pol.Converting(); ok && !(int(sd.Descriptor.K) == k && int(sd.Descriptor.N) == n) {
 			usage, uerr = s.st.UsageExcluding(owner, k, n)
 		} else {
 			usage, uerr = s.st.Usage(owner)

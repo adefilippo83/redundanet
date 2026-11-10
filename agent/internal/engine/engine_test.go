@@ -267,6 +267,19 @@ func contract(t *testing.T, e Engine, member identity.Key, other identity.Key) {
 	if len(roots.Views) != 1 || roots.Views[0].Version != 2 || roots.Views[0].Root.Note != "v2" || roots.Answered < 1 {
 		t.Fatalf("roots after v2: %+v", roots)
 	}
+	if roots.Own != 2 || roots.Confirmed != 2 || roots.Trusted() != nil {
+		t.Fatalf("this device's own root: seen %d, confirmed %d, %v", roots.Own, roots.Confirmed, roots.Trusted())
+	}
+	for _, r := range []Roots{{Servers: 3, Answered: 1}, {Servers: 0}, {Servers: 3, Answered: 3, Own: 4, Confirmed: 5}} {
+		if !errors.Is(r.Trusted(), ErrRootsUnsure) {
+			t.Fatalf("%+v was trusted", r)
+		}
+	}
+	for _, r := range []Roots{{Servers: 3, Answered: 2}, {Servers: 2, Answered: 1}, {Servers: 3, Answered: 3, Own: 5, Confirmed: 5}, {Servers: 3, Answered: 3, Own: 7}} {
+		if err := r.Trusted(); err != nil {
+			t.Fatalf("%+v: %v", r, err)
+		}
+	}
 	if roots, _ := e.GetRoots(ctx, other); len(roots.Views) != 0 {
 		t.Fatal("another member's roots listed")
 	}

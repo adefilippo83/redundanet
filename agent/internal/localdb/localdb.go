@@ -47,6 +47,7 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 		`CREATE INDEX IF NOT EXISTS scan_hashed ON scan(last_hashed)`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_version', 0)`,
+		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_confirmed', 0)`,
 		`CREATE TABLE IF NOT EXISTS verifications (at INTEGER PRIMARY KEY, snapshot TEXT NOT NULL, sampled INTEGER NOT NULL,
 			verified INTEGER NOT NULL, compared INTEGER NOT NULL, unchanged INTEGER NOT NULL, failed TEXT NOT NULL)`,
 	} {
@@ -223,7 +224,25 @@ func (d *DB) NextRootVersion() (uint64, error) {
 	return v, tx.Commit()
 }
 
-// RootVersion is the last version this device confirmed.
+// ConfirmRootVersion records a root version that a majority of the
+// storage servers took. The counter above is spent on every attempt; this
+// is the last one that is certain to be out there, which a later reading
+// of the roots must not fall behind.
+func (d *DB) ConfirmRootVersion(v uint64) error {
+	_, err := d.db.Exec(`UPDATE meta SET value = MAX(value, ?) WHERE key = 'root_confirmed'`, v)
+	return err
+}
+
+// RootConfirmed is the last version ConfirmRootVersion recorded; 0 on a
+// new or replaced database.
+func (d *DB) RootConfirmed() (uint64, error) {
+	var v uint64
+	err := d.db.QueryRow(`SELECT value FROM meta WHERE key = 'root_confirmed'`).Scan(&v)
+	return v, err
+}
+
+// RootVersion is the device's root version counter: the last version
+// tried, confirmed or not.
 func (d *DB) RootVersion() (uint64, error) {
 	var v uint64
 	err := d.db.QueryRow(`SELECT value FROM meta WHERE key = 'root_version'`).Scan(&v)

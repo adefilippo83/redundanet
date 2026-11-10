@@ -37,6 +37,11 @@ type Fake struct {
 	// RootsAnswered is how many servers GetRoots reports answering; -1
 	// means all of them.
 	RootsAnswered int
+	// StaleRoot makes GetRoots return this device's root before the last
+	// one, as servers that withhold or missed the newest would.
+	StaleRoot bool
+	previous  *RootView
+	confirmed uint64 // the version of this device's own last root
 }
 
 // NewFake makes a fake engine for one member and device.
@@ -227,7 +232,11 @@ func (f *Fake) PutRoot(_ context.Context, root Root) (uint64, error) {
 		root.WrittenAt = time.Now()
 	}
 	r := root
+	if old, ok := f.roots[f.Device]; ok {
+		f.previous = &old
+	}
 	f.roots[f.Device] = RootView{Device: f.Device, Version: f.version, Root: &r}
+	f.confirmed = f.version
 	return f.version, nil
 }
 
@@ -242,9 +251,19 @@ func (f *Fake) GetRoots(_ context.Context, member identity.Key) (*Roots, error) 
 	if member != f.Member {
 		return out, nil
 	}
+	out.Confirmed = f.confirmed
 	for dev, v := range f.roots {
+		if dev == f.Device && f.StaleRoot {
+			if f.previous == nil {
+				continue
+			}
+			v = *f.previous
+		}
 		if f.unopen[dev] {
 			v.Root = nil
+		}
+		if dev == f.Device {
+			out.Own = v.Version
 		}
 		out.Views = append(out.Views, v)
 	}

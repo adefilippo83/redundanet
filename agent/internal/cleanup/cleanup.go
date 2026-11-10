@@ -119,6 +119,11 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if roots.Servers == 0 || roots.Answered < roots.Servers-w+1 {
 		return fail(fmt.Errorf("%w: %d of %d", ErrQuorum, roots.Answered, roots.Servers))
 	}
+	// And this device's own root is not older than the one it confirmed:
+	// what only a newer root references would be taken for garbage.
+	if err := roots.Trusted(); err != nil {
+		return fail(fmt.Errorf("%w: %v", ErrQuorum, err))
+	}
 	revokedAt := map[identity.Key]time.Time{}
 	if cfg.Revocations != nil {
 		for _, r := range cfg.Revocations() {

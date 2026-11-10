@@ -25,7 +25,7 @@ Top level:
 | --- | --- | --- |
 | `name` | required | The network name: lowercase letters, digits and dashes. Devices are certified for it. |
 | `encoding` | required | `{k: K, n: N}`: every object is split into N shares of which any K rebuild it. 2-of-3 on the live network today. Applies to new uploads. |
-| `encoding_transition` | none | `{from, to, deadline}`: a k-of-n change in progress. `to` must equal `encoding`; the deadline is a date. Until it, servers account shares under `from` at zero, so members convert without deleting first; `validate` warns once it has passed. |
+| `encoding_transition` | none | `{from, to, deadline}`: a k-of-n change in progress. `to` must equal `encoding`; the deadline is a date. Until it, servers account shares under `from` at zero when a member stores under `to`, so members convert without deleting first (a new share under `from` is still measured against everything the member holds); `validate` warns once it has passed. |
 | `reserve_percent` | 15 | The share of contributions held back for repair, 0 to 50. Allocations come out of the rest. |
 | `grace_days` | 30 | How long servers keep a leaving or unlisted member's shares and roots, on their own clocks, before purging them. |
 | `min_version` | none | The lowest agent version admitted; the self-updater installs a release that satisfies it. MAJOR.MINOR.PATCH with an optional pre-release suffix. |

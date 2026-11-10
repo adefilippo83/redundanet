@@ -59,6 +59,18 @@ func DefaultParams(k, n int) Params {
 	return Params{K: uint8(k), N: uint8(n), SegmentSize: DefaultSegmentSize, Cipher: CipherAESGCM}
 }
 
+// Bounds on an object's geometry. Every writer uses DefaultSegmentSize; a
+// descriptor is a claim by whoever signed it, and a server works out sizes
+// from it before a byte arrives, so the claim is kept within what the
+// arithmetic and the per-segment tables can carry: a segment of one byte
+// under a size of 2^50 would be 2^50 segments.
+const (
+	MinSegmentSize = 4 << 10
+	MaxSegmentSize = 64 << 20
+	MaxObjectSize  = 1 << 40 // 1 TiB; files are chunked far below it
+	MaxSegments    = 1 << 22
+)
+
 func (p Params) check() error {
 	switch {
 	case p.K < 1:
@@ -67,8 +79,8 @@ func (p Params) check() error {
 		return errors.New("object: n must be greater than k")
 	case int(p.N) > MaxShares:
 		return fmt.Errorf("object: n must be at most %d", MaxShares)
-	case p.SegmentSize < 1:
-		return errors.New("object: the segment size must be positive")
+	case p.SegmentSize < MinSegmentSize || p.SegmentSize > MaxSegmentSize:
+		return fmt.Errorf("object: the segment size must be between %d and %d bytes", MinSegmentSize, MaxSegmentSize)
 	case p.Cipher != CipherAESGCM:
 		return fmt.Errorf("object: cipher %d is not available in this version", p.Cipher)
 	}
@@ -194,12 +206,15 @@ func (g Geometry) BlockSize(s int) int {
 }
 
 // ShareBlocksSize is the bytes of blocks one share holds for the object.
+// Every segment but the last is full, so this is arithmetic, not a walk
+// over the segments: a server asks it of a descriptor it has not checked
+// against any data yet.
 func (g Geometry) ShareBlocksSize() int64 {
-	var total int64
-	for s := 0; s < g.Segments(); s++ {
-		total += int64(g.BlockSize(s))
+	n := g.Segments()
+	if n < 1 {
+		return 0
 	}
-	return total
+	return int64(n-1)*int64(g.BlockSize(0)) + int64(g.BlockSize(n-1))
 }
 
 // ---- capabilities ----

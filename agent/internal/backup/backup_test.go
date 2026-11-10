@@ -3,6 +3,7 @@ package backup_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -176,6 +177,51 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	v, err := restore.Verify(ctx, w.fake, listing.Devices[0].Index.Latest(), 3, w.now)
 	if err != nil || v.Sampled != 3 || v.Verified != 3 || len(v.Failed) != 0 || v.Compared < 1 {
 		t.Fatalf("verify: %+v %v", v, err)
+	}
+}
+
+// A run adds its snapshot to the list its root names and publishes the
+// result over it. When too few servers answer, or when they return an
+// older root than this device confirmed, the run stops instead of
+// publishing a list that has lost the snapshots made since.
+func TestBackupDoesNotBuildOnAnUnsureRoot(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := w.run(ctx); err != nil {
+			t.Fatal(err)
+		}
+		w.now = w.now.Add(time.Hour)
+	}
+	state := func() (uint64, int) {
+		t.Helper()
+		l, err := restore.List(ctx, w.fake, w.member)
+		if err != nil || len(l.Devices) != 1 || l.Devices[0].Index == nil {
+			t.Fatalf("listing: %+v %v", l, err)
+		}
+		return l.Devices[0].Version, len(l.Devices[0].Index.Snapshots)
+	}
+	if v, n := state(); v != 2 || n != 2 {
+		t.Fatalf("after two runs: root %d, %d snapshots", v, n)
+	}
+	w.fake.RootsAnswered = 1 // of four servers; two are needed
+	if _, err := w.run(ctx); !errors.Is(err, engine.ErrRootsUnsure) {
+		t.Fatalf("a run on one answer of four: %v", err)
+	}
+	w.fake.RootsAnswered = -1
+	w.fake.StaleRoot = true
+	if _, err := w.run(ctx); !errors.Is(err, engine.ErrRootsUnsure) {
+		t.Fatalf("a run on an older root than the one confirmed: %v", err)
+	}
+	w.fake.StaleRoot = false
+	if v, n := state(); v != 2 || n != 2 {
+		t.Fatalf("the refused runs published something: root %d, %d snapshots", v, n)
+	}
+	if _, err := w.run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v, n := state(); v != 3 || n != 3 {
+		t.Fatalf("after the third run: root %d, %d snapshots", v, n)
 	}
 }
 

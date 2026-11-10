@@ -9,6 +9,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -58,6 +59,32 @@ type Roots struct {
 	Views    []RootView
 	Answered int
 	Servers  int
+	// Own is the highest version of this device's own root among the
+	// answers, and Confirmed the version this device last published to a
+	// majority, from its local database: 0 when it has no record (a new
+	// device, a replaced database) or when the roots are another
+	// member's. See Trusted.
+	Own       uint64
+	Confirmed uint64
+}
+
+// ErrRootsUnsure is why a reading of the roots is not built on.
+var ErrRootsUnsure = errors.New("engine: the storage servers did not give a sure view of the member's roots")
+
+// Trusted says whether the views are sure to hold every root that was
+// confirmed, and why not. A root is confirmed on a majority W of the S
+// servers, so S-W+1 answers include a holder of each; and whatever the
+// servers say, this device's own root is not older than the one it
+// confirmed itself. What is built on an older root (a backup's snapshot
+// list, a cleanup's set of referenced objects) drops what came after it.
+func (r *Roots) Trusted() error {
+	if w := r.Servers/2 + 1; r.Servers == 0 || r.Answered < r.Servers-w+1 {
+		return fmt.Errorf("%w: %d of %d answered", ErrRootsUnsure, r.Answered, r.Servers)
+	}
+	if r.Own < r.Confirmed {
+		return fmt.Errorf("%w: they returned version %d of this device's root, and it confirmed version %d", ErrRootsUnsure, r.Own, r.Confirmed)
+	}
+	return nil
 }
 
 // Health is where an object's shares are.
