@@ -158,9 +158,15 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, _ := io.ReadAll(resp.Body)
+	// The link led to the session's own address, which carries its key.
+	home := strings.TrimSuffix(resp.Request.URL.String(), "/")
+	homePath := strings.TrimSuffix(resp.Request.URL.Path, "/")
+	if !strings.HasPrefix(homePath, keyedPrefix) || len(homePath) != len(keyedPrefix)+32 {
+		t.Fatalf("the page after login is at %s", resp.Request.URL)
+	}
 	get := func(path string) string {
 		t.Helper()
-		r, err := browser.Get("http://" + h.srv.Addr() + path)
+		r, err := browser.Get(home + path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,11 +191,11 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 	}
 	want("overview", string(page), "testnet", "Your backup needs attention", "grant Full Disk Access", "Install 3.0.1", "Version 3.0.1 could not be installed",
 		"Weeks in a row passing: 2", "20 of 20 sample files read back", `lang="en"`, `aria-current="page"`)
-	want("backups", get("/backups"), "/home/x", "(1 not on this computer)", "20 of 20", "Failed (1)", "/action/backup-add", "/action/backup-remove", "settings-excludes")
+	want("backups", get("/backups"), "/home/x", "(1 not on this computer)", "20 of 20", "Failed (1)", `action="action/backup-add"`, `action="action/backup-remove"`, "settings-excludes")
 	want("network", get("/network"), "peerpeer", "relay connection up")
 	want("settings", get("/settings"), "settings-schedule", `<option value="24h0m0s" selected>every day</option>`, `<option value="168h0m0s" selected>every week</option>`, "Try 3.0.1 again")
-	want("advanced", get("/advanced"), "repairing abcdefgh", "surplus pieces released: 3", "hello from the test", "/diagnostics.zip")
-	if r, _ := browser.Get("http://" + h.srv.Addr() + "/nowhere"); r.StatusCode != http.StatusNotFound {
+	want("advanced", get("/advanced"), "repairing abcdefgh", "surplus pieces released: 3", "hello from the test", `href="diagnostics.zip"`)
+	if r, _ := browser.Get(home + "/nowhere"); r.StatusCode != http.StatusNotFound {
 		t.Fatalf("an unknown path: %d", r.StatusCode)
 	}
 	// The policy lets the page load its own stylesheet and script and
@@ -218,39 +224,64 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 		t.Fatalf("reused link: %d", r.StatusCode)
 	}
 	// The cookie is HttpOnly and SameSite=Strict.
-	u, _ := url.Parse("http://" + h.srv.Addr())
+	u, _ := url.Parse(home + "/")
 	cookies := jar.Cookies(u)
 	if len(cookies) != 1 || cookies[0].Name != sessionCookie {
 		t.Fatalf("cookies: %v", cookies)
+	}
+	// The browser sends the cookie to the session's address only: not to
+	// the root of this port, and so not to any other port of this host,
+	// which it would reach with a cookie for the whole host.
+	root, _ := url.Parse("http://" + h.srv.Addr() + "/")
+	if got := jar.Cookies(root); len(got) != 0 {
+		t.Fatalf("cookies sent to the root: %v", got)
+	}
+	// The cookie alone is no session: at the root, and under another key,
+	// it opens the page that says to run `redundanet open`, and no API.
+	for _, path := range []string{"/", "/backups", "/api/status", "/diagnostics.zip", keyedPrefix + strings.Repeat("0", 32) + "/", keyedPrefix + strings.Repeat("0", 32) + "/api/status"} {
+		req, _ := http.NewRequest("GET", "http://"+h.srv.Addr()+path, nil)
+		req.AddCookie(cookies[0])
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		if r.StatusCode != http.StatusUnauthorized || strings.Contains(string(b), `name="csrf"`) || strings.Contains(string(b), "testnet") {
+			t.Fatalf("the cookie without the key at %s: %d %s", path, r.StatusCode, firstLines(string(b)))
+		}
+	}
+	// The key alone is none either.
+	if r, _ := http.Get(home + "/"); r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the address without the cookie: %d", r.StatusCode)
 	}
 	csrf := extract(string(page), `name="csrf" value="`, `"`)
 	if csrf == "" {
 		t.Fatal("no csrf token in the page")
 	}
 	// A form post without the CSRF token is refused; with it, the action runs.
-	if r, _ := browser.PostForm("http://"+h.srv.Addr()+"/action/update-check", url.Values{}); r.StatusCode != http.StatusForbidden {
+	if r, _ := browser.PostForm(home+"/action/update-check", url.Values{}); r.StatusCode != http.StatusForbidden {
 		t.Fatalf("post without csrf: %d", r.StatusCode)
 	}
-	r, _ := browser.PostForm("http://"+h.srv.Addr()+"/action/update-check", url.Values{"csrf": {csrf}})
+	r, _ := browser.PostForm(home+"/action/update-check", url.Values{"csrf": {csrf}})
 	body, _ := io.ReadAll(r.Body)
 	if r.StatusCode != http.StatusOK || h.checks != 1 || !strings.Contains(string(body), "Version 3.0.1 is available.") {
 		t.Fatalf("post with csrf: %d checks=%d", r.StatusCode, h.checks)
 	}
 	// The message of an action shows once; the page's own refresh, which
 	// reads the view again every few seconds, does not use it up.
-	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/update-check", url.Values{"csrf": {csrf}, "back": {"/settings"}})
-	if body, _ = io.ReadAll(r.Body); r.Request.URL.Path != "/settings" || !strings.Contains(string(body), "Version 3.0.1 is available.") {
+	r, _ = browser.PostForm(home+"/action/update-check", url.Values{"csrf": {csrf}, "back": {"/settings"}})
+	if body, _ = io.ReadAll(r.Body); r.Request.URL.Path != homePath+"/settings" || !strings.Contains(string(body), "Version 3.0.1 is available.") {
 		t.Fatalf("an action returns to its view: %s", r.Request.URL.Path)
 	}
-	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/update-check", url.Values{"csrf": {csrf}, "back": {"https://attacker.example/"}})
-	if r.Request.URL.Host != h.srv.Addr() || r.Request.URL.Path != "/" {
+	r, _ = browser.PostForm(home+"/action/update-check", url.Values{"csrf": {csrf}, "back": {"https://attacker.example/"}})
+	if r.Request.URL.Host != h.srv.Addr() || r.Request.URL.Path != homePath+"/" {
 		t.Fatalf("an action redirected off the page: %s", r.Request.URL)
 	}
 	stay := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	if r, _ = stay.PostForm("http://"+h.srv.Addr()+"/action/update-check", url.Values{"csrf": {csrf}}); r.StatusCode != http.StatusSeeOther {
+	if r, _ = stay.PostForm(home+"/action/update-check", url.Values{"csrf": {csrf}}); r.StatusCode != http.StatusSeeOther {
 		t.Fatalf("an action answers with a redirect: %d", r.StatusCode)
 	}
-	live, _ := http.NewRequest("GET", "http://"+h.srv.Addr()+"/", nil)
+	live, _ := http.NewRequest("GET", home+"/", nil)
 	live.Header.Set(liveHeader, "1")
 	r, _ = browser.Do(live)
 	if body, _ = io.ReadAll(r.Body); !strings.Contains(string(body), "Version 3.0.1 is available.") {
@@ -260,47 +291,66 @@ func TestBrowserSessionAndCSRF(t *testing.T) {
 		t.Fatal("the message of an action is shown once, after any refresh")
 	}
 	// The language is the browser's, or the one chosen on the page.
-	de, _ := http.NewRequest("GET", "http://"+h.srv.Addr()+"/", nil)
+	de, _ := http.NewRequest("GET", home+"/", nil)
 	de.Header.Set("Accept-Language", "de-CH,de;q=0.9,en;q=0.8")
 	r, _ = browser.Do(de)
 	if body, _ = io.ReadAll(r.Body); !strings.Contains(string(body), `<html lang="de">`) {
 		t.Fatalf("Accept-Language: %s", firstLines(string(body)))
 	}
-	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/language", url.Values{"csrf": {csrf}, "lang": {"it"}, "back": {"/backups"}})
-	if body, _ = io.ReadAll(r.Body); r.Request.URL.Path != "/backups" || !strings.Contains(string(body), `<html lang="it">`) {
+	r, _ = browser.PostForm(home+"/action/language", url.Values{"csrf": {csrf}, "lang": {"it"}, "back": {"/backups"}})
+	if body, _ = io.ReadAll(r.Body); r.Request.URL.Path != homePath+"/backups" || !strings.Contains(string(body), `<html lang="it">`) {
 		t.Fatalf("language form: %s %s", r.Request.URL.Path, firstLines(string(body)))
 	}
-	browser.PostForm("http://"+h.srv.Addr()+"/action/language", url.Values{"csrf": {csrf}, "lang": {"xx"}})
-	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/language", url.Values{"csrf": {csrf}, "lang": {"en"}})
+	browser.PostForm(home+"/action/language", url.Values{"csrf": {csrf}, "lang": {"xx"}})
+	r, _ = browser.PostForm(home+"/action/language", url.Values{"csrf": {csrf}, "lang": {"en"}})
 	if body, _ = io.ReadAll(r.Body); !strings.Contains(string(body), `<html lang="en">`) {
 		t.Fatal("back to English")
 	}
+	// What a browser sends with the page's own form depends on the page's
+	// referrer policy: under no-referrer it is "Origin: null", which the
+	// origin check refuses, so the policy must not be that, and a post
+	// that says null stays refused.
+	if rp := resp.Header.Get("Referrer-Policy"); rp != "same-origin" {
+		t.Fatalf("referrer policy %q: the page's own forms need same-origin", rp)
+	}
+	req0, _ := http.NewRequest("POST", home+"/action/update-apply", strings.NewReader("csrf="+csrf))
+	req0.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req0.Header.Set("Origin", "null")
+	if r, _ := browser.Do(req0); r.StatusCode != http.StatusForbidden || h.applies != 0 {
+		t.Fatalf("a post with a null origin: %d applies=%d", r.StatusCode, h.applies)
+	}
+	same, _ := http.NewRequest("POST", home+"/action/update-check", strings.NewReader("csrf="+csrf))
+	same.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	same.Header.Set("Origin", "http://"+h.srv.Addr())
+	if r, _ := browser.Do(same); r.StatusCode != http.StatusOK {
+		t.Fatalf("a post from the page's own origin: %d", r.StatusCode)
+	}
 	// A cross-origin post is refused before anything runs.
-	req, _ := http.NewRequest("POST", "http://"+h.srv.Addr()+"/action/update-apply", strings.NewReader("csrf="+csrf))
+	req, _ := http.NewRequest("POST", home+"/action/update-apply", strings.NewReader("csrf="+csrf))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://attacker.example")
 	if r, _ := browser.Do(req); r.StatusCode != http.StatusForbidden || h.applies != 0 {
 		t.Fatalf("cross-origin post: %d applies=%d", r.StatusCode, h.applies)
 	}
 	// The JSON API with a session needs the CSRF header on a POST.
-	req, _ = http.NewRequest("POST", "http://"+h.srv.Addr()+"/api/update/apply", nil)
+	req, _ = http.NewRequest("POST", home+"/api/update/apply", nil)
 	if r, _ := browser.Do(req); r.StatusCode != http.StatusForbidden {
 		t.Fatalf("api post with session but no csrf header: %d", r.StatusCode)
 	}
-	req, _ = http.NewRequest("POST", "http://"+h.srv.Addr()+"/api/update/apply", nil)
+	req, _ = http.NewRequest("POST", home+"/api/update/apply", nil)
 	req.Header.Set(headerCSRF, csrf)
 	if r, _ := browser.Do(req); r.StatusCode != http.StatusBadGateway || h.applies != 1 {
 		t.Fatalf("api post with csrf header: %d applies=%d", r.StatusCode, h.applies)
 	}
 	// The page's retry form carries the version and the CSRF token.
-	r, _ = browser.PostForm("http://"+h.srv.Addr()+"/action/update-retry", url.Values{"csrf": {csrf}, "version": {"3.0.1"}})
+	r, _ = browser.PostForm(home+"/action/update-retry", url.Values{"csrf": {csrf}, "version": {"3.0.1"}})
 	body, _ = io.ReadAll(r.Body)
 	if r.StatusCode != http.StatusOK || h.retries != 1 || !strings.Contains(string(body), "Version 3.0.1 is tried again at the next check.") {
 		t.Fatalf("retry form: %d retries=%d", r.StatusCode, h.retries)
 	}
 	// GET never changes anything.
 	before := h.checks
-	browser.Get("http://" + h.srv.Addr() + "/action/update-check")
+	browser.Get(home + "/action/update-check")
 	if h.checks != before {
 		t.Fatal("a GET ran an action")
 	}
@@ -512,12 +562,15 @@ func TestSetupModeThenAttach(t *testing.T) {
 		t.Fatal(err)
 	}
 	req, _ = http.NewRequest("GET", link.URL, nil)
-	if resp := do(req); resp.StatusCode != http.StatusSeeOther {
+	resp := do(req)
+	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("login: %d", resp.StatusCode)
 	}
-	req, _ = http.NewRequest("GET", base+"/", nil)
+	// From here on the page is at the session's own address.
+	home := base + strings.TrimSuffix(resp.Header.Get("Location"), "/")
+	req, _ = http.NewRequest("GET", home+"/", nil)
 	page := body(do(req))
-	if !strings.Contains(page, "I am new here") || !strings.Contains(page, "/setup/begin") {
+	if !strings.Contains(page, "I am new here") || !strings.Contains(page, `action="setup/begin"`) {
 		t.Fatalf("setup page: %s", page)
 	}
 	csrf := page[strings.Index(page, `name="csrf" value="`)+len(`name="csrf" value="`):]
@@ -525,17 +578,17 @@ func TestSetupModeThenAttach(t *testing.T) {
 
 	// Begin: the words show once, then not again.
 	form := url.Values{"csrf": {csrf}, "storage": {"on"}}
-	req, _ = http.NewRequest("POST", base+"/setup/begin", strings.NewReader(form.Encode()))
+	req, _ = http.NewRequest("POST", home+"/setup/begin", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if resp := do(req); resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("begin: %d", resp.StatusCode)
 	}
-	req, _ = http.NewRequest("GET", base+"/", nil)
+	req, _ = http.NewRequest("GET", home+"/", nil)
 	page = body(do(req))
 	if !strings.Contains(page, "foxtrot") || !strings.Contains(page, "Word 2") || !strings.Contains(page, "Word 11") {
 		t.Fatalf("confirm page with words: %s", page)
 	}
-	req, _ = http.NewRequest("GET", base+"/", nil)
+	req, _ = http.NewRequest("GET", home+"/", nil)
 	page = body(do(req))
 	if strings.Contains(page, "foxtrot") || !strings.Contains(page, "shown once") {
 		t.Fatalf("confirm page after reload still shows the phrase: %s", page)
@@ -543,19 +596,19 @@ func TestSetupModeThenAttach(t *testing.T) {
 	// A wrong word is reported; the right ones end the wizard.
 	for _, words := range [][]string{{"wrong", "foxtrot", "lima"}, {"bravo", "foxtrot", "lima"}} {
 		form = url.Values{"csrf": {csrf}, "w1": {words[0]}, "w2": {words[1]}, "w3": {words[2]}}
-		req, _ = http.NewRequest("POST", base+"/setup/confirm", strings.NewReader(form.Encode()))
+		req, _ = http.NewRequest("POST", home+"/setup/confirm", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		do(req)
 	}
 	if len(confirmed) != 3 || confirmed[0] != "bravo" {
 		t.Fatalf("confirmed %v", confirmed)
 	}
-	req, _ = http.NewRequest("GET", base+"/", nil)
+	req, _ = http.NewRequest("GET", home+"/", nil)
 	if page = body(do(req)); !strings.Contains(page, "Identity written") {
 		t.Fatalf("done page: %s", page)
 	}
 	// Without the CSRF token nothing moves.
-	req, _ = http.NewRequest("POST", base+"/setup/cancel", strings.NewReader("csrf=nope"))
+	req, _ = http.NewRequest("POST", home+"/setup/cancel", strings.NewReader("csrf=nope"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if resp := do(req); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cancel without csrf: %d", resp.StatusCode)
@@ -566,13 +619,13 @@ func TestSetupModeThenAttach(t *testing.T) {
 	srv.Attach(Runtime{Snapshot: func() Snapshot {
 		return Snapshot{Version: "3.0.9-test", Network: "testnet", Device: "dev", Member: "mem", Admission: "waiting", Generated: time.Now()}
 	}})
-	req, _ = http.NewRequest("GET", base+"/", nil)
+	req, _ = http.NewRequest("GET", home+"/", nil)
 	page = body(do(req))
-	if !strings.Contains(page, "You are not a listed member yet") || strings.Contains(page, "/setup/begin") {
+	if !strings.Contains(page, "You are not a listed member yet") || strings.Contains(page, `action="setup/begin"`) {
 		t.Fatalf("page after attach: %s", page)
 	}
 	form = url.Values{"csrf": {csrf}}
-	req, _ = http.NewRequest("POST", base+"/setup/begin", strings.NewReader(form.Encode()))
+	req, _ = http.NewRequest("POST", home+"/setup/begin", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if resp := do(req); resp.StatusCode != http.StatusConflict {
 		t.Fatalf("begin after attach: %d", resp.StatusCode)
@@ -585,3 +638,18 @@ func TestSetupModeThenAttach(t *testing.T) {
 }
 
 func jsonDecode(s string, v any) error { return json.Unmarshal([]byte(s), v) }
+
+// openPage follows a login link as the browser does and returns the page
+// and the session's own address, under which the page lives.
+func openPage(t *testing.T, browser *http.Client, link string) (page, home string) {
+	t.Helper()
+	r, err := browser.Get(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	if r.StatusCode != http.StatusOK || strings.Contains(string(b), "%!") {
+		t.Fatalf("the page after login: %d %s", r.StatusCode, firstLines(string(b)))
+	}
+	return string(b), strings.TrimSuffix(r.Request.URL.String(), "/")
+}

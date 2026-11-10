@@ -11,7 +11,7 @@
 
 {{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="back" value="{{.Back}}">{{end}}
 
-{{define "language"}}<form method="post" action="/action/language" class="lang">{{template "csrf" .}}
+{{define "language"}}<form method="post" action="action/language" class="lang">{{template "csrf" .}}
   <label for="lang">{{.T "lang.label"}}</label>
   <select id="lang" name="lang" data-autosubmit>{{range .Langs}}<option value="{{.Code}}" lang="{{.Code}}"{{if eq .Code $.Lang}} selected{{end}}>{{.Name}}</option>{{end}}</select>
   <button class="btn small nojs">{{.T "lang.set"}}</button>
@@ -25,12 +25,12 @@
 {{define "page"}}{{template "head" .}}
 <body>
 <header class="top">
-  <a class="brand" href="/"><span class="logo" aria-hidden="true">R</span><span class="brand-text"><strong>RedundaNet</strong><span class="muted">{{if .Network}}{{.Network}} · {{end}}{{.Version}}</span></span></a>
+  <a class="brand" href="./"><span class="logo" aria-hidden="true">R</span><span class="brand-text"><strong>RedundaNet</strong><span class="muted">{{if .Network}}{{.Network}} · {{end}}{{.Version}}</span></span></a>
   <span id="online" data-live class="grow">{{if eq .Online "up"}}<span class="pill pill-ok">{{.T "online.up"}}</span>{{else if eq .Online "down"}}<span class="pill pill-bad">{{.T "online.down"}}</span>{{end}}</span>
   {{template "language" .}}
 </header>
 <div class="shell">
-<nav aria-label="{{.T "nav.label"}}">{{range .Nav}}<a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
+<nav aria-label="{{.T "nav.label"}}">{{range .Nav}}<a href="{{rel .Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
 <main>
 <p id="gone" class="flash flash-bad" role="alert" hidden>{{.T "session.gone"}}</p>
 {{with .Flash}}<p class="flash {{if .Bad}}flash-bad{{else}}flash-ok{{end}}" role="status">{{.Text}}</p>{{end}}
@@ -48,13 +48,13 @@
     <p class="muted">{{.Overview.Sub}}</p>
     {{if eq .Overview.State "running"}}<progress aria-label="{{.T "hero.running.title"}}"></progress>{{end}}
   </div>
-  {{if .Jobs}}{{if .Jobs.Sets}}<form method="post" action="/action/backup-run">{{template "csrf" .}}<button class="btn primary">{{.T "action.backup"}}</button></form>{{else}}<a class="btn primary" href="/backups">{{.T "action.choose"}}</a>{{end}}{{end}}
+  {{if .Jobs}}{{if .Jobs.Sets}}<form method="post" action="action/backup-run">{{template "csrf" .}}<button class="btn primary">{{.T "action.backup"}}</button></form>{{else}}<a class="btn primary" href="backups">{{.T "action.choose"}}</a>{{end}}{{end}}
 </section>
 
 <div id="issues" data-live class="stack">{{range .Overview.Issues}}
 <section class="callout callout-{{.Kind}}">
   <div class="grow"><h2>{{.Title}}</h2><p>{{.Text}}</p></div>
-  {{if .Action}}<form method="post" action="/action/{{.Action}}">{{template "csrf" $}}{{if .Version}}<input type="hidden" name="version" value="{{.Version}}">{{end}}<button class="btn">{{.Label}}</button></form>{{else if .Href}}<a class="btn" href="{{.Href}}">{{.Label}}</a>{{end}}
+  {{if .Action}}<form method="post" action="action/{{.Action}}">{{template "csrf" $}}{{if .Version}}<input type="hidden" name="version" value="{{.Version}}">{{end}}<button class="btn">{{.Label}}</button></form>{{else if .Href}}<a class="btn" href="{{.Href}}">{{.Label}}</a>{{end}}
 </section>{{end}}</div>
 
 {{with .Jobs}}<div id="tiles" data-live class="tiles">
@@ -96,7 +96,7 @@
 {{range $i, $s := .Sets}}<section class="card">
   <div class="row">
     <div class="grow"><h2>{{.Name}}</h2>{{range .Folders}}<code class="path">{{.}}</code>{{end}}</div>
-    <form method="post" action="/action/backup-run">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn primary">{{$.T "action.backup"}}</button></form>
+    <form method="post" action="action/backup-run">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn primary">{{$.T "action.backup"}}</button></form>
   </div>
   <div id="run-{{$i}}" data-live class="stack">
     {{with .Run}}
@@ -114,7 +114,7 @@
   </div>
   <details>
     <summary>{{$.T "set.excludes"}}</summary>
-    <form method="post" action="/action/settings-excludes" class="fields">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}">
+    <form method="post" action="action/settings-excludes" class="fields">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}">
       <label class="wide">{{$.T "set.excludes.label"}}<input name="excludes" value="{{.Excluded}}" placeholder="*.iso, node_modules, cache/" autocomplete="off" spellcheck="false"></label>
       <button class="btn">{{$.T "action.save"}}</button>
       <p class="muted full">{{$.T "set.excludes.hint"}}</p>
@@ -123,13 +123,13 @@
   <details>
     <summary>{{$.T "set.remove"}}</summary>
     <p>{{$.T "set.remove.text"}}</p>
-    <form method="post" action="/action/backup-remove">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn danger">{{$.T "set.remove.confirm" .Name}}</button></form>
+    <form method="post" action="action/backup-remove">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn danger">{{$.T "set.remove.confirm" .Name}}</button></form>
   </details>
 </section>{{end}}
 
 <section class="card card-new">
   <h2>{{.T "add.title"}}</h2>
-  <form method="post" action="/action/backup-add" class="fields">{{template "csrf" .}}
+  <form method="post" action="action/backup-add" class="fields">{{template "csrf" .}}
     <label>{{.T "add.name"}}<input name="name" required autocomplete="off" spellcheck="false" placeholder="documents"></label>
     <label class="wide">{{.T "add.folder"}}<input name="folder" required autocomplete="off" spellcheck="false" class="mono"></label>
     <button class="btn primary">{{.T "add.button"}}</button>
@@ -140,7 +140,7 @@
 {{with .Jobs}}<section class="card">
   <div class="row">
     <div class="grow"><h2>{{$.T "verify.title"}}</h2><p class="muted">{{$.T "verify.intro"}}</p></div>
-    <form method="post" action="/action/backup-verify">{{template "csrf" $}}<button class="btn">{{$.T "verify.button"}}</button></form>
+    <form method="post" action="action/backup-verify">{{template "csrf" $}}<button class="btn">{{$.T "verify.button"}}</button></form>
   </div>
   <div id="verify" data-live>{{if .Verifications}}<div class="scroll"><table>
     <thead><tr><th>{{$.T "verify.when"}}</th><th>{{$.T "verify.version"}}</th><th>{{$.T "verify.read"}}</th><th>{{$.T "verify.compared"}}</th><th>{{$.T "verify.result"}}</th></tr></thead>
@@ -164,7 +164,7 @@
 
 <section class="card card-new">
   <div><h2>{{.T "pair.title"}}</h2><p class="muted">{{.T "pair.intro"}}</p></div>
-  <form method="post" action="/action/device-pair" class="fields" autocomplete="off">{{template "csrf" .}}
+  <form method="post" action="action/device-pair" class="fields" autocomplete="off">{{template "csrf" .}}
     <label class="full">{{.T "pair.code"}}<input name="code" required autocomplete="off" autocapitalize="none" spellcheck="false" class="mono" placeholder="rn3:pair:"></label>
     <label class="full">{{.T "pair.phrase"}}<textarea name="phrase" rows="2" required autocomplete="off" autocapitalize="none" spellcheck="false"></textarea></label>
     <label class="check grow"><input type="checkbox" name="storage"><span>{{.T "pair.storage"}}</span></label>
@@ -218,7 +218,7 @@
 
 {{with .Jobs}}<section class="card">
   <h2>{{$.T "schedule.title"}}</h2>
-  <form method="post" action="/action/settings-schedule" class="fields">{{template "csrf" $}}
+  <form method="post" action="action/settings-schedule" class="fields">{{template "csrf" $}}
     <label>{{$.T "schedule.backup"}}<select name="every">{{range $.Every}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
     <label>{{$.T "schedule.verify"}}<select name="verify_every">{{range $.Verify}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
     <label>{{$.T "schedule.cleanup"}}<select name="cleanup_every">{{range $.Cleanup}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
@@ -229,7 +229,7 @@
 <section class="card">
   <h2>{{$.T "retention.title"}}</h2>
   <p class="muted">{{$.T "retention.intro"}}</p>
-  <form method="post" action="/action/settings-retention" class="fields">{{template "csrf" $}}
+  <form method="post" action="action/settings-retention" class="fields">{{template "csrf" $}}
     <label>{{$.T "retention.days"}}<input type="number" min="0" name="days" value="{{.Retention.Days}}" required></label>
     <label>{{$.T "retention.daily"}}<input type="number" min="0" name="daily" value="{{.Retention.Daily}}" required></label>
     <label>{{$.T "retention.weekly"}}<input type="number" min="0" name="weekly" value="{{.Retention.Weekly}}" required></label>
@@ -241,7 +241,7 @@
 <section class="card">
   <h2>{{$.T "speed.title"}}</h2>
   <p class="muted">{{$.T "speed.intro"}}</p>
-  <form method="post" action="/action/settings-bandwidth" class="fields">{{template "csrf" $}}
+  <form method="post" action="action/settings-bandwidth" class="fields">{{template "csrf" $}}
     <label>{{$.T "speed.upload"}}<input type="number" min="0" name="upload_kbps" value="{{.UploadKBps}}" required></label>
     <label>{{$.T "speed.download"}}<input type="number" min="0" name="download_kbps" value="{{.DownloadKBps}}" required></label>
     <button class="btn">{{$.T "action.save"}}</button>
@@ -257,7 +257,7 @@
     {{if .Failed}}<div><dt>{{$.T "updates.failed"}}</dt><dd class="bad">{{range $i, $v := .Failed}}{{if $i}}, {{end}}{{$v}}{{end}}</dd></div>{{end}}
   </dl></div>
   <p class="muted">{{$.T "updates.intro"}}</p>
-  <form method="post" action="/action/settings-channel" class="fields">{{template "csrf" $}}
+  <form method="post" action="action/settings-channel" class="fields">{{template "csrf" $}}
     <fieldset class="full"><legend>{{$.T "channel.title"}}</legend>
       <label class="check"><input type="radio" name="channel" value="stable"{{if ne .Channel "early"}} checked{{end}}><span><strong>{{$.T "channel.stable"}}</strong> {{$.T "channel.stable.text"}}</span></label>
       <label class="check"><input type="radio" name="channel" value="early"{{if eq .Channel "early"}} checked{{end}}><span><strong>{{$.T "channel.early"}}</strong> {{$.T "channel.early.text"}}</span></label>
@@ -265,9 +265,9 @@
     <button class="btn">{{$.T "action.save"}}</button>
   </form>
   <div class="row">
-    <form method="post" action="/action/update-check">{{template "csrf" $}}<button class="btn">{{$.T "updates.check"}}</button></form>
-    {{if .Available}}<form method="post" action="/action/update-apply">{{template "csrf" $}}<button class="btn primary">{{$.T "issue.update.button" .Available}}</button></form>{{end}}
-    {{range .Failed}}<form method="post" action="/action/update-retry">{{template "csrf" $}}<input type="hidden" name="version" value="{{.}}"><button class="btn">{{$.T "updates.retry" .}}</button></form>{{end}}
+    <form method="post" action="action/update-check">{{template "csrf" $}}<button class="btn">{{$.T "updates.check"}}</button></form>
+    {{if .Available}}<form method="post" action="action/update-apply">{{template "csrf" $}}<button class="btn primary">{{$.T "issue.update.button" .Available}}</button></form>{{end}}
+    {{range .Failed}}<form method="post" action="action/update-retry">{{template "csrf" $}}<input type="hidden" name="version" value="{{.}}"><button class="btn">{{$.T "updates.retry" .}}</button></form>{{end}}
   </div>
 </section>{{end}}
 {{end}}
@@ -278,7 +278,7 @@
 <section class="card">
   <div class="row">
     <div class="grow"><h2>{{.T "diag.title"}}</h2><p class="muted">{{.T "diag.text"}}</p></div>
-    <a class="btn" href="/diagnostics.zip">{{.T "diag.button"}}</a>
+    <a class="btn" href="diagnostics.zip">{{.T "diag.button"}}</a>
   </div>
 </section>
 
@@ -351,7 +351,7 @@
 
 {{if not .Err}}<section class="card card-new">
   <h2>{{if .IsFile}}{{$.T "restore.this.file"}}{{else if .Root}}{{$.T "restore.this.folder" .Here}}{{else}}{{$.T "restore.this.all"}}{{end}}</h2>
-  <form method="post" action="/action/restore-start" class="fields">{{template "csrf" $}}
+  <form method="post" action="action/restore-start" class="fields">{{template "csrf" $}}
     <input type="hidden" name="device" value="{{.Device}}"><input type="hidden" name="snapshot" value="{{.Snapshot}}"><input type="hidden" name="root" value="{{.Root}}"><input type="hidden" name="sub" value="{{.Sub}}">
     <label class="wide">{{$.T "restore.folder"}}<input name="folder" value="{{.Folder}}" required autocomplete="off" spellcheck="false" class="mono"></label>
     <button class="btn primary">{{$.T "restore.button"}}</button>

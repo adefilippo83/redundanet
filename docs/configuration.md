@@ -109,7 +109,7 @@ What is in it:
 | `manifest.yaml`, `manifest.sig` | The last good signed manifest, for offline starts. |
 | `backup.yaml` | Above. |
 | `local.sqlite` | The device's local database: files by scan key and hash, capabilities, placement, restore tests. A cache, rebuilt when lost. |
-| `api.addr`, `api.token` | Where the local API listens and the bearer token the CLI uses, mode 0600. |
+| `api.addr`, `api.token` | Where the local API listens and the token the CLI proves itself with, mode 0600. The CLI signs its requests with the token and never sends it. |
 | `service.log` | The service's output on macOS; Linux uses the journal. |
 | `spool/` | Staging for uploads. |
 | `versions/`, `updates/state.yaml` | Downloaded releases and the self-updater's record, including candidates that failed probation. |
@@ -125,7 +125,7 @@ Removing the data directory removes everything the agent knows; `redundanet serv
 
 ## The local API
 
-The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 127.0.0.1:4470`), never on the LAN. The CLI reads `api.addr` and `api.token` from the data directory. A browser gets in only through `redundanet open`, whose link works once and for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every form carries a CSRF token; the API refuses any request whose Host is not loopback and any change whose Origin is not the page; no GET changes anything; the page loads its stylesheet and its one script from the agent itself and nothing from anywhere else. Its language is the browser's until one is chosen in its menu (cookie `redundanet_lang`). A headless node is reached over an SSH tunnel: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
+The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 127.0.0.1:4470`), never on the LAN. The CLI reads `api.addr` and `api.token` from the data directory. A browser gets in only through `redundanet open`, whose link works once and for two minutes, sets an HttpOnly, SameSite=Strict session cookie and leads to the session's own address (`/s/<key>/`), the only path the cookie is sent to; every form carries a CSRF token; the API refuses any request whose Host is not loopback and any change whose Origin is not the page; no GET changes anything; the page loads its stylesheet and its one script from the agent itself and nothing from anywhere else. Its language is the browser's until one is chosen in its menu (cookie `redundanet_lang`). A headless node is reached over an SSH tunnel: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
 
 ## Agent flags
 

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,8 @@ import (
 type Client struct {
 	addr, token string
 	http        *http.Client
+	once        sync.Once // the server's proof, asked once
+	proven      error
 }
 
 // NewClient talks to the agent at addr with the bearer token.
@@ -32,11 +35,14 @@ func NewClient(addr, token string) *Client {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, out any) error {
+	if err := c.verifyServer(ctx); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.addr+path, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.sign(req, nil)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -58,11 +64,14 @@ func (c *Client) doJSON(ctx context.Context, method, path string, in, out any) e
 	if err != nil {
 		return err
 	}
+	if err := c.verifyServer(ctx); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.addr+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	c.sign(req, body)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
