@@ -187,6 +187,12 @@ only. Hub changes additionally need `fly deploy`. Nodes pick up images via
   with injected runners/clocks; the monitor (`src/redundanet/monitor/`) is
   pure logic. Keep both that way.
 - The human maintainer does all commits, tags, and pushes.
+- Workflows name every action by commit, with the version in a comment
+  (Dependabot moves both). `process-join-request.yml` runs for any
+  stranger's issue: the jobs that run scripts or packages hold a read-only
+  token, the job that opens the pull request takes only the manifest from
+  them, and the job that reports the `validate` check runs nothing but
+  `actions/github-script`. Keep that split.
 - Docs describe what the code DOES, not what it should do. When behavior and
   docs disagree, fixing the drift is part of the change. `docs/legacy/` is
   frozen except for the banner.

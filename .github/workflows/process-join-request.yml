@@ -4,16 +4,23 @@ on:
   issues:
     types: [opened, labeled]
 
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  checks: write
+# Any stranger's issue starts this workflow, and the issue body is theirs.
+# So the work is split by what each part may do. The job that reads the
+# body and runs the scripts, and the job that validates the result, hold a
+# read-only token and no credential in the checkout. The job that opens
+# the pull request runs nothing but the checkout and the action that opens
+# it, and takes one file from the first job: the manifest. The job that
+# reports the required "validate" check and closes the issue runs no
+# checkout, no package and no third-party action. Every action is pinned
+# to a commit; the Python packages come from poetry.lock.
+permissions: {}
 
 jobs:
-  process-join-request:
-    name: Process membership request
+  label:
+    name: Label the issue
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     # GitHub drops the `labels=join-request` query param from the website's
     # "new issue" link for applicants without triage permission, so the label is
     # usually absent on `opened`. Process when a maintainer has applied the
@@ -30,10 +37,9 @@ jobs:
        (contains(github.event.issue.body, 'RedundaNet 3 membership') ||
         contains(github.event.issue.body, 'RedundaNet 3 storage device') ||
         contains(github.event.issue.body, 'New Node Application')))
-
     steps:
       - name: Ensure join-request label
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -62,8 +68,25 @@ jobs:
               });
             }
 
+  parse:
+    name: Read the request and edit the manifest
+    runs-on: ubuntu-latest
+    needs: label
+    permissions:
+      contents: read
+    outputs:
+      kind: ${{ steps.process.outputs.kind }}
+      success: ${{ steps.process.outputs.success }}
+      error: ${{ steps.process.outputs.error }}
+      pr_title: ${{ steps.process.outputs.pr_title }}
+      pr_body: ${{ steps.process.outputs.pr_body }}
+      commit_message: ${{ steps.process.outputs.commit_message }}
+      next_steps: ${{ steps.process.outputs.next_steps }}
+    steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Dispatch on the body marker. The RedundaNet 3 markers win when both
       # are present; the v3 script tells a membership request from a storage
@@ -84,18 +107,26 @@ jobs:
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          pip install pyyaml httpx pgpy
+      # The locked environment, as validate.yml installs it: poetry.lock
+      # names every package with its hash.
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
 
-      # The agent's validator (`go run ./cmd/redundanet validate`) runs inline
-      # below, the same way validate.yml runs it on pull requests.
+      - name: Install the locked packages
+        run: poetry install --no-interaction
+
+      # A storage device request's certificate is verified by the checkout's
+      # own agent (`go run ./cmd/redundanet identity verify-certificate`).
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
@@ -106,10 +137,7 @@ jobs:
       # the manifest textually (the v3 half and manifest.sig's revision
       # survive), write outputs with random-delimiter heredocs, and exit
       # non-zero with `success=false` and an `error` on any failure; the
-      # steps continue so the applicant gets the reason as a comment. A
-      # storage device request's certificate is verified by the checkout's
-      # own agent (`go run ./cmd/redundanet identity verify-certificate`),
-      # which is why Go is set up before this step.
+      # steps continue so the applicant gets the reason as a comment.
       - name: Parse the issue and update the manifest (RedundaNet 3)
         id: v3
         if: steps.kind.outputs.kind == 'v3'
@@ -118,7 +146,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-        run: python .github/scripts/process_join_v3.py
+        run: poetry run python .github/scripts/process_join_v3.py
 
       - name: Parse the issue and update the manifest (RedundaNet 2)
         id: v2
@@ -128,13 +156,13 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-        run: python .github/scripts/process_join.py
+        run: poetry run python .github/scripts/process_join.py
 
-      # One set of outputs for the steps below, whichever script ran:
+      # One set of outputs for the jobs below, whichever script ran:
       # success, error, pr_title, pr_body, commit_message, next_steps.
       - name: Collect the result
         id: process
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           KIND: ${{ steps.kind.outputs.kind }}
           V3_OUTPUTS: ${{ toJSON(steps.v3.outputs) }}
@@ -156,60 +184,132 @@ jobs:
             }
             core.setOutput('kind', kind);
 
-      - name: Create Pull Request
+      # The one thing the next job takes from this one.
+      - name: Hand the manifest over
         if: steps.process.outputs.success == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: manifest
+          path: manifests/manifest.yaml
+          if-no-files-found: error
+          retention-days: 1
+
+  open-pr:
+    name: Open the pull request
+    runs-on: ubuntu-latest
+    needs: parse
+    if: needs.parse.outputs.success == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      head_sha: ${{ steps.create-pr.outputs.pull-request-head-sha }}
+      url: ${{ steps.create-pr.outputs.pull-request-url }}
+    steps:
+      # This job holds the write token, so it runs no script of the
+      # repository's and no package: the checkout, a copy, and the action.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the edited manifest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: manifest
+          path: ${{ runner.temp }}/join
+
+      # Only the manifest comes over, as a plain file, and nothing else in
+      # the tree may differ from main.
+      - name: Put the manifest in place
+        run: |
+          f="$RUNNER_TEMP/join/manifest.yaml"
+          test -f "$f" && test ! -L "$f" || { echo "no manifest came from the parse job"; exit 1; }
+          test "$(find "$RUNNER_TEMP/join" -mindepth 1 | wc -l)" -eq 1 || { echo "the parse job handed over more than the manifest"; exit 1; }
+          cp "$f" manifests/manifest.yaml
+          changed="$(git status --porcelain)"
+          test "$changed" = " M manifests/manifest.yaml" || { echo "unexpected changes:"; echo "$changed"; exit 1; }
+
+      - name: Create Pull Request
         id: create-pr
         # v6 (early 2024) rotted against the 2026 runners: its git base-repo
         # check started failing with HTTP 400 (seen on issue #82). Keep this
         # action on the current major.
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
           # A PR opened with GITHUB_TOKEN cannot trigger the pull_request-based
           # validate.yml (GitHub's recursion guard), so that required check
           # would stay "Expected — waiting for status to be reported". Rather
-          # than require a PAT, the steps below validate the manifest inline and
+          # than require a PAT, the jobs below validate the manifest and
           # report the "validate" check directly onto this PR's head commit.
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: ${{ steps.process.outputs.commit_message }}
-          title: ${{ steps.process.outputs.pr_title }}
-          body: ${{ steps.process.outputs.pr_body }}
+          add-paths: manifests/manifest.yaml
+          commit-message: ${{ needs.parse.outputs.commit_message }}
+          title: ${{ needs.parse.outputs.pr_title }}
+          body: ${{ needs.parse.outputs.pr_body }}
           branch: join-request/${{ github.event.issue.number }}
           delete-branch: true
           labels: |
             node-addition
             automated
 
-      # The step above leaves the working tree on the base branch again, with
-      # main's manifest in it. What is validated below must be the pull
-      # request's own commit: validating main's manifest passes every time
-      # and reports a manifest as valid that nobody looked at (it did, for
-      # the pull request of issue #254).
+  # validate.yml (pull_request) does not run on this bot-created PR, so the
+  # same checks run here, on the pull request's own commit: validating
+  # main's manifest passes every time and reports a manifest as valid that
+  # nobody looked at (it did, for the pull request of issue #254).
+  validate:
+    name: Validate the pull request's manifest
+    runs-on: ubuntu-latest
+    needs: open-pr
+    permissions:
+      contents: read
+    outputs:
+      outcome: ${{ steps.validate.outcome }}
+      failed: ${{ steps.validate.outputs.failed }}
+      signature: ${{ steps.signature.outcome }}
+    steps:
       - name: Check out the pull request's commit
-        if: steps.process.outputs.success == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.open-pr.outputs.head_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Check that it is the pull request's commit and changes the manifest
         env:
-          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
+          HEAD_SHA: ${{ needs.open-pr.outputs.head_sha }}
         run: |
           test -n "$HEAD_SHA" || { echo "no pull request head to validate"; exit 1; }
-          git fetch --quiet origin "$HEAD_SHA"
-          git checkout --quiet --detach "$HEAD_SHA"
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-          git diff --quiet "origin/${{ github.event.repository.default_branch }}" -- manifests/ \
-            && { echo "the pull request's commit does not change the manifest: nothing to validate"; exit 1; } || true
+          if git diff --quiet HEAD^ HEAD -- manifests/; then
+            echo "the pull request's commit does not change the manifest: nothing to validate"
+            exit 1
+          fi
 
-      # validate.yml (pull_request) does not run on this bot-created PR, so the
-      # required "validate" check is reported from here instead: run the same
-      # checks validate.yml runs, all of them even when one fails, then publish
-      # a check run named "validate" on the PR head.
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
+        with:
+          version: 1.7.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install the locked packages
+        run: poetry install --no-interaction
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      # The checks validate.yml runs, all of them even when one fails.
       - name: Validate the generated manifest
-        if: steps.process.outputs.success == 'true'
         id: validate
         continue-on-error: true
-        env:
-          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
         run: |
-          # Never report on another tree than the pull request's.
-          test "$(git rev-parse HEAD)" = "$HEAD_SHA" || { echo "failed=the tree validated is not the pull request's" >> "$GITHUB_OUTPUT"; exit 1; }
-          pip install . --quiet
           failed=""
           check() {
             local name="$1"
@@ -220,9 +320,9 @@ jobs:
             fi
           }
           for m in manifests/*.yaml; do
-            check "redundanet validate $m" redundanet validate "$m"
-            check "validate_pr.py $m" python .github/scripts/validate_pr.py "$m"
-            check "validate_v3_members.py $m" python .github/scripts/validate_v3_members.py "$m"
+            check "redundanet validate $m" poetry run redundanet validate "$m"
+            check "validate_pr.py $m" poetry run python .github/scripts/validate_pr.py "$m"
+            check "validate_v3_members.py $m" poetry run python .github/scripts/validate_v3_members.py "$m"
           done
           cd agent
           for m in ../manifests/*.yaml; do
@@ -236,7 +336,6 @@ jobs:
       # manifest.sig cannot match yet. REDUNDANET_OPERATOR_KEY pins the key
       # when it is set, as in validate.yml.
       - name: Check the manifest signature (informational)
-        if: steps.process.outputs.success == 'true'
         id: signature
         continue-on-error: true
         env:
@@ -249,14 +348,26 @@ jobs:
             go run ./cmd/redundanet manifest verify --manifest ../manifests/manifest.yaml
           fi
 
+  # The required check is written here, by a job that runs nothing but
+  # GitHub's own script action: no checkout, no package, no other action.
+  report:
+    name: Report the check and close the issue
+    runs-on: ubuntu-latest
+    needs: [parse, open-pr, validate]
+    # Also when the validate job broke: the pull request then gets a failing
+    # check, not a missing one.
+    if: always() && needs.open-pr.result == 'success'
+    permissions:
+      checks: write
+      issues: write
+    steps:
       - name: Report the required "validate" check on the PR
-        if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
-          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
-          FAILED_CHECKS: ${{ steps.validate.outputs.failed }}
-          SIGNATURE_OUTCOME: ${{ steps.signature.outcome }}
+          HEAD_SHA: ${{ needs.open-pr.outputs.head_sha }}
+          VALIDATE_OUTCOME: ${{ needs.validate.outputs.outcome }}
+          FAILED_CHECKS: ${{ needs.validate.outputs.failed }}
+          SIGNATURE_OUTCOME: ${{ needs.validate.outputs.signature }}
         with:
           script: |
             const sha = process.env.HEAD_SHA;
@@ -288,17 +399,16 @@ jobs:
               core.setFailed('Manifest validation failed; reported a failing "validate" check.');
             }
 
+      # Pass values through env and read them with process.env rather than
+      # interpolating ${{ … }} into the script body, so a value can never be
+      # parsed as JavaScript. The comment text comes from the script that
+      # processed the request (next steps for the member) with the PR link
+      # filled in here. Skipped when the check above failed.
       - name: Close issue
-        if: steps.process.outputs.success == 'true'
-        uses: actions/github-script@v9
-        # Pass values through env and read them with process.env rather than
-        # interpolating ${{ … }} into the script body, so a value can never be
-        # parsed as JavaScript. The comment text comes from the script that
-        # processed the request (next steps for the member) with the PR link
-        # filled in here.
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          NEXT_STEPS: ${{ steps.process.outputs.next_steps }}
-          PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
+          NEXT_STEPS: ${{ needs.parse.outputs.next_steps }}
+          PR_URL: ${{ needs.open-pr.outputs.url }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         with:
           script: |
@@ -319,37 +429,40 @@ jobs:
               state: 'closed'
             });
 
-      - name: Comment on issue - Failure
-        if: steps.process.outputs.success != 'true'
-        uses: peter-evans/create-or-update-comment@v5
-        with:
-          issue-number: ${{ github.event.issue.number }}
-          body: |
-            ## ❌ Application Processing Failed
-
-            There was an error processing your application:
-
-            > ${{ steps.process.outputs.error }}
-
-            Please check your submission and try again, or contact a maintainer for help.
-
-            ---
-            *If you believe this is an error, please comment below.*
-
-      - name: Add failure label
-        if: steps.process.outputs.success != 'true'
-        uses: actions/github-script@v9
+  failure:
+    name: Tell the applicant what went wrong
+    runs-on: ubuntu-latest
+    needs: parse
+    if: always() && needs.parse.result != 'skipped' && needs.parse.result != 'cancelled' && needs.parse.outputs.success != 'true'
+    permissions:
+      issues: write
+    steps:
+      - name: Comment on the issue and label it
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ERROR: ${{ needs.parse.outputs.error }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         with:
           script: |
-            github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: ${{ github.event.issue.number }},
-              labels: ['needs-attention']
-            })
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.ISSUE_NUMBER);
+            const error = process.env.ERROR || 'The processing job stopped before reporting a result; see the workflow log.';
+            const body = [
+              '## ❌ Application Processing Failed',
+              '',
+              'There was an error processing your application:',
+              '',
+              '> ' + error.split('\n').join('\n> '),
+              '',
+              'Please check your submission and try again, or contact a maintainer for help.',
+              '',
+              '---',
+              '*If you believe this is an error, please comment below.*',
+            ].join('\n');
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            await github.rest.issues.addLabels({ owner, repo, issue_number, labels: ['needs-attention'] });
 
       - name: Fail the run
-        if: steps.process.outputs.success != 'true'
         run: |
           echo "::error::The request could not be processed; the reason is in the comment on the issue."
           exit 1
