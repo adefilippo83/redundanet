@@ -53,6 +53,12 @@ func (d *Descriptor) check() error {
 	if err := d.Params().check(); err != nil {
 		return err
 	}
+	if d.Size > MaxObjectSize {
+		return fmt.Errorf("object: descriptor size %d is above %d", d.Size, uint64(MaxObjectSize))
+	}
+	if n := d.Geometry().Segments(); n < 1 || n > MaxSegments {
+		return fmt.Errorf("object: descriptor has %d segments, at most %d", n, MaxSegments)
+	}
 	if len(d.ShareRoots) != int(d.N) {
 		return fmt.Errorf("object: descriptor lists %d share roots for n=%d", len(d.ShareRoots), d.N)
 	}

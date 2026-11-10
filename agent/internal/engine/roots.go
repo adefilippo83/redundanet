@@ -105,6 +105,9 @@ func (e *Native) PutRoot(ctx context.Context, root Root) (uint64, error) {
 	if acks < w {
 		return v, fmt.Errorf("%w: %d of %d, needed %d", ErrQuorum, acks, len(servers), w)
 	}
+	if err := e.cfg.DB.ConfirmRootVersion(v); err != nil {
+		e.log.Warn("confirmed root version not recorded", "version", v, "err", err)
+	}
 	return v, nil
 }
 
@@ -159,6 +162,10 @@ func (e *Native) GetRoots(ctx context.Context, member identity.Key) (*Roots, err
 	}
 	if highestOwn > 0 {
 		_ = e.cfg.DB.RecoverRootVersion(highestOwn)
+	}
+	if member == e.cfg.Member {
+		out.Own = highestOwn
+		out.Confirmed, _ = e.cfg.DB.RootConfirmed()
 	}
 	return out, nil
 }

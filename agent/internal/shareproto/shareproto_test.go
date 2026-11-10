@@ -662,6 +662,21 @@ func TestTransitionAccountsTheOldEncodingAtZero(t *testing.T) {
 	if err := c.PutShare(ctx, peer, sd, 0, func(s int) ([]byte, error) { return blocks[s], nil }); err != nil {
 		t.Fatalf("over the cap during the transition: %v", err)
 	}
+	// The exemption is for what is stored under the new encoding. A new
+	// object under the retiring one is measured against everything the
+	// owner holds here, old shares included, so the old encoding is not a
+	// way around the cap.
+	w.pol.mu.Lock()
+	w.pol.capFor[w.server.key] = 30000
+	w.pol.mu.Unlock()
+	more := encode(t, w.server, 3*8192+100, 12)
+	if err := c.PutShare(ctx, peer, more.sd, 0, func(s int) ([]byte, error) { return more.blocks[0][s], nil }); !isStatus(err, StatusQuota) {
+		t.Fatalf("a new share under the retiring encoding, past the cap with the old shares counted: %v", err)
+	}
+	// Under the new encoding the same cap still has room.
+	if err := c.PutShare(ctx, peer, sd, 1, func(s int) ([]byte, error) { return nil, errors.New("not sent") }); isStatus(err, StatusQuota) {
+		t.Fatalf("a share under the new encoding within the cap: %v", err)
+	}
 }
 
 // TestLocalOpener is a device as a client of its own server: the same

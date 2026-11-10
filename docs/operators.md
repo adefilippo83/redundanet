@@ -75,7 +75,7 @@ network:
   encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2026-12-03}
 ```
 
-`validate` refuses a transition whose `to` is not the encoding and warns once the deadline has passed. Until the deadline every server accounts shares under the old encoding at zero, so a member near budget converts without deleting first. Each device converts what its own snapshots reference, every six hours on its own and on `redundanet backup rebalance`; the status page shows the conversion as a bar, with the old encoding's bytes and whether they count yet, and per member the objects still to convert. Once every member has converted, remove the transition, raise the revision, sign. Encoding is per object at upload time: nothing is re-encoded except by the owner's devices.
+`validate` refuses a transition whose `to` is not the encoding and warns once the deadline has passed. Until the deadline every server accounts shares under the old encoding at zero when it decides on a share under the new one, so a member near budget converts without deleting first. A new share under the old encoding gets no such exemption: it is measured against everything the member holds, so the old encoding is not a way around the quota. Each device converts what its own snapshots reference, every six hours on its own and on `redundanet backup rebalance`; the status page shows the conversion as a bar, with the old encoding's bytes and whether they count yet, and per member the objects still to convert. Once every member has converted, remove the transition, raise the revision, sign. Encoding is per object at upload time: nothing is re-encoded except by the owner's devices.
 
 ## Grace, minimum version, signature age
 

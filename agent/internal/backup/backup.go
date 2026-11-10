@@ -207,6 +207,14 @@ func (r *run) currentIndex(ctx context.Context) (*snapshot.Index, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The new snapshot is added to the list this root names and the result
+	// published over it. A list read from too few servers, or from servers
+	// that return an older root than this device confirmed, would be
+	// published without the snapshots made since: the run stops instead
+	// and the next one tries again.
+	if err := roots.Trusted(); err != nil {
+		return nil, fmt.Errorf("backup: %w", err)
+	}
 	empty := &snapshot.Index{Version: snapshot.IndexVersion, Device: r.cfg.Device.String()}
 	for _, v := range roots.Views {
 		if v.Device != r.cfg.Device || v.Root == nil || v.Root.IndexCap == "" {
