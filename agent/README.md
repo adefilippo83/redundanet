@@ -286,8 +286,10 @@ Host is not loopback and any change whose Origin is not the page, and no
 GET changes anything. These are the guards the RFC's Browser safety
 section lists.
 
-Self-update needs a release key embedded at build time (`-X
-.../version.ReleaseKey=`); a plain build has none and says so. The running
+Self-update needs a release version and the release key. The key is
+written in `internal/version`; the version is set by
+`scripts/build-agent.sh` when a release is built, and a plain build is
+`dev`, which never updates itself and says so. The running
 agent checks the signed index hourly and on start. When a newer release
 fits its channel, or the manifest's `min_version` requires one, it
 downloads the asset, checks its hash and size, closes its own endpoint,

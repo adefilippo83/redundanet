@@ -202,7 +202,7 @@ func (u *Updater) Status() Status {
 // nil when there is none.
 func (u *Updater) Check(ctx context.Context) (*release.Release, error) {
 	if !u.Enabled() {
-		return nil, errors.New("self-update is disabled: no release key in this build")
+		return nil, errors.New("self-update is disabled: this build has no release version or no release key")
 	}
 	u.reload()
 	u.mu.Lock()
@@ -355,7 +355,7 @@ func commit(candidate, exe string) error {
 // an update is installed (ErrRestart is returned).
 func (u *Updater) Run(ctx context.Context) error {
 	if !u.Enabled() {
-		u.log.Info("self-update disabled: no release key in this build")
+		u.log.Info("self-update disabled: this build has no release version or no release key")
 		<-ctx.Done()
 		return nil
 	}

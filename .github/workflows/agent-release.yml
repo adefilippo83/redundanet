@@ -82,36 +82,17 @@ jobs:
         run: |
           echo "windows=$([ -n "$SIGNPATH" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "macos=$([ -n "$APPLE" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - name: version resource for the Windows binary
-        # Product name and version in the executable's properties, which
-        # Windows shows and SignPath requires. The strings are in
-        # cmd/redundanet/versioninfo.json, the version comes from the tag,
-        # and the object is named for windows/amd64 so the other targets
-        # ignore it.
-        run: |
-          version="${GITHUB_REF_NAME#agent/v}"
-          go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0 -64 \
-            -file-version "$version" -product-version "$version" \
-            -o cmd/redundanet/resource_windows_amd64.syso cmd/redundanet/versioninfo.json
       - name: build every target
-        env:
-          CGO_ENABLED: "0"
-          # The release key's public half, a repository variable (it is not
-          # a secret); without it the binary cannot self-update and says so.
-          RELEASE_KEY: ${{ vars.REDUNDANET_RELEASE_KEY }}
-          INDEX_URL: ${{ vars.REDUNDANET_RELEASE_INDEX_URL }}
+        # scripts/build-agent.sh is the whole recipe, and takes nothing from
+        # this workflow but the version: the maintainer's scripts/sign.sh
+        # runs the same script from the same tag on the laptop and signs
+        # only when every binary on the release equals the one built there.
+        # The release key and the index address are in
+        # agent/internal/version, not in a repository variable.
         run: |
           set -e
           version="${GITHUB_REF_NAME#agent/v}"
-          pkg=github.com/adefilippo83/redundanet/agent/internal/version
-          flags="-s -w -X $pkg.Version=$version"
-          [ -n "$RELEASE_KEY" ] && flags="$flags -X $pkg.ReleaseKey=$RELEASE_KEY"
-          [ -n "$INDEX_URL" ] && flags="$flags -X $pkg.ReleaseIndexURL=$INDEX_URL"
-          mkdir -p dist
-          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
-            os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
-            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "dist/redundanet-$version-$os-$arch/redundanet$ext" ./cmd/redundanet
-          done
+          ../scripts/build-agent.sh "$version" dist
           # The Windows binary moves to a fixed path: uploaded alone from
           # there, the artifact holds redundanet.exe at its root, which is
           # the layout the SignPath artifact configuration and the release
