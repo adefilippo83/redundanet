@@ -102,11 +102,15 @@ The hub updates itself like a node: every hour it checks the signed release
 index on its channel (`--channel early` in the unit), downloads the asset,
 checks its hash, hands the relay, the status listener and the collector to
 the candidate, which runs `hub --probation` on the same ports and reports
-healthy once every device that was connected is back on a channel, then
-renames the new binary into place beside `redundanet.old` and exits for
-systemd to restart it. Devices see two reconnects of a few seconds. A
+healthy once the devices that were connected are back on a channel: all of
+them, or after thirty seconds every storage device among them and at least
+half of all, since a laptop may have gone to sleep meanwhile (a storage
+device that stays away is the candidate's fault until proven otherwise).
+Then the new binary is renamed into place beside `redundanet.old` and the
+hub exits for systemd to restart it. Devices see two reconnects of a few seconds. A
 candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`
-and never retried until `redundanet update retry VERSION`.
+and never retried until `redundanet update retry VERSION`; the journal line
+from the candidate names the devices that did not come back.
 
 By hand, for an emergency: download the asset, check its hash, `install` it
 over `/var/lib/redundanet3/bin/redundanet` owned by `redundanet3`, and

@@ -1,131 +1,364 @@
-<!doctype html>
-<html lang="en">
+{{define "head"}}<!doctype html>
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>RedundaNet</title>
-<style>
-:root { --bg:#faf9f5; --fg:#141413; --muted:#5e5d59; --line:#e8e6dc; --card:#ffffff; --ok:#2c7a4b; --warn:#b4540a; --bad:#b42318; --accent:#2c7be5; }
-@media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#f0efe9; --muted:#a5a39b; --line:#2b2a27; --card:#1d1c1a; } }
-* { box-sizing: border-box }
-body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif }
-header { padding: 20px 24px; border-bottom: 1px solid var(--line); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
-header h1 { font-size: 18px; margin:0 }
-header .meta { color: var(--muted); font-size: 13px }
-main { padding: 16px 24px 40px; max-width: 1100px }
-.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px }
-.card { background:var(--card); border:1px solid var(--line); border-radius: 10px; padding: 14px 16px }
-.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px }
-.kv { display:grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px }
-.kv b { font-weight: 500; color: var(--muted) }
-code { font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all }
-code.cmd { word-break: normal; white-space: nowrap }
-.ok { color: var(--ok) } .warn { color: var(--warn) } .bad { color: var(--bad) }
-table { width:100%; border-collapse: collapse; font-size: 14px }
-th, td { text-align:left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
-th { color: var(--muted); font-weight: 500; font-size: 12.5px }
-.msg { background: var(--card); border-left: 3px solid var(--accent); padding: 10px 14px; margin: 0 0 16px; border-radius: 6px }
-form { display:inline } button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--fg); cursor: pointer }
-pre { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 12px; overflow:auto; max-height: 320px }
-.settings{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:0 0 10px}.settings b{min-width:90px}.settings label{display:inline-flex;gap:4px;align-items:center}.settings input,.settings select{font:inherit;padding:2px 4px}.settings .muted{flex-basis:100%}
-</style>
-</head>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>{{end}}
+
+{{define "csrf"}}<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="back" value="{{.Back}}">{{end}}
+
+{{define "language"}}<form method="post" action="/action/language" class="lang">{{template "csrf" .}}
+  <label for="lang">{{.T "lang.label"}}</label>
+  <select id="lang" name="lang" data-autosubmit>{{range .Langs}}<option value="{{.Code}}" lang="{{.Code}}"{{if eq .Code $.Lang}} selected{{end}}>{{.Name}}</option>{{end}}</select>
+  <button class="btn small nojs">{{.T "lang.set"}}</button>
+</form>{{end}}
+
+{{define "icon-check"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{end}}
+{{define "icon-alert"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>{{end}}
+{{define "icon-sync"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>{{end}}
+{{define "icon-dot"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 12h10"/></svg>{{end}}
+
+{{define "page"}}{{template "head" .}}
 <body>
-<header>
-  <h1>RedundaNet</h1>
-  <span class="meta">{{.Network}} · {{.Version}} · up {{.Uptime}}</span>
+<header class="top">
+  <a class="brand" href="/"><span class="logo" aria-hidden="true">R</span><span class="brand-text"><strong>RedundaNet</strong><span class="muted">{{if .Network}}{{.Network}} · {{end}}{{.Version}}</span></span></a>
+  <span id="online" data-live class="grow">{{if eq .Online "up"}}<span class="pill pill-ok">{{.T "online.up"}}</span>{{else if eq .Online "down"}}<span class="pill pill-bad">{{.T "online.down"}}</span>{{end}}</span>
+  {{template "language" .}}
 </header>
+<div class="shell">
+<nav aria-label="{{.T "nav.label"}}">{{range .Nav}}<a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
 <main>
-{{if .Message}}<p class="msg">{{.Message}}</p>{{end}}
-<div class="grid">
-  <div class="card"><h2>This device</h2><div class="kv">
-    <b>help</b><span><a href="/diagnostics.zip">Download a diagnostics bundle</a> to send when something is wrong: versions, counts and redacted log lines, no file names, no addresses, nothing uploaded</span>
-    <b>member</b><span><code>{{.Member}}</code><br><small>{{.MemberCode}}</small></span>
-    {{if eq .Admission "listed"}}<b>status</b><span class="ok">listed in the manifest</span>{{else if eq .Admission "waiting"}}<b>status</b><span class="warn">not in the manifest yet: send the <a href="https://redundanet.com/join.html">join request</a> (<code>redundanet join-request</code> fills it in); the maintainer admits you by signing</span>{{end}}
-    <b>device</b><code>{{.Device}}</code>
-    <b>roles</b><span>{{range .Roles}}{{.}} {{end}}</span>
-    <b>data</b><code>{{.DataDir}}</code>
-  </div></div>
-  {{with .Membership}}<div class="card"><h2>Network</h2><div class="kv">
-    <b>manifest</b><span>revision {{.Revision}}, signed {{since .SignedAt}}{{if .Expired}} <span class="warn">signature expired: new devices are refused until an operator re-signs</span>{{end}}</span>
-    <b>members</b><span>{{.Members}} · {{.Hubs}} hubs · {{.Revocations}} revocations</span>
-    <b>last fetch</b><span>{{since .LastFetch}}{{if .LastError}} <span class="bad">{{.LastError}}</span>{{end}}</span>
-    {{if .NeedsUpdate}}<b>required</b><span class="warn">the network requires version {{.NeedsUpdate}}</span>{{end}}
-  </div></div>{{end}}
-  {{with .Update}}<div class="card"><h2>Updates</h2><div class="kv">
-    <b>running</b><span>{{.Running}} on the {{.Channel}} channel</span>
-    <b>available</b><span>{{if .Available}}<span class="ok">{{.Available}}</span>{{else if .Enabled}}none{{else}}<span class="warn">disabled in this build</span>{{end}}</span>
-    <b>last check</b><span>{{since .LastCheck}}{{if .LastError}} <span class="bad">{{.LastError}}</span>{{end}}</span>
-    {{if .Failed}}<b>failed</b><span>{{range .Failed}}<span class="bad">{{.}}</span> <form method="post" action="/action/update-retry"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="version" value="{{.}}"><button>Retry</button></form> {{end}}</span>{{end}}
-  </div>
-  <p style="margin:10px 0 0">
-    <form method="post" action="/action/update-check"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Check now</button></form>
-    {{if .Available}}<form method="post" action="/action/update-apply"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Install {{.Available}}</button></form>{{end}}
-  </p></div>{{end}}
-  {{with .Repair}}<div class="card"><h2>Repair</h2><div class="kv">
-    <b>now</b><span>{{if .Running}}<span class="ok">repairing {{.Running}}</span>{{else}}idle{{end}}{{if .Queued}}, {{.Queued}} queued{{end}}</span>
-    <b>since start</b><span>{{.Done}} tasks done, {{.Failed}} failed, {{.Released}} surplus shares released</span>
-    {{if .Last}}<b>last</b><span>{{since .LastAt}}: {{.Last}}</span>{{end}}
-  </div></div>{{end}}
-  {{with .Jobs}}<div class="card"><h2>Backups</h2>
-  {{if .Sets}}<table>
-  <tr><th>set</th><th>folders</th><th>last run</th><th>result</th></tr>
-  {{range .Runs}}<tr><td>{{.Set}}</td><td>{{range $i, $f := (index $.Jobs.Sets 0).Folders}}{{if $i}}, {{end}}{{$f}}{{end}}</td>
-    <td>{{if .Running}}<span class="ok">running</span>{{with .Progress}} · {{.Phase}}, {{.Files}} files, {{.Uploaded}} bytes sent{{end}}{{else}}{{since .LastAt}}{{end}}</td>
-    <td>{{range .Needs}}<span class="bad">{{.}}</span><br>{{end}}{{if .LastErr}}<span class="bad">{{.LastErr}}</span>{{else if .Last}}{{.Last.Snapshot.Files}} files, {{.Last.Snapshot.Skipped}} skipped{{with .Last.SkipReasons}} ({{.}}){{end}}{{if .Last.Snapshot.Partial}}, <span class="warn">partial</span>{{end}}, root {{.Last.RootVersion}}{{end}}</td></tr>{{end}}
-  </table>{{else}}<p class="muted">No backup set yet: <code class="cmd">redundanet backup add NAME FOLDER</code></p>{{end}}
-  <div class="kv" style="margin-top:8px"><b>every</b><span>{{.Every}}{{if or .UploadKBps .DownloadKBps}}; bandwidth: upload {{if .UploadKBps}}{{.UploadKBps}} kB/s{{else}}no cap{{end}}, download {{if .DownloadKBps}}{{.DownloadKBps}} kB/s{{else}}no cap{{end}}{{end}}</span>
-    {{with .Budget}}<b>allocation</b><span>{{printf "%.1f" .UsedGB}} of {{.AllowedGB}} GB used{{if .Exhausted}}, <span class="bad">used up: prune snapshots or ask for more</span>{{else if lt .Answered .Servers}} (from {{.Answered}} of {{.Servers}} servers){{end}}</span>{{end}}
-    <b>restore tests</b><span>every {{.VerifyEvery}}{{if .VerifyStreak}}, <span class="ok">{{.VerifyStreak}} week{{if ne .VerifyStreak 1}}s{{end}} in a row passing</span>{{end}}</span>
-    <b>last verified restore</b><span>{{with .LastVerify}}{{since .At}}: {{.Verified}} of {{.Sampled}} files read back{{if .Failed}}, <span class="bad">{{len .Failed}} failed</span>{{end}}{{else}}never{{end}}</span>
-    <b>cleanup</b><span>{{if .Cleaning}}<span class="ok">running</span>{{else}}{{with .LastCleanup}}{{since .At}}: {{.Reachable}} objects live, {{.Tombstoned}} deleted{{if .Recent}}, {{.Recent}} waiting out the immunity{{end}}{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}{{else}}never{{end}}{{end}}</span>
-    {{with .Rebalance}}<b>encoding</b><span>{{if .Running}}<span class="ok">converting {{.From}} to {{.To}}</span>: snapshot {{.Done}} of {{.Snapshots}}, {{.Objects}} objects re-encoded{{else if .Nothing}}nothing to convert{{else}}{{since .At}}: {{.Done}} of {{.Snapshots}} snapshots under {{.To}}, {{.Objects}} objects re-encoded{{if .Err}} <span class="bad">{{.Err}}</span>{{end}}{{end}}</span>{{end}}
-    {{with .Restore}}<b>restore</b><span>{{if .Running}}running: {{.Path}} to {{.Target}}{{else if .Err}}<span class="bad">{{.Err}}</span>{{else if .Report}}{{.Report.Files}} files to {{.Target}}{{if .Report.Exceptions}}, {{len .Report.Exceptions}} exceptions{{end}}{{end}}</span>{{end}}
-  </div>
-  {{if .Verifications}}<table style="margin-top:8px">
-  <tr><th>restore test</th><th>snapshot</th><th>read back</th><th>compared</th><th>result</th></tr>
-  {{range .Verifications}}<tr><td>{{.At.Format "2006-01-02 15:04"}}</td><td>{{.Snapshot}}</td><td>{{.Verified}} of {{.Sampled}}</td><td>{{.Compared}}</td><td>{{if .Passed}}<span class="ok">passed</span>{{else}}<span class="bad">{{len .Failed}} failed</span>{{end}}</td></tr>{{end}}
-  </table>{{end}}
-  <p style="margin:10px 0 0">
-    <form method="post" action="/action/backup-run"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Back up now</button></form>
-    <form method="post" action="/action/backup-verify"><input type="hidden" name="csrf" value="{{$.CSRF}}"><button>Restore test</button></form>
-  </p></div>
-  <div class="card"><h2>Settings</h2>
-  <form method="post" action="/action/settings-schedule" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <b>schedule</b><label>backups every <input name="every" value="{{.Every}}" size="8"></label><label>restore test every <input name="verify_every" value="{{.VerifyEvery}}" size="8"></label><label>cleanup every <input name="cleanup_every" value="{{.CleanupEvery}}" size="8"></label><button>Save</button>
-    <span class="muted">durations like 24h, 168h; backups at most hourly, the others at most daily</span></form>
-  <form method="post" action="/action/settings-retention" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <b>retention</b><label>everything for <input name="days" value="{{.Retention.Days}}" size="3"> days</label><label>then one a day for <input name="daily" value="{{.Retention.Daily}}" size="3"> days</label><label>one a week for <input name="weekly" value="{{.Retention.Weekly}}" size="3"> weeks</label><label>one a month for <input name="monthly" value="{{.Retention.Monthly}}" size="3"> months</label><button>Save</button></form>
-  <form method="post" action="/action/settings-bandwidth" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <b>bandwidth</b><label>upload <input name="upload_kbps" value="{{.UploadKBps}}" size="6"> kB/s</label><label>download <input name="download_kbps" value="{{.DownloadKBps}}" size="6"> kB/s</label><button>Save</button>
-    <span class="muted">0 is no cap; applies at once to every mesh stream</span></form>
-  {{with $.Update}}<form method="post" action="/action/settings-channel" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <b>channel</b><label><select name="channel"><option value="stable"{{if eq .Channel "stable"}} selected{{end}}>stable</option><option value="early"{{if eq .Channel "early"}} selected{{end}}>early</option></select></label><button>Save</button>
-    <span class="muted">early takes pre-releases; the next hourly check uses the choice</span></form>{{end}}
-  {{range .Sets}}<form method="post" action="/action/settings-excludes" class="settings"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="set" value="{{.Name}}">
-    <b>excludes of {{.Name}}</b><label><input name="excludes" value="{{range $i, $e := .Excludes}}{{if $i}}, {{end}}{{$e}}{{end}}" size="40" placeholder="*.iso, node_modules, cache/"></label><button>Save</button>
-    <span class="muted">base-name globs or relative prefixes, beside the defaults</span></form>{{end}}
-  </div>{{end}}
-  {{with .Service}}<div class="card"><h2>Service</h2><div class="kv">
-    <b>installed</b><span>{{if .Installed}}<span class="ok">yes</span>{{else}}no: run <code class="cmd">redundanet service install</code>{{end}}</span>
-    <b>running</b><span>{{if .Running}}<span class="ok">yes</span>{{else}}{{if .Installed}}<span class="warn">no</span>{{else}}this process{{end}}{{end}}</span>
-    {{if .Path}}<b>unit</b><code>{{.Path}}</code>{{end}}
-  </div></div>{{end}}
-</div>
-{{with .Transport}}
-<div class="card" style="margin-bottom:14px"><h2>Hubs</h2>
-<table><tr><th>hub</th><th>channel</th><th>carrier</th><th>sees me as</th><th>since</th><th>reconnects</th></tr>
-{{range .Hubs}}<tr><td><code>{{.Hub}}</code></td><td>{{if .Up}}<span class="ok">up</span>{{else}}<span class="bad">down{{if .LastError}}: {{.LastError}}{{end}}</span>{{end}}</td><td>{{.Carrier}}</td><td><code>{{.Observed}}</code></td><td>{{since .Since}}</td><td>{{.Reconnects}}</td></tr>{{end}}
-</table></div>
-<div class="card" style="margin-bottom:14px"><h2>Peers</h2>
-{{if .Sessions}}<table><tr><th>device</th><th>member</th><th>relay</th><th>direct</th><th>role</th><th>last event</th></tr>
-{{range .Sessions}}<tr><td><code>{{short .Peer}}</code></td><td><code>{{short .Member}}</code></td><td>{{if .Relay}}<span class="ok">up</span>{{else}}<span class="muted">no</span>{{end}}</td><td>{{if .Direct}}<span class="ok">{{.Direct}}</span>{{else}}no{{end}}</td><td>{{if .Dialer}}dialer{{else}}listener{{end}}</td><td>{{with .Events}}{{(index . (lastIndex .)).What}}{{end}}</td></tr>{{end}}
-</table>{{else}}<p class="meta">No peers yet.</p>{{end}}
-</div>
-{{end}}
-<div class="card"><h2>Log</h2>
-<pre>{{range .Logs}}{{.Time.Format "15:04:05"}} {{.Level}} {{.Msg}} {{.Attrs}}
-{{end}}</pre></div>
+<p id="gone" class="flash flash-bad" role="alert" hidden>{{.T "session.gone"}}</p>
+{{with .Flash}}<p class="flash {{if .Bad}}flash-bad{{else}}flash-ok{{end}}" role="status">{{.Text}}</p>{{end}}
+{{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "restore"}}{{template "restore" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else}}{{template "advanced" .}}{{end}}
 </main>
+</div>
 </body>
-</html>
+</html>{{end}}
+
+{{define "overview"}}
+<section id="hero" data-live class="hero hero-{{.Overview.State}}">
+  <span class="hero-icon" aria-hidden="true">{{if eq .Overview.State "protected"}}{{template "icon-check"}}{{else if eq .Overview.State "attention"}}{{template "icon-alert"}}{{else if eq .Overview.State "running"}}{{template "icon-sync"}}{{else}}{{template "icon-dot"}}{{end}}</span>
+  <div class="grow">
+    <h1>{{.Overview.Title}}</h1>
+    <p class="muted">{{.Overview.Sub}}</p>
+    {{if eq .Overview.State "running"}}<progress aria-label="{{.T "hero.running.title"}}"></progress>{{end}}
+  </div>
+  {{if .Jobs}}{{if .Jobs.Sets}}<form method="post" action="/action/backup-run">{{template "csrf" .}}<button class="btn primary">{{.T "action.backup"}}</button></form>{{else}}<a class="btn primary" href="/backups">{{.T "action.choose"}}</a>{{end}}{{end}}
+</section>
+
+<div id="issues" data-live class="stack">{{range .Overview.Issues}}
+<section class="callout callout-{{.Kind}}">
+  <div class="grow"><h2>{{.Title}}</h2><p>{{.Text}}</p></div>
+  {{if .Action}}<form method="post" action="/action/{{.Action}}">{{template "csrf" $}}{{if .Version}}<input type="hidden" name="version" value="{{.Version}}">{{end}}<button class="btn">{{.Label}}</button></form>{{else if .Href}}<a class="btn" href="{{.Href}}">{{.Label}}</a>{{end}}
+</section>{{end}}</div>
+
+{{with .Jobs}}<div id="tiles" data-live class="tiles">
+  <section class="tile">
+    <h2>{{$.T "tile.backup"}}</h2>
+    <p class="big">{{$.Since $.Overview.LastBackup}}</p>
+    {{if not $.Overview.LastBackup.IsZero}}<p class="muted">{{$.T "tile.backup.detail" $.Overview.Files ($.Bytes $.Overview.Bytes)}}</p>{{end}}
+    <p class="muted">{{$.T "tile.backup.schedule"}} {{range $.Every}}{{if .Selected}}{{.Label}}{{end}}{{end}}</p>
+  </section>
+  <section class="tile">
+    <h2>{{$.T "tile.verify"}}</h2>
+    {{if .Verifications}}{{with index .Verifications 0}}<p class="big {{if .Passed}}ok{{else}}bad{{end}}">{{if .Passed}}{{$.T "verify.passed"}}{{else}}{{$.T "verify.failed"}}{{end}}</p>
+    <p class="muted">{{$.Since .At}} · {{$.T "tile.verify.detail" .Verified .Sampled}}</p>{{end}}{{else}}<p class="big">{{$.T "time.never"}}</p><p class="muted">{{$.T "tile.verify.none"}}</p>{{end}}
+    {{if .VerifyStreak}}<p class="muted">{{$.T "tile.verify.streak" .VerifyStreak}}</p>{{end}}
+  </section>
+  <section class="tile">
+    <h2>{{$.T "tile.space"}}</h2>
+    {{with .Budget}}<p class="big">{{printf "%.1f" .UsedGB}} / {{.AllowedGB}} GB</p>
+    <meter min="0" max="{{.AllowedGB}}" value="{{printf "%.2f" .UsedGB}}">{{printf "%.1f" .UsedGB}} / {{.AllowedGB}} GB</meter>
+    {{if lt .Answered .Servers}}<p class="muted">{{$.T "tile.space.partial" .Answered .Servers}}</p>{{end}}{{else}}<p class="big">{{$.T "tile.space.unknown"}}</p><p class="muted">{{$.T "tile.space.unknown.detail"}}</p>{{end}}
+  </section>
+</div>{{end}}
+
+{{with .Placement}}<section class="card">
+  <h2>{{$.T "where.title"}}</h2>
+  <p>{{$.T "where.text" .N .K}}</p>
+  <p class="muted">{{$.T "where.servers" .Servers}}</p>
+</section>{{end}}
+
+{{if .Overview.Activity}}<section id="activity" data-live class="card">
+  <h2>{{.T "activity.title"}}</h2>
+  <ul class="rows">{{range .Overview.Activity}}<li><span class="muted when">{{$.Since .At}}</span><span class="what">{{.Text}}</span></li>{{end}}</ul>
+</section>{{end}}
+{{end}}
+
+{{define "backups"}}
+<div class="head"><h1>{{.T "backups.title"}}</h1><p class="muted">{{.T "backups.intro"}}</p></div>
+
+{{range $i, $s := .Sets}}<section class="card">
+  <div class="row">
+    <div class="grow"><h2>{{.Name}}</h2>{{range .Folders}}<code class="path">{{.}}</code>{{end}}</div>
+    <form method="post" action="/action/backup-run">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn primary">{{$.T "action.backup"}}</button></form>
+  </div>
+  <div id="run-{{$i}}" data-live class="stack">
+    {{with .Run}}
+    {{if .Running}}<progress aria-label="{{$.T "hero.running.title"}}"></progress><p class="muted">{{with .Progress}}{{$.T "run.progress" .Files ($.Bytes .Uploaded)}}{{else}}{{$.T "run.starting"}}{{end}}</p>{{end}}
+    {{range .Needs}}<p class="bad">{{.}}</p>{{end}}
+    {{if .LastErr}}<p class="bad">{{.LastErr}}</p>{{end}}
+    <dl class="facts">
+      <div><dt>{{$.T "fact.last"}}</dt><dd>{{$.Since .LastAt}}</dd></div>
+      {{with .Last}}<div><dt>{{$.T "fact.files"}}</dt><dd>{{.Snapshot.Files}}</dd></div>
+      <div><dt>{{$.T "fact.size"}}</dt><dd>{{$.Bytes .Snapshot.Bytes}}</dd></div>
+      <div><dt>{{$.T "fact.skipped"}}</dt><dd>{{.Snapshot.Skipped}}{{with .SkipReasons}} ({{.}}){{end}}</dd></div>
+      {{if .Snapshot.Partial}}<div><dt>{{$.T "fact.state"}}</dt><dd class="warn">{{$.T "fact.partial"}}</dd></div>{{end}}{{end}}
+    </dl>
+    {{else}}<p class="muted">{{$.T "run.never"}}</p>{{end}}
+  </div>
+  <details>
+    <summary>{{$.T "set.excludes"}}</summary>
+    <form method="post" action="/action/settings-excludes" class="fields">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}">
+      <label class="wide">{{$.T "set.excludes.label"}}<input name="excludes" value="{{.Excluded}}" placeholder="*.iso, node_modules, cache/" autocomplete="off" spellcheck="false"></label>
+      <button class="btn">{{$.T "action.save"}}</button>
+      <p class="muted full">{{$.T "set.excludes.hint"}}</p>
+    </form>
+  </details>
+  <details>
+    <summary>{{$.T "set.remove"}}</summary>
+    <p>{{$.T "set.remove.text"}}</p>
+    <form method="post" action="/action/backup-remove">{{template "csrf" $}}<input type="hidden" name="set" value="{{.Name}}"><button class="btn danger">{{$.T "set.remove.confirm" .Name}}</button></form>
+  </details>
+</section>{{end}}
+
+<section class="card card-new">
+  <h2>{{.T "add.title"}}</h2>
+  <form method="post" action="/action/backup-add" class="fields">{{template "csrf" .}}
+    <label>{{.T "add.name"}}<input name="name" required autocomplete="off" spellcheck="false" placeholder="documents"></label>
+    <label class="wide">{{.T "add.folder"}}<input name="folder" required autocomplete="off" spellcheck="false" class="mono"></label>
+    <button class="btn primary">{{.T "add.button"}}</button>
+    <p class="muted full">{{.T "add.hint"}}</p>
+  </form>
+</section>
+
+{{with .Jobs}}<section class="card">
+  <div class="row">
+    <div class="grow"><h2>{{$.T "verify.title"}}</h2><p class="muted">{{$.T "verify.intro"}}</p></div>
+    <form method="post" action="/action/backup-verify">{{template "csrf" $}}<button class="btn">{{$.T "verify.button"}}</button></form>
+  </div>
+  <div id="verify" data-live>{{if .Verifications}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "verify.when"}}</th><th>{{$.T "verify.version"}}</th><th>{{$.T "verify.read"}}</th><th>{{$.T "verify.compared"}}</th><th>{{$.T "verify.result"}}</th></tr></thead>
+    <tbody>{{range .Verifications}}<tr><td>{{.At.Format "2006-01-02 15:04"}}</td><td>{{.Snapshot}}</td><td>{{$.T "count.of" .Verified .Sampled}}</td><td>{{.Compared}}</td><td>{{if .Passed}}<span class="ok">{{$.T "verify.passed"}}</span>{{else}}<span class="bad">{{$.T "verify.failed"}} ({{len .Failed}})</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="muted">{{$.T "tile.verify.none"}}</p>{{end}}</div>
+</section>{{end}}
+{{end}}
+
+{{define "network"}}
+<div class="head"><h1>{{.T "network.title"}}</h1><p class="muted">{{.T "network.intro"}}</p></div>
+
+<section id="devices" data-live class="card">
+  <div><h2>{{.T "devices.title"}}</h2><p class="muted">{{.T "devices.intro"}}</p></div>
+  {{if .Paired}}<div class="scroll"><table>
+    <thead><tr><th>{{.T "devices.name"}}</th><th>{{.T "device.roles"}}</th><th>{{.T "devices.paired"}}</th><th>{{.T "devices.link"}}</th></tr></thead>
+    <tbody>{{range .Paired}}<tr><td><strong>{{if .Name}}{{.Name}}{{else}}{{.Short}}{{end}}</strong><br><code>{{.Short}}</code></td><td>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</td><td>{{$.Since .PairedAt}}</td>
+      <td>{{if eq .Link "direct"}}<span class="ok">{{$.T "link.direct"}}</span>{{else if eq .Link "relay"}}<span class="ok">{{$.T "link.relay"}}</span>{{else}}<span class="muted">{{$.T "link.none"}}</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="muted">{{.T "devices.none"}}</p>{{end}}
+  {{if and .JoinURL .JoinDevice}}<p><a href="{{.JoinURL}}">{{.T "issue.node.title" .JoinDevice}}</a> {{.T "issue.node.text"}}</p>{{end}}
+</section>
+
+<section class="card card-new">
+  <div><h2>{{.T "pair.title"}}</h2><p class="muted">{{.T "pair.intro"}}</p></div>
+  <form method="post" action="/action/device-pair" class="fields" autocomplete="off">{{template "csrf" .}}
+    <label class="full">{{.T "pair.code"}}<input name="code" required autocomplete="off" autocapitalize="none" spellcheck="false" class="mono" placeholder="rn3:pair:"></label>
+    <label class="full">{{.T "pair.phrase"}}<textarea name="phrase" rows="2" required autocomplete="off" autocapitalize="none" spellcheck="false"></textarea></label>
+    <label class="check grow"><input type="checkbox" name="storage"><span>{{.T "pair.storage"}}</span></label>
+    <button class="btn primary">{{.T "pair.button"}}</button>
+    <p class="muted full">{{.T "pair.warn"}}</p>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{.T "device.title"}}</h2>
+  <dl class="facts">
+    <div><dt>{{.T "device.status"}}</dt><dd>{{if eq .Admission "listed"}}<span class="ok">{{.T "device.listed"}}</span>{{else if eq .Admission "waiting"}}<span class="warn">{{.T "device.waiting"}}</span> <a href="{{if .JoinURL}}{{.JoinURL}}{{else}}https://redundanet.com/join.html{{end}}">{{.T "issue.waiting.button"}}</a>{{else}}–{{end}}</dd></div>
+    <div><dt>{{.T "device.roles"}}</dt><dd>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</dd></div>
+    <div class="full"><dt>{{.T "device.member"}}</dt><dd><code>{{.Member}}</code><br><span class="muted">{{.MemberCode}}</span></dd></div>
+    <div class="full"><dt>{{.T "device.key"}}</dt><dd><code>{{.Device}}</code></dd></div>
+  </dl>
+</section>
+
+{{with .Membership}}<section id="membership" data-live class="card">
+  <h2>{{$.T "members.title"}}</h2>
+  <dl class="facts">
+    <div><dt>{{$.T "members.count"}}</dt><dd>{{.Members}}</dd></div>
+    <div><dt>{{$.T "members.hubs"}}</dt><dd>{{.Hubs}}</dd></div>
+    <div><dt>{{$.T "members.revision"}}</dt><dd>{{.Revision}}{{if .Expired}} <span class="warn">{{$.T "issue.expired.title"}}</span>{{end}}</dd></div>
+    <div><dt>{{$.T "members.signed"}}</dt><dd>{{$.Since .SignedAt}}</dd></div>
+    <div><dt>{{$.T "members.checked"}}</dt><dd>{{$.Since .LastFetch}}{{if .LastError}} <span class="bad">{{.LastError}}</span>{{end}}</dd></div>
+    <div><dt>{{$.T "members.revocations"}}</dt><dd>{{.Revocations}}</dd></div>
+    {{if .NeedsUpdate}}<div><dt>{{$.T "members.required"}}</dt><dd class="warn">{{.NeedsUpdate}}</dd></div>{{end}}
+  </dl>
+</section>{{end}}
+
+{{with .Transport}}<section id="hubs" data-live class="card">
+  <h2>{{$.T "hubs.title"}}</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>{{$.T "hubs.hub"}}</th><th>{{$.T "hubs.state"}}</th><th>{{$.T "hubs.carrier"}}</th><th>{{$.T "hubs.observed"}}</th><th>{{$.T "hubs.since"}}</th><th>{{$.T "hubs.reconnects"}}</th></tr></thead>
+    <tbody>{{range .Hubs}}<tr><td><code>{{.Hub}}</code></td><td>{{if .Up}}<span class="ok">{{$.T "state.up"}}</span>{{else}}<span class="bad">{{$.T "state.down"}}{{if .LastError}}: {{.LastError}}{{end}}</span>{{end}}</td><td>{{.Carrier}}</td><td><code>{{.Observed}}</code></td><td>{{$.Since .Since}}</td><td>{{.Reconnects}}</td></tr>{{end}}</tbody>
+  </table></div>
+</section>
+<section id="peers" data-live class="card">
+  <h2>{{$.T "peers.title"}}</h2>
+  <p class="muted">{{$.T "peers.intro"}}</p>
+  {{if .Sessions}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "peers.device"}}</th><th>{{$.T "peers.member"}}</th><th>{{$.T "peers.relay"}}</th><th>{{$.T "peers.direct"}}</th><th>{{$.T "peers.last"}}</th></tr></thead>
+    <tbody>{{range .Sessions}}<tr><td><code>{{short .Peer}}</code></td><td><code>{{short .Member}}</code></td><td>{{if .Relay}}<span class="ok">{{$.T "state.yes"}}</span>{{else}}{{$.T "state.no"}}{{end}}</td><td>{{if .Direct}}<span class="ok">{{.Direct}}</span>{{else}}{{$.T "state.no"}}{{end}}</td><td>{{with .Events}}{{(index . (lastIndex .)).What}}{{end}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}<p class="muted">{{$.T "peers.none"}}</p>{{end}}
+</section>{{end}}
+{{end}}
+
+{{define "settings"}}
+<div class="head"><h1>{{.T "settings.title"}}</h1><p class="muted">{{.T "settings.intro"}}</p></div>
+
+{{with .Jobs}}<section class="card">
+  <h2>{{$.T "schedule.title"}}</h2>
+  <form method="post" action="/action/settings-schedule" class="fields">{{template "csrf" $}}
+    <label>{{$.T "schedule.backup"}}<select name="every">{{range $.Every}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+    <label>{{$.T "schedule.verify"}}<select name="verify_every">{{range $.Verify}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+    <label>{{$.T "schedule.cleanup"}}<select name="cleanup_every">{{range $.Cleanup}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+    <button class="btn">{{$.T "action.save"}}</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{$.T "retention.title"}}</h2>
+  <p class="muted">{{$.T "retention.intro"}}</p>
+  <form method="post" action="/action/settings-retention" class="fields">{{template "csrf" $}}
+    <label>{{$.T "retention.days"}}<input type="number" min="0" name="days" value="{{.Retention.Days}}" required></label>
+    <label>{{$.T "retention.daily"}}<input type="number" min="0" name="daily" value="{{.Retention.Daily}}" required></label>
+    <label>{{$.T "retention.weekly"}}<input type="number" min="0" name="weekly" value="{{.Retention.Weekly}}" required></label>
+    <label>{{$.T "retention.monthly"}}<input type="number" min="0" name="monthly" value="{{.Retention.Monthly}}" required></label>
+    <button class="btn">{{$.T "action.save"}}</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{$.T "speed.title"}}</h2>
+  <p class="muted">{{$.T "speed.intro"}}</p>
+  <form method="post" action="/action/settings-bandwidth" class="fields">{{template "csrf" $}}
+    <label>{{$.T "speed.upload"}}<input type="number" min="0" name="upload_kbps" value="{{.UploadKBps}}" required></label>
+    <label>{{$.T "speed.download"}}<input type="number" min="0" name="download_kbps" value="{{.DownloadKBps}}" required></label>
+    <button class="btn">{{$.T "action.save"}}</button>
+  </form>
+</section>{{end}}
+
+{{with .Update}}<section class="card">
+  <h2>{{$.T "updates.title"}}</h2>
+  <div id="update" data-live><dl class="facts">
+    <div><dt>{{$.T "updates.running"}}</dt><dd>{{.Running}}</dd></div>
+    <div><dt>{{$.T "updates.available"}}</dt><dd>{{if .Available}}<span class="ok">{{.Available}}</span>{{else if .Enabled}}{{$.T "updates.none"}}{{else}}<span class="warn">{{$.T "updates.disabled"}}</span>{{end}}</dd></div>
+    <div><dt>{{$.T "updates.checked"}}</dt><dd>{{$.Since .LastCheck}}{{if .LastError}} <span class="bad">{{.LastError}}</span>{{end}}</dd></div>
+    {{if .Failed}}<div><dt>{{$.T "updates.failed"}}</dt><dd class="bad">{{range $i, $v := .Failed}}{{if $i}}, {{end}}{{$v}}{{end}}</dd></div>{{end}}
+  </dl></div>
+  <p class="muted">{{$.T "updates.intro"}}</p>
+  <form method="post" action="/action/settings-channel" class="fields">{{template "csrf" $}}
+    <fieldset class="full"><legend>{{$.T "channel.title"}}</legend>
+      <label class="check"><input type="radio" name="channel" value="stable"{{if ne .Channel "early"}} checked{{end}}><span><strong>{{$.T "channel.stable"}}</strong> {{$.T "channel.stable.text"}}</span></label>
+      <label class="check"><input type="radio" name="channel" value="early"{{if eq .Channel "early"}} checked{{end}}><span><strong>{{$.T "channel.early"}}</strong> {{$.T "channel.early.text"}}</span></label>
+    </fieldset>
+    <button class="btn">{{$.T "action.save"}}</button>
+  </form>
+  <div class="row">
+    <form method="post" action="/action/update-check">{{template "csrf" $}}<button class="btn">{{$.T "updates.check"}}</button></form>
+    {{if .Available}}<form method="post" action="/action/update-apply">{{template "csrf" $}}<button class="btn primary">{{$.T "issue.update.button" .Available}}</button></form>{{end}}
+    {{range .Failed}}<form method="post" action="/action/update-retry">{{template "csrf" $}}<input type="hidden" name="version" value="{{.}}"><button class="btn">{{$.T "updates.retry" .}}</button></form>{{end}}
+  </div>
+</section>{{end}}
+{{end}}
+
+{{define "advanced"}}
+<div class="head"><h1>{{.T "advanced.title"}}</h1><p class="muted">{{.T "advanced.intro"}}</p></div>
+
+<section class="card">
+  <div class="row">
+    <div class="grow"><h2>{{.T "diag.title"}}</h2><p class="muted">{{.T "diag.text"}}</p></div>
+    <a class="btn" href="/diagnostics.zip">{{.T "diag.button"}}</a>
+  </div>
+</section>
+
+<section id="internals" data-live class="card">
+  <h2>{{.T "internals.title"}}</h2>
+  <dl class="facts">
+    <div><dt>{{.T "internals.uptime"}}</dt><dd>{{.Uptime}}</dd></div>
+    {{with .Service}}<div><dt>{{$.T "internals.service"}}</dt><dd>{{if .Installed}}{{if .Running}}<span class="ok">{{$.T "service.running"}}</span>{{else}}<span class="warn">{{$.T "service.stopped"}}</span>{{end}}{{else}}{{$.T "service.none"}} <code>redundanet service install</code>{{end}}</dd></div>{{end}}
+    {{with .Repair}}<div><dt>{{$.T "internals.repair"}}</dt><dd>{{if .Running}}<span class="ok">{{$.T "repair.running" .Running}}</span>{{else}}{{$.T "repair.idle"}}{{end}}{{if .Queued}}, {{$.T "repair.queued" .Queued}}{{end}}</dd></div>
+    <div><dt>{{$.T "internals.repaired"}}</dt><dd>{{$.T "repair.totals" .Done .Failed .Released}}</dd></div>
+    {{if .Last}}<div class="full"><dt>{{$.T "internals.lastrepair"}}</dt><dd>{{$.Since .LastAt}}: {{.Last}}</dd></div>{{end}}{{end}}
+    {{with .Jobs}}<div><dt>{{$.T "internals.cleanup"}}</dt><dd>{{if .Cleaning}}<span class="ok">{{$.T "state.running"}}</span>{{else}}{{with .LastCleanup}}{{$.Since .At}}: {{$.T "cleanup.totals" .Reachable .Tombstoned .Recent}}{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}{{else}}{{$.T "time.never"}}{{end}}{{end}}</dd></div>
+    {{with .Rebalance}}<div><dt>{{$.T "internals.encoding"}}</dt><dd>{{if .Running}}<span class="ok">{{$.T "encoding.running" .From .To .Done .Snapshots}}</span>{{else if .Nothing}}{{$.T "encoding.nothing"}}{{else}}{{$.Since .At}}: {{$.T "encoding.done" .Done .Snapshots .To}}{{if .Err}} <span class="bad">{{.Err}}</span>{{end}}{{end}}</dd></div>{{end}}
+    {{with .Restore}}<div class="full"><dt>{{$.T "internals.restore"}}</dt><dd>{{if .Running}}{{$.T "restore.running" .Path .Target}}{{else if .Err}}<span class="bad">{{.Err}}</span>{{else if .Report}}{{$.T "activity.restore" .Report.Files .Target}}{{if .Report.Exceptions}} ({{len .Report.Exceptions}}){{end}}{{end}}</dd></div>{{end}}{{end}}
+    {{with .Service}}{{if .Path}}<div class="full"><dt>{{$.T "internals.unit"}}</dt><dd><code>{{.Path}}</code></dd></div>{{end}}{{end}}
+    <div class="full"><dt>{{.T "internals.data"}}</dt><dd><code>{{.DataDir}}</code></dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>{{.T "log.title"}}</h2>
+  <pre id="log" data-live tabindex="0">{{range .Logs}}{{.Time.Format "15:04:05"}} {{.Level}} {{.Msg}} {{.Attrs}}
+{{end}}</pre>
+</section>
+{{end}}
+
+{{define "restore"}}
+<div class="head"><h1>{{.T "restore.title"}}</h1><p class="muted">{{.T "restore.intro"}}</p></div>
+
+<div id="restoring" data-live class="stack">{{with .Jobs}}{{with .Restore}}
+<section class="callout {{if .Running}}callout-info{{else if .Err}}callout-bad{{else}}callout-ok{{end}}">
+  <div class="grow">
+    {{if .Running}}<h2>{{$.T "restore.running.title"}}</h2><p>{{$.T "restore.to" .Target}}</p><progress aria-label="{{$.T "restore.running.title"}}"></progress>
+    {{else if .Err}}<h2>{{$.T "restore.failed.title"}}</h2><p>{{.Err}}</p>
+    {{else if .Report}}<h2>{{if .Report.Exceptions}}{{$.T "restore.exceptions.title"}}{{else}}{{$.T "restore.done.title"}}{{end}}</h2>
+    <p>{{$.T "restore.done.text" .Report.Files ($.Bytes .Report.Bytes)}} {{$.T "restore.to" .Target}}</p>
+    {{if .Report.Exceptions}}<details><summary>{{$.T "restore.exceptions" (len .Report.Exceptions)}}</summary><ul class="plain">{{range .Report.Exceptions}}<li>{{.}}</li>{{end}}</ul></details>{{end}}{{end}}
+  </div>
+</section>{{end}}{{end}}</div>
+
+{{with .Restore}}
+{{if .Err}}<p class="flash flash-bad" role="alert">{{$.T "restore.unreadable"}} {{.Err}}</p>{{end}}
+
+{{if not .Browsing}}
+{{if lt .Answered .Servers}}<p class="muted">{{$.T "restore.partial" .Answered .Servers}}</p>{{end}}
+{{range .Devices}}<section class="card">
+  <div><h2>{{if .This}}{{$.T "restore.thisdevice"}}{{else}}{{$.T "restore.otherdevice"}}{{end}}</h2><code class="path">{{.Short}}</code></div>
+  {{if .Err}}<p class="muted">{{.Err}}</p>{{end}}
+  {{if .Versions}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "restore.version"}}</th><th>{{$.T "restore.set"}}</th><th>{{$.T "fact.files"}}</th><th>{{$.T "fact.size"}}</th></tr></thead>
+    <tbody>{{range .Versions}}<tr><td><a href="{{.Href}}">{{.At.Local.Format "2006-01-02 15:04"}}</a>{{if .Partial}} <span class="warn">{{$.T "restore.partialversion"}}</span>{{end}}</td><td>{{.Set}}</td><td>{{.Files}}</td><td>{{$.Bytes .Bytes}}</td></tr>{{end}}</tbody>
+  </table></div>{{end}}
+</section>{{else}}{{if not .Err}}<section class="card"><p class="muted">{{$.T "restore.nothing"}}</p></section>{{end}}{{end}}
+
+{{else}}
+<section class="card">
+  <div><h2>{{$.T "restore.versionof" .When}}</h2>
+  <p class="crumbs">{{range $i, $c := .Crumbs}}{{if $i}}<span aria-hidden="true"> / </span>{{end}}<a href="{{.Href}}">{{if $i}}{{.Label}}{{else}}{{$.T "restore.top"}}{{end}}</a>{{end}}</p></div>
+  {{if .IsFile}}<p>{{$.T "restore.onefile" .Here ($.Bytes .Bytes)}}</p>
+  {{else if .Entries}}<div class="scroll"><table>
+    <thead><tr><th>{{$.T "restore.name"}}</th><th>{{$.T "fact.size"}}</th><th>{{$.T "restore.changed"}}</th></tr></thead>
+    <tbody>{{range .Entries}}<tr>
+      <td>{{if .Href}}<a href="{{.Href}}"{{if .Dir}} class="dir"{{end}}>{{.Name}}{{if .Dir}}/{{end}}</a>{{else}}{{.Name}}{{end}}{{if .Skipped}} <span class="warn">{{$.T "restore.skipped" .Skipped}}</span>{{end}}</td>
+      <td>{{if .Dir}}{{$.T "restore.dirsize" .Files ($.Bytes .Bytes)}}{{else if not .Skipped}}{{$.Bytes .Bytes}}{{end}}</td>
+      <td>{{if not .At.IsZero}}{{.At.Local.Format "2006-01-02 15:04"}}{{end}}</td>
+    </tr>{{end}}</tbody>
+  </table></div>
+  {{else if not .Err}}<p class="muted">{{$.T "restore.empty"}}</p>{{end}}
+</section>
+
+{{if not .Err}}<section class="card card-new">
+  <h2>{{if .IsFile}}{{$.T "restore.this.file"}}{{else if .Root}}{{$.T "restore.this.folder" .Here}}{{else}}{{$.T "restore.this.all"}}{{end}}</h2>
+  <form method="post" action="/action/restore-start" class="fields">{{template "csrf" $}}
+    <input type="hidden" name="device" value="{{.Device}}"><input type="hidden" name="snapshot" value="{{.Snapshot}}"><input type="hidden" name="root" value="{{.Root}}"><input type="hidden" name="sub" value="{{.Sub}}">
+    <label class="wide">{{$.T "restore.folder"}}<input name="folder" value="{{.Folder}}" required autocomplete="off" spellcheck="false" class="mono"></label>
+    <button class="btn primary">{{$.T "restore.button"}}</button>
+    <label class="check full"><input type="checkbox" name="overwrite"><span>{{$.T "restore.overwrite"}}</span></label>
+    <p class="muted full">{{$.T "restore.hint"}}</p>
+  </form>
+</section>{{end}}
+{{end}}
+{{end}}
+{{end}}

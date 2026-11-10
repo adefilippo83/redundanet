@@ -95,7 +95,7 @@ jobs:
       # The agent's validator (`go run ./cmd/redundanet validate`) runs inline
       # below, the same way validate.yml runs it on pull requests.
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
