@@ -418,9 +418,11 @@ func (w *Worker) Release(h *wire.ReleaseHint) {
 }
 
 // release removes this node's copy of a share once the object would still
-// have every share number complete without it: the number itself on
-// another holder, asked directly, and the rest on the other holders or in
-// this node's own store.
+// have every share number complete without it. The other holders are
+// asked directly, and their answers carry no proof, so each is believed
+// for no more share numbers than placement gives one server (see
+// releasable): a hub and a storage server that lie together cannot talk
+// the honest holders out of their shares.
 func (w *Worker) release(ctx context.Context, h *wire.ReleaseHint) error {
 	m := w.cfg.Manifest()
 	if m == nil {
@@ -444,8 +446,7 @@ func (w *Worker) release(ctx context.Context, h *wire.ReleaseHint) error {
 	for _, s := range m.Storage {
 		listed[s.Device] = true
 	}
-	covered := map[uint8]bool{}
-	elsewhere := false
+	others := map[identity.Key][]uint8{}
 	for _, dev := range h.Holders {
 		if dev == w.cfg.Device || !listed[dev] {
 			continue
@@ -454,23 +455,93 @@ func (w *Worker) release(ctx context.Context, h *wire.ReleaseHint) error {
 		if err != nil || pres == nil || pres.DescriptorHash != dhash || pres.Tombstoned {
 			continue
 		}
-		for _, n := range pres.Complete {
-			covered[n] = true
-			elsewhere = elsewhere || n == h.Number
-		}
+		others[dev] = pres.Complete
 	}
-	if !elsewhere {
-		return errors.New("no other server confirmed holding this share number")
+	var mine []uint8
+	if p, err := w.cfg.Store.Has(si); err == nil && p != nil && p.DescriptorHash == dhash {
+		mine = p.Complete
 	}
-	if mine, err := w.cfg.Store.Has(si); err == nil && mine != nil && mine.DescriptorHash == dhash {
-		for _, n := range mine.Complete {
-			if n != h.Number {
-				covered[n] = true
-			}
-		}
-	}
-	if len(covered) < int(sd.Descriptor.N) {
-		return fmt.Errorf("only %d of %d share numbers would remain complete", len(covered), sd.Descriptor.N)
+	if err := releasable(h.Number, int(sd.Descriptor.N), len(m.Storage), mine, others); err != nil {
+		return err
 	}
 	return w.cfg.Store.Remove(si, h.Number, "surplus: every share number stays complete without it")
+}
+
+// releasable decides whether this node may give up its copy of share
+// number n of an object with total share numbers, on a network of servers
+// storage servers. mine is what this node holds complete, others what
+// each other holder says it holds.
+//
+// Every share number must stay accounted for without this copy: by this
+// node's other shares, or by another holder. Another holder's word counts
+// for at most ceil(total / servers) share numbers, the most that placement
+// gives one server, and each number is counted on one holder. So what a
+// release can cost an object is bounded by what the lying servers were
+// trusted to hold in the first place: with every honest holder following
+// this rule, the honest servers together keep every share number that
+// only they hold.
+func releasable(n uint8, total, servers int, mine []uint8, others map[identity.Key][]uint8) error {
+	if total < 1 || servers < 1 || int(n) >= total {
+		return errors.New("the hint does not fit the object")
+	}
+	kept := map[uint8]bool{}
+	for _, s := range mine {
+		if s != n {
+			kept[s] = true
+		}
+	}
+	var need []uint8 // the numbers another holder must account for; n first
+	need = append(need, n)
+	for s := 0; s < total; s++ {
+		if uint8(s) != n && !kept[uint8(s)] {
+			need = append(need, uint8(s))
+		}
+	}
+	maxPer := (total + servers - 1) / servers
+	devs := make([]identity.Key, 0, len(others))
+	claims := map[identity.Key]map[uint8]bool{}
+	for dev, shares := range others {
+		devs = append(devs, dev)
+		claims[dev] = map[uint8]bool{}
+		for _, s := range shares {
+			claims[dev][s] = true
+		}
+	}
+	sort.Slice(devs, func(i, j int) bool { return devs[i].Less(devs[j]) })
+	// A matching of share numbers to holders, each holder taking at most
+	// maxPer: augmenting paths, which the few servers and at most 255
+	// numbers make cheap.
+	assigned := map[uint8]identity.Key{}
+	load := map[identity.Key][]uint8{}
+	var place func(s uint8, seen map[identity.Key]bool) bool
+	place = func(s uint8, seen map[identity.Key]bool) bool {
+		for _, dev := range devs {
+			if !claims[dev][s] || seen[dev] {
+				continue
+			}
+			seen[dev] = true
+			if len(load[dev]) < maxPer {
+				assigned[s] = dev
+				load[dev] = append(load[dev], s)
+				return true
+			}
+			for i, held := range load[dev] {
+				if place(held, seen) {
+					load[dev][i] = s
+					assigned[s] = dev
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for i, s := range need {
+		if !place(s, map[identity.Key]bool{}) {
+			if i == 0 {
+				return errors.New("no other server confirmed holding this share number")
+			}
+			return fmt.Errorf("only %d of %d share numbers would stay accounted for, each holder counted for at most %d", len(kept)+len(assigned), total, maxPer)
+		}
+	}
+	return nil
 }
