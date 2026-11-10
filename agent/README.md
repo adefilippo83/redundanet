@@ -212,7 +212,10 @@ the grid-wide placement table of the RFC's "Health" section: per object
 the distinct shares held on servers that are not dead (a server is down
 after ten minutes without a heartbeat and still counts; dead after
 `repair_after_hours`, 72 by default, and counts no more), the spread over
-servers against min(n, servers not dead), surplus, tombstones, and
+servers against min(n, servers not dead), surplus, tombstones (an object
+is deleted, and out of repair, when most of the servers that hold a share
+of it or report a tombstone for its owner and descriptor report one; where
+servers disagree on the descriptor, each server has one vote), and
 whether it needs repair at once (it had been fully placed) or after the
 24-hour quiescence window (it never was). The page and `status.json`
 carry the counts only: objects per number of copies, under-placed,

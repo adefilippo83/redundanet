@@ -191,7 +191,7 @@ type Object struct {
 	Readable     bool                     // at least k distinct shares
 	Surplus      int                      // complete shares beyond n
 	Conflict     bool                     // servers disagree on the descriptor
-	Tombstoned   bool                     // a server holds a tombstone for it
+	Tombstoned   bool                     // most of the servers concerned hold a tombstone for it
 	Reached      bool                     // it was fully placed at some point: a loss since is a server's death or a failed check
 	LastChange   time.Time                // when a holder last gained or lost one of its shares
 	Need         string                   // "" (nothing to do), "quiescing" or "repair"
@@ -289,25 +289,35 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	tomb := map[[16]byte]bool{}
-	rows, err = p.db.Query(`SELECT device, si FROM tombstones`)
+	// A tombstone is one server's word, like every census row. Which
+	// servers report one, for which owner and descriptor, is kept apart
+	// until the object is known: see tombstoned.
+	type tombRow struct {
+		device identity.Key
+		owner  identity.Key
+		dhash  [32]byte
+	}
+	tomb := map[[16]byte][]tombRow{}
+	rows, err = p.db.Query(`SELECT device, si, owner, dhash FROM tombstones`)
 	if err != nil {
 		return nil, nil, err
 	}
 	for rows.Next() {
-		var dev, si []byte
-		if err := rows.Scan(&dev, &si); err != nil {
+		var dev, si, owner, dhash []byte
+		if err := rows.Scan(&dev, &si, &owner, &dhash); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
-		var d identity.Key
-		copy(d[:], dev)
-		if !alive[d] {
+		var t tombRow
+		copy(t.device[:], dev)
+		copy(t.owner[:], owner)
+		copy(t.dhash[:], dhash)
+		if !alive[t.device] {
 			continue
 		}
 		var key [16]byte
 		copy(key[:], si)
-		tomb[key] = true
+		tomb[key] = append(tomb[key], t)
 	}
 	rows.Close()
 	history := map[[16]byte]struct {
@@ -345,19 +355,24 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 	var reachedNow [][16]byte
 	for _, si := range order {
 		rs := bySI[si]
-		// The descriptor the holders agree on: the one with the most shares.
-		votes := map[[32]byte]int{}
+		// The descriptor the holders agree on: the one most servers
+		// report. A server has one vote however many rows it sends, so one
+		// server cannot outvote the others by reporting more shares.
+		votes := map[[32]byte]map[identity.Key]bool{}
 		for _, r := range rs {
-			votes[r.dhash]++
+			if votes[r.dhash] == nil {
+				votes[r.dhash] = map[identity.Key]bool{}
+			}
+			votes[r.dhash][r.device] = true
 		}
 		var best [32]byte
 		bestN := -1
-		for h, n := range votes {
-			if n > bestN || (n == bestN && string(h[:]) < string(best[:])) {
+		for h, devs := range votes {
+			if n := len(devs); n > bestN || (n == bestN && string(h[:]) < string(best[:])) {
 				best, bestN = h, n
 			}
 		}
-		o := Object{StorageIndex: si, Hash: best, Holders: map[identity.Key][]uint8{}, Conflict: len(votes) > 1, Tombstoned: tomb[si]}
+		o := Object{StorageIndex: si, Hash: best, Holders: map[identity.Key][]uint8{}, Conflict: len(votes) > 1}
 		distinct := map[uint8]bool{}
 		total := 0
 		for _, r := range rs {
@@ -382,6 +397,25 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 				o.Missing = append(o.Missing, uint8(n))
 			}
 		}
+		// Deleted, for the hub, is what most of the servers concerned say:
+		// those that hold a share of the object and those that report a
+		// tombstone for this owner and this descriptor. One server's
+		// tombstone does not take an object out of repair; a real deletion
+		// that has reached only a minority shows as under-placed until the
+		// owner's next cleanup has sent the token to the rest, and a repair
+		// scheduled meanwhile is refused by the servers that have it.
+		concerned := map[identity.Key]bool{}
+		for dev := range o.Holders {
+			concerned[dev] = true
+		}
+		reporting := map[identity.Key]bool{}
+		for _, t := range tomb[si] {
+			if t.owner == o.Owner && t.dhash == best {
+				concerned[t.device] = true
+				reporting[t.device] = true
+			}
+		}
+		o.Tombstoned = 2*len(reporting) > len(concerned)
 		o.Spread = len(o.Holders)
 		o.Target = min(o.N, servers)
 		o.Placed = len(o.Shares) == o.N && o.Spread >= o.Target
