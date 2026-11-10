@@ -1,6 +1,6 @@
 # Command reference
 
-Every command of the `redundanet` binary, version 3.0.0. `redundanet help` prints the list. On a laptop the command is `redundanet`; on a Linux storage node name the full path, `sudo /var/lib/redundanet3/bin/redundanet`, which finds the node's data directory on its own for the commands that talk to the running agent.
+Every command of the `redundanet` binary, version 3.0.0. `redundanet help` prints the list. On a laptop the command is `redundanet`; on a Linux storage node it is `sudo redundanet3`, the copy of the program that root owns at `/usr/local/bin/redundanet3`, which finds the node's data directory on its own for the commands that talk to the running agent.
 
 Two flags are accepted by most commands:
 
@@ -211,6 +211,6 @@ redundanet agent [--network NAME] [--data-dir DIR] [--api 127.0.0.1:4470] [--sto
 Runs the agent; the service and the node unit run this. Started before the device has an identity, it serves the local page alone with the setup wizard (a new member's phrase shown once and three words asked back, an existing member's phrase typed in, or a pairing code for another device of the member) and continues into normal operation in the same process once the identity exists, whether the page or the CLI made it; the page's session carries over. Until then `status` says "no identity yet" and where the wizard stands. `--api` is the local API and page, loopback only. `--storage-path` is the disk a storage device stores on (the store lives in its `redundanet3` directory) and `--storage-floor-gb` the free gigabytes below which the store refuses writes. `--portmap` asks the router for a port mapping; `--tcp-only` reaches hubs over TCP only; `--connect` keeps sessions with the named devices; `--listen` is the UDP address to bind. `--manifest` runs from a signed file instead of the joined network, for tests. `--probation`, `--probation-peers` and `--loopback-candidates` are for the updater and tests.
 
 ```
-sudo /var/lib/redundanet3/bin/redundanet migrate-node [--dry-run] [--force] [--rollback] [--compose-dir DIR] [--env-file FILE]
+sudo redundanet3 migrate-node [--dry-run] [--force] [--rollback] [--compose-dir DIR] [--env-file FILE]
 ```
 Linux, as root, on a node that runs the agent beside the RedundaNet 2 stack: retires the stack. Refuses while the folder `backup-sync` pushed to the old grid is not held by a native set with a complete run and a passed restore test on this device, or while no hub is connected; `--force` overrides and the plan names what is lost. `--dry-run` prints the plan and changes nothing. The stack is stopped whole, every profile named, tinc last; files and Tahoe shares stay on disk. `--rollback` starts every recorded service again in one `up`, tinc first, and forgets the migration. `--compose-dir` and `--env-file` override where the compose file and the `.env` are installed. Guide: [migration.md](migration.md).

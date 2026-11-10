@@ -441,9 +441,9 @@ redundanet open</code></pre>
                 <p data-i18n="ig.node.alt">No laptop of yours at all? The runbook's script makes the same layout with a certificate file copied over SSH.</p>
                 <ul>
                     <li data-i18n="ig.node.layout">Layout: data in <code>/var/lib/redundanet3</code>, the binary at <code>/var/lib/redundanet3/bin/redundanet</code>, service user <code>redundanet3</code>, unit <code>redundanet-agent</code>, settings in <code>/etc/redundanet3/agent.env</code> (<code>NETWORK</code>, <code>CHANNEL</code>, <code>STORAGE_PATH</code>).</li>
-                    <li data-i18n="ig.node.fullpath">Use the full path <code>/var/lib/redundanet3/bin/redundanet</code> in commands on a node. On a RedundaNet 2 node the Python <code>redundanet</code> on PATH is the legacy tool.</li>
+                    <li data-i18n="ig.node.fullpath">On a node the command is <code>sudo redundanet3</code>, a copy of the program that root owns at <code>/usr/local/bin/redundanet3</code>. On a RedundaNet 2 node the Python <code>redundanet</code> on PATH is the legacy tool.</li>
                     <li data-i18n="ig.node.firewall">No inbound firewall rule is needed. A node may forward a UDP port and list it in the join request as <code>udp_port</code> to be reached directly more often.</li>
-                    <li data-i18n="ig.node.page">The local page over SSH: <code>ssh -L 4470:127.0.0.1:4470 node</code>, then <code>sudo /var/lib/redundanet3/bin/redundanet open --print</code>.</li>
+                    <li data-i18n="ig.node.page">The local page over SSH: <code>ssh -L 4470:127.0.0.1:4470 node</code>, then <code>sudo redundanet3 open --print</code>.</li>
                     <li data-i18n="ig.node.runbook">The runbook: <a href="https://github.com/adefilippo83/redundanet/blob/main/agent/deploy/node/README.md">agent/deploy/node/README.md</a>.</li>
                 </ul>
             </section>

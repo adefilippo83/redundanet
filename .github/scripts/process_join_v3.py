@@ -721,7 +721,7 @@ This issue is being closed. What happens next:
 
 1. The maintainer reviews, signs `manifest.sig` offline with the operator key, and merges. Every agent applies the new revision within five minutes.
 2. The node is admitted from then on and appears on the status page under your name: {STATUS_PAGE}
-3. On the node, `sudo /var/lib/redundanet3/bin/redundanet status` shows it; on your laptop, `redundanet setup` shows nothing left to request.
+3. On the node, `sudo redundanet3 status` shows it; on your laptop, `redundanet setup` shows nothing left to request.
 
 *Thank you for contributing to RedundaNet!*"""
 

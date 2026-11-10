@@ -14,6 +14,7 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/node"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 	"github.com/adefilippo83/redundanet/agent/internal/service"
+	"github.com/adefilippo83/redundanet/agent/internal/version"
 )
 
 // `node` is the storage node's install, from the binary itself, as root
@@ -81,7 +82,7 @@ func nodeInstall(args []string) error {
 		return err
 	}
 	if *storage == "" || *network == "" {
-		return errors.New("usage: sudo redundanet node install --storage-path /mnt/storage [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]")
+		return errors.New("usage: sudo redundanet3 node install --storage-path /mnt/storage [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]")
 	}
 	if err := needRoot(); err != nil {
 		return err
@@ -99,15 +100,15 @@ func nodeInstall(args []string) error {
 	for _, s := range rep.Steps {
 		fmt.Println(s)
 	}
-	if out, err := exec.Command(rep.Binary, "version").Output(); err == nil {
-		fmt.Printf("installed %s", out)
-	}
+	// The version is this binary's own: root does not run the copy the
+	// service user owns to ask it.
+	fmt.Printf("installed redundanet %s; from here on, commands on this node are sudo redundanet3 ..., the copy root owns at %s\n", version.Version, node.OperatorBinary)
 	if _, err := os.Stat(filepath.Join(node.DataDir, "identity")); err == nil {
 		fmt.Println("this node already has an identity; starting the service")
 		return startNode()
 	}
 	if *noPair {
-		fmt.Printf("laid out without an identity; next: sudo %s node install again without --no-pair, or install.sh finish with a certificate file\n", exe)
+		fmt.Println("laid out without an identity; next: sudo redundanet3 node install again without --no-pair, or install.sh finish with a certificate file")
 		return nil
 	}
 	// Pairing, as the service user so the identity is its own: the code
@@ -154,7 +155,7 @@ func startNode() error {
 	if out, err := exec.Command("systemctl", "enable", "--now", node.UnitName).CombinedOutput(); err != nil {
 		return fmt.Errorf("starting the service: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	fmt.Printf("%s enabled and started; the agent as it sees itself: sudo %s/bin/redundanet status\n", node.UnitName, node.DataDir)
+	fmt.Printf("%s enabled and started; the agent as it sees itself: sudo redundanet3 status\n", node.UnitName)
 	return nil
 }
 

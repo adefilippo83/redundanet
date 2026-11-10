@@ -33,6 +33,9 @@ CHANNEL=${CHANNEL:-stable}
 STORAGE_PATH=${STORAGE_PATH:-/mnt/storage}
 DATA=/var/lib/redundanet3
 BIN=$DATA/bin/redundanet
+# CMD is the copy root owns and runs. BIN is the service's: its user owns it
+# so that the updater can replace it, and for that reason root never runs it.
+CMD=/usr/local/bin/redundanet3
 UNIT=/etc/systemd/system/redundanet-agent.service
 ENV=/etc/redundanet3/agent.env
 RAW=https://raw.githubusercontent.com/$REPO/main
@@ -87,8 +90,13 @@ prepare() {
     echo "$sha  $tmp/$asset" | sha256sum -c >/dev/null || die "checksum mismatch for $asset"
   fi
   tar -xzf "$tmp/$asset" -C "$tmp"
-  install -o redundanet3 -g redundanet3 -m 0755 "$(find "$tmp" -type f -name redundanet | head -1)" "$BIN"
-  echo "installed $("$BIN" version) at $BIN"
+  new=$(find "$tmp" -type f -name redundanet | head -1)
+  # A link planted under either name is replaced, not followed.
+  rm -f "$CMD" "$BIN"
+  install -d -m 0755 "$(dirname "$CMD")"
+  install -o root -g root -m 0755 "$new" "$CMD"
+  install -o redundanet3 -g redundanet3 -m 0755 "$new" "$BIN"
+  echo "installed $("$CMD" version) at $BIN for the service, and at $CMD for you: sudo redundanet3 ..."
 
   if [ ! -f "$ENV" ]; then
     printf 'NETWORK=%s\nCHANNEL=%s\nSTORAGE_PATH=%s\n' "$NETWORK" "$CHANNEL" "$STORAGE_PATH" > "$ENV"
@@ -135,7 +143,7 @@ pair() {
   sleep 3
   systemctl --no-pager --lines=5 status redundanet-agent || true
   echo
-  echo "the agent as it sees itself: sudo $BIN status"
+  echo "the agent as it sees itself: sudo redundanet3 status"
 }
 
 finish() {
@@ -157,7 +165,7 @@ finish() {
   sleep 3
   systemctl --no-pager --lines=5 status redundanet-agent || true
   echo
-  echo "the agent as it sees itself: sudo $BIN status"
+  echo "the agent as it sees itself: sudo redundanet3 status"
 }
 
 # disk: the whole device becomes one ext4 filesystem labeled REDUNDANET,

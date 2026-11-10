@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +312,77 @@ func TestEnvAndRelativeSyncDir(t *testing.T) {
 	env, err = readEnv(filepath.Join(t.TempDir(), "none"))
 	if err != nil || len(env) != 0 {
 		t.Fatalf("missing env file: %v %v", env, err)
+	}
+}
+
+// The marker lies in a directory the service user owns, and the rollback
+// runs as root. Whatever the marker says the command is, the command that
+// runs is the one built from the stack's files; a service name that could
+// be read as anything else stops the rollback before a command runs.
+func TestRollbackDoesNotRunWhatTheMarkerSays(t *testing.T) {
+	cfg, rec, _ := stack(t, "")
+	write := func(m string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(cfg.DataDir, Marker), []byte(m), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A marker that names another program: its services are started with
+	// this node's own compose command, and nothing of its command runs.
+	write(`{"at":"2026-11-05T15:00:00Z","device":"dev","compose":["/tmp/evil","--now"],"services":["tinc","tahoe-storage"]}`)
+	if err := Rollback(cfg); err != nil {
+		t.Fatal(err)
+	}
+	ch := rec.changes()
+	want, _ := composeCommand(cfg)
+	if len(ch) != 1 || ch[0] != strings.Join(want, " ")+" up -d --force-recreate tinc tahoe-storage" || strings.Contains(ch[0], "evil") {
+		t.Fatalf("rollback ran: %v", ch)
+	}
+	// A marker from before this version, with the command it recorded then:
+	// its services still start.
+	for _, bad := range []string{"--volume=/:/host", "-f", "a b", "../x", "tinc;reboot", ""} {
+		before := len(rec.changes())
+		b, _ := json.Marshal(map[string]any{"at": "2026-11-05T15:00:00Z", "device": "dev", "compose": []string{"docker", "compose"}, "services": []string{"tinc", bad}})
+		write(string(b))
+		if err := Rollback(cfg); err == nil || !strings.Contains(err.Error(), "not the name of a compose service") {
+			t.Fatalf("a marker naming %q: %v", bad, err)
+		}
+		if len(rec.changes()) != before {
+			t.Fatalf("a marker naming %q ran: %v", bad, rec.changes()[before:])
+		}
+		if _, ok := Migrated(cfg.DataDir); !ok {
+			t.Fatalf("the marker naming %q was removed", bad)
+		}
+	}
+}
+
+// Root writes the marker in a directory the service user owns: a link
+// planted under the marker's name, or its temporary name, is replaced,
+// not followed.
+func TestTheMarkerIsNotWrittenThroughALink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need a privilege on Windows")
+	}
+	dir := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, Marker)
+	for _, link := range []string{path, path + ".new"} {
+		_ = os.Remove(path)
+		_ = os.Remove(path + ".new")
+		if err := os.Symlink(victim, link); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeNew(path, []byte("marker\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(victim); string(b) != "mine" {
+			t.Fatalf("with a link at %s the file it points to was written: %q", filepath.Base(link), b)
+		}
+		if fi, err := os.Lstat(path); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+			t.Fatalf("with a link at %s the marker is %v %v", filepath.Base(link), fi, err)
+		}
 	}
 }

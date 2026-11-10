@@ -157,7 +157,7 @@ func runSetup(args []string) error {
 			link := joinRequestURL(*p)
 			proof := "with the node's certificate as proof"
 			if p.Certificate == "" {
-				proof = "it needs the node's certificate, which `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` prints on the node"
+				proof = "it needs the node's certificate, which `sudo redundanet3 identity show --certificate` prints on the node"
 			}
 			step("request", "storage node %s is paired but not in the manifest yet; the form that adds it, %s:\n          %s", p.DeviceName, proof, link)
 			if !*noBrowser {

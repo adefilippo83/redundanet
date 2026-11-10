@@ -112,7 +112,7 @@ Releases are tagged `agent/vX.Y.Z` and built by the release workflow. Every rele
 
 ## RedundaNet 2 (legacy)
 
-RedundaNet 2 is the earlier product: a Python command line tool, Docker Compose, a Tinc VPN and Tahoe-LAFS. The Python package `redundanet` on PyPI (version 2.7.x) is that legacy tool, not the RedundaNet 3 binary; on a RedundaNet 2 node both exist, the Python one on PATH and the Go one at `/var/lib/redundanet3/bin/redundanet`. The old grid stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. Its documentation is under [docs/legacy/README.md](docs/legacy/README.md). Existing members move over with [docs/migration.md](docs/migration.md).
+RedundaNet 2 is the earlier product: a Python command line tool, Docker Compose, a Tinc VPN and Tahoe-LAFS. The Python package `redundanet` on PyPI (version 2.7.x) is that legacy tool, not the RedundaNet 3 binary; on a RedundaNet 2 node both exist, the Python one on PATH as `redundanet` and the Go one as `redundanet3` (`/usr/local/bin/redundanet3`, a copy root owns; the service runs its own at `/var/lib/redundanet3/bin/redundanet`). The old grid stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. Its documentation is under [docs/legacy/README.md](docs/legacy/README.md). Existing members move over with [docs/migration.md](docs/migration.md).
 
 ## Documentation
 

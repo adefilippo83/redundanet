@@ -173,7 +173,7 @@ func runJoinRequest(args []string) error {
 			link := joinRequestURL(*p)
 			fmt.Println(link)
 			if p.Certificate == "" {
-				fmt.Fprintf(os.Stderr, "the form adds storage node %s to member %s; it needs the node's certificate as proof, which `sudo /var/lib/redundanet3/bin/redundanet identity show --certificate` prints on the node\n", p.DeviceName, p.MemberName)
+				fmt.Fprintf(os.Stderr, "the form adds storage node %s to member %s; it needs the node's certificate as proof, which `sudo redundanet3 identity show --certificate` prints on the node\n", p.DeviceName, p.MemberName)
 			} else {
 				fmt.Fprintf(os.Stderr, "the form adds storage node %s to member %s, with the node's certificate as proof; review it, then open the issue on GitHub\n", p.DeviceName, p.MemberName)
 			}

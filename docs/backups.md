@@ -1,6 +1,6 @@
 # Backups and restores
 
-The agent does the work; `backup` and `restore` ask it through the local API, so the service must be running. On a laptop the command is `redundanet`; on a storage node it is `sudo /var/lib/redundanet3/bin/redundanet`, which finds the node's data directory on its own.
+The agent does the work; `backup` and `restore` ask it through the local API, so the service must be running. On a laptop the command is `redundanet`; on a storage node it is `sudo redundanet3`, the copy root owns, which finds the node's data directory on its own.
 
 ## Backup sets
 

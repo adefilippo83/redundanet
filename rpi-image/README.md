@@ -18,7 +18,9 @@ pairing").
 
 - Raspberry Pi OS Lite (64-bit, Trixie), SSH enabled, hostname `redundanet`,
   login `redundanet` / `redundanet`. Change the password at the first login.
-- The agent at `/var/lib/redundanet3/bin/redundanet`, the service user
+- The agent at `/var/lib/redundanet3/bin/redundanet`, which the service
+  runs and updates, and a copy root owns at `/usr/local/bin/redundanet3`,
+  which is the command you run (`sudo redundanet3 ...`); the service user
   `redundanet3`, the unit `redundanet-agent`, the settings in
   `/etc/redundanet3/agent.env` (`NETWORK=redundanet`, `CHANNEL=stable`,
   `STORAGE_PATH=/mnt/storage`). The same layout `install.sh` makes on any
@@ -84,9 +86,9 @@ pairing").
 
 How things stand, at any time: `redundanet-status.txt` on the boot
 partition (paired, disk, agent and its version), refreshed every five
-minutes; over SSH `sudo /var/lib/redundanet3/bin/redundanet status`; the
+minutes; over SSH `sudo redundanet3 status`; the
 local page through `ssh -L 4470:127.0.0.1:4470 redundanet@redundanet.local`
-and then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
+and then `sudo redundanet3 open --print`.
 
 ## Without pairing
 
@@ -117,7 +119,7 @@ pairing code leaves the card once the node has its identity either way.
   the node**: it is not yet listed under `storage:`, step 5.
 - **Updates**: the agent checks the signed release index every hour and
   updates itself with probation and rollback; nothing to do. `sudo
-  /var/lib/redundanet3/bin/redundanet update status` shows where it stands.
+  redundanet3 update status` shows where it stands.
 
 ## How the image is built
 

@@ -2,7 +2,7 @@
 
 This page is for a member of the RedundaNet 2 grid: the Python command line tool, Docker Compose, the Tinc VPN and Tahoe-LAFS. The old grid stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data; six members and eight storage nodes are on it today. Nothing changes for your Tahoe node until you choose to retire it. The steps below add your RedundaNet 3 identity, put the agent on each node, back up natively, prove a restore, and only then retire the Docker stack.
 
-On a RedundaNet 2 node both programs exist: the Python `redundanet` on PATH is the legacy tool, the Go one is at `/var/lib/redundanet3/bin/redundanet`. Every command meant for a node below names the full path.
+On a RedundaNet 2 node both programs exist: the Python `redundanet` on PATH is the legacy tool, the RedundaNet 3 command is `sudo redundanet3`, a copy of the program that root owns at `/usr/local/bin/redundanet3` (the service runs its own at `/var/lib/redundanet3/bin/redundanet`).
 
 ## 1. Your identity, on your laptop
 
@@ -44,9 +44,9 @@ Your contribution in GB is what your nodes contribute. The workflow verifies the
 The old grid received what `backup-sync` pushed from your node. Make a native backup set for each of those folders, on the device that holds them. On a node:
 
 ```bash
-sudo /var/lib/redundanet3/bin/redundanet backup add NAME FOLDER
-sudo /var/lib/redundanet3/bin/redundanet backup run NAME
-sudo /var/lib/redundanet3/bin/redundanet backup list
+sudo redundanet3 backup add NAME FOLDER
+sudo redundanet3 backup run NAME
+sudo redundanet3 backup list
 ```
 
 Runs are daily from then on. The old Tahoe shares count only against the old grid, so your native allocation starts empty; a member who needs room during the overlap can draw on the reserve or a sponsor, recorded in the manifest by the maintainer. Both grids share one disk: the native store refuses writes below its floor, and the status page shows free space per server.
@@ -56,8 +56,8 @@ Runs are daily from then on. The old Tahoe shares count only against the old gri
 A restore test reads a sample of a snapshot back and compares it to the source. The agent runs one weekly; ask for one now and read the result:
 
 ```bash
-sudo /var/lib/redundanet3/bin/redundanet backup verify
-sudo /var/lib/redundanet3/bin/redundanet backup list
+sudo redundanet3 backup verify
+sudo redundanet3 backup list
 ```
 
 `migrate-node` refuses to retire the stack until the folder `backup-sync` pushed is held by a native set with a complete run and a passed restore test on that device. Doing a real restore of something you care about is a good habit too: [backups.md](backups.md).
@@ -67,9 +67,9 @@ sudo /var/lib/redundanet3/bin/redundanet backup list
 Not before the stop date is announced: your node's Tahoe shares hold other members' data too, and the old grid is 2-of-4. Until then, a drill is fine: `migrate-node` followed by `--rollback` within a few minutes, inside the old grid's tolerance of two servers down.
 
 ```bash
-sudo /var/lib/redundanet3/bin/redundanet migrate-node --dry-run   # the plan, and what is not yet on the native grid
-sudo /var/lib/redundanet3/bin/redundanet migrate-node             # stops and removes the containers; files and shares stay
-sudo /var/lib/redundanet3/bin/redundanet migrate-node --rollback  # every service again, together, tinc first
+sudo redundanet3 migrate-node --dry-run   # the plan, and what is not yet on the native grid
+sudo redundanet3 migrate-node             # stops and removes the containers; files and shares stay
+sudo redundanet3 migrate-node --rollback  # every service again, together, tinc first
 ```
 
 What it does: the plan lists the stack's containers by service and every compose profile, then one `docker compose down` through the installed compose file, its override and `.env`, with every profile named, so the Tahoe services go too, every container at once and tinc last. A container that survives puts the stack back and fails the command, since it would run on tinc's dead network namespace. The compose files, the `.env` and the Tahoe share directories stay on disk. The agent keeps running through all of it and the node stays on the status page. `--force` retires the stack although something is not yet on the native grid, and the plan names what is lost. `--rollback` recreates every recorded service in one `up`, tinc first, never one container at a time. The Python CLI stays installed but idle until you remove it.

@@ -73,19 +73,31 @@ started. Everything on the device is destroyed, so the device name is asked
 back unless `--yes`.
 
 Layout: `/var/lib/redundanet3` (identity, manifest copy, census state,
-`versions/` for updates), `/var/lib/redundanet3/bin/redundanet` (the binary,
-owned by the service user so the updater can rename a new version into
-place), `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`).
+`versions/` for updates), `/var/lib/redundanet3/bin/redundanet` (the
+service's binary, owned by the service user so the updater can rename a new
+version into place), `/usr/local/bin/redundanet3` (a copy root owns: the
+command you run, `sudo redundanet3 ...`), `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`).
 Change the channel there and `systemctl restart redundanet-agent`.
 
 No inbound firewall rule is needed: the agent reaches the hub outbound and
 peers through hole punching or the relay. The local page is on
 `127.0.0.1:4470`; over SSH: `ssh -L 4470:127.0.0.1:4470 node`, then
-`sudo /var/lib/redundanet3/bin/redundanet open --print`. As root, the
+`sudo redundanet3 open --print`. As root, the
 commands that talk to the running agent (`status`, `backup`, `restore`,
 `open`, `logs`, `update`) find the node's data directory on their own;
 the identity and join commands run as the service user with `--data-dir`,
 as the installer does.
+
+Root does not run the service's binary. The service user owns that file,
+so a fault in the agent could replace it, and the next `sudo` of it would
+run whatever is there as root. `sudo redundanet3` is the copy root owns;
+it does not follow the service's updates. An older copy keeps talking to a
+newer agent as long as the local API it uses is still there; run the node's
+one-line installer again to refresh it. A node installed before 3.0.16 has no such copy until
+the installer is run once more: until then its documented commands were
+`sudo /var/lib/redundanet3/bin/redundanet ...`. `migrate-node --rollback`
+builds its command from the stack's own files and takes only the service
+names from the marker in the data directory, each checked.
 
 After the node is up, the member asks the operator to list it under
 `storage:` in the manifest, which is what makes its contribution count.
@@ -99,9 +111,9 @@ node's Tahoe shares hold other members' data too, and the old grid is
 missing:
 
 ```bash
-sudo /var/lib/redundanet3/bin/redundanet migrate-node --dry-run   # the plan, and what is not yet on the native grid
-sudo /var/lib/redundanet3/bin/redundanet migrate-node             # stops and removes the containers; files and shares stay
-sudo /var/lib/redundanet3/bin/redundanet migrate-node --rollback  # every service again, together, tinc first
+sudo redundanet3 migrate-node --dry-run   # the plan, and what is not yet on the native grid
+sudo redundanet3 migrate-node             # stops and removes the containers; files and shares stay
+sudo redundanet3 migrate-node --rollback  # every service again, together, tinc first
 ```
 
 The agent keeps running through all of it and the node stays on the
