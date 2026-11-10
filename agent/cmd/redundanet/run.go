@@ -65,9 +65,23 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		Roles: rc.state.Certificate.Certificate.Roles, Generated: time.Now()}
 	if m := rc.current(); m != nil {
 		s.Network = m.Network.Name
+		if e := m.Network.Encoding; e.K > 0 && e.N > 0 {
+			s.Placement = &api.Placement{K: e.K, N: e.N, Servers: len(m.Storage)}
+		}
 		s.Admission = "waiting"
+		devices, _ := loadDevices(rc.dataDir)
+		for _, d := range devices {
+			s.Devices = append(s.Devices, api.Device{Key: d.Device, Name: d.Name, Roles: d.Roles, PairedAt: d.PairedAt})
+		}
+		// The join form, filled in from here: a member not listed yet asks
+		// to join; a listed one has a storage node the manifest lacks.
 		if memberListed(m, rc.state.Member) {
 			s.Admission = "listed"
+			if p := devicePrefill(m, rc.state.Member, devices); p != nil {
+				s.JoinURL, s.JoinDevice = joinRequestURL(*p), p.DeviceName
+			}
+		} else {
+			s.JoinURL = joinRequestURL(prefillFor(rc.state, devices))
 		}
 	}
 	if ep != nil {
@@ -795,6 +809,9 @@ func runAgent(args []string) error {
 		},
 		Actions: api.Actions{
 			Revoke: revokeAction,
+			PairDevice: func(ctx context.Context, code, phrase string, storage bool) (api.Device, error) {
+				return pairFromPage(ctx, rc, code, phrase, storage)
+			},
 			SetChannel: func(channel string) error {
 				u := getU()
 				if u == nil {
@@ -1220,4 +1237,23 @@ func logEvery(ctx context.Context, every time.Duration, status func() any, lg *s
 			lg.Info("status", "snapshot", string(b))
 		}
 	}
+}
+
+// pairFromPage pairs a new device with the phrase typed on the page. The
+// words must be this member's: a phrase of another member would certify
+// the new device for that member from this one's page, which nobody means.
+func pairFromPage(ctx context.Context, rc *runtimeConfig, code, phrase string, storage bool) (api.Device, error) {
+	seed, err := identity.ParsePhrase(strings.Fields(phrase))
+	if err != nil {
+		return api.Device{}, err
+	}
+	defer seed.Zero()
+	if seed.MemberKey() != rc.state.Member {
+		return api.Device{}, errors.New("these twelve words are not the recovery phrase of this device's member")
+	}
+	pd, err := pairDevice(ctx, rc.dataDir, rc.state.Network, strings.TrimSpace(code), seed, storage, 0)
+	if err != nil {
+		return api.Device{}, err
+	}
+	return api.Device{Key: pd.Device, Name: pd.Name, Roles: pd.Roles, PairedAt: pd.PairedAt}, nil
 }

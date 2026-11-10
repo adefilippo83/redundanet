@@ -256,7 +256,7 @@ func TestConversionProgress(t *testing.T) {
 	rec := httptest.NewRecorder()
 	w.c.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
-	for _, want := range []string{"1 of 3 objects converted", "not counted yet", "width:33%", "1 to convert"} {
+	for _, want := range []string{"1 of 3 objects converted", "not counted yet", `value="1" max="3"`, "1 to convert"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page lacks %q:\n%s", want, page)
 		}

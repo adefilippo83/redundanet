@@ -73,7 +73,7 @@ redundanet restore start DEVICE SNAPSHOT [PATH] --to DIR [--overwrite]
 redundanet restore status
 ```
 
-A restore runs in the background. Files are written under temporary names and renamed when complete, with modification time and mode set after the data. Without `--overwrite`, files that exist are left alone. Names the target cannot hold (invalid UTF-8 on Windows, reserved names, forbidden characters) are mapped to an escaped form and each one is reported; a restore ends "complete with exceptions" when something could not be restored as it was, and `restore status` lists each exception. Restores read any k shares of each object and verify them before writing.
+A restore runs in the background. Files are written under temporary names and renamed when complete, with modification time and mode set after the data. Without `--overwrite`, a file that exists is left alone and the restored copy is written beside it with `.restored` added to its name, listed as an exception. Names the target cannot hold (invalid UTF-8 on Windows, reserved names, forbidden characters) are mapped to an escaped form and each one is reported; a restore ends "complete with exceptions" when something could not be restored as it was, and `restore status` lists each exception. Restores read any k shares of each object and verify them before writing.
 
 ## Restore tests
 
@@ -97,4 +97,13 @@ When the manifest declares a k-of-n transition, each device converts the objects
 
 ## The local page
 
-`redundanet open` opens the local page on `127.0.0.1:4470` in the browser through a one-time link that works for two minutes. It shows the device's state, the backup sets with their last run, the restore tests, and has the diagnostics button. It is never on the LAN; a headless node is reached over an SSH tunnel.
+`redundanet open` opens the local page on `127.0.0.1:4470` in the browser through a one-time link that works for two minutes. It is never on the LAN; a headless node is reached over an SSH tunnel. It has six views:
+
+- **Overview**: one sentence on how the backup stands (protected, backing up, needs attention, first backup still to run, nothing backed up yet), then what needs you, each with its button or link: a folder the system does not let the agent read, a failed backup, a failed restore test, a used-up allocation, no connection to a hub, a membership not signed yet, an update to install or one that failed. Below that, the last backup, the last restore test, your space against your allocation, how the network spreads a file (the manifest's k-of-n), and recent activity.
+- **Backups**: one card per set with its folders, its last run and its progress, `Back up now`, its exclusions, and `Remove this folder`; a form that adds a folder under a new name (the form never replaces a set, `redundanet backup add` does); the restore tests with `Run a test now`.
+- **Restore**: the versions of each of your devices, newest first; a version opens as its folders, link by link down to the folder or the file you want; the form at the end takes the folder to put it in, as a full path, and an option to replace files that exist there. The folder or file keeps its name inside that folder. The view shows the restore running, then its outcome with every exception. It is `redundanet restore list`, `browse` and `start` behind links, and reads only the directory shown.
+- **Devices and network**: the devices paired from this one, with how each is reached now, and the link to the join form for a paired storage node the manifest does not list yet; a form that pairs a new device from the code it shows and your twelve words, the same as `redundanet device pair` (the words must be this member's, certify the new device and are kept nowhere); this device's keys and roles, the member list's revision, the hubs and the connections to other devices.
+- **Settings**: schedule, versions to keep, bandwidth caps, update channel, `Check now`.
+- **Advanced**: the diagnostics bundle, the service, repair, cleanup, conversion, the data folder and the log.
+
+The page is in English, German, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian and Chinese: it follows the browser's language until you choose another in its menu, which a cookie on `127.0.0.1` remembers. Reasons the agent gives for a failure are shown as the agent words them, in English. The parts that change (progress, status, the log) refresh by themselves every few seconds; with scripts off the page works the same and is refreshed by hand.
