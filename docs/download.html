@@ -387,6 +387,7 @@
             <section id="quick">
                 <h2 data-i18n="dl.quick.title">One line</h2>
                 <p data-i18n="dl.quick.desc">One line finds your platform, downloads the newest stable release, refuses it unless its sha256 and size match the signed index, and installs it where the agent can update it: in a terminal on macOS and Linux, in PowerShell on Windows. The <a href="installation.html">install page</a> continues from there; the scripts are <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh">docs/install.sh</a> and <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1">docs/install.ps1</a>.</p>
+                <p data-i18n="dl.quick.trust">A first install trusts GitHub and this website: the script does not check the index's signature. The installed agent does, and every update after that is verified.</p>
                 <pre><code># macOS and Linux
 curl -fsSL https://redundanet.com/install.sh | sh
 

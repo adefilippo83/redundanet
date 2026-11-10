@@ -24,14 +24,18 @@
 # redundanet, and the one this runs in is told too. Nothing needs
 # administrator rights.
 #
-# What it trusts. The release index, releases/index.yaml on the main branch,
-# names every release's archives with their sha256 and size, newest first.
-# The script fetches it over HTTPS, downloads the zip for this machine and
-# refuses one whose hash or size differs. The index is signed by the release
-# key built into every redundanet binary, and the installed binary checks
-# that signature itself as the last step, so a tampered index is caught
-# here, as it would be by the agent's own updater. To do the same by hand,
-# the download page lists the archives and docs/install.md the commands.
+# What it trusts. GitHub and the website, on a first install. The release
+# index, releases/index.yaml on the main branch, names every release's
+# archives with their sha256 and size, newest first. The script fetches it
+# over HTTPS, downloads the zip for this machine and refuses one whose
+# hash or size differs from what the index says. It does not check the
+# index's signature: the installed binary does that as the last step, with
+# the release key built into it, and a failure there is a warning. That
+# catches an index that was damaged, not someone who can change what the
+# repository or the website serves, who can change the binary as well. The
+# signature protects the updates that follow. docs/security.md says the
+# same; the download page lists the archives and docs/install.md the
+# commands to compare a hash by hand.
 #
 # The whole script is one function called at the end, so a partial download
 # runs nothing. Piped into iex it never calls exit, which would close your

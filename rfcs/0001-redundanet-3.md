@@ -955,7 +955,9 @@ BLAKE3 hash of that encoding without the signature and certificate, so two
 devices of a member that upload the same object produce the same descriptor
 hash with different signatures, and either is accepted. A server that already
 holds shares of a storage index refuses a share with a different descriptor
-hash, and `HasShares` returns the descriptor hash it holds. When a server first
+hash, and `HasShares` returns the descriptor hash it holds. That rule is per
+storage index today, whoever the owner is; "Planned: shares keyed by owner and
+storage index" below says what that allows and how it changes. When a server first
 saw an object is recorded in its index, not in the descriptor.
 
 The signature covers all n share roots at once. That one choice makes repair
@@ -1087,6 +1089,116 @@ reserve. The formula does not change; the manifest is the policy.
 next manifest sync, keeps read access during the grace period, and their
 shares and roots are deleted on every server when the grace period ends. A
 removed member's devices are refused at the handshake.
+
+### Planned: shares keyed by owner and storage index
+
+Not built. This section is the plan for one change to the store, the share
+protocol and the hub's tables; the sections around it describe what runs
+today.
+
+**What is wrong today.** A server keeps one descriptor per storage index, and
+the first one it sees wins: a put under another descriptor hash is refused
+with `descriptor`. Nothing ties a storage index to an owner, and a client
+names the index to every server in a `has` before it encodes and uploads. A
+storage member that sees the index can sign a descriptor of its own for it and
+begin a share on the other servers first. The owner's upload is then refused
+on those servers, and on every retry, because the same file gives the same
+index. The file is reported as skipped in each backup for as long as the other
+member stays in the manifest; once the operators take it out, its shares are
+purged after the grace and the upload goes through. The cost to
+the member doing it is a few kilobytes of its own budget per object, and its
+name is on every row, signed.
+
+A client never mistakes such an object for its own: it counts an object as
+stored only after it has fetched the descriptor and found its own member key,
+size and encoding in it.
+
+**The end state.** A server's object is the pair (owner, storage index). "One
+descriptor per object" stays, per owner. Two members' shares under the same
+index sit side by side, each charged to its own owner, each deleted, purged and
+repaired on its own. Since the index derives from a secret of the member, two
+honest members never share one; a second owner under an index costs that owner
+budget and nobody else anything.
+
+The storage index, the descriptor, the capabilities and every signed record
+stay as they are. The delete token and the repair task already name the owner.
+Deriving the index from the owner instead is ruled out: it would give every
+stored object a new address.
+
+**What changes.**
+
+- *The server's index.* `shares` is keyed by (owner, storage index, share
+  number) instead of (storage index, share number); `tombstones` by (owner,
+  storage index) instead of the index alone; `removed` gains the owner. Every
+  row already carries its owner, so the new tables are filled from the old ones
+  without reading a share file.
+- *Share files.* The shares of the first owner under an index stay where they
+  are, `shares/<si prefix>/<si>/<share number>`. A later owner's go to
+  `shares/<si prefix>/<si>/owner/<owner key>/<share number>`, and the row
+  records which of the two places it uses. No existing file moves. The index
+  stays rebuildable from the files, since each share's header holds its
+  descriptor.
+- *The share protocol.* `has` and `get` gain an optional `owner`. A member's
+  own devices send their member key; a repair worker sends the owner its task
+  names. A request without one, from a version that does not know the field,
+  is answered for the asking member's own object when there is one, otherwise
+  for the only object under that index, and with `not-found` when two owners
+  hold it and neither is the asker. `put` needs nothing: the descriptor names
+  the owner. `delete`, `undelete`, `list` and `usage` already act for the
+  asking member only. A version that does not know `owner` ignores it, as it
+  ignores every unknown field of a request.
+- *The census.* A removed share is reported with its owner. Added shares and
+  tombstones carry it already.
+- *The hub.* The collector's placement, tombstone and object tables and its
+  repair tasks are keyed by (owner, storage index) the same way, filled from
+  the rows it holds. A repair task is issued per owner's object, as it is in
+  effect today.
+
+**Order of release.** The change reaches every machine by self-update, with
+the previous binary kept for a rollback, so no version may leave behind a
+store its predecessor cannot read.
+
+1. *A release that understands owners and changes nothing.* It carries all of
+   the code above. It rebuilds the tables under the wider key in one
+   transaction and keeps a unique index on the old key, so the previous
+   binary's statements still hold if this one fails probation. Servers still
+   refuse a second owner under an index, so no row and no file exists that the
+   previous binary would misread. Clients and repair workers start sending
+   `owner`; the hub starts keying by it. Nothing a member can observe changes.
+2. *A release that accepts a second owner.* Published once the status page
+   shows every storage server, the hub and every repair worker on the first
+   release or later. A server begins to accept a second owner only after its
+   own update has passed probation, and drops the unique index on the old key
+   at that moment, not at install: a rollback during probation therefore
+   returns to a store laid out as before. From then on the first release is
+   the oldest binary such a server can go back to, and it reads everything
+   the second one writes.
+3. *Later, and not urgent:* requests without an owner are refused and the
+   fallback is removed.
+
+Between the first and the second release the weakness is as it is today.
+
+**What must be shown before each release.**
+
+- The table rebuild on a copy of the largest live index: how long it takes and
+  that census generation, usage per owner and tombstones are the same before
+  and after.
+- A rollback drill on one live node for each of the two releases: install,
+  force the rollback, compare the census.
+- Old client against new server and new client against old server, for
+  `has`, `get`, `put`, `delete` and repair, as tests on the engine fake and
+  the share protocol.
+- The attack as a test: a second member registers a descriptor under an index
+  first, and the owner's upload, restore, delete and repair all go through;
+  the second member's shares count against its own budget and its tombstone
+  touches only its own rows.
+- A member marked as leaving loses its own rows and no one else's under the
+  same index.
+
+**Until then.** An object refused with `descriptor` on every attempt, on
+servers that hold nothing of it for its owner, is the sign. The remedy is the
+operators': the rows name the member, and removing it from the manifest clears
+them after the grace.
 
 ### Mutable state without mutable files: roots and snapshots
 
@@ -1625,12 +1737,12 @@ learns who talks to whom and how much.
 | Adversary | Can | Cannot | Why |
 | --- | --- | --- | --- |
 | A storage host, curious or malicious | See ciphertext, sizes, owners and timing; delete or corrupt the shares it holds | Read a byte of content, alter a share undetected, forge a share's owner, inflate another member's usage | Per-object keys never leave the owner's devices; hash trees are verified on read; the descriptor is signed by a device certified for the owner |
-| A malicious member | Fill their own quota with garbage, hammer servers with requests, invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the receiving server catches before it marks the share complete | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
+| A malicious member | Fill their own quota with garbage, hammer servers with requests, as a storage member hold up the upload of an object whose storage index it saw announced, for as long as it stays a member and with its name on the rows (see "Planned: shares keyed by owner and storage index"), invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the receiving server catches before it marks the share complete | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
 | A compromised hub | See the metadata the collector sees, drop or delay relayed traffic, publish a false status page, hand out wrong address candidates, after which connections fail rather than being misdirected, serve a stale manifest within its maximum age to agents that reach only the hub, issue repair tasks that place surplus copies of real objects, at most one share per server and charged to their owners, which the census shows and the surplus rule removes | Admit a member or forge a manifest, revocation or release; read a share; impersonate a device; delete anything, including through a surplus release, which each holder confirms itself; withhold a revocation from an agent that talks to any peer | Manifests, revocations and releases carry signatures by keys the hub does not hold; revision numbers stop rollback; devices authenticate each other end to end; agents fetch revocations from peers too. The hub's GitHub token is the exception to "no key but its own"; it can only open issues, which become pull requests through the repository's workflow and take effect when an operator signs |
 | An anonymous poster | Send requests to the join endpoint until the per-address limit stops them | Open an issue, spend the hub's token or reach a human without a valid, unused invite from an active member | The hub verifies the invite against the signed manifest before it does anything else |
-| A compromised repository account | Change the files on main; stop signed manifests from being published, which only delays changes | Change what any node runs: admit a member, change k-of-n, mark a member leaving; install a binary; read data; impersonate a device | Agents apply only manifests signed by an operator key pinned at join; release keys rotate only through their own chain; branch protection, review and 2FA stay as the first line |
+| A compromised repository account | Change the files on main; stop signed manifests from being published, which only delays changes; hand a first install through the one-line installer a binary of its choosing, since the script checks the archive against the index as served and not the index's signature | Change what any node runs: admit a member, change k-of-n, mark a member leaving; install a binary; read data; impersonate a device | Agents apply only manifests signed by an operator key pinned at join; release keys rotate only through their own chain; branch protection, review and 2FA stay as the first line |
 | A stolen operator key | Sign a manifest: admit a member or a device, change k-of-n or allocations, mark members leaving, replace the operator keys | Install a binary; read data; delete anything inside the grace period, which servers measure on their own clocks | Release keys are separate; deletion waits for the grace on every server, time enough to notice a signed manifest nobody merged; until a threshold of operator keys exists, recovery is a new network descriptor sent out of band, which is why the threshold is an open question |
-| A lost or stolen device | Read everything of that member, which is what the member's own device is for; write and tombstone as that device until revoked | Certify devices, revoke the member's other devices, write another device's root, purge anything within 30 days of tombstoning it, act after revocation, read other members' data | The member signing key is never stored on a device; revocation needs the phrase and reaches servers directly; deletion is two-phase; a stolen phrase means a new identity, as a stolen GPG key does today |
+| A lost or stolen device | Read everything of that member, which is what the member's own device is for; write and tombstone as that device until revoked; after revocation, still decrypt any share of the member it obtains some other way, since the member secret is the same on every device and is not rotated | Certify devices, revoke the member's other devices, write another device's root, purge anything within 30 days of tombstoning it, act after revocation, read other members' data | The member signing key is never stored on a device; revocation needs the phrase and reaches servers directly; deletion is two-phase; a stolen phrase means a new identity, as a stolen GPG key does today |
 | A compromised release pipeline | Ship a malicious binary | Have it installed | Releases are signed with an offline key that CI never holds and whose public half agents already hold; the index can withdraw a version; CI builds from tags |
 | The network path | See QUIC flows to hubs and peers, their volume and timing | Read or alter anything | TLS 1.3 between device keys; the relay forwards ciphertext |
 | A web page the member visits | Send requests to `127.0.0.1` from the member's browser | Change a setting, certify a device or start a restore | Session cookie with SameSite=Strict, a CSRF token on every change, Host and Origin checks, no GET that changes state |

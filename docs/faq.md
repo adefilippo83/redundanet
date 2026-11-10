@@ -20,7 +20,7 @@ No. Every object is encrypted on your device with a key derived from your member
 The data is unreadable to everyone, by design; there is no escrow and nobody can recover it for you. A new identity is a new member entry, and the maintainer retires the old one. Keep the phrase like a passport. Seal the identity file with `--passphrase` if the device is shared.
 
 **What if I lose a device?**
-Revoke it from any other device of yours: `redundanet device revoke --device KEY`. The agent sends the signed record to every storage server and hub within seconds, and the maintainer adds it to the manifest for good; the device is refused from then on. Until then it can read what your devices can read and write as that device, but anything it deletes stays recoverable for 30 days. See [security.md](security.md).
+Revoke it from any other device of yours: `redundanet device revoke --device KEY`. The agent sends the signed record to every storage server and hub within seconds, and the maintainer adds it to the manifest for good; the device is refused from then on. Until then it can read what your devices can read and write as that device, but anything it deletes stays recoverable for 30 days. Revoking stops the device; it does not change the secret that device held, which reads your data and is the same on all your devices. What that leaves open, and when a new identity is the answer: [security.md](security.md), "What a lost device can do".
 
 **How much space do I get?**
 The local page and `redundanet backup list` show "allocation: X of Y GB used"; a run is refused once the allocation is used up, and says so.

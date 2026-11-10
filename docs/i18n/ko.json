@@ -22,6 +22,7 @@
   "dl.toc.updates": "자체 업데이트",
   "dl.quick.title": "한 줄",
   "dl.quick.desc": "한 줄이면 플랫폼을 인식하고, 최신 안정 릴리스를 내려받아 sha256과 크기가 서명된 색인과 맞지 않으면 거부하고, 에이전트가 갱신할 수 있는 곳에 설치합니다. macOS와 Linux에서는 터미널에서, Windows에서는 PowerShell에서. <a href=\"installation.html\">설치 페이지</a>가 거기서 이어집니다. 스크립트는 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.sh\">docs/install.sh</a>와 <a href=\"https://github.com/adefilippo83/redundanet/blob/main/docs/install.ps1\">docs/install.ps1</a>입니다.",
+  "dl.quick.trust": "첫 설치는 GitHub와 이 웹사이트를 신뢰합니다. 스크립트는 인덱스의 서명을 확인하지 않습니다. 설치된 에이전트가 서명을 확인하며, 그 이후의 모든 업데이트는 검증됩니다.",
   "dl.builds.title": "빌드",
   "dl.builds.intro": "GitHub의 <code>agent/v3.0.0</code> 릴리스에는 아카이브 다섯 개와 <code>sha256sums.txt</code>가 있습니다. 각 아카이브에는 <code>redundanet</code> 바이너리(Windows에서는 <code>redundanet.exe</code>)가 든 폴더 하나가 들어 있습니다.",
   "dl.builds.col.platform": "플랫폼",
