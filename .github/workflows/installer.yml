@@ -26,7 +26,7 @@ jobs:
     name: install.ps1 (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: a version the index does not list is refused, as a file (exit 1) and piped (no exit)
         shell: powershell
