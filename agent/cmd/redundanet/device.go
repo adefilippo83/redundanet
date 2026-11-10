@@ -38,7 +38,10 @@ func runDevice(args []string) error {
 
 // devicePair is the existing device's side of pairing: with the phrase typed
 // here, it reaches the new device through its code, certifies its key and
-// hands over the identity and this network's descriptor.
+// hands over the identity and this network's descriptor. The code is asked
+// for, like the phrase: on the command line every user of this machine
+// could read it while the command runs, and whoever holds a code can
+// answer the new device in the member's place.
 func devicePair(args []string) error {
 	fs := flag.NewFlagSet("device pair", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
@@ -47,12 +50,25 @@ func devicePair(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *network == "" || fs.NArg() != 1 {
-		return errors.New("usage: device pair [--network NAME] [--storage] <code shown by the new device>")
+	if *network == "" || fs.NArg() > 1 {
+		return errors.New("usage: device pair [--network NAME] [--storage]; it asks for the code the new device shows, then for the phrase")
 	}
 	d, err := dataDir(*dir)
 	if err != nil {
 		return err
+	}
+	code := fs.Arg(0)
+	if code != "" {
+		fmt.Fprintln(os.Stderr, "note: a code on the command line can be read by other users of this machine while this runs; leave it out and paste it when asked")
+	} else if code, err = readLine("Pairing code shown by the new device: "); err != nil {
+		return err
+	}
+	parsed, err := pairing.Parse(code)
+	if err != nil {
+		return err
+	}
+	if !parsed.Bound() {
+		fmt.Fprintln(os.Stderr, "note: this code comes from a version before 3.0.15 and does not name the new device's key; make sure nobody else has seen it")
 	}
 	seed, err := readPhrase()
 	if err != nil {
@@ -61,7 +77,7 @@ func devicePair(args []string) error {
 	defer seed.Zero()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	pd, err := pairDevice(ctx, d, *network, fs.Arg(0), seed, *storage, *serial)
+	pd, err := pairDevice(ctx, d, *network, code, seed, *storage, *serial)
 	if err != nil {
 		return err
 	}

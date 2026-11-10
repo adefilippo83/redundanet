@@ -38,7 +38,9 @@ RedundaNet 3 node: the pairing code of this Raspberry Pi
 On a device of yours that has its identity, with the recovery phrase at
 hand, on this network or anywhere else (the hub relays the exchange):
 
-  redundanet device pair ${netflag}--storage $code
+  redundanet device pair ${netflag}--storage
+
+and paste the code when it asks.
 
 The code stays valid, and the same after every reboot, until the node is
 paired; anyone holding it could claim the node until then, so it is for
@@ -60,7 +62,7 @@ TXT
     $code
 
   On a device of yours with its identity, with the phrase at hand:
-    redundanet device pair ${netflag}--storage $code
+    redundanet device pair ${netflag}--storage     (it asks for the code)
   The same code is in redundanet-pairing-code.txt on the boot partition.
   The store needs a disk labeled REDUNDANET: sudo redundanet-install disk /dev/sda
   Change the password first: passwd

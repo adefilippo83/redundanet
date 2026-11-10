@@ -51,8 +51,10 @@ The same download and checks as above, then `redundanet node install`: the servi
 On your laptop, with the phrase at hand, on the same network as the node or anywhere else:
 
 ```bash
-redundanet device pair --storage <the code>
+redundanet device pair --storage
 ```
+
+It asks for the code the node shows, then for the phrase.
 
 The two reach each other directly on the same network, or through the hub when they cannot: the hub relays the same sealed frames and learns nothing but that a pairing happened. The node receives its identity and the network through the code, joins and starts; nothing is copied by hand. Your laptop records the node (key, host name, roles) in `devices.yaml` in its data directory, so `redundanet setup` and `redundanet join-request` put it in the join form; the node prints its `storage:` lines too. It contributes only once the maintainer lists it under `storage:` in the manifest.
 
@@ -69,7 +71,7 @@ The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 
 
 ## Raspberry Pi
 
-Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it, and pair it from a device of yours with the code it writes to the SD card's boot partition (`redundanet device pair --storage <code>`, from anywhere: the hub relays the exchange; the code is the same after every reboot until the Pi is paired). Give it a disk labeled `REDUNDANET`: the Pi mounts it on its own and runs the agent only while it is mounted, so shares never land on the SD card; `sudo redundanet-install disk /dev/sda` over SSH formats one. The steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: the one line above picks the `linux-arm64` release on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
+Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it, and pair it from a device of yours with the code it writes to the SD card's boot partition (`redundanet device pair --storage`, which asks for the code, from anywhere: the hub relays the exchange; the code is the same after every reboot until the Pi is paired). Give it a disk labeled `REDUNDANET`: the Pi mounts it on its own and runs the agent only while it is mounted, so shares never land on the SD card; `sudo redundanet-install disk /dev/sda` over SSH formats one. The steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: the one line above picks the `linux-arm64` release on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
 
 ## A second device, without the phrase
 
@@ -79,10 +81,10 @@ On the new device, after the one line, `redundanet setup` offers it as the third
 redundanet identity pair
 ```
 
-It shows a code and waits ten minutes. On a device of yours that already has its identity, anywhere, type the phrase when asked:
+It shows a code and waits ten minutes. On a device of yours that already has its identity, anywhere, run this, paste the code when asked, then type the phrase:
 
 ```
-redundanet device pair <the code>
+redundanet device pair
 ```
 
 Add `--storage` if the new device will contribute disk. The new device now holds its identity and the network; finish with `redundanet service install`. The phrase never leaves the device you typed it on; the code is good for one device and ten minutes. The two devices reach each other directly on the same network, or through the hub from anywhere: the code names the hub, and the hub relays the sealed frames without being able to read them. With the phrase at hand and no other device nearby, `setup`'s second choice, or `redundanet identity init --from-phrase`, puts your identity on the new device directly. For a machine with no second device beside it, the storage node flow above and the Raspberry Pi image remain.

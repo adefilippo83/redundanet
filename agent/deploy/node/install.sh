@@ -128,7 +128,7 @@ pair() {
   [ -f "$ENV" ] && . "$ENV"
   [ ! -f "$DATA/identity" ] || die "this node already has an identity"
   echo "On a device of yours that has its identity, with the phrase at hand (on this network or anywhere: the hub relays the exchange):"
-  echo "  redundanet device pair ${netflag}--storage <the code shown below>"
+  echo "  redundanet device pair ${netflag}--storage"
   echo
   sudo -u redundanet3 "$BIN" identity pair --network "$NETWORK" --data-dir "$DATA" --wait "${PAIR_WAIT:-10m}" || die "pairing did not complete; run install.sh pair again for a new code, or use finish with a certificate file"
   systemctl enable --now redundanet-agent || echo "paired, but the agent could not start yet (no storage disk mounted?): systemctl status redundanet-agent"

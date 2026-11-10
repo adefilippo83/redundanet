@@ -50,8 +50,10 @@ pairing").
    relays the exchange and learns nothing but that a pairing happened):
 
    ```bash
-   redundanet device pair --storage <the code>
+   redundanet device pair --storage
    ```
+
+   It asks for the code, then for the phrase.
 
    The Pi receives its identity and the network, joins, and the code leaves
    the card. Your device records the Pi (key, name, certificate), so

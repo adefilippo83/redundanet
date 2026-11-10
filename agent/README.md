@@ -103,12 +103,20 @@ deltas since the generation that hub last received, with the date its
 oldest integrity check dates from and its free-space floor.
 Pairing (RFC 0001, "Adding a device") is how a member adds a laptop without
 typing the phrase on it: `identity pair` on the new device shows a code,
-`rn3:pair:` and base32 of the device's addresses and a 160-bit secret, and
-listens on a TCP port; `device pair CODE` on a device that has the
-identity, after the phrase, connects to one of those addresses, and the
-two exchange four messages sealed with AES-GCM under a key HKDF derives
-from the secret: open, the new device's key, the offer (the identity as
-`identity certify` makes it, plus the network descriptor), done. Only the
+`rn3:pair:` and base32 of the device's addresses, a 160-bit secret and the
+device's key, and listens on a TCP port; `device pair` on a device that
+has the identity asks for the code and the phrase and connects to one of
+those addresses. The two send each other a one-time X25519 key in the
+clear, then exchange four messages sealed with AES-GCM under a key HKDF
+derives from the agreement and the secret, salted with both one-time keys:
+open, the new device's key with its signature over the two one-time keys,
+the offer (the identity as `identity certify` makes it, plus the network
+descriptor), done. The existing device sends the offer only when the key
+that answered is the one in the code and the signature verifies, so the
+offer opens only on the device the code was made on. A code of version 1
+or 2, from a device before 3.0.15, has no key and is paired by the earlier
+exchange, sealed under the secret alone; a new device answers only the
+exchange with the agreement. Only the
 holders of the code can take part, a wrong code opens nothing, three
 failed connections end the code, and it is good for ten minutes and one
 device. The two reach each other directly on the same network or, failing
@@ -385,8 +393,10 @@ redundanet identity check
 redundanet identity pair [--wait 10m]
     The new device's side of pairing: makes its device key, shows a
     one-time code and waits. Nothing is typed here but the command.
-redundanet device pair [--storage] CODE
-    The existing device's side, with the phrase: reaches the new device
+redundanet device pair [--storage]
+    The existing device's side: asks for the code, then the phrase (a code
+    given as an argument works too, with a note that other users of the
+    machine can read it there); reaches the new device
     through the code, certifies its key and hands over the identity and
     the network descriptor, sealed under the code. The phrase never moves.
     The new device (key, host name, roles) goes on record in devices.yaml,

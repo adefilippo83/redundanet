@@ -65,7 +65,7 @@ func runStatus(args []string) error {
 		fmt.Printf("redundanet %s, up %s, no identity yet\n", s.Version, s.Uptime)
 		switch s.Setup.Phase {
 		case "pairing":
-			fmt.Printf("setup: waiting for a device of yours to answer: redundanet device pair %s\n", s.Setup.Code)
+			fmt.Printf("setup: waiting for a device of yours to answer: run redundanet device pair there and paste this code when asked:\n  %s\n", s.Setup.Code)
 		case "confirm":
 			fmt.Println("setup: a phrase was shown on the page; confirm three of its words there")
 		case "done":
