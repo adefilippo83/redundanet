@@ -884,10 +884,29 @@ type page struct {
 	Active   int
 	FreeSum  uint64
 	TotalSum uint64
+	// Verdict is the page's first line: ok when everything stored is fully
+	// placed and no device that was seen is away, warn when repair is due
+	// or running or a device is away, bad when an object is unreadable,
+	// beyond repair or in conflict; "" before the hub tracks placement.
+	Verdict string
 }
 
 func pageData(st Status) page {
 	p := page{Status: st}
+	if g := st.Grid; g != nil {
+		p.Verdict = "ok"
+		if g.UnderPlaced > 0 || g.Repair > 0 || g.RepairRunning > 0 || g.RepairBlocked > 0 {
+			p.Verdict = "warn"
+		}
+		for _, d := range st.Devices {
+			if d.State == "recent" || d.State == "down" {
+				p.Verdict = "warn"
+			}
+		}
+		if g.Unreadable > 0 || g.BeyondRepair > 0 || g.Conflicts > 0 {
+			p.Verdict = "bad"
+		}
+	}
 	for _, d := range st.Devices {
 		if d.State == "online" {
 			p.Online++

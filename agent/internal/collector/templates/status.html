@@ -5,65 +5,116 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RedundaNet status</title>
 <style>
-:root { --bg:#faf9f5; --fg:#141413; --muted:#5e5d59; --line:#e8e6dc; --card:#ffffff; --ok:#2c7a4b; --warn:#b4540a; --bad:#b42318; --accent:#2c7be5; }
-@media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#f0efe9; --muted:#a5a39b; --line:#2b2a27; --card:#1d1c1a; } }
+/* The look of the agent's own page (agent/internal/api/static/app.css),
+   kept inline: this page is one document, served by the hub and mirrored
+   as a file, and loads nothing. */
+:root {
+  --bg: #f8fafc; --card: #ffffff; --sunk: #eef2f7; --line: #d5dde8; --fg: #0f172a; --muted: #475569;
+  --accent: #4338ca; --btn: #4f46e5; --btn-fg: #ffffff;
+  --ok: #15803d; --warn: #92400e; --bad: #b91c1c;
+  --ok-bg: #dcfce7; --warn-bg: #fef3c7; --bad-bg: #fee2e2;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a; --card: #1e293b; --sunk: #162033; --line: #334155; --fg: #f8fafc; --muted: #a3b2c7;
+    --accent: #a5b4fc;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #fca5a5;
+    --ok-bg: #12351f; --warn-bg: #3a2c0b; --bad-bg: #451a1a;
+  }
+}
 * { box-sizing: border-box }
-body { margin:0; background:var(--bg); color:var(--fg); font: 15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif }
-header { padding: 20px 24px; border-bottom: 1px solid var(--line); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap }
-header h1 { font-size: 18px; margin:0 }
-.meta { color: var(--muted); font-size: 13px }
-main { padding: 16px 24px 40px; max-width: 1100px }
-.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 16px }
-.card { background:var(--card); border:1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px }
-.grid .card { margin: 0 }
-.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px }
-.kv { display:grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px }
-.kv b { font-weight: 500; color: var(--muted) }
-code { font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace }
-.ok { color: var(--ok) } .warn { color: var(--warn) } .bad { color: var(--bad) } .muted { color: var(--muted) }
-table { width:100%; border-collapse: collapse; font-size: 14px }
-th, td { text-align:left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap }
-th { color: var(--muted); font-weight: 500; font-size: 12.5px }
-.wrap { overflow-x: auto }
-.bar { display:inline-block; width: 160px; height: 8px; border-radius: 4px; background: var(--line); vertical-align: middle; margin-left: 6px; overflow: hidden }
-.bar .fill { display:block; height: 100%; background: var(--ok) }
+html { -webkit-text-size-adjust: 100% }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif }
+h1, h2, p, dl, dd { margin: 0; padding: 0 }
+h1 { font-size: 26px; line-height: 1.2; font-weight: 700; text-wrap: balance }
+h2 { font-size: 17px; font-weight: 600 }
 a { color: var(--accent) }
+a:hover { color: var(--fg) }
+code { font-family: var(--mono); font-size: 13px }
+.muted { color: var(--muted) }
+.ok { color: var(--ok) } .warn { color: var(--warn) } .bad { color: var(--bad) }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 24px; border-bottom: 1px solid var(--line) }
+.brand { display: flex; align-items: center; gap: 12px }
+.brand-text { display: flex; flex-direction: column; line-height: 1.3 }
+.brand-text strong { font-size: 17px }
+.brand-text .muted, .meta { font-size: 13px; color: var(--muted) }
+.logo { width: 36px; height: 36px; border-radius: 9px; background: var(--btn); color: var(--btn-fg); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px }
+main { display: flex; flex-direction: column; gap: 20px; padding: 24px; max-width: 1240px; margin: 0 auto }
+.card, .tile, .hero { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px }
+.card { display: flex; flex-direction: column; gap: 14px }
+.hero { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; padding: 24px }
+.hero div { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 4px }
+.hero-icon { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; background: var(--sunk); color: var(--muted) }
+.hero-ok .hero-icon { background: var(--ok-bg); color: var(--ok) }
+.hero-warn .hero-icon { background: var(--warn-bg); color: var(--warn) }
+.hero-bad .hero-icon { background: var(--bad-bg); color: var(--bad) }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px }
+.tile { display: flex; flex-direction: column; gap: 6px }
+.tile h2 { font-size: 14px; font-weight: 500; color: var(--muted) }
+.tile .muted { font-size: 14px }
+.big { font-size: 24px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px }
+.facts .full { grid-column: 1 / -1 }
+.facts dt { font-size: 13px; color: var(--muted) }
+.facts dd { font-weight: 600; overflow-wrap: anywhere }
+.facts dd .muted { font-weight: 400 }
+progress { display: block; width: 100%; max-width: 320px; height: 8px; margin: 6px 0 0; border: 0; border-radius: 999px; overflow: hidden; background: var(--sunk); accent-color: var(--btn); appearance: none; -webkit-appearance: none }
+progress::-webkit-progress-bar { background: var(--sunk); border-radius: 999px }
+progress::-webkit-progress-value { background: #6366f1; border-radius: 999px }
+progress::-moz-progress-bar { background: #6366f1; border-radius: 999px }
+.wrap { overflow-x: auto }
+table { width: 100%; border-collapse: collapse; font-size: 14px }
+th, td { text-align: left; padding: 8px; border-top: 1px solid var(--line); vertical-align: top; white-space: nowrap }
+thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 13px }
+td:first-child { font-weight: 600 }
+td:first-child code { font-weight: 400 }
+:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px }
+@media (max-width: 520px) { .top, main { padding-left: 16px; padding-right: 16px } }
 </style>
 </head>
 <body>
-<header>
-  <h1>RedundaNet</h1>
-  <span class="meta">{{.Network}} · hub <code>{{short .Hub}}</code> · up {{.HubUptime}} · manifest revision {{.ManifestRevision}}</span>
+<header class="top">
+  <span class="brand"><span class="logo" aria-hidden="true">R</span><span class="brand-text"><strong>RedundaNet</strong><span class="muted">{{.Network}} · network status</span></span></span>
 </header>
 <main>
-<section class="grid">
-  <div class="card"><h2>Devices</h2><div class="kv">
-    <b>online</b><span>{{.Online}} of {{len .Devices}}</span>
-    <b>storage free</b><span>{{if .TotalSum}}{{size .FreeSum}} of {{size .TotalSum}}{{else}}<span class="muted">no storage device reporting</span>{{end}}</span>
-  </div></div>
-  <div class="card"><h2>Members</h2><div class="kv">
-    <b>active</b><span>{{.Active}} of {{len .Members}}</span>
-    <b>manifest</b><span>revision {{.ManifestRevision}}</span>
-  </div></div>
-  {{with .Grid}}<div class="card"><h2>Objects</h2><div class="kv">
-    <b>stored</b><span>{{if .Objects}}{{.Objects}} {{plural .Objects "object"}}, {{size .Bytes}} of shares on {{.Servers}} {{plural .Servers "server"}}{{else}}<span class="muted">none yet</span>{{end}}</span>
-    <b>placement</b><span>{{if not .Objects}}<span class="muted">nothing to place</span>{{else if .UnderPlaced}}<span class="warn">{{.UnderPlaced}} under-placed</span>{{if .Unreadable}}, <span class="bad">{{.Unreadable}} unreadable</span>{{end}}{{else}}<span class="ok">all {{.Placed}} fully placed</span>{{end}}</span>
-    <b>copies</b><span>{{range $k, $v := .Copies}}{{$v}} with {{$k}} · {{end}}{{if .Surplus}}{{.Surplus}} with surplus{{end}}</span>
-    <b>repair</b><span>{{if .RepairRunning}}<span class="warn">{{.RepairRunning}} running</span>{{if .Repair}}, {{.Repair}} {{plural .Repair "object"}} due{{end}}{{else if .Repair}}<span class="warn">{{.Repair}} {{plural .Repair "object"}} due</span>{{else if .Quiescing}}{{.Quiescing}} waiting out the quiescence window{{else if not .BeyondRepair}}<span class="muted">nothing to do</span>{{end}}{{if .BeyondRepair}}{{if or .RepairRunning .Repair .Quiescing}} · {{end}}<span class="bad">{{.BeyondRepair}} beyond repair</span>{{end}}{{if .RepairBlocked}} · <span class="bad">{{.RepairBlocked}} blocked{{if .RepairShort}}: {{size .RepairShort}} short above the floors{{end}}</span>{{end}}{{if .RepairDone}} · {{.RepairDone}} repaired in 24 h{{end}}{{if .RepairFailed}} · <span class="warn">{{.RepairFailed}} {{plural .RepairFailed "task"}} failed in 24 h</span>{{end}}{{if .Conflicts}} · <span class="bad">{{.Conflicts}} with servers disagreeing</span>{{end}}{{if .Tombstoned}} · {{.Tombstoned}} deleted{{end}}</span>
-    <b>scheduler</b><span>{{if .Scheduler}}{{.Scheduler}}{{else}}<span class="muted">none yet</span>{{end}}</span>
-    {{with .Conversion}}<b>encoding</b><span>{{.From}} to {{.To}} by {{.Deadline}}: {{.Converted}} of {{.Objects}} {{plural .Objects "object"}} converted{{if .OldBytes}}, {{size .OldBytes}} under the old encoding{{if .Counting}} counting again{{else}} not counted yet{{end}}{{end}}
-      <span class="bar"><span class="fill" style="width:{{pct .Converted .Objects}}%"></span></span></span>{{end}}
-  </div></div>{{end}}
-  {{with .Legacy}}<div class="card"><h2>RedundaNet 2</h2><div class="kv">
-    <b>overall</b><span>{{if eq .Overall "healthy"}}<span class="ok">{{.Overall}}</span>{{else if .Overall}}<span class="warn">{{.Overall}}</span>{{else}}<span class="muted">unknown</span>{{end}}</span>
-    {{with .Grid}}<b>storage</b><span>{{index . "storage_connected"}} of {{index . "storage_expected"}} connected</span>{{end}}
-    <b>fetched</b><span>{{since .FetchedAt}}{{if .Error}} <span class="bad">({{.Error}})</span>{{end}}</span>
-  </div></div>{{end}}
+<section class="hero hero-{{.Verdict}}">
+  <span class="hero-icon" aria-hidden="true">{{if eq .Verdict "ok"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{else if .Verdict}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>{{else}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 12h10"/></svg>{{end}}</span>
+  <div>
+    <h1>{{if eq .Verdict "ok"}}Everything stored is fully placed{{else if eq .Verdict "warn"}}The network is repairing or waiting for a device{{else if eq .Verdict "bad"}}Some stored objects need attention{{else}}Network status{{end}}</h1>
+    <p class="muted">hub <code>{{short .Hub}}</code> · up {{.HubUptime}} · manifest revision {{.ManifestRevision}}</p>
+  </div>
 </section>
 
-<div class="card"><h2>Devices</h2><div class="wrap"><table>
-<tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>checked since</th><th>peers</th><th>relayed</th><th>update</th></tr>
-{{range .Devices}}<tr>
+<section class="tiles">
+  <div class="tile"><h2>Devices</h2>
+    <p class="big">{{.Online}} of {{len .Devices}}</p><p class="muted">online</p>
+  </div>
+  <div class="tile"><h2>Storage free</h2>
+    {{if .TotalSum}}<p class="big">{{size .FreeSum}} of {{size .TotalSum}}</p><p class="muted">on the storage devices reporting</p>{{else}}<p class="big muted">no storage device reporting</p>{{end}}
+  </div>
+  <div class="tile"><h2>Members</h2>
+    <p class="big">{{.Active}} of {{len .Members}}</p><p class="muted">active · manifest revision {{.ManifestRevision}}</p>
+  </div>
+  {{with .Legacy}}<div class="tile"><h2>RedundaNet 2</h2>
+    <p class="big">{{if eq .Overall "healthy"}}<span class="ok">{{.Overall}}</span>{{else if .Overall}}<span class="warn">{{.Overall}}</span>{{else}}<span class="muted">unknown</span>{{end}}</p>
+    <p class="muted">{{with .Grid}}{{index . "storage_connected"}} of {{index . "storage_expected"}} connected · {{end}}fetched {{since .FetchedAt}}{{if .Error}} <span class="bad">({{.Error}})</span>{{end}}</p>
+  </div>{{end}}
+</section>
+
+{{with .Grid}}<section class="card"><h2>Objects</h2><dl class="facts">
+  <div><dt>stored</dt><dd>{{if .Objects}}{{.Objects}} {{plural .Objects "object"}}, {{size .Bytes}} of shares on {{.Servers}} {{plural .Servers "server"}}{{else}}<span class="muted">none yet</span>{{end}}</dd></div>
+  <div><dt>placement</dt><dd>{{if not .Objects}}<span class="muted">nothing to place</span>{{else if .UnderPlaced}}<span class="warn">{{.UnderPlaced}} under-placed</span>{{if .Unreadable}}, <span class="bad">{{.Unreadable}} unreadable</span>{{end}}{{else}}<span class="ok">all {{.Placed}} fully placed</span>{{end}}</dd></div>
+  <div><dt>copies</dt><dd>{{range $k, $v := .Copies}}{{$v}} with {{$k}} · {{end}}{{if .Surplus}}{{.Surplus}} with surplus{{end}}</dd></div>
+  <div><dt>scheduler</dt><dd>{{if .Scheduler}}{{.Scheduler}}{{else}}<span class="muted">none yet</span>{{end}}</dd></div>
+  <div class="full"><dt>repair</dt><dd>{{if .RepairRunning}}<span class="warn">{{.RepairRunning}} running</span>{{if .Repair}}, {{.Repair}} {{plural .Repair "object"}} due{{end}}{{else if .Repair}}<span class="warn">{{.Repair}} {{plural .Repair "object"}} due</span>{{else if .Quiescing}}{{.Quiescing}} waiting out the quiescence window{{else if not .BeyondRepair}}<span class="muted">nothing to do</span>{{end}}{{if .BeyondRepair}}{{if or .RepairRunning .Repair .Quiescing}} · {{end}}<span class="bad">{{.BeyondRepair}} beyond repair</span>{{end}}{{if .RepairBlocked}} · <span class="bad">{{.RepairBlocked}} blocked{{if .RepairShort}}: {{size .RepairShort}} short above the floors{{end}}</span>{{end}}{{if .RepairDone}} · {{.RepairDone}} repaired in 24 h{{end}}{{if .RepairFailed}} · <span class="warn">{{.RepairFailed}} {{plural .RepairFailed "task"}} failed in 24 h</span>{{end}}{{if .Conflicts}} · <span class="bad">{{.Conflicts}} with servers disagreeing</span>{{end}}{{if .Tombstoned}} · {{.Tombstoned}} deleted{{end}}</dd></div>
+  {{with .Conversion}}<div class="full"><dt>encoding</dt><dd>{{.From}} to {{.To}} by {{.Deadline}}: {{.Converted}} of {{.Objects}} {{plural .Objects "object"}} converted{{if .OldBytes}}, {{size .OldBytes}} under the old encoding{{if .Counting}} counting again{{else}} not counted yet{{end}}{{end}}
+    <progress value="{{.Converted}}" max="{{.Objects}}">{{pct .Converted .Objects}}%</progress></dd></div>{{end}}
+</dl></section>{{end}}
+
+<section class="card"><h2>Devices</h2><div class="wrap"><table>
+<thead><tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>checked since</th><th>peers</th><th>relayed</th><th>update</th></tr></thead>
+<tbody>{{range .Devices}}<tr>
   <td>{{if .Name}}{{.Name}} <code class="muted">{{short .Device}}</code>{{else}}<code>{{short .Device}}</code>{{end}}</td>
   <td>{{.Member}}</td>
   <td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}</td>
@@ -79,17 +130,17 @@ a { color: var(--accent) }
   <td>{{if or .Direct .Relayed}}{{.Direct}} direct, {{.Relayed}} relayed{{end}}</td>
   <td>{{if or .RelayIn .RelayOut}}{{size .RelayIn}} in, {{size .RelayOut}} out{{end}}</td>
   <td>{{.Update}}</td>
-</tr>{{end}}
-</table></div></div>
+</tr>{{end}}</tbody>
+</table></div></section>
 
-<div class="card"><h2>Members</h2><div class="wrap"><table>
-<tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>placement</th><th>last backup</th><th>last verified restore</th><th>devices</th></tr>
-{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{if .Objects}}{{size .StoredBytes}} in {{.Objects}} objects{{if .OldEncoding}}, <span class="warn">{{.OldEncoding}} to convert</span>{{end}}{{else}}<span class="muted">nothing yet</span>{{end}}</td><td>{{if not .Objects}}{{else if .Unreadable}}<span class="bad">{{.Unreadable}} unreadable</span>, {{.UnderPlaced}} under-placed{{else if .UnderPlaced}}<span class="warn">{{.UnderPlaced}} under-placed</span>{{else}}<span class="ok">complete</span>{{end}}</td><td>{{if .LastBackup}}{{.LastBackup}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{if .LastVerified}}{{.LastVerified}}{{if .VerifyStreak}}, {{.VerifyStreak}} week{{if ne .VerifyStreak 1}}s{{end}} in a row{{end}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}
-</table></div></div>
+<section class="card"><h2>Members</h2><div class="wrap"><table>
+<thead><tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>placement</th><th>last backup</th><th>last verified restore</th><th>devices</th></tr></thead>
+<tbody>{{range .Members}}<tr><td>{{.Name}}</td><td>{{.Status}}</td><td>{{.ContributionGB}} GB</td><td>{{.AllocationGB}} GB</td><td>{{if .Objects}}{{size .StoredBytes}} in {{.Objects}} objects{{if .OldEncoding}}, <span class="warn">{{.OldEncoding}} to convert</span>{{end}}{{else}}<span class="muted">nothing yet</span>{{end}}</td><td>{{if not .Objects}}{{else if .Unreadable}}<span class="bad">{{.Unreadable}} unreadable</span>, {{.UnderPlaced}} under-placed{{else if .UnderPlaced}}<span class="warn">{{.UnderPlaced}} under-placed</span>{{else}}<span class="ok">complete</span>{{end}}</td><td>{{if .LastBackup}}{{.LastBackup}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{if .LastVerified}}{{.LastVerified}}{{if .VerifyStreak}}, {{.VerifyStreak}} week{{if ne .VerifyStreak 1}}s{{end}} in a row{{end}}{{else}}<span class="muted">none</span>{{end}}</td><td>{{.Online}} online of {{.Devices}}</td></tr>{{end}}</tbody>
+</table></div></section>
 
-{{with .Legacy}}<div class="card"><h2>RedundaNet 2 nodes</h2><div class="wrap"><table>
-<tr><th>node</th><th>roles</th><th>reachable</th><th>rtt</th><th>24 h</th><th>7 d</th><th>30 d</th><th>storage</th></tr>
-{{range .Nodes}}<tr>
+{{with .Legacy}}<section class="card"><h2>RedundaNet 2 nodes</h2><div class="wrap"><table>
+<thead><tr><th>node</th><th>roles</th><th>reachable</th><th>rtt</th><th>24 h</th><th>7 d</th><th>30 d</th><th>storage</th></tr></thead>
+<tbody>{{range .Nodes}}<tr>
   <td>{{.Name}}</td>
   <td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}</td>
   <td>{{if .Reachable}}<span class="ok">yes</span>{{else}}<span class="bad">no</span>{{end}}</td>
@@ -98,9 +149,9 @@ a { color: var(--accent) }
   <td>{{fnum .Uptime7d "%.1f%%"}}</td>
   <td>{{fnum .Uptime30d "%.1f%%"}}</td>
   <td>{{with .StorageListening}}{{if .}}<span class="ok">listening</span>{{else}}<span class="bad">not listening</span>{{end}}{{end}}</td>
-</tr>{{end}}
+</tr>{{end}}</tbody>
 </table></div>
-<p class="meta">Mirrored from <a href="{{.Source}}">{{.Source}}</a>{{if .GeneratedAt}}, generated {{.GeneratedAt}}{{end}}.</p></div>{{end}}
+<p class="meta">Mirrored from <a href="{{.Source}}">{{.Source}}</a>{{if .GeneratedAt}}, generated {{.GeneratedAt}}{{end}}.</p></section>{{end}}
 
 <p class="meta">Generated {{.GeneratedAt.Format "2006-01-02 15:04:05 MST"}} · <a href="status.json">status.json</a></p>
 </main>

@@ -496,3 +496,11 @@ func sameContent(a, b string) (bool, error) {
 		}
 	}
 }
+
+// TargetName is the name a restored entry called name gets on this
+// machine: its own, or the escaped form a name the file system cannot hold
+// is restored under. A caller that picks where one entry goes uses it.
+func TargetName(name string) string {
+	n, _ := safeName(&snapshot.Entry{Name: []byte(name), UTF8: true})
+	return n
+}

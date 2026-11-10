@@ -54,13 +54,46 @@ func devicePair(args []string) error {
 	if err != nil {
 		return err
 	}
+	seed, err := readPhrase()
+	if err != nil {
+		return err
+	}
+	defer seed.Zero()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	pd, err := pairDevice(ctx, d, *network, fs.Arg(0), seed, *storage, *serial)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", short(pd.Device), seed.MemberKey().Short(), strings.Join(pd.Roles, ", "))
+	if *storage {
+		fmt.Printf("storage node %s is on record here: redundanet join-request puts it in the join form, or send its storage: lines to the maintainer\n", pd.Name)
+	}
+	return nil
+}
+
+func short(key string) string {
+	if len(key) > 8 {
+		return key[:8]
+	}
+	return key
+}
+
+// pairDevice is the existing device's side of a pairing, for the command
+// and for the page: it reaches the new device through the code, certifies
+// it from the seed with the client role, and the storage role when asked,
+// hands it the identity and the network, and puts it on record in the data
+// directory dd with its certificate, so the join request can name a
+// storage node and prove it is the member's without anything copied by
+// hand. A serial of 0 is the seconds since 2026-01-01.
+func pairDevice(ctx context.Context, dd, network, code string, seed identity.Seed, storage bool, serial uint64) (pairedDevice, error) {
 	// The descriptor handed over: the one this device joined with, else the
 	// network built into this binary when that is the one.
 	descriptor := ""
-	desc, err := membership.LoadDescriptor(filepath.Join(d, membership.DescriptorFile))
-	if err != nil || desc.Network != *network {
+	desc, err := membership.LoadDescriptor(filepath.Join(dd, membership.DescriptorFile))
+	if err != nil || desc.Network != network {
 		desc, err = builtinDescriptor()
-		if err != nil || desc.Network != *network {
+		if err != nil || desc.Network != network {
 			desc = nil
 		}
 	}
@@ -72,28 +105,21 @@ func devicePair(args []string) error {
 	if descriptor == "" {
 		fmt.Fprintln(os.Stderr, "this device has no descriptor for that network; the new device will need `network join <descriptor>` by hand")
 	}
-	seed, err := readPhrase()
-	if err != nil {
-		return err
-	}
-	defer seed.Zero()
-	if *serial == 0 {
-		*serial = uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
+	if serial == 0 {
+		serial = uint64(time.Since(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)).Seconds())
 	}
 	roles := []string{identity.RoleClient}
-	if *storage {
+	if storage {
 		roles = append(roles, identity.RoleStorage)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	var issued *identity.SignedCertificate
-	dev, name, err := pairing.Pair(ctx, fs.Arg(0), *network, func(device identity.Key, _ string) (*pairing.Offer, error) {
-		sc, err := identity.Issue(seed, identity.Certificate{Network: *network, Device: device, Roles: roles, IssuedAt: time.Now(), Serial: *serial})
+	dev, name, err := pairing.Pair(ctx, code, network, func(device identity.Key, _ string) (*pairing.Offer, error) {
+		sc, err := identity.Issue(seed, identity.Certificate{Network: network, Device: device, Roles: roles, IssuedAt: time.Now(), Serial: serial})
 		if err != nil {
 			return nil, err
 		}
 		issued = sc
-		st := identity.State{Network: *network, Member: sc.Certificate.Member, MemberSecret: seed.Secret(), Certificate: *sc}
+		st := identity.State{Network: network, Member: sc.Certificate.Member, MemberSecret: seed.Secret(), Certificate: *sc}
 		b, err := identity.Marshal(&st)
 		if err != nil {
 			return nil, err
@@ -101,20 +127,14 @@ func devicePair(args []string) error {
 		return &pairing.Offer{State: b, Descriptor: descriptor}, nil
 	})
 	if err != nil {
-		return err
+		return pairedDevice{}, err
 	}
-	// On record here, with its certificate, so the join request can name the
-	// storage node and prove it is the member's without anything copied by
-	// hand.
 	cert, _ := encodeCertificate(issued)
-	if err := recordDevice(d, pairedDevice{Device: dev.String(), Name: name, Roles: roles, Certificate: cert, PairedAt: time.Now()}); err != nil {
+	pd := pairedDevice{Device: dev.String(), Name: name, Roles: roles, Certificate: cert, PairedAt: time.Now()}
+	if err := recordDevice(dd, pd); err != nil {
 		fmt.Fprintln(os.Stderr, "could not record the device:", err)
 	}
-	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", dev.Short(), seed.MemberKey().Short(), strings.Join(roles, ", "))
-	if *storage {
-		fmt.Printf("storage node %s is on record here: redundanet join-request puts it in the join form, or send its storage: lines to the maintainer\n", name)
-	}
-	return nil
+	return pd, nil
 }
 
 func deviceRevoke(args []string) error {

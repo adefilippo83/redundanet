@@ -125,7 +125,7 @@ Removing the data directory removes everything the agent knows; `redundanet serv
 
 ## The local API
 
-The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 127.0.0.1:4470`), never on the LAN. The CLI reads `api.addr` and `api.token` from the data directory. A browser gets in only through `redundanet open`, whose link works once and for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every form carries a CSRF token; the API refuses any request whose Host is not loopback and any change whose Origin is not the page; no GET changes anything. A headless node is reached over an SSH tunnel: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
+The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 127.0.0.1:4470`), never on the LAN. The CLI reads `api.addr` and `api.token` from the data directory. A browser gets in only through `redundanet open`, whose link works once and for two minutes and sets an HttpOnly, SameSite=Strict session cookie; every form carries a CSRF token; the API refuses any request whose Host is not loopback and any change whose Origin is not the page; no GET changes anything; the page loads its stylesheet and its one script from the agent itself and nothing from anywhere else. Its language is the browser's until one is chosen in its menu (cookie `redundanet_lang`). A headless node is reached over an SSH tunnel: `ssh -L 4470:127.0.0.1:4470 node`, then `sudo /var/lib/redundanet3/bin/redundanet open --print`.
 
 ## Agent flags
 
@@ -133,4 +133,4 @@ The service passes `agent --network NAME --data-dir DIR [--channel early]`. The 
 
 ## Settings that the page and the commands change
 
-`backup.yaml` holds the schedule, the retention policy, the bandwidth caps and each set's excludes, all changeable from the local page's Settings card or `redundanet backup schedule|retention|exclude|limit`. The update channel chosen on a device is kept in `updates/state.yaml` as `chosen_channel` and wins over the service's `--channel` flag from the next check on; `redundanet update channel stable|early` sets it, from the agent or from another process.
+`backup.yaml` holds the schedule, the retention policy, the bandwidth caps and each set's excludes, all changeable from the local page (Settings, and each set's card under Backups) or `redundanet backup schedule|retention|exclude|limit`. The update channel chosen on a device is kept in `updates/state.yaml` as `chosen_channel` and wins over the service's `--channel` flag from the next check on; `redundanet update channel stable|early` sets it, from the agent or from another process.
