@@ -97,7 +97,9 @@ func networkJoin(args []string) error {
 	if err := os.MkdirAll(dd, 0o700); err != nil {
 		return err
 	}
-	m, err := membership.Open(membership.Config{DataDir: dd, Descriptor: d, Version: version.Version, Log: quietLog()})
+	// A descriptor a person gives here, like the built-in one, may replace
+	// the operator keys the device pinned: the way back from a stolen key.
+	m, err := membership.Open(membership.Config{DataDir: dd, Descriptor: d, Anchor: true, Version: version.Version, Log: quietLog()})
 	if err != nil {
 		return err
 	}
@@ -115,6 +117,9 @@ func networkJoin(args []string) error {
 		return fmt.Errorf("descriptor saved, but the first fetch failed: %s", st.LastError)
 	}
 	fmt.Printf("joined %s: manifest revision %d, %d members, %d hubs, signed %s\n", st.Network, st.Revision, st.Members, st.Hubs, st.SignedAt.Format(time.RFC3339))
+	if st.AwaitingOperators {
+		fmt.Println("this descriptor replaced the operator keys of this device; the member list above is the last one under the earlier keys and stays until one signed by a new key is published")
+	}
 	fmt.Printf("operators pinned: %d; the identity of this device must now be certified by a member listed there\n", len(d.Operators))
 	return nil
 }
@@ -185,7 +190,7 @@ func membershipConfig(dd, network string) membership.Config {
 			return cfg // joined by hand, or seeded from this very descriptor
 		}
 	}
-	cfg.Descriptor = d
+	cfg.Descriptor, cfg.Anchor = d, true
 	_ = os.MkdirAll(dd, 0o700)
 	_ = os.WriteFile(filepath.Join(dd, builtinMarker), []byte(version.Network), 0o644)
 	return cfg

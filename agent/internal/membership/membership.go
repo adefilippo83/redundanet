@@ -26,12 +26,19 @@ const (
 	fileSignature   = "manifest.sig"
 	fileRevocations = "revocations.cbor"
 	fileTrust       = "operators.yaml"
+	fileAnchor      = "anchor.yaml"
 )
 
 // Config wires a Membership.
 type Config struct {
 	DataDir    string
 	Descriptor *Descriptor
+	// Anchor says the descriptor given may replace the operator keys this
+	// device pinned: the one built into the binary, which the signed
+	// release index vouches for, and one a person gave `network join`.
+	// Not one that merely came along, such as a pairing offer's. See
+	// reanchor.
+	Anchor bool
 	// Version is the running binary's version, checked against the
 	// manifest's min_version.
 	Version string
@@ -49,8 +56,17 @@ type Membership struct {
 	cfg Config
 	log *slog.Logger
 
-	mu          sync.RWMutex
-	trusted     []identity.Key // operator keys pinned at join, updated only by a manifest they signed
+	mu      sync.RWMutex
+	trusted []identity.Key // operator keys pinned at join, updated only by a manifest they signed
+	// pinned is operators.yaml as it was at Open: its presence says the
+	// manifest on disk is one this device applied itself.
+	pinned []identity.Key
+	// After a descriptor replaced the pinned keys (anchor.go): the keys it
+	// dropped, which no manifest may bring back, and whether the device
+	// still waits for a manifest signed by one of the new keys.
+	dropped  []identity.Key
+	awaiting bool
+
 	manifest    *manifest.Manifest
 	signature   *manifest.Signature
 	policy      *manifest.Policy
@@ -73,6 +89,10 @@ type Status struct {
 	LastFetch   time.Time `json:"last_fetch"`
 	LastError   string    `json:"last_error,omitempty"`
 	NeedsUpdate string    `json:"needs_update,omitempty"`
+	// AwaitingOperators is set after a new descriptor replaced the operator
+	// keys, until a member list signed by one of the new keys has arrived;
+	// the list in force meanwhile is the last one under the earlier keys.
+	AwaitingOperators bool `json:"awaiting_operators,omitempty"`
 }
 
 // Open loads the last good state from the data directory. Without one it
@@ -91,6 +111,13 @@ func Open(cfg Config) (*Membership, error) {
 	}
 	m := &Membership{cfg: cfg, log: cfg.Log.With("component", "membership"), seen: map[identity.Key]bool{}}
 	if cfg.Descriptor != nil {
+		// Before the descriptor on disk is replaced: whether this one
+		// changes whom the device trusts.
+		if cfg.Anchor {
+			if err := m.reanchor(); err != nil {
+				return nil, err
+			}
+		}
 		if err := SaveDescriptor(filepath.Join(cfg.DataDir, DescriptorFile), cfg.Descriptor); err != nil {
 			return nil, err
 		}
@@ -102,8 +129,16 @@ func Open(cfg Config) (*Membership, error) {
 		m.cfg.Descriptor = d
 	}
 	m.trusted = append([]identity.Key(nil), m.cfg.Descriptor.Operators...)
-	if t, err := loadTrust(filepath.Join(cfg.DataDir, fileTrust)); err == nil && len(t) > 0 {
-		m.trusted = t
+	m.pinned, _ = loadTrust(filepath.Join(cfg.DataDir, fileTrust))
+	if len(m.pinned) > 0 {
+		m.trusted = m.pinned
+	}
+	if a, err := loadAnchor(filepath.Join(cfg.DataDir, fileAnchor)); err == nil {
+		m.dropped = a.Dropped
+		if a.Pending {
+			m.trusted, m.awaiting = a.Operators, true
+			m.log.Warn("the operator keys were replaced by a new network descriptor; the member list on disk stays in force until one signed by a new key arrives", "operators", len(a.Operators), "dropped", len(a.Dropped))
+		}
 	}
 	m.revocations = loadRevocations(filepath.Join(cfg.DataDir, fileRevocations), m.log)
 	if err := m.loadFromDisk(); err != nil {
@@ -231,6 +266,7 @@ func (m *Membership) Status() Status {
 		st.Members = len(m.manifest.Members)
 		st.Hubs = len(m.manifest.Hubs)
 		st.Revocations += len(m.manifest.Revocations)
+		st.AwaitingOperators = m.awaiting
 		if v := m.manifest.Network.MinVersion; v != "" && m.cfg.Version != "" && m.cfg.Version != "dev" && semver.Less(m.cfg.Version, v) {
 			st.NeedsUpdate = v
 		}
@@ -276,9 +312,35 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 	}
 	m.mu.RLock()
 	trusted := append([]identity.Key(nil), m.trusted...)
+	awaiting := m.awaiting
+	dropped := append([]identity.Key(nil), m.dropped...)
 	last := uint64(0)
 	if m.manifest != nil {
 		last = m.manifest.Revision
+		// The very manifest in force, fetched again: nothing to do, also
+		// when its signer has left the operators since.
+		if persist && !awaiting && s.Revision == last && s.SHA256 == m.signature.SHA256 && s.Signature == m.signature.Signature {
+			m.mu.RUnlock()
+			return nil
+		}
+	}
+	// The manifest on disk beside pinned keys is one this device applied
+	// itself, under the keys it trusted then. Those may be gone since: the
+	// manifest's own signer when it named other operators and left, or
+	// every earlier key after a new descriptor. So it is checked for being
+	// the file that was signed, stays the policy, and names the operators
+	// of the next one only when its signer is still among the pinned keys
+	// and no descriptor has replaced them.
+	own := !persist && len(m.pinned) > 0
+	adopt := true
+	if own {
+		signer, perr := identity.ParseKey(s.Operator)
+		if perr != nil {
+			m.mu.RUnlock()
+			return fmt.Errorf("manifest.sig: operator: %w", perr)
+		}
+		adopt = !awaiting && hasKey(m.pinned, signer)
+		trusted = []identity.Key{signer}
 	}
 	m.mu.RUnlock()
 	man, err := s.Verify(data, trusted)
@@ -295,7 +357,21 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 		return fmt.Errorf("manifest revision %d is older than the applied %d", man.Revision, last)
 	}
 	if man.Revision == last && persist {
+		if awaiting {
+			return fmt.Errorf("manifest revision %d is the one applied under the earlier operator keys: the new keys must sign a higher revision", last)
+		}
 		return nil // unchanged
+	}
+	if !own {
+		// A key a descriptor dropped does not come back through a manifest,
+		// whoever signed it: neither an older one replayed nor a new one.
+		for _, o := range man.Operators {
+			for _, d := range dropped {
+				if o.Key == d {
+					return fmt.Errorf("manifest revision %d lists operator key %s, which a newer network descriptor dropped", man.Revision, d.Short())
+				}
+			}
+		}
 	}
 	// The operators list may change only through a manifest the current keys
 	// signed, which Verify just established; from here on the new list is
@@ -307,7 +383,12 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 	m.mu.Lock()
 	m.manifest, m.signature = man, s
 	m.policy = manifest.NewPolicy(man, m.revocations)
-	m.trusted = ops
+	if adopt {
+		m.trusted = ops
+	}
+	if persist {
+		m.awaiting = false
+	}
 	m.seen = map[identity.Key]bool{}
 	m.mu.Unlock()
 	if persist {
@@ -320,6 +401,13 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 		}
 		if err := saveTrust(filepath.Join(dir, fileTrust), ops); err != nil {
 			return err
+		}
+		if awaiting {
+			// The wait is over: the pinned keys are the manifest's again.
+			if err := saveAnchor(filepath.Join(dir, fileAnchor), anchor{Dropped: dropped}); err != nil {
+				return err
+			}
+			m.log.Info("a member list signed by a new operator key arrived; the earlier keys are gone", "revision", man.Revision)
 		}
 		m.log.Info("manifest applied", "revision", man.Revision, "members", len(man.Members), "signed", s.IssuedAt.Format(time.RFC3339))
 	}

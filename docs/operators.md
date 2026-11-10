@@ -101,6 +101,26 @@ redundanet network descriptor --manifest manifests/manifest.yaml --repository ht
 
 When the hubs or the operator keys change, put the new descriptor in `version.go` in the same change; a test in `agent/cmd/redundanet` fails until it matches the manifest. Devices on the built-in network follow it with the next release; a device that joined with a descriptor given by hand keeps that one until `redundanet network join` (no argument, back to the built-in one) or a new descriptor is run on it.
 
+### Changing the operator keys
+
+There are two ways, and they are for different days.
+
+**An ordinary change** goes through the manifest: a manifest signed by a current key lists the operators of the next one. Add the new key first and remove the old one in a later revision, or do both at once; either way the device keeps the list it has across restarts, also when the key that signed it has left. Put the new descriptor in `version.go` in the same change. When a release brings a descriptor whose keys the devices already trust through the manifest, nothing more happens.
+
+**A stolen key** cannot be removed that way, because the thief can sign manifests too. The way out is the descriptor: a device takes its operator keys from a descriptor (the one built into a release, or one given to `network join`) when the descriptor's keys differ both from the keys of the descriptor it had and from the keys it trusts now. From that moment:
+
+- only the descriptor's keys sign for that device, and the keys it dropped stay out: a manifest that lists one of them as an operator is refused, whoever signed it;
+- the member list it has stays in force, so it keeps working, and its revision stays the floor;
+- the next manifest must be signed by a new key and carry a higher revision. `redundanet network status` shows `awaiting_operators` until it arrives.
+
+So, in this order:
+
+1. Sign a manifest with the new key, with a higher revision, listing only the keys that remain, and publish it. Devices on the old release refuse it and stay on the list they have.
+2. Put the new descriptor in `version.go` and release. Each device that updates drops the stolen key and takes the manifest from step 1 at its next fetch.
+3. A device that joined with a descriptor given by hand needs the new descriptor sent to it, for `redundanet network join <descriptor>`.
+
+If step 1 is skipped the release still installs and the devices keep the old list, but nothing new reaches them until a manifest from a new key is published. Between the theft and step 2 the thief's manifests are accepted by any device they can serve them to, which takes control of the repository address as well as the key. A device the thief served a manifest with a very high revision keeps that list until a new key signs a higher one. A failed update that puts the previous binary back returns that device to the old keys until a release with the new descriptor installs on it.
+
 ## Repair, by hand
 
 The hub schedules repair of under-placed objects without the owner: a task signed by its device key goes to a storage node that volunteers, which fetches k shares, regenerates the missing numbers without the key, checks them against the signed share roots and stores them where the task says. The status page shows objects per number of copies, under-placed, unreadable and due; "blocked: X short above the floors" means no live server has room, and the community needs to add disk.
