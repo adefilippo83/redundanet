@@ -81,7 +81,11 @@ docker run --rm --platform "$PLATFORM" -v "$WORK:/work:ro" -e VERSION="$VERSION"
   test -e /var/lib/redundanet3/pairing.state || { echo "FAIL: the code was not kept"; exit 1; }
   test -e /var/lib/redundanet3/device-key.pending || { echo "FAIL: no pending key"; exit 1; }
   grep -q "$code" /etc/motd || { echo "FAIL: motd"; exit 1; }
-  grep -q "device pair --storage $code" /boot/firmware/redundanet-pairing-code.txt || { echo "FAIL: the code file does not say what to run"; exit 1; }
+  # the command is shown without the code, which it asks for: a code on a
+  # command line can be read by other users of that machine
+  grep -q "device pair --storage\$" /boot/firmware/redundanet-pairing-code.txt || { echo "FAIL: the code file does not say what to run"; exit 1; }
+  grep -q "paste the code" /boot/firmware/redundanet-pairing-code.txt || { echo "FAIL: the code file does not say to paste the code"; exit 1; }
+  ! grep -q "device pair.*rn3:pair:" /boot/firmware/redundanet-pairing-code.txt /etc/motd || { echo "FAIL: the code is shown on a command line"; exit 1; }
   sleep 1
   timeout 40 bash /usr/local/lib/redundanet3/firstboot.sh > /tmp/fb2.out 2>&1 || true
   again=$(grep -oE "rn3:pair:[A-Za-z0-9_-]+" /boot/firmware/redundanet-pairing-code.txt | head -n 1)
