@@ -97,8 +97,10 @@ type TaskReport struct {
 
 // ReleaseHint tells a holder that the object has more complete shares
 // than n and that its copy of a share number is the one to give up. The
-// holder asks the other holders itself before it removes anything: a
-// lying hub can waste a release, never a needed share.
+// holder asks the other holders itself before it removes anything, and
+// believes each of them for no more share numbers than placement gives one
+// server: a lying hub can waste a release, and a hub with a lying storage
+// server can cost an object no more than that server's own part.
 type ReleaseHint struct {
 	StorageIndex   [16]byte       `cbor:"si" json:"si"`
 	Number         uint8          `cbor:"n" json:"n"`
