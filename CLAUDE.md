@@ -85,7 +85,10 @@ commits. Never weaken that chain.
   container at a time. Keep `agent/internal/migrate` that way.
 - **The local API is loopback only** with the browser guards the RFC lists
   (one-time login link, session cookie, CSRF token, Host and Origin checks,
-  no GET that changes state). Never bind it to the LAN.
+  no GET that changes state). Never bind it to the LAN. The page lives
+  under the session's own address (`/s/<key>/`) and its links are relative,
+  so a new link or form action never starts with `/`; the CLI signs its
+  requests and never sends the token.
 - **The status page and the diagnostics bundle carry no address, path or
   storage index.** Keep the allowlists in `internal/collector` and
   `internal/diag`.

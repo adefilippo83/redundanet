@@ -222,6 +222,7 @@ func TestFoldersFromThePage(t *testing.T) {
 	}
 	jar, _ := cookiejar.New(nil)
 	browser := &http.Client{Jar: jar}
+	var base string // the session's own address, known after the login
 	read := func(r *http.Response, err error) string {
 		t.Helper()
 		if err != nil {
@@ -233,9 +234,9 @@ func TestFoldersFromThePage(t *testing.T) {
 		}
 		return string(b)
 	}
-	base := "http://" + srv.Addr()
-	page := read(browser.Get(link))
-	if !strings.Contains(page, "Nothing is backed up yet") || !strings.Contains(page, `href="/backups"`) {
+	page, home := openPage(t, browser, link)
+	base = home
+	if !strings.Contains(page, "Nothing is backed up yet") || !strings.Contains(page, `href="backups"`) {
 		t.Fatalf("overview without a folder: %s", firstLines(page))
 	}
 	csrf := extract(page, `name="csrf" value="`, `"`)
@@ -325,7 +326,7 @@ func TestPairingFromThePage(t *testing.T) {
 	}
 	jar, _ := cookiejar.New(nil)
 	browser := &http.Client{Jar: jar}
-	base := "http://" + srv.Addr()
+	var base string // the session's own address, known after the login
 	read := func(r *http.Response, err error) string {
 		t.Helper()
 		if err != nil {
@@ -337,14 +338,15 @@ func TestPairingFromThePage(t *testing.T) {
 		}
 		return string(b)
 	}
-	page := read(browser.Get(link))
+	page, home := openPage(t, browser, link)
+	base = home
 	csrf := extract(page, `name="csrf" value="`, `"`)
 	// The overview says the paired storage node still needs its request.
 	if !strings.Contains(page, "Storage device falcon is not in the member list yet") || !strings.Contains(page, "join.html?mode=device&amp;devicename=falcon") {
 		t.Fatalf("overview: %s", firstLines(page))
 	}
 	page = read(browser.Get(base + "/network"))
-	for _, want := range []string{"falcon", "client, storage", ">direct<", "ikpijbsq", ">not connected<", "/action/device-pair", `name="phrase"`, `autocomplete="off"`} {
+	for _, want := range []string{"falcon", "client, storage", ">direct<", "ikpijbsq", ">not connected<", `action="action/device-pair"`, `name="phrase"`, `autocomplete="off"`} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("the devices view lacks %q", want)
 		}
@@ -380,5 +382,27 @@ func TestPairingFromThePage(t *testing.T) {
 	srv.Attach(Runtime{Snapshot: func() Snapshot { return Snapshot{} }})
 	if p := post(url.Values{"csrf": {csrf}, "code": {"c"}, "phrase": {phrase}}); !strings.Contains(p, "Pairing from the page is off on this device.") {
 		t.Fatalf("pairing where it is off: %s", firstLines(p))
+	}
+}
+
+// The page lives under the session's own address, so a link or a form of
+// its own must be relative: one that starts with a slash would leave the
+// session and reach the page that says to run `redundanet open`. Only the
+// stylesheet and the script, served without a session, are absolute.
+func TestThePagesOwnLinksAreRelative(t *testing.T) {
+	re := regexp.MustCompile(`(?:href|action|src)="(/[^"]*)"`)
+	for _, name := range []string{"templates/page.html", "templates/setup.html"} {
+		b, err := templates.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			if !strings.HasPrefix(m[1], "/static/") {
+				t.Errorf("%s: %s is absolute", name, m[0])
+			}
+		}
+	}
+	if h := restoreHref("d", "s", "", ""); strings.HasPrefix(h, "/") {
+		t.Errorf("restore link %s is absolute", h)
 	}
 }

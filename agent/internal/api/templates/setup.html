@@ -23,7 +23,7 @@
 <section class="card">
   <h2>{{.T "setup.new.title"}}</h2>
   <p>{{.T "setup.new.text"}}</p>
-  <form method="post" action="/setup/begin" class="stack">{{template "csrf" .}}
+  <form method="post" action="setup/begin" class="stack">{{template "csrf" .}}
     <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
     <div><button class="btn primary">{{.T "setup.new.button"}}</button></div>
   </form>
@@ -31,7 +31,7 @@
 <section class="card">
   <h2>{{.T "setup.phrase.title"}}</h2>
   <p>{{.T "setup.phrase.text"}}</p>
-  <form method="post" action="/setup/restore" class="stack">{{template "csrf" .}}
+  <form method="post" action="setup/restore" class="stack">{{template "csrf" .}}
     <label>{{.T "setup.phrase.label"}}<textarea name="phrase" rows="3" autocomplete="off" autocapitalize="none" spellcheck="false" required></textarea></label>
     <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
     <div><button class="btn">{{.T "setup.phrase.button"}}</button></div>
@@ -40,7 +40,7 @@
 <section class="card">
   <h2>{{.T "setup.pair.title"}}</h2>
   <p>{{.T "setup.pair.text"}}</p>
-  <form method="post" action="/setup/pair">{{template "csrf" .}}<button class="btn">{{.T "setup.pair.button"}}</button></form>
+  <form method="post" action="setup/pair">{{template "csrf" .}}<button class="btn">{{.T "setup.pair.button"}}</button></form>
 </section>
 {{end}}
 
@@ -54,11 +54,11 @@
   <p class="warn">{{.T "setup.words.gone"}}</p>
   {{end}}
   <p>{{.T "setup.words.check"}}</p>
-  <form method="post" action="/setup/confirm" class="fields">{{template "csrf" .}}
+  <form method="post" action="setup/confirm" class="fields">{{template "csrf" .}}
     {{range $i, $n := .Check}}<label>{{$.T "setup.word" $n}}<input type="text" name="w{{inc $i}}" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>{{end}}
     <button class="btn primary">{{.T "setup.confirm"}}</button>
   </form>
-  <form method="post" action="/setup/cancel">{{template "csrf" .}}<button class="btn">{{.T "setup.restart"}}</button></form>
+  <form method="post" action="setup/cancel">{{template "csrf" .}}<button class="btn">{{.T "setup.restart"}}</button></form>
 </section>
 {{end}}
 
@@ -68,7 +68,7 @@
   <p>{{.T "setup.pairing.text"}}</p>
   <p class="code">redundanet device pair {{.Code}}</p>
   <p class="muted">{{.T "setup.pairing.hint"}}{{if .Error}} <span class="bad">{{.Error}}</span>{{end}}</p>
-  <form method="post" action="/setup/cancel">{{template "csrf" .}}<button class="btn">{{.T "setup.cancel"}}</button></form>
+  <form method="post" action="setup/cancel">{{template "csrf" .}}<button class="btn">{{.T "setup.cancel"}}</button></form>
 </section>
 {{end}}
 

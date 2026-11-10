@@ -66,7 +66,7 @@ func TestRestoreFromThePage(t *testing.T) {
 	}
 	jar, _ := cookiejar.New(nil)
 	browser := &http.Client{Jar: jar}
-	base := "http://" + srv.Addr()
+	var base string // the session's own address, known after the login
 	read := func(r *http.Response, err error) string {
 		t.Helper()
 		if err != nil {
@@ -81,15 +81,16 @@ func TestRestoreFromThePage(t *testing.T) {
 	// follow finds the link whose text starts with name and opens it.
 	follow := func(page, name string) string {
 		t.Helper()
-		m := regexp.MustCompile(`<a href="(/restore\?[^"]+)"[^>]*>` + regexp.QuoteMeta(html.EscapeString(name))).FindStringSubmatch(page)
+		m := regexp.MustCompile(`<a href="(restore\?[^"]+)"[^>]*>` + regexp.QuoteMeta(html.EscapeString(name))).FindStringSubmatch(page)
 		if m == nil {
 			t.Fatalf("no link to %q in: %s", name, page[strings.Index(page, "<main>"):])
 		}
-		return read(browser.Get(base + html.UnescapeString(m[1])))
+		return read(browser.Get(base + "/" + html.UnescapeString(m[1])))
 	}
-	page := read(browser.Get(link))
+	page, home := openPage(t, browser, link)
+	base = home
 	csrf := extract(page, `name="csrf" value="`, `"`)
-	if !strings.Contains(page, `href="/restore"`) {
+	if !strings.Contains(page, `href="restore"`) {
 		t.Fatal("no Restore in the navigation")
 	}
 	page = read(browser.Get(base + "/restore"))
@@ -207,7 +208,7 @@ func TestRestorePlaces(t *testing.T) {
 			t.Errorf("lastName(%q) = %q, want %q", p, got, want)
 		}
 	}
-	if h := restoreHref("d", "s", "/a b", "c&d"); h != "/restore?device=d&root=%2Fa+b&snapshot=s&sub=c%26d" {
+	if h := restoreHref("d", "s", "/a b", "c&d"); h != "restore?device=d&root=%2Fa+b&snapshot=s&sub=c%26d" {
 		t.Errorf("href: %s", h)
 	}
 }

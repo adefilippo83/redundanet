@@ -92,7 +92,7 @@ func restoreHref(device, snap, root, sub string) string {
 			q.Set("sub", sub)
 		}
 	}
-	return "/restore?" + q.Encode()
+	return "restore?" + q.Encode()
 }
 
 // restorePath is the path string the runner resolves.

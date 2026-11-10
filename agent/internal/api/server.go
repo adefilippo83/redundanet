@@ -284,6 +284,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /login", s.login)
 	mux.HandleFunc("POST /action/{name}", s.pageAction)
 	mux.HandleFunc("POST /setup/{name}", s.setupAction)
+	mux.HandleFunc("GET "+proofPath, s.prove)
 	mux.HandleFunc("GET /api/status", s.apiStatus)
 	mux.HandleFunc("GET /api/logs", s.apiLogs)
 	mux.HandleFunc("POST /api/login-link", s.apiLoginLink)
@@ -305,7 +306,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	mux.HandleFunc("GET /api/restore/list", s.apiRestoreList)
 	mux.HandleFunc("GET /api/restore/browse", s.apiRestoreBrowse)
 	mux.HandleFunc("POST /api/restore/start", s.apiRestoreStart)
-	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 5 * time.Second}
+	s.srv = &http.Server{Handler: s.guard(keyed(mux)), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.log.Error("api server", "err", err)
@@ -338,7 +339,13 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", contentPolicy)
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		// same-origin, not no-referrer: under no-referrer a browser sends
+		// "Origin: null" with the page's own form posts, which the check
+		// above then refuses, and no button on the page works. Under
+		// same-origin the page's own requests name their origin, and a
+		// link that leaves the page still carries no referrer, so the
+		// session's address goes nowhere.
+		w.Header().Set("Referrer-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -795,18 +802,29 @@ func (s *Server) apiRestoreStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.auth.redeem(r.URL.Query().Get("t"))
+	id, key, ok := s.auth.redeem(r.URL.Query().Get("t"))
 	if !ok {
 		http.Error(w, "this link has expired or was used already; run `redundanet open` again", http.StatusForbidden)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// The cookie goes only to the session's own address, which no other
+	// program on this machine knows.
+	home := keyedPrefix + key + "/"
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: home, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
+	http.Redirect(w, r, home, http.StatusSeeOther)
 }
 
 func parseTemplates() (*template.Template, error) {
 	return template.New("page").Funcs(template.FuncMap{
-		"short":     short,
+		"short": short,
+		// rel makes one of the page's own paths relative, so a link stays
+		// under the session's address: "/" is "./", "/backups" is "backups".
+		"rel": func(p string) string {
+			if p = strings.TrimPrefix(p, "/"); p == "" {
+				return "./"
+			}
+			return p
+		},
 		"inc":       func(i int) int { return i + 1 },
 		"lastIndex": func(v []transport.Event) int { return len(v) - 1 },
 	}).ParseFS(templates, "templates/page.html", "templates/setup.html")
@@ -972,7 +990,7 @@ func (s *Server) setupAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setFlash(msg, bad)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, base(r)+"/", http.StatusSeeOther)
 }
 
 // pageAction handles the page's forms: same checks as the API, then back
@@ -1023,7 +1041,7 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 		if code := r.FormValue("lang"); knownLang(code) {
 			http.SetCookie(w, &http.Cookie{Name: langCookie, Value: code, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 365 * 24 * 3600})
 		}
-		http.Redirect(w, r, back, http.StatusSeeOther)
+		http.Redirect(w, r, base(r)+back, http.StatusSeeOther)
 		return
 	}
 	msg, bad := s.runPageAction(r, name, l)
@@ -1032,7 +1050,7 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setFlash(msg, bad)
-	http.Redirect(w, r, back, http.StatusSeeOther)
+	http.Redirect(w, r, base(r)+back, http.StatusSeeOther)
 }
 
 // runPageAction does what a form of the page asks and says how it went, in

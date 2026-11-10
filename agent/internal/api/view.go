@@ -255,7 +255,7 @@ func buildOverview(s Snapshot, online string, l tr) overviewData {
 			if v.Passed() {
 				o.Activity = append(o.Activity, activity{At: v.At, Text: l.T("activity.verify.passed", v.Verified, v.Sampled)})
 			} else {
-				add(issue{Kind: "bad", Title: l.T("issue.verify.title"), Text: l.T("issue.verify.text", v.Verified, v.Sampled), Href: "/backups", Label: l.T("issue.verify.button")})
+				add(issue{Kind: "bad", Title: l.T("issue.verify.title"), Text: l.T("issue.verify.text", v.Verified, v.Sampled), Href: "backups", Label: l.T("issue.verify.button")})
 				o.Activity = append(o.Activity, activity{At: v.At, Text: l.T("activity.verify.failed", v.Verified, v.Sampled)})
 			}
 		}
