@@ -179,11 +179,49 @@ type Report struct {
 	Exceptions []string `json:"exceptions,omitempty"`
 }
 
+// dest is where a restore writes: the folder the member chose, opened as
+// a root, so that no name, no ".." and no symlink takes a write out of
+// it. A snapshot is data from the grid, written by whoever held the
+// member's secret and a certified device at the time, which after a theft
+// is not the member; its names and links are not trusted to stay inside.
+type dest struct {
+	root *os.Root
+	base string // the folder's path, for messages
+}
+
+func (d *dest) path(rel string) string { return filepath.Join(d.base, rel) }
+
+// localName is the path, relative to the folder being written, that an
+// entry's name stands for, and whether a restore writes it at all. Below
+// the top a name is one path element. The top directory names each folder
+// by its whole path, so there the separators stay and the folder is
+// recreated under the target; no element may be "..".
+func localName(name string, top bool) (string, bool) {
+	if top {
+		name = strings.TrimLeft(filepath.ToSlash(name), "/")
+		for _, el := range strings.Split(name, "/") {
+			if el == ".." {
+				return "", false
+			}
+		}
+		name = filepath.FromSlash(name)
+	} else if strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator) {
+		return "", false
+	}
+	name = filepath.Clean(name)
+	if name == "." || !filepath.IsLocal(name) {
+		return "", false
+	}
+	return name, true
+}
+
 // Restore writes the entry at path elems of a snapshot into target: a
-// file becomes target itself, a directory is recreated under it. Every
-// file is written under a temporary name and renamed when complete and
-// verified; mtime and mode come after the data, directory mtimes after
-// their children; ownership is not restored.
+// file becomes target itself, a directory is recreated under it. Nothing
+// is written outside target (see dest). Every file is written under a
+// temporary name and renamed when complete and verified; mtime and
+// permission bits come after the data, directory mtimes after their
+// children; ownership and the set-user-ID, set-group-ID and sticky bits
+// are not restored.
 func Restore(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, elems []string, target string, opts Options) (*Report, error) {
 	if opts.Log == nil {
 		opts.Log = slog.Default()
@@ -197,15 +235,28 @@ func Restore(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, elem
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return nil, err
 		}
-		if err := restoreDir(ctx, e, dir, target, opts, rep); err != nil {
+		root, err := os.OpenRoot(target)
+		if err != nil {
+			return nil, err
+		}
+		defer root.Close()
+		if err := restoreDir(ctx, e, dir, &dest{root: root, base: target}, "", len(elems) == 0, opts, rep); err != nil {
 			return rep, err
 		}
 		return rep, nil
 	}
-	return rep, restoreEntry(ctx, e, entry, target, opts, rep)
+	root, err := os.OpenRoot(filepath.Dir(target))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return rep, restoreEntry(ctx, e, entry, &dest{root: root, base: filepath.Dir(target)}, filepath.Base(target), opts, rep)
 }
 
-func restoreDir(ctx context.Context, e engine.Engine, d *snapshot.Directory, target string, opts Options, rep *Report) error {
+// restoreDir recreates a directory's entries under rel, a path inside the
+// destination. top says the directory is the snapshot's top, whose names
+// are whole folder paths.
+func restoreDir(ctx context.Context, e engine.Engine, d *snapshot.Directory, dst *dest, rel string, top bool, opts Options, rep *Report) error {
 	// Names that collide on a case-insensitive or normalizing target are
 	// detected before any write; one gets a suffix and is listed.
 	seen := map[string]bool{}
@@ -215,6 +266,11 @@ func restoreDir(ctx context.Context, e engine.Engine, d *snapshot.Directory, tar
 		}
 		en := &d.Entries[i]
 		name, mapped := safeName(en)
+		name, ok := localName(name, top)
+		if !ok {
+			rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: not a name a restore writes", en.NameString()))
+			continue
+		}
 		if seen[strings.ToLower(name)] {
 			name += ".restored-duplicate"
 			mapped = true
@@ -223,50 +279,51 @@ func restoreDir(ctx context.Context, e engine.Engine, d *snapshot.Directory, tar
 		if mapped {
 			rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: restored as %s", en.NameString(), name))
 		}
-		p := filepath.Join(target, name)
+		p := filepath.Join(rel, name)
 		switch en.Kind {
 		case snapshot.KindDir:
-			if err := os.MkdirAll(p, 0o755); err != nil {
-				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", p, err))
+			if err := dst.root.MkdirAll(p, 0o755); err != nil {
+				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", dst.path(p), err))
 				continue
 			}
 			sub, err := Directory(ctx, e, en.Cap)
 			if err != nil {
-				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", p, err))
+				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", dst.path(p), err))
 				continue
 			}
-			if err := restoreDir(ctx, e, sub, p, opts, rep); err != nil {
+			if err := restoreDir(ctx, e, sub, dst, p, false, opts, rep); err != nil {
 				return err
 			}
 			if en.Mtime != 0 {
 				t := time.Unix(0, en.Mtime)
-				_ = os.Chtimes(p, t, t)
+				_ = dst.root.Chtimes(p, t, t)
 			}
 			rep.Dirs++
 		case snapshot.KindSkipped:
 			rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: not in the snapshot (%s)", en.NameString(), en.Reason))
 		default:
-			if err := restoreEntry(ctx, e, en, p, opts, rep); err != nil {
+			if err := restoreEntry(ctx, e, en, dst, p, opts, rep); err != nil {
 				if ctx.Err() != nil {
 					return err
 				}
-				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", p, err))
+				rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s: %v", dst.path(p), err))
 			}
 		}
 	}
 	return nil
 }
 
-// restoreEntry writes one file or symlink at p.
-func restoreEntry(ctx context.Context, e engine.Engine, en *snapshot.Entry, p string, opts Options, rep *Report) error {
-	if _, err := os.Lstat(p); err == nil && !opts.Overwrite {
+// restoreEntry writes one file or symlink at p, a path inside the
+// destination.
+func restoreEntry(ctx context.Context, e engine.Engine, en *snapshot.Entry, dst *dest, p string, opts Options, rep *Report) error {
+	if _, err := dst.root.Lstat(p); err == nil && !opts.Overwrite {
 		p += ".restored"
 		rep.Exceptions = append(rep.Exceptions, fmt.Sprintf("%s exists: written as %s", en.NameString(), filepath.Base(p)))
 	}
 	switch en.Kind {
 	case snapshot.KindSymlink:
-		_ = os.Remove(p)
-		if err := os.Symlink(en.Target, p); err != nil {
+		_ = dst.root.Remove(p)
+		if err := dst.root.Symlink(en.Target, p); err != nil {
 			if runtime.GOOS == "windows" {
 				return fmt.Errorf("symlink not created on this account: %w", err)
 			}
@@ -279,7 +336,14 @@ func restoreEntry(ctx context.Context, e engine.Engine, en *snapshot.Entry, p st
 		return fmt.Errorf("cannot restore a %s", en.Kind)
 	}
 	tmp := p + ".rn3-restoring"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	// A symlink left under the temporary name is removed, never written
+	// through, even when it points inside the destination.
+	if fi, err := dst.root.Lstat(tmp); err == nil && !fi.Mode().IsRegular() {
+		if err := dst.root.Remove(tmp); err != nil {
+			return err
+		}
+	}
+	f, err := dst.root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -287,7 +351,7 @@ func restoreEntry(ctx context.Context, e engine.Engine, en *snapshot.Entry, p st
 	defer func() {
 		if !ok {
 			_ = f.Close()
-			_ = os.Remove(tmp)
+			_ = dst.root.Remove(tmp)
 		}
 	}()
 	var n int64
@@ -325,16 +389,16 @@ func restoreEntry(ctx context.Context, e engine.Engine, en *snapshot.Entry, p st
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, p); err != nil {
+	if err := dst.root.Rename(tmp, p); err != nil {
 		return err
 	}
 	ok = true
 	if en.Mode != 0 {
-		_ = os.Chmod(p, os.FileMode(en.Mode))
+		_ = dst.root.Chmod(p, os.FileMode(en.Mode).Perm())
 	}
 	if en.Mtime != 0 {
 		t := time.Unix(0, en.Mtime)
-		_ = os.Chtimes(p, t, t)
+		_ = dst.root.Chtimes(p, t, t)
 	}
 	rep.Files++
 	rep.Bytes += n
@@ -403,12 +467,19 @@ func Verify(ctx context.Context, e engine.Engine, snap *snapshot.Snapshot, sampl
 		return v, err
 	}
 	defer os.RemoveAll(tmp)
+	root, err := os.OpenRoot(tmp)
+	if err != nil {
+		return v, err
+	}
+	defer root.Close()
+	scratch := &dest{root: root, base: tmp}
 	for i := 0; i < len(files) && v.Sampled < sample; i += step {
 		f := files[i]
 		v.Sampled++
-		dst := filepath.Join(tmp, fmt.Sprintf("f%d", i))
+		name := fmt.Sprintf("f%d", i)
+		dst := filepath.Join(tmp, name)
 		rep := &Report{}
-		if err := restoreEntry(ctx, e, &f.entry, dst, Options{Overwrite: true, Log: slog.Default()}, rep); err != nil {
+		if err := restoreEntry(ctx, e, &f.entry, scratch, name, Options{Overwrite: true, Log: slog.Default()}, rep); err != nil {
 			v.Failed = append(v.Failed, f.path+": "+err.Error())
 			continue
 		}
