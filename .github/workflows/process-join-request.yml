@@ -179,6 +179,23 @@ jobs:
             node-addition
             automated
 
+      # The step above leaves the working tree on the base branch again, with
+      # main's manifest in it. What is validated below must be the pull
+      # request's own commit: validating main's manifest passes every time
+      # and reports a manifest as valid that nobody looked at (it did, for
+      # the pull request of issue #254).
+      - name: Check out the pull request's commit
+        if: steps.process.outputs.success == 'true'
+        env:
+          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
+        run: |
+          test -n "$HEAD_SHA" || { echo "no pull request head to validate"; exit 1; }
+          git fetch --quiet origin "$HEAD_SHA"
+          git checkout --quiet --detach "$HEAD_SHA"
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git diff --quiet "origin/${{ github.event.repository.default_branch }}" -- manifests/ \
+            && { echo "the pull request's commit does not change the manifest: nothing to validate"; exit 1; } || true
+
       # validate.yml (pull_request) does not run on this bot-created PR, so the
       # required "validate" check is reported from here instead: run the same
       # checks validate.yml runs, all of them even when one fails, then publish
@@ -187,7 +204,11 @@ jobs:
         if: steps.process.outputs.success == 'true'
         id: validate
         continue-on-error: true
+        env:
+          HEAD_SHA: ${{ steps.create-pr.outputs.pull-request-head-sha }}
         run: |
+          # Never report on another tree than the pull request's.
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA" || { echo "failed=the tree validated is not the pull request's" >> "$GITHUB_OUTPUT"; exit 1; }
           pip install . --quiet
           failed=""
           check() {
