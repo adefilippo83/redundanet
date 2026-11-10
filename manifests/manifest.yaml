@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 6
+revision: 7
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
@@ -80,6 +80,11 @@ members:
         Z/5jKPM/8x986aMPvTw8clUujtuzWqs/Qa0FPm0YPIVD7ZdP59c=
         =Aqeo
         -----END PGP SIGNATURE-----
+  - name: emiliano-giusti
+    key: j2doiuzc3esow6a2r3ga3qnzngwfjhsq4nccfg637267aob46pia
+    contribution_gb: 0
+    joined: 2026-11-10
+    status: active
 storage:
   - member: adefilippo83
     device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
