@@ -3,6 +3,7 @@ package pairing
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -153,10 +154,56 @@ func TestRelayMailboxLimits(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || string(b) != "frame" {
 		t.Errorf("first frame back: %d %q", resp.StatusCode, b)
 	}
-	for i := 0; relay.Rooms() < maxRooms; i++ {
-		post("/pair/"+roomID([]byte{byte(i), byte(i >> 8)})+"/new", []byte("x"))
+	// A room holds a bounded amount nobody has read: two frames of the
+	// largest size, not a full queue of them.
+	big := roomID([]byte("big frames"))
+	for i, want := range []int{http.StatusNoContent, http.StatusNoContent, http.StatusTooManyRequests} {
+		if code := post("/pair/"+big+"/new", make([]byte, maxFrame)); code != want {
+			t.Errorf("large frame %d: %d, want %d", i, code, want)
+		}
 	}
-	if code := post("/pair/"+roomID([]byte("one more"))+"/new", []byte("x")); code != http.StatusServiceUnavailable {
+	resp, err = http.Get(hub.URL + "/pair/" + big + "/new?wait=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if code := post("/pair/"+big+"/existing", make([]byte, maxFrame)); code != http.StatusNoContent {
+		t.Errorf("a frame after one was read: %d", code)
+	}
+	// One address opens a bounded number of rooms; a room that exists is
+	// still found from it. The test server is reached over loopback, as
+	// the hub is behind its proxy, so the forwarded address names the source.
+	from := func(src, path string) int {
+		req, _ := http.NewRequest(http.MethodPost, hub.URL+path, bytes.NewReader([]byte("x")))
+		req.Header.Set("X-Forwarded-For", "198.51.100.1, "+src)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 0; i < maxPerSource; i++ {
+		if code := from("203.0.113.9", "/pair/"+roomID([]byte{'s', byte(i)})+"/new"); code != http.StatusNoContent {
+			t.Fatalf("room %d of one address: %d", i, code)
+		}
+	}
+	if code := from("203.0.113.9", "/pair/"+roomID([]byte("one more"))+"/new"); code != http.StatusServiceUnavailable {
+		t.Errorf("a room beyond the bound of one address: %d", code)
+	}
+	if code := from("203.0.113.9", "/pair/"+roomID([]byte{'s', 0})+"/existing"); code != http.StatusNoContent {
+		t.Errorf("an open room from an address at its bound: %d", code)
+	}
+	if code := from("2001:db8:0:1::7", "/pair/"+roomID([]byte("v6 a"))+"/new"); code != http.StatusNoContent {
+		t.Errorf("another address: %d", code)
+	}
+	for i := 0; relay.Rooms() < maxRooms; i++ {
+		if code := from(fmt.Sprintf("192.0.2.%d", i/maxPerSource+1), "/pair/"+roomID([]byte{byte(i), byte(i >> 8)})+"/new"); code != http.StatusNoContent {
+			t.Fatalf("filling the hub, room %d: %d", i, code)
+		}
+	}
+	if code := from("192.0.2.250", "/pair/"+roomID([]byte("past the cap"))+"/new"); code != http.StatusServiceUnavailable {
 		t.Errorf("room cap: %d", code)
 	}
 	// Rooms expire.
@@ -175,5 +222,32 @@ func TestCodeVersionOneStillParses(t *testing.T) {
 	}
 	if _, err := Parse((&Code{Version: version + 1, Addrs: c.Addrs, Secret: c.Secret}).String()); err == nil {
 		t.Fatal("a code from the future parsed")
+	}
+}
+
+// The source of a request is the connection's address, and the address
+// the proxy on the same host wrote when the connection is from loopback.
+// A forwarded address on a connection from elsewhere is not believed.
+func TestSourceOfARequest(t *testing.T) {
+	for _, c := range []struct{ remote, xff, want string }{
+		{"203.0.113.5:4000", "", "203.0.113.5"},
+		{"203.0.113.5:4000", "198.51.100.1", "203.0.113.5"},
+		{"127.0.0.1:4000", "198.51.100.1", "198.51.100.1"},
+		{"127.0.0.1:4000", "10.9.9.9, 198.51.100.2", "198.51.100.2"},
+		{"127.0.0.1:4000", "not an address", "127.0.0.1"},
+		{"127.0.0.1:4000", "", "127.0.0.1"},
+		{"[::1]:4000", "2001:db8:1:2:3:4:5:6", "2001:db8:1:2::/64"},
+		{"[2001:db8:1:2::9]:4000", "", "2001:db8:1:2::/64"},
+		{"[::ffff:203.0.113.5]:4000", "", "203.0.113.5"},
+		{"nonsense", "", "unknown"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/pair/x/new", nil)
+		req.RemoteAddr = c.remote
+		if c.xff != "" {
+			req.Header.Set("X-Forwarded-For", c.xff)
+		}
+		if got := source(req); got != c.want {
+			t.Errorf("source of %s forwarded %q: %s, want %s", c.remote, c.xff, got, c.want)
+		}
 	}
 }

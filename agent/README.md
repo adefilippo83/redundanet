@@ -114,7 +114,8 @@ failed connections end the code, and it is good for ten minutes and one
 device. The two reach each other directly on the same network or, failing
 that, through a hub: the code names the hubs' status pages, each hub keeps
 a mailbox per pairing under `/pair/` (a room derived from the code's secret,
-a queue per direction, ten minutes), and the same sealed frames travel
+a queue per direction, ten minutes; at most eight rooms open per source
+address and two full frames unread per room), and the same sealed frames travel
 through it, so the hub learns only that a pairing happened and from which
 addresses. The new device then holds its identity and the network, and
 installs its service. The headless flows (`install.sh`, the Pi image) stay
@@ -250,7 +251,7 @@ placed, the hub issues a task at once. That is how repair is drilled on
 a live network, and `object check CAP` from any device of the owner
 prints the storage index and the holders to pick from.
 The collector serves the status page and `status.json` on
-`--status`, and with `--legacy-status` mirrors the RedundaNet 2 status page
+`--status`, both from one status computed at most once in five seconds, and with `--legacy-status` mirrors the RedundaNet 2 status page
 so today's nodes stay visible beside the new devices until G3. With
 `--publish` it also PUTs `status.json` and `index.html` under that URL every
 minute with the bearer token from `--publish-token-file`, which is how the
@@ -321,7 +322,10 @@ survives every later manifest.
 How a session comes up: the agent asks a hub for the peer's candidates; the
 device the hub names dials through the relay at once, both punch the
 candidates, and the dialer opens a second, direct connection on the first
-address that answers, ranked LAN, global IPv6, public IPv4. New streams take
+address that answers, ranked LAN, global IPv6, public IPv4. The candidates
+are a peer's own claim passed on by the hub, so both the hub and the device
+keep only literal addresses with a port, no name to look up, and a bounded
+number (`wire.Addrs`, 32 announced). New streams take
 the direct connection while it lives and the relay otherwise; a connection
 that dies takes its streams with it, and the request layer retries. There
 is no QUIC path migration: quic-go cannot migrate off a dead path (see the

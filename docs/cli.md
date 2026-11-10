@@ -115,7 +115,7 @@ The self-updater by hand. `check` names the newest release that fits the channel
 ```
 redundanet diagnostics [--out FILE]
 ```
-Writes the bundle to send when something is wrong (default `redundanet-diagnostics-DATE.zip` in the current directory). Works with the agent down. Every path, URL and address is redacted; nothing is uploaded.
+Writes the bundle to send when something is wrong (default `redundanet-diagnostics-DATE.zip` in the current directory). Works with the agent down. Paths, URLs and addresses are replaced before anything is written (a path by a short hash, whole, spaces included); this works by pattern, so look through `log.txt` in the zip before sending it. Nothing is uploaded.
 
 ```
 redundanet version

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -33,6 +34,15 @@ const (
 	queueDepth = 16
 	maxFrame   = maxMessage + 2 + 64
 	pollWait   = 20 * time.Second
+
+	// The mailbox is open to anyone who can reach the page, so what one
+	// caller can take of it is bounded: a source address opens at most
+	// maxPerSource rooms at a time, and a room holds at most maxRoomBytes
+	// of frames nobody has read yet. An exchange has one frame on its way
+	// in each direction at most; all rooms full of unread frames come to
+	// maxRooms times maxRoomBytes, about 34 MB.
+	maxPerSource = 8
+	maxRoomBytes = 2 * maxFrame
 
 	sideNew      = "new"      // the queue of frames addressed to the new device
 	sideExisting = "existing" // the queue of frames addressed to the existing device
@@ -60,7 +70,41 @@ type Relay struct {
 
 type room struct {
 	expires time.Time
+	source  string // who opened it, for the bound per source
+	queued  int    // bytes of frames waiting, both directions
 	to      map[string]chan []byte
+}
+
+var errTooManyFromSource = errors.New("too many pairings in progress from this address; try again in a few minutes")
+
+// source names who a request comes from, for the bound on rooms: the
+// address, or the /64 of an IPv6 one. Behind the reverse proxy on the
+// same host every connection comes from loopback, and then the last
+// address in X-Forwarded-For, the one that proxy wrote, is taken. The
+// header of a connection from anywhere else is not read.
+func source(req *http.Request) string {
+	host, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil {
+		host = req.RemoteAddr
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return "unknown"
+	}
+	if addr.IsLoopback() {
+		if xff := req.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+			parts := strings.Split(xff[len(xff)-1], ",")
+			if fwd, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
+				addr = fwd
+			}
+		}
+	}
+	addr = addr.Unmap().WithZone("")
+	if addr.Is6() {
+		p, _ := addr.Prefix(64)
+		return p.String()
+	}
+	return addr.String()
 }
 
 // NewRelay makes an empty mailbox.
@@ -88,20 +132,55 @@ func (r *Relay) sweepLocked() {
 	}
 }
 
-// room finds or opens a mailbox; nil when the hub is full.
-func (r *Relay) room(id string) *room {
+// room finds or opens a mailbox. It refuses when the hub is full, and
+// when the source already has maxPerSource rooms open; a room that
+// exists is found whoever asks, since the two devices of a pairing come
+// from different addresses.
+func (r *Relay) room(id, src string) (*room, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sweepLocked()
 	if rm, ok := r.rooms[id]; ok {
-		return rm
+		return rm, nil
 	}
 	if len(r.rooms) >= maxRooms {
-		return nil
+		return nil, errors.New("too many pairings in progress; try again in a few minutes")
 	}
-	rm := &room{expires: r.now().Add(roomTTL), to: map[string]chan []byte{sideNew: make(chan []byte, queueDepth), sideExisting: make(chan []byte, queueDepth)}}
+	mine := 0
+	for _, rm := range r.rooms {
+		if rm.source == src {
+			mine++
+		}
+	}
+	if mine >= maxPerSource {
+		return nil, errTooManyFromSource
+	}
+	rm := &room{expires: r.now().Add(roomTTL), source: src, to: map[string]chan []byte{sideNew: make(chan []byte, queueDepth), sideExisting: make(chan []byte, queueDepth)}}
 	r.rooms[id] = rm
-	return rm
+	return rm, nil
+}
+
+// post queues a frame unless the room holds too much unread already.
+func (r *Relay) post(rm *room, q chan []byte, body []byte) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if rm.queued+len(body) > maxRoomBytes {
+		return false
+	}
+	select {
+	case q <- body:
+		rm.queued += len(body)
+		return true
+	default:
+		return false
+	}
+}
+
+// taken accounts for a frame that left the room.
+func (r *Relay) taken(rm *room, body []byte) {
+	r.mu.Lock()
+	rm.queued -= len(body)
+	r.mu.Unlock()
 }
 
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -110,9 +189,9 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "a pairing room is /pair/{room}/{new|existing}", http.StatusBadRequest)
 		return
 	}
-	rm := r.room(parts[0])
-	if rm == nil {
-		http.Error(w, "too many pairings in progress; try again in a few minutes", http.StatusServiceUnavailable)
+	rm, err := r.room(parts[0], source(req))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	q := rm.to[parts[1]]
@@ -127,10 +206,9 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "frame too large", http.StatusRequestEntityTooLarge)
 			return
 		}
-		select {
-		case q <- body:
+		if r.post(rm, q, body) {
 			w.WriteHeader(http.StatusNoContent)
-		default:
+		} else {
 			http.Error(w, "the other side has not read the earlier frames", http.StatusTooManyRequests)
 		}
 	case http.MethodGet:
@@ -141,6 +219,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		deliver := func(b []byte) {
+			r.taken(rm, b)
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = w.Write(b)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -228,6 +229,9 @@ func (s *session) loop() {
 
 // candidates is the hub's answer to a rendezvous.
 func (s *session) candidates(c *hubClient, cand wire.Candidates) {
+	// The list is the peer's own claim, passed on by the hub: only literal
+	// addresses, and a bounded number of them, are ever sent a packet.
+	cand.Addrs = wire.Addrs(cand.Addrs, wire.MaxCandidates+1)
 	s.mu.Lock()
 	s.hub = c
 	s.cands = cand.Addrs
@@ -261,11 +265,11 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 func (s *session) punch(addrs []string) {
 	var targets []*net.UDPAddr
 	for _, a := range addrs {
-		u, err := net.ResolveUDPAddr("udp", a)
-		if err != nil || wire.IsRelayAddr(u) {
+		ap, err := netip.ParseAddrPort(a)
+		if err != nil {
 			continue
 		}
-		targets = append(targets, u)
+		targets = append(targets, net.UDPAddrFromAddrPort(ap))
 	}
 	if len(targets) == 0 {
 		return

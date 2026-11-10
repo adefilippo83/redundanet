@@ -331,3 +331,36 @@ func TestVerifyStreakOnTheMemberRow(t *testing.T) {
 		t.Fatalf("page lacks the streak:\n%s", page)
 	}
 }
+
+// The page is public: however many ask, the status is computed once in
+// pageTTL, and what changed shows after it.
+func TestTheListenerAnswersFromOneComputedStatus(t *testing.T) {
+	w := newWorld(t, "", "")
+	h := w.c.Handler()
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	before := get("/status.json")
+	if strings.Contains(before, `"version":"3.9.9"`) {
+		t.Fatalf("the version is there before the census:\n%s", before)
+	}
+	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Version: "3.9.9", Roles: []string{"storage"}, Manifest: 7})
+	if got := get("/status.json"); got != before {
+		t.Fatalf("a second request inside %s computed the status again", pageTTL)
+	}
+	if page := get("/"); strings.Contains(page, "3.9.9") {
+		t.Fatalf("the page inside %s is not from the same status", pageTTL)
+	}
+	w.advance(pageTTL)
+	if got := get("/status.json"); !strings.Contains(got, `"version":"3.9.9"`) {
+		t.Fatalf("the status after %s is still the old one:\n%s", pageTTL, got)
+	}
+	if page := get("/"); !strings.Contains(page, "3.9.9") {
+		t.Fatalf("the page after %s is still the old one", pageTTL)
+	}
+}

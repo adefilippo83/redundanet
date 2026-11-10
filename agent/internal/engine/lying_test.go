@@ -24,12 +24,13 @@ func (r *replayed) Read(p []byte) (int, error) { return r.head.Read(p) }
 
 // handle is the server's stream handler in the test grid. While lie is
 // set, a has request is answered with what lie returns and never reaches
-// the store; everything else is served honestly.
+// the store; while usage is set, a usage request is answered with it.
+// Everything else is served honestly.
 func (n *serverNode) handle(peer identity.Peer, proto string, st wire.Stream) {
 	n.lieMu.Lock()
-	lie := n.lie
+	lie, usage := n.lie, n.usage
 	n.lieMu.Unlock()
-	if lie == nil {
+	if lie == nil && usage == nil {
 		n.srv.Handle(peer, proto, st)
 		return
 	}
@@ -44,13 +45,19 @@ func (n *serverNode) handle(peer identity.Peer, proto string, st wire.Stream) {
 		return
 	}
 	var req shareproto.Request
-	if err := identity.UnmarshalLenient(body, &req); err != nil || req.Type != shareproto.TypeHas {
+	var resp shareproto.Response
+	switch err := identity.UnmarshalLenient(body, &req); {
+	case err == nil && req.Type == shareproto.TypeHas && lie != nil:
+		resp = shareproto.Response{Status: shareproto.StatusOK, Presence: lie(req.StorageIndex)}
+	case err == nil && req.Type == shareproto.TypeUsage && usage != nil:
+		resp = shareproto.Response{Status: shareproto.StatusOK, Usage: *usage}
+	default:
 		n.srv.Handle(peer, proto, &replayed{Stream: st, head: io.MultiReader(bytes.NewReader(hdr[:]), bytes.NewReader(body), st)})
 		return
 	}
 	defer st.Close()
 	defer st.CancelRead(0)
-	out, _ := identity.Marshal(shareproto.Response{Status: shareproto.StatusOK, Presence: lie(req.StorageIndex)})
+	out, _ := identity.Marshal(resp)
 	buf := make([]byte, 4+len(out))
 	binary.BigEndian.PutUint32(buf, uint32(len(out)))
 	copy(buf[4:], out)
@@ -156,5 +163,46 @@ func TestVouched(t *testing.T) {
 		if got := vouched(&Health{N: tc.n, Holders: tc.holders}, tc.servers); len(got) != tc.want {
 			t.Errorf("%s: %d share numbers vouched for, want %d (%v)", tc.name, len(got), tc.want, got)
 		}
+	}
+}
+
+// A storage server that overstates what it holds for a member must not
+// put that member over its allocation by itself: its answer counts for at
+// most what the manifest lets it hold. A negative answer counts for
+// nothing, so it cannot hide what the others report either.
+func TestUsageCountsAServerUpToItsLimit(t *testing.T) {
+	g, alice, bob := newGrid(t)
+	e, _ := g.engineFor(t, alice)
+	ctx := context.Background()
+	data := pattern(object.DefaultSegmentSize+11, 9)
+	if _, err := e.Put(ctx, bytes.NewReader(data), int64(len(data))); err != nil {
+		t.Fatal(err)
+	}
+	honest, err := e.Usage(ctx)
+	if err != nil || honest.Bytes <= 0 || honest.Answered != honest.Servers {
+		t.Fatalf("honest usage: %+v %v", honest, err)
+	}
+	liar := g.servers[bob.dev.ID()]
+	limit := g.m.OwnerCap(alice.key, bob.dev.ID())
+	if limit <= 0 {
+		t.Fatalf("the grid gives the server no limit for the member: %d", limit)
+	}
+	set := func(v int64) {
+		liar.lieMu.Lock()
+		liar.usage = &v
+		liar.lieMu.Unlock()
+	}
+	set(1 << 60)
+	over, err := e.Usage(ctx)
+	if err != nil || over.Answered != honest.Answered {
+		t.Fatalf("usage with an overstating server: %+v %v", over, err)
+	}
+	if over.Bytes < limit || over.Bytes > honest.Bytes+limit {
+		t.Fatalf("an overstating server counted for %d, its limit is %d (honest total %d)", over.Bytes, limit, honest.Bytes)
+	}
+	set(-(1 << 60))
+	under, err := e.Usage(ctx)
+	if err != nil || under.Bytes < 0 || under.Bytes > honest.Bytes {
+		t.Fatalf("usage with a negative answer: %+v %v (honest total %d)", under, err, honest.Bytes)
 	}
 }

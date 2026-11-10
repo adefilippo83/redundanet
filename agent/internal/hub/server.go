@@ -252,7 +252,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 		return
 	}
 	c.mu.Lock()
-	c.locals = hello.Locals
+	c.locals = wire.Addrs(hello.Locals, wire.MaxCandidates)
 	c.mu.Unlock()
 	if err := c.w.Message(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
 		return
@@ -298,7 +298,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 				return
 			}
 			c.mu.Lock()
-			c.locals = hello.Locals
+			c.locals = wire.Addrs(hello.Locals, wire.MaxCandidates)
 			c.mu.Unlock()
 		case wire.FrameConnect:
 			var req wire.Connect

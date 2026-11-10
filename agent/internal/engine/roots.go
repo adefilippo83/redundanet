@@ -171,11 +171,17 @@ func (e *Native) GetRoots(ctx context.Context, member identity.Key) (*Roots, err
 }
 
 // Usage asks every storage server what it holds for the member and sums
-// the answers: the budget check's measure.
+// the answers: the budget check's measure. A server's answer counts for at
+// most what the manifest lets that server hold for the member, so no one
+// server can report the member over its allocation by itself.
 func (e *Native) Usage(ctx context.Context) (Usage, error) {
 	servers, _, err := e.servers()
 	if err != nil {
 		return Usage{}, err
+	}
+	man := e.cfg.Manifest()
+	if man == nil {
+		return Usage{}, ErrNoServers
 	}
 	u := Usage{Servers: len(servers)}
 	var mu sync.Mutex
@@ -190,6 +196,10 @@ func (e *Native) Usage(ctx context.Context) (Usage, error) {
 			if err != nil {
 				e.log.Info("usage not answered", "server", s.Device.Short(), "err", err)
 				return
+			}
+			if limit := man.OwnerCap(e.cfg.Member, s.Device); n < 0 || n > limit {
+				e.log.Warn("a server reports more than it may hold for this member; counted at its limit", "server", s.Device.Short(), "reported", n, "limit", limit)
+				n = min(max(n, 0), limit)
 			}
 			mu.Lock()
 			u.Bytes += n

@@ -84,11 +84,13 @@ func runDiagnostics(args []string) error {
 		}
 	}
 	// The service's log: the file launchd writes on macOS, the journal on
-	// Linux; on Windows the agent's own lines are what there is.
+	// Linux; on Windows the agent's own lines are what there is. The
+	// journal is read as the messages alone: its own prefix names the host,
+	// and every line of the agent carries its time already.
 	if text, err := diag.TailFile(filepath.Join(d, "service.log"), 1<<20); err == nil {
 		in.LogText = text
 	} else if runtime.GOOS == "linux" {
-		for _, args := range [][]string{{"--user", "-u", "redundanet.service", "-n", "2000", "--no-pager"}, {"-u", "redundanet-agent", "-n", "2000", "--no-pager"}} {
+		for _, args := range [][]string{{"--user", "-u", "redundanet.service", "-n", "2000", "--no-pager", "-o", "cat"}, {"-u", "redundanet-agent", "-n", "2000", "--no-pager", "-o", "cat"}} {
 			if b, err := exec.Command("journalctl", args...).Output(); err == nil && len(b) > 0 {
 				in.LogText = string(b)
 				break
@@ -121,7 +123,8 @@ func runDiagnostics(args []string) error {
 	}
 	fmt.Printf("wrote %s from %s\n", abs, source)
 	fmt.Println("it holds versions, the manifest revision, the service state, hubs and peers as counts, the backup sets with folders as label and hash,")
-	fmt.Println("error kinds and counts, a disk check and the last log lines with every path and address redacted; nothing was uploaded, send it by hand")
+	fmt.Println("error kinds and counts, a disk check and the last log lines with paths, URLs and addresses replaced; nothing was uploaded.")
+	fmt.Println("the replacement works by pattern: look through log.txt in the zip before you send it by hand")
 	_ = strings.TrimSpace
 	return nil
 }
