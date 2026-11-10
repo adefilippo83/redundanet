@@ -480,3 +480,48 @@ func TestRevocationSpreadsThroughTheHub(t *testing.T) {
 		return len(late.Status().Hubs) == 1 && len(got[seed(4).MemberKey()]) == 1
 	})
 }
+
+// TestAPeerLongOutOfReachFailsFast: a request to a peer that has had no
+// connection for a while does not spend its whole deadline waiting for
+// one, which is what made every operation take as long as its timeout
+// while one storage server was switched off. A peer only just asked for
+// still gets the full wait, and one that comes back is reached again.
+func TestAPeerLongOutOfReachFailsFast(t *testing.T) {
+	n := newTestNet(t, false)
+	a, _ := n.endpoint(seed(1), true, nil)
+	absent, absentID := device(t, seed(2), identity.RoleClient, identity.RoleStorage)
+	peer := absent.ID()
+	n.permit(peer)
+
+	// Just asked for: the wait is the caller's deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	_, _, err := a.OpenStream(ctx, peer)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrNoPath) {
+		t.Fatalf("a peer just asked for: %v", err)
+	}
+
+	// Out of reach for long: a short wait, then ErrNoPath.
+	s := a.Connect(peer).session
+	s.mu.Lock()
+	s.down = time.Now().Add(-2 * noPathAfter)
+	s.mu.Unlock()
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	start := time.Now()
+	_, _, err = a.OpenStream(ctx, peer)
+	cancel()
+	if !errors.Is(err, ErrNoPath) {
+		t.Fatalf("a peer long out of reach: %v", err)
+	}
+	if took := time.Since(start); took > noPathWait+3*time.Second {
+		t.Fatalf("the request waited %v for a peer long out of reach", took)
+	}
+
+	// It comes back: connected, and no longer taken for unreachable.
+	n.endpoint(seed(3), false, func(c *Config) { c.Identity, c.Device = absentID, peer })
+	eventually(t, 30*time.Second, "the returned peer to connect", func() bool { return a.Connect(peer).Best() != "" })
+	if s.noPath() {
+		t.Fatal("a connected peer is still taken for unreachable")
+	}
+	roundTrip(t, a, peer, "back")
+}

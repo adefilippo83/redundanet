@@ -197,13 +197,21 @@ func (e *Endpoint) Connect(peer identity.Key) *Session {
 	return &Session{s}
 }
 
+// ErrNoPath answers OpenStream for a peer that has had no connection for
+// some time and gained none in the short wait a request gives it.
+var ErrNoPath = errors.New("transport: the peer has not been reachable for some time")
+
 // OpenStream opens a stream to peer on the best live path, waiting for a
-// connection first.
+// connection first: up to the context's deadline for a peer that was
+// connected until a moment ago or was only just asked for, and a short
+// moment for one that has been out of reach for a while, so that one
+// server that is off does not cost every request its whole deadline.
 func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stream, string, error) {
 	if peer == e.cfg.Device {
 		return nil, "", ErrSelf
 	}
 	s := e.Connect(peer).session
+	start := time.Now()
 	for {
 		if conn, path := s.best(); conn != nil {
 			st, err := conn.OpenStreamSync(ctx)
@@ -214,6 +222,8 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stre
 				return nil, "", err
 			}
 			// That connection just died; the loop picks the other one.
+		} else if time.Since(start) > noPathWait && s.noPath() {
+			return nil, "", fmt.Errorf("no connection to %s: %w", peer.Short(), ErrNoPath)
 		}
 		select {
 		case <-ctx.Done():

@@ -21,6 +21,15 @@ const (
 	dialTimeout     = 10 * time.Second
 	idleSession     = 60 * time.Second // a session nobody here asked for is dropped after this long without a connection
 	maxEvents       = 50
+
+	// A peer that has had no connection for noPathAfter, three rounds of
+	// rendezvous, is taken to have no path for now: a request to it waits
+	// noPathWait for one and then fails, instead of spending its whole
+	// deadline on a server that is switched off. A session that is new, or
+	// lost its connections a moment ago (a laptop waking up), still gets
+	// the full wait.
+	noPathAfter = 3 * rendezvousEvery
+	noPathWait  = 2 * time.Second
 )
 
 // Event is one line of a session's history.
@@ -73,11 +82,13 @@ type session struct {
 	events     []Event
 	created    time.Time
 	lastConn   time.Time
+	down       time.Time // since when no connection is up; zero while one is
 }
 
 func newSession(e *Endpoint, peer identity.Key) *session {
 	ctx, cancel := context.WithCancel(e.ctx)
 	s := &session{ep: e, peer: peer, ctx: ctx, stop: cancel, seen: map[string]bool{}, dialing: map[string]bool{}, created: time.Now()}
+	s.down = s.created
 	go s.loop()
 	return s
 }
@@ -126,6 +137,14 @@ func (s *session) best() (*quic.Conn, string) {
 	return nil, ""
 }
 
+// noPath reports whether the peer has been without any connection for
+// long enough that a request should not wait its whole deadline for one.
+func (s *session) noPath() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.down.IsZero() && time.Since(s.down) > noPathAfter
+}
+
 func (s *session) wantsRendezvous() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,6 +173,7 @@ func (s *session) setConn(conn *quic.Conn, path string) {
 		old, s.relayConn = s.relayConn, conn
 	}
 	s.lastConn = time.Now()
+	s.down = time.Time{}
 	s.mu.Unlock()
 	if old != nil && old != conn {
 		_ = old.CloseWithError(0, "replaced")
@@ -190,6 +210,9 @@ func (s *session) serve(conn *quic.Conn, path string) {
 	}
 	if path == PathRelay && s.relayConn == conn {
 		s.relayConn, mine = nil, true
+	}
+	if mine && s.relayConn == nil && s.directConn == nil {
+		s.down = time.Now()
 	}
 	s.mu.Unlock()
 	if mine {
