@@ -83,8 +83,6 @@ members:
   - name: emiliano-giusti
     key: j2doiuzc3esow6a2r3ga3qnzngwfjhsq4nccfg637267aob46pia
     contribution_gb: 1000
-    allocation_gb: 50
-    sponsor: {member: reserve, gb: 50}
     joined: 2026-11-10
     status: active
 storage:
