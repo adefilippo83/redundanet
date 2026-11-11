@@ -4,7 +4,7 @@
 # follows only a manifest whose manifest.sig an operator key signed. Edit,
 # then re-sign: redundanet manifest sign --key <operator.key>.
 schema: 3
-revision: 8
+revision: 9
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
@@ -82,7 +82,7 @@ members:
         -----END PGP SIGNATURE-----
   - name: emiliano-giusti
     key: j2doiuzc3esow6a2r3ga3qnzngwfjhsq4nccfg637267aob46pia
-    contribution_gb: 0
+    contribution_gb: 1000
     allocation_gb: 50
     sponsor: {member: reserve, gb: 50}
     joined: 2026-11-10
@@ -97,6 +97,9 @@ storage:
   - member: ptlug
     device: ikpijbsqxiz4cz2a6s3t6r6gqfqz6dt6mgci5yubzuklc64l3qsa
     name: ptlug-1
+  - member: emiliano-giusti
+    device: ftdvrjwkkq3fqujhewhb62pirccd5in3c2uehbkjor5k272ha5ka
+    name: pc-redundanet
 introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
 nodes:
 - name: hub-fly
