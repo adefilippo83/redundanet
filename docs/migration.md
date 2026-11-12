@@ -22,7 +22,7 @@ Do this on every node before the join request, so each node's device key and nam
 
 ## 3. The join request
 
-Fill the form at <https://redundanet.com/join.html> as a new member does ([join.md](join.md), step 4), from the GitHub account your old nodes were listed under: the workflow gives the name of a former RedundaNet 2 member only to a request filed from that account. Nothing else tells you apart from a new member; the GPG signature the earlier form asked for is no longer used.
+Fill the form at <https://redundanet.com/join.html> as a new member does ([join.md](join.md), step 4). Nothing tells you apart from a new member: the manifest no longer lists the old nodes, and the GPG signature the earlier form asked for is no longer used. The maintainer reviews every request, and the request shows the GitHub account it came from.
 
 Your contribution in GB is what your nodes contribute. The workflow opens the pull request adding you under `members:` and your nodes under `storage:`, the maintainer signs and merges, and every agent applies the new revision within five minutes.
 
@@ -63,7 +63,7 @@ What it does: the plan lists the stack's containers by service and every compose
 
 ## What the end of RedundaNet 2 means
 
-RedundaNet 2 ended on 13 November 2026, when its two hubs were shut down and removed. Nothing was deleted on any member's node: the Tahoe shares are still on the disks that held them, but with no introducer and no VPN entry point the nodes cannot find each other, so the old grid cannot be read or written. What a member never moved to a native backup set is gone from the grid, not from their own disks. No automatic deletion exists: each member retires their own stack with `migrate-node` and deletes the old share directories when they choose. The Python package `redundanet` on PyPI (2.7.40, the last one) and its source, containers and documentation are no longer in this repository; they are in its history, at the tag `v2.7.40`.
+RedundaNet 2 ended on 13 November 2026, when its two hubs were shut down and removed. Nothing was deleted on any member's node: the Tahoe shares are still on the disks that held them, but with no introducer and no VPN entry point the nodes cannot find each other, so the old grid cannot be read or written. What a member never moved to a native backup set is gone from the grid, not from their own disks. No automatic deletion exists: each member retires their own stack with `migrate-node` and deletes the old share directories when they choose. Since revision 10 the manifest no longer carries the old stack's settings (its node list, its VPN range, its introducer), so the old containers on a node find nothing for themselves in it; that is one more reason to retire them. The Python package `redundanet` on PyPI (2.7.40, the last one) and its source, containers and documentation are no longer in this repository; they are in its history, at the tag `v2.7.40`.
 
 ## Lost something?
 

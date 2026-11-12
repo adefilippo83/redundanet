@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "Mit Ihrer Phrase zertifiziert Ihr Laptop den Knoten über den Code und übergibt ihm das Netzwerk. Der Knoten startet von selbst, und Ihr Laptop merkt ihn sich, sodass <code>redundanet setup</code> oder <code>redundanet join-request</code> seinen Schlüssel und Namen in das <a href=\"join.html\">Beitrittsformular</a> einträgt; der Knoten gibt seine <code>storage:</code>-Zeilen auch aus. Er zählt, sobald der Maintainer das Manifest damit signiert hat.",
   "ig.node.alt": "Gar kein Laptop von Ihnen zur Hand? Das Skript des Runbooks richtet dasselbe Layout mit einer per SSH kopierten Zertifikatsdatei ein.",
   "leg.former.title": "Wenn Sie Mitglied waren",
-  "leg.former.join": "Ehemalige Mitglieder treten RedundaNet 3 wie alle anderen bei: <a href=\"installation.html\">installieren Sie den Agenten</a> und senden Sie dann die <a href=\"join.html\">Beitrittsanfrage</a> von dem GitHub-Konto, unter dem Ihre alten Knoten geführt wurden.",
+  "leg.former.join": "Ehemalige Mitglieder treten RedundaNet 3 wie alle anderen bei: <a href=\"installation.html\">installieren Sie den Agenten</a> und senden Sie dann die <a href=\"join.html\">Beitrittsanfrage</a>.",
   "leg.retire.title": "Den Docker-Stack stilllegen",
   "leg.retire.warn": "<strong>Das alte Grid ist abgeschaltet.</strong> Niemand liest die Tahoe-Fragmente Ihres Knotens mehr. Es wird auch nichts für Sie gelöscht: die Fragmente bleiben auf dem Datenträger, bis Sie sie löschen.",
   "leg.retire.desc": "<code>migrate-node</code> stoppt und entfernt die Container, als Ganzes, tinc zuerst; Dateien und Fragmente bleiben auf der Festplatte. Es verweigert, solange im nativen Grid etwas fehlt. Zuerst ein Probelauf; <code>--rollback</code> bringt alle Dienste gemeinsam zurück.",

@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "Com a sua frase, o seu notebook certifica o nó pelo código e lhe entrega a rede. O nó inicia sozinho, e o seu notebook o lembra, de modo que <code>redundanet setup</code> ou <code>redundanet join-request</code> coloca a chave e o nome dele no <a href=\"join.html\">formulário de adesão</a>; o nó também imprime as suas linhas <code>storage:</code>. Ele conta quando o mantenedor assina o manifesto com elas.",
   "ig.node.alt": "Nenhum portátil seu à mão? O script do runbook cria a mesma estrutura com um ficheiro de certificado copiado por SSH.",
   "leg.former.title": "Se você era membro",
-  "leg.former.join": "Os antigos membros entram no RedundaNet 3 como qualquer pessoa: <a href=\"installation.html\">instale o agente</a> e envie o <a href=\"join.html\">pedido de adesão</a> a partir da conta do GitHub em que os seus nós antigos estavam listados.",
+  "leg.former.join": "Os antigos membros entram no RedundaNet 3 como qualquer pessoa: <a href=\"installation.html\">instale o agente</a> e envie o <a href=\"join.html\">pedido de adesão</a>.",
   "leg.retire.title": "Desativar a stack Docker",
   "leg.retire.warn": "<strong>A grid antiga está desligada.</strong> Nada mais lê os fragmentos Tahoe do seu nó. Também nada é apagado por você: os fragmentos ficam no disco até que você os apague.",
   "leg.retire.desc": "<code>migrate-node</code> para e remove os contêineres, todos juntos, o tinc primeiro; os arquivos e os fragmentos ficam no disco. Ele se recusa enquanto algo estiver faltando na grid nativa. Primeiro o dry run; <code>--rollback</code> traz todos os serviços de volta juntos.",

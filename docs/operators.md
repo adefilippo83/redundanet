@@ -21,7 +21,7 @@ Every change to membership is a pull request against `manifests/manifest.yaml`: 
    redundanet validate --manifest manifests/manifest.yaml
    ```
 
-   It parses the v3 half (the RedundaNet 2 keys are set aside, anything else unknown is an error), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request.
+   It parses the file (an unknown key is an error; the RedundaNet 2 keys of revisions up to 9 are set aside), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request.
 3. Sign offline, on the laptop with the operator key, one command for a pull request:
 
    ```bash
@@ -49,7 +49,7 @@ A manifest that is broken on main does not reach an agent: it keeps its last goo
 
 ## Admitting a member
 
-The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution. The name of a former RedundaNet 2 member, one the manifest's `nodes:` still lists, is given only to a request filed from that GitHub account; the workflow refuses any other. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
+The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution. A former RedundaNet 2 member's request is like any other: check that the GitHub account it comes from is the person you know, since nothing else ties a member name to an account. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
 
 ## A member leaving
 

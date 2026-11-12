@@ -31,9 +31,7 @@ names against the agent's rule, keys as 52-character base32 that decodes to
 32 bytes, numbers as integers in range. The manifest is edited textually,
 never re-serialised, so the header comment and the existing entries survive
 byte for byte and manifest.sig stays the only thing the maintainer has to
-redo; the result must parse back to exactly the entries written. The name
-of a former RedundaNet 2 member, one the manifest's `nodes:` still lists,
-is given only to a request filed from that GitHub account.
+redo; the result must parse back to exactly the entries written.
 """
 
 from __future__ import annotations
@@ -344,8 +342,8 @@ def _entries(manifest: dict[str, Any], key: str) -> list[dict[str, Any]]:
     return [entry for entry in value if isinstance(entry, dict)]
 
 
-def check_manifest(req: JoinRequest, manifest: Any, author: str | None = None) -> None:
-    """Uniqueness of the names and keys, and the RedundaNet 2 name rule."""
+def check_manifest(req: JoinRequest, manifest: Any) -> None:
+    """Uniqueness of the names and keys."""
     if not isinstance(manifest, dict) or manifest.get("schema") != 3:
         raise JoinError("the manifest is not a RedundaNet 3 manifest (schema: 3)")
     members = _entries(manifest, "members")
@@ -375,19 +373,6 @@ def check_manifest(req: JoinRequest, manifest: Any, author: str | None = None) -
         raise JoinError(
             f"a storage device or hub named {req.device_name} already exists; "
             "pick another device name"
-        )
-
-    # A former RedundaNet 2 member's name is claimed only by that GitHub
-    # account, for as long as the manifest's `nodes:` lists it.
-    v2_members = {
-        str(node.get("member")).lower()
-        for node in _entries(manifest, "nodes")
-        if node.get("member")
-    }
-    if req.name in v2_members and req.name != (author or "").strip().lower():
-        raise JoinError(
-            f"{req.name} is the member name of RedundaNet 2 nodes: file the request from "
-            "that GitHub account"
         )
 
 
@@ -801,7 +786,7 @@ def process(
     try:
         req = parse_request(issue_body, author)
         text = manifest_path.read_text()
-        check_manifest(req, yaml.safe_load(text), author)
+        check_manifest(req, yaml.safe_load(text))
         joined = today()
         new_text = append_items(text, "members", lambda indent: render_member(req, joined, indent))
         if req.device_key:

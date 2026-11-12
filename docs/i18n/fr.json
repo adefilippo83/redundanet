@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "Avec votre phrase, votre portable certifie le nœud par le code et lui remet le réseau. Le nœud démarre tout seul, et votre portable s'en souvient : <code>redundanet setup</code> ou <code>redundanet join-request</code> met sa clé et son nom dans le <a href=\"join.html\">formulaire d'adhésion</a> ; le nœud affiche aussi ses lignes <code>storage:</code>. Il compte dès que le mainteneur a signé le manifeste avec elles.",
   "ig.node.alt": "Aucun portable à vous sous la main ? Le script du runbook crée la même disposition avec un fichier de certificat copié par SSH.",
   "leg.former.title": "Si vous étiez membre",
-  "leg.former.join": "Les anciens membres rejoignent RedundaNet 3 comme tout le monde : <a href=\"installation.html\">installez l'agent</a>, puis envoyez la <a href=\"join.html\">demande d'adhésion</a> depuis le compte GitHub sous lequel vos anciens nœuds étaient listés.",
+  "leg.former.join": "Les anciens membres rejoignent RedundaNet 3 comme tout le monde : <a href=\"installation.html\">installez l'agent</a>, puis envoyez la <a href=\"join.html\">demande d'adhésion</a>.",
   "leg.retire.title": "Retirer la pile Docker",
   "leg.retire.warn": "<strong>L'ancienne grille est éteinte.</strong> Plus rien ne lit les fragments Tahoe de votre nœud. Rien n'est supprimé à votre place non plus : les fragments restent sur le disque jusqu'à ce que vous les supprimiez.",
   "leg.retire.desc": "<code>migrate-node</code> arrête et supprime les conteneurs, en bloc, tinc en premier ; les fichiers et les fragments restent sur le disque. Il refuse tant que quelque chose manque sur la grille native. Faites d'abord un essai à blanc ; <code>--rollback</code> remet tous les services en place ensemble.",

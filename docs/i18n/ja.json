@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "あなたのフレーズを使って、ノート PC がコードを通じてノードに証明書を発行し、ネットワークを渡します。ノードは自分で起動し、ノート PC はそれを記憶するので、<code>redundanet setup</code> または <code>redundanet join-request</code> がその鍵と名前を<a href=\"join.html\">参加フォーム</a>に入れます。ノード自身も <code>storage:</code> の行を表示します。メンテナーがそれを含むマニフェストに署名した時点で、ノードは数に入ります。",
   "ig.node.alt": "手元にあなたのノート PC がまったくない場合は、ランブックのスクリプトが SSH でコピーした証明書ファイルから同じ配置を作ります。",
   "leg.former.title": "以前メンバーだった方へ",
-  "leg.former.join": "以前のメンバーも、ほかの方と同じ手順で RedundaNet 3 に参加します。<a href=\"installation.html\">エージェントをインストール</a>し、以前のノードが登録されていた GitHub アカウントから<a href=\"join.html\">参加申請</a>を送ってください。",
+  "leg.former.join": "以前のメンバーも、ほかの方と同じ手順で RedundaNet 3 に参加します。<a href=\"installation.html\">エージェントをインストール</a>し、<a href=\"join.html\">参加申請</a>を送ってください。",
   "leg.retire.title": "Docker スタックの退役",
   "leg.retire.warn": "<strong>旧グリッドは停止しています。</strong>ノードの Tahoe シェアを読み取るものはもうありません。代わりに削除されることもありません。シェアは、ご自身で削除するまでディスクに残ります。",
   "leg.retire.desc": "<code>migrate-node</code> はコンテナをまとめて停止して削除します（tinc が最初）。ファイルとシェアはディスクに残ります。ネイティブグリッドに欠けているものがある間は拒否します。まずドライランを実行してください。<code>--rollback</code> はすべてのサービスをまとめて元に戻します。",

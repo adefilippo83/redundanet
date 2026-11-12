@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "Con la tua frase, il tuo portatile certifica il nodo tramite il codice e gli consegna la rete. Il nodo parte da solo, e il tuo portatile se lo ricorda, così <code>redundanet setup</code> o <code>redundanet join-request</code> mette la sua chiave e il suo nome nel <a href=\"join.html\">modulo di adesione</a>; anche il nodo stampa le sue righe <code>storage:</code>. Conta quando il maintainer ha firmato il manifest con esse.",
   "ig.node.alt": "Nessun tuo portatile a disposizione? Lo script del runbook crea la stessa struttura con un file di certificato copiato via SSH.",
   "leg.former.title": "Se eri un membro",
-  "leg.former.join": "Gli ex membri entrano in RedundaNet 3 come chiunque altro: <a href=\"installation.html\">installa l'agente</a>, poi invia la <a href=\"join.html\">richiesta di adesione</a> dall'account GitHub sotto cui erano elencati i tuoi vecchi nodi.",
+  "leg.former.join": "Gli ex membri entrano in RedundaNet 3 come chiunque altro: <a href=\"installation.html\">installa l'agente</a>, poi invia la <a href=\"join.html\">richiesta di adesione</a>.",
   "leg.retire.title": "Dismettere lo stack Docker",
   "leg.retire.warn": "<strong>La vecchia griglia è spenta.</strong> Nessuno legge più le share Tahoe del tuo nodo. Nemmeno viene cancellato nulla al posto tuo: le share restano su disco finché non le cancelli.",
   "leg.retire.desc": "<code>migrate-node</code> ferma e rimuove i container, tutti insieme, tinc per primo; file e share restano su disco. Rifiuta di procedere finché manca qualcosa sulla griglia nativa. Prima una prova a secco; <code>--rollback</code> riporta indietro tutti i servizi insieme.",
