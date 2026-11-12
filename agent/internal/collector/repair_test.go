@@ -337,3 +337,79 @@ func TestOneSchedulerAtATime(t *testing.T) {
 		t.Fatalf("unsigned hub schedules: %q", st.Grid.Scheduler)
 	}
 }
+
+// A task is handed over on the worker's channel. When that channel began
+// after the task was issued, or there is none, the task is closed at the
+// next tick and its object is offered again after the usual wait, not
+// after the task's hour.
+func TestATaskItsWorkerCannotHaveIsClosedEarly(t *testing.T) {
+	sw := newSchedulerWorld(t, []manifest.Hub{{Name: "hub"}}, nil)
+	ctx := context.Background()
+	// connected puts the three servers on the hub, the worker on a channel
+	// that began when workerSince says.
+	connected := func(workerSince time.Time, withWorker bool) {
+		sw.online(100<<30, falcon, spare, third)
+		var st hub.Status
+		for _, d := range []identity.Key{falcon, spare, third} {
+			cl := hub.ClientStatus{Device: d.String(), Member: alice.String(), Since: sw.now.Add(-48 * time.Hour)}
+			if d == falcon {
+				if !withWorker {
+					continue
+				}
+				cl.Since = workerSince
+			}
+			st.Clients = append(st.Clients, cl)
+		}
+		sw.setLive(st)
+	}
+	sw.online(100<<30, falcon, spare, third)
+	sw.report(falcon, 1, share(2, 0, alice), share(2, 1, alice))
+	sw.report(spare, 1, share(2, 2, alice))
+	sw.advance(25 * time.Hour)
+	longAgo := sw.now.Add(-48 * time.Hour)
+	connected(longAgo, true)
+	sw.c.Schedule(ctx)
+	if got := sw.tasks(); len(got) != 1 || got[0].Worker != falcon {
+		t.Fatalf("tasks after the window: %+v", got)
+	}
+
+	// The worker stays on the channel it had: the task runs on.
+	sw.advance(time.Minute)
+	connected(longAgo, true)
+	sw.c.Schedule(ctx)
+	if st := sw.c.Status(); st.Grid.RepairRunning != 1 || st.Grid.RepairFailed != 0 {
+		t.Fatalf("a task whose worker stayed connected: %+v", st.Grid)
+	}
+
+	// The worker's channel is a new one, begun after the task was issued.
+	sw.advance(time.Minute)
+	connected(sw.now.Add(-30*time.Second), true)
+	sw.c.Schedule(ctx)
+	if st := sw.c.Status(); st.Grid.RepairRunning != 0 || st.Grid.RepairFailed != 1 {
+		t.Fatalf("a task issued before its worker's channel began: %+v", st.Grid)
+	}
+	if len(sw.tasks()) != 1 {
+		t.Fatal("the object was offered again at once")
+	}
+	// A late report for the closed task changes nothing.
+	sw.c.RecordTaskReport(identity.Peer{Device: falcon, Member: alice}, &wire.TaskReport{ID: sw.tasks()[0].ID, Done: []uint8{3}})
+	if st := sw.c.Status(); st.Grid.RepairDone != 0 || st.Grid.RepairFailed != 1 {
+		t.Fatalf("a report for a closed task: %+v", st.Grid)
+	}
+
+	// After the wait the object is offered again.
+	sw.advance(retryAfterFailure + time.Minute)
+	connected(sw.now.Add(-retryAfterFailure), true)
+	sw.c.Schedule(ctx)
+	if got := sw.tasks(); len(got) != 2 {
+		t.Fatalf("%d tasks after the wait", len(got))
+	}
+
+	// A worker with no channel at all cannot have its task either.
+	sw.advance(time.Minute)
+	connected(time.Time{}, false)
+	sw.c.Schedule(ctx)
+	if st := sw.c.Status(); st.Grid.RepairRunning != 0 || st.Grid.RepairFailed != 2 {
+		t.Fatalf("a task whose worker has no channel: %+v", st.Grid)
+	}
+}

@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"database/sql"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -358,5 +359,118 @@ func TestConversionProgress(t *testing.T) {
 	m.Network.EncodingTransition = nil
 	if st := w.c.Status(); st.Grid.Conversion != nil {
 		t.Fatal("a conversion shown without a transition")
+	}
+}
+
+// A node sends its whole list on every new channel. That is a change only
+// to the objects whose shares on it really changed: the others keep their
+// clock, so an under-placed object's quiescence window ends although its
+// holders reconnect meanwhile.
+func TestAReconnectChangesOnlyWhatChanged(t *testing.T) {
+	w := newWorld(t, "", "")
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	// 2: three of four numbers, never placed. 7: one share that will go.
+	w.report(falcon, 1, share(2, 0, alice), share(2, 1, alice), share(2, 2, alice), share(7, 0, alice))
+	objs, _ := objectsBySI(t, w)
+	first := objs[2].LastChange
+	if objs[2].Need != "quiescing" {
+		t.Fatalf("object 2 at first: %+v", objs[2])
+	}
+
+	// Most of a day later falcon is on a new channel with its list as it
+	// is now: 2 as before, 7 gone, 8 new.
+	w.advance(23 * time.Hour)
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	w.report(falcon, 2, share(2, 0, alice), share(2, 1, alice), share(2, 2, alice), share(8, 0, alice))
+	objs, _ = objectsBySI(t, w)
+	if !objs[2].LastChange.Equal(first) {
+		t.Fatalf("a reconnect moved the clock of an object that did not change: %v, was %v", objs[2].LastChange, first)
+	}
+	if len(objs[2].Shares) != 3 {
+		t.Fatalf("object 2 after the reconnect: %+v", objs[2])
+	}
+	if _, still := objs[7]; still {
+		t.Fatalf("a share the list no longer names is still counted: %+v", objs[7])
+	}
+	if !objs[8].LastChange.Equal(w.now) || objs[8].Need != "quiescing" {
+		t.Fatalf("the new object: %+v", objs[8])
+	}
+
+	// The same list again in two frames, as a long one arrives: nothing is
+	// missing between the frames and nothing changes at the end.
+	peer := identity.Peer{Device: falcon, Member: alice}
+	w.advance(time.Hour)
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	w.c.RecordShares(peer, &wire.ShareCensus{Since: 0, Generation: 3, More: true, Added: []wire.ShareEntry{share(2, 0, alice), share(2, 1, alice)}})
+	objs, _ = objectsBySI(t, w)
+	if len(objs[2].Shares) != 3 || len(objs[8].Shares) != 1 {
+		t.Fatalf("between the frames of a list: %+v %+v", objs[2], objs[8])
+	}
+	w.c.RecordShares(peer, &wire.ShareCensus{Since: 0, Generation: 3, Added: []wire.ShareEntry{share(2, 2, alice), share(8, 0, alice)}})
+	objs, _ = objectsBySI(t, w)
+	if !objs[2].LastChange.Equal(first) || len(objs[2].Shares) != 3 || len(objs[8].Shares) != 1 {
+		t.Fatalf("after a list in two frames: %+v %+v", objs[2], objs[8])
+	}
+
+	// The window of object 2 ran from its one real change.
+	w.advance(time.Hour)
+	w.heartbeat(falcon)
+	w.heartbeat(spare)
+	objs, _ = objectsBySI(t, w)
+	if objs[2].Need != "repair" {
+		t.Fatalf("25 hours after its last change object 2 still waits: %+v", objs[2])
+	}
+	if objs[8].Need != "quiescing" {
+		t.Fatalf("the object that is two hours old: %+v", objs[8])
+	}
+
+	// A list cut off half way, then the whole one on the next channel: a
+	// share named in neither is gone, the rest stays.
+	w.c.RecordShares(peer, &wire.ShareCensus{Since: 0, Generation: 4, More: true, Added: []wire.ShareEntry{share(2, 0, alice)}})
+	w.c.RecordShares(peer, &wire.ShareCensus{Since: 0, Generation: 5, Added: []wire.ShareEntry{share(2, 0, alice), share(2, 1, alice), share(8, 0, alice)}})
+	objs, _ = objectsBySI(t, w)
+	if len(objs[2].Shares) != 2 || !objs[2].LastChange.Equal(w.now) || len(objs[8].Shares) != 1 {
+		t.Fatalf("after an interrupted list and a whole one: %+v %+v", objs[2], objs[8])
+	}
+}
+
+// A table an earlier version made gets the column the comparison needs,
+// and keeps what it held.
+func TestPlacementTableOfAnEarlierVersionOpens(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "placement.sqlite")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE shares (device BLOB NOT NULL, si BLOB NOT NULL, n INTEGER NOT NULL, owner BLOB NOT NULL,
+			size INTEGER NOT NULL, k INTEGER NOT NULL, nn INTEGER NOT NULL, dhash BLOB NOT NULL, PRIMARY KEY (device, si, n))`,
+		`INSERT INTO shares (device, si, n, owner, size, k, nn, dhash) VALUES (x'01', x'02', 0, x'03', 4096, 2, 3, x'04')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // the second time the column is there already
+		p, err := openPlacement(path)
+		if err != nil {
+			t.Fatalf("open %d: %v", i, err)
+		}
+		var rows, stale int
+		if err := p.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(stale), 0) FROM shares`).Scan(&rows, &stale); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 1 || stale != 0 {
+			t.Fatalf("open %d: %d rows, %d marked", i, rows, stale)
+		}
+		if err := p.close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

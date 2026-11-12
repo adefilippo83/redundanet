@@ -226,7 +226,11 @@ is deleted, and out of repair, when most of the servers that hold a share
 of it or report a tombstone for its owner and descriptor report one; where
 servers disagree on the descriptor, each server has one vote), and
 whether it needs repair at once (it had been fully placed) or after the
-24-hour quiescence window (it never was). The page and `status.json`
+24-hour quiescence window (it never was). The window runs from the last
+change to the object's shares. A node sends its whole list on every new
+channel; the hub compares it with the table, so only a share that
+appeared or went away counts as a change, and a reconnect of a holder does
+not start the window again. The page and `status.json`
 carry the counts only: objects per number of copies, under-placed,
 unreadable, due for repair, and per member its under-placed objects.
 Every minute the hub that schedules repair (the first in manifest order
@@ -244,8 +248,10 @@ signed share roots and stores them; the receiving server checks the task
 before it accepts a share from a device that is not the owner's, lets a
 repair write pass the owner's cap but never its own floor, and never
 crosses a tombstone. The task closes when the share census shows the
-object placed, when the worker reports, or at its expiry, after which the
-object waits ten minutes before another task. When no live server has
+object placed, when the worker reports, at its expiry, or at the next tick
+when its worker has no channel or one that began after the task was
+issued, since the task was handed over on a channel that is gone; after
+any of the last three the object waits ten minutes before another task. When no live server has
 room for a share the page says "blocked: X short above the floors", which
 tells the community to add disk. When a server returns from the dead and
 an object has more complete shares than n, the hub hints at the holder
