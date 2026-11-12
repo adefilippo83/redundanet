@@ -440,3 +440,71 @@ func TestTheFailedMapStaysWhatOlderBinariesRead(t *testing.T) {
 		t.Fatalf("left over: %+v", d)
 	}
 }
+
+// A version that failed here and that the manifest's min_version now
+// requires is tried once more for each manifest revision, whether its wait
+// is over or it waits for `update retry`.
+func TestMinVersionAsksAgainOncePerManifestRevision(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	u, _ := newUpdater(t, r, t.TempDir(), func(context.Context, string) error {
+		return fmt.Errorf("probe: %w", ErrCandidateExited)
+	})
+	minVersion, revision := "", uint64(8)
+	u.MinVersionFrom(func() string { return minVersion })
+	u.ManifestRevisionFrom(func() uint64 { return revision })
+	offered := func() bool {
+		t.Helper()
+		rel, err := u.Check(context.Background())
+		if rel == nil && err == nil {
+			t.Fatal("nothing newer in the index")
+		}
+		return rel != nil
+	}
+	fail := func() {
+		t.Helper()
+		rel, err := u.Check(context.Background())
+		if err != nil || rel == nil {
+			t.Fatalf("check: %v %v", rel, err)
+		}
+		if err := u.Apply(context.Background(), rel); err == nil {
+			t.Fatal("a failed probation must fail the apply")
+		}
+	}
+
+	fail()
+	if offered() {
+		t.Fatal("a candidate that exited was offered again with no min_version")
+	}
+	// A min_version the running version already satisfies asks for nothing.
+	minVersion = "3.0.0"
+	if offered() {
+		t.Fatal("offered again although the running version satisfies min_version")
+	}
+	// One the failed version satisfies and the running one does not: once.
+	minVersion = "3.0.1"
+	if !offered() {
+		t.Fatal("not offered although min_version requires it")
+	}
+	fail()
+	if offered() {
+		t.Fatal("offered a second time under the same manifest revision")
+	}
+	// The next manifest revision asks again, once.
+	revision = 9
+	fail()
+	if offered() {
+		t.Fatal("offered a second time under the same manifest revision")
+	}
+	// A restart remembers the attempt made.
+	again, _ := newUpdater(t, r, filepath.Dir(filepath.Dir(u.statePath())), nil)
+	again.MinVersionFrom(func() string { return minVersion })
+	again.ManifestRevisionFrom(func() uint64 { return revision })
+	if rel, _ := again.Check(context.Background()); rel != nil {
+		t.Fatal("a restart forgot the attempt made under this revision")
+	}
+	// Without a manifest, nothing is asked.
+	revision = 0
+	if offered() {
+		t.Fatal("offered again with no manifest")
+	}
+}

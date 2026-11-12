@@ -34,6 +34,11 @@ type Config struct {
 	Channel  string // stable or early
 	// MinVersion returns the manifest's min_version, "" when unknown.
 	MinVersion func() string
+	// ManifestRevision returns the applied manifest's revision, 0 when
+	// unknown. A version that failed probation and that min_version now
+	// requires is tried once more for each revision: the operators' way
+	// to ask a device again without a command on it.
+	ManifestRevision func() uint64
 	// Exe is the running executable's path, the file that gets replaced.
 	Exe string
 	// Probation runs the candidate and returns nil when it proved healthy.
@@ -81,6 +86,9 @@ type failure struct {
 	// another process (the CLI's `update status`) reads the same time
 	// whatever backoff it was started with. Zero: not without `update retry`.
 	RetryAt time.Time `yaml:"retry_at,omitempty"`
+	// RequiredAt is the manifest revision under which the version was
+	// last tried because min_version requires it; see required.
+	RequiredAt uint64 `yaml:"required_at,omitempty"`
 }
 
 // state is what persists between runs.
@@ -233,6 +241,35 @@ func (u *Updater) MinVersionFrom(f func() string) {
 	u.mu.Unlock()
 }
 
+// ManifestRevisionFrom sets where the applied manifest's revision is read
+// from.
+func (u *Updater) ManifestRevisionFrom(f func() uint64) {
+	u.mu.Lock()
+	u.cfg.ManifestRevision = f
+	u.mu.Unlock()
+}
+
+// required reports the manifest revision under which a failed version may
+// be tried once more although its wait is not over: the manifest's
+// min_version is above the running version, the release satisfies it, and
+// no attempt was made under this revision yet. Zero for none. A signed
+// manifest with a higher revision is how the operators ask every device
+// again; one attempt for each, so a version that cannot run here does not
+// take the device off the network every hour.
+func (u *Updater) required(version, minVersion string) uint64 {
+	u.mu.Lock()
+	revFn := u.cfg.ManifestRevision
+	tried := u.st.FailedInfo[version].RequiredAt
+	u.mu.Unlock()
+	if revFn == nil || minVersion == "" || !semver.Less(u.cfg.Version, minVersion) || semver.Less(version, minVersion) {
+		return 0
+	}
+	if rev := revFn(); rev > tried {
+		return rev
+	}
+	return 0
+}
+
 // Enabled reports whether a release key is embedded.
 func (u *Updater) Enabled() bool { return !u.cfg.Embedded.IsZero() && u.cfg.Version != "dev" }
 
@@ -343,6 +380,8 @@ func (u *Updater) check(ctx context.Context) (*release.Release, error) {
 	u.mu.Unlock()
 	switch {
 	case !failed:
+	case u.required(rel.Version, minVersion) != 0:
+		u.log.Info("a version that failed probation is tried again: the manifest's min_version requires it", "version", rel.Version, "min_version", minVersion)
 	case next.IsZero():
 		return nil, fmt.Errorf("release %s failed probation earlier (%s) and is not retried", rel.Version, why)
 	case time.Now().Before(next):
@@ -380,6 +419,23 @@ func (u *Updater) Apply(ctx context.Context, rel *release.Release) error {
 	candidate, err := release.Download(ctx, asset, dir, u.cfg.FetchAsset)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", rel.Version, err)
+	}
+	// An attempt the manifest's min_version asked for is counted before it
+	// runs, so one that takes the process down with it is not made again
+	// under the same manifest revision.
+	u.mu.Lock()
+	minFn := u.cfg.MinVersion
+	_, failedBefore := u.st.Failed[rel.Version]
+	u.mu.Unlock()
+	if failedBefore && minFn != nil {
+		if rev := u.required(rel.Version, minFn()); rev != 0 {
+			u.mu.Lock()
+			f := u.st.FailedInfo[rel.Version]
+			f.RequiredAt = rev
+			u.st.FailedInfo[rel.Version] = f
+			u.save()
+			u.mu.Unlock()
+		}
 	}
 	if u.cfg.Probation != nil {
 		if u.cfg.Handover != nil {

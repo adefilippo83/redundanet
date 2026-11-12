@@ -315,8 +315,10 @@ downloads the asset, checks its hash and size, closes its own endpoint,
 starts the candidate as `agent --probation` on the same identity, and waits
 up to two minutes for the candidate to report that every hub answered and
 the peers the agent had came back: all of them, or after thirty seconds
-every storage device among them and at least half of all, so a laptop that
-went to sleep meanwhile does not fail the update (`peersBack` in
+at least half of all and at least half of the storage devices among them,
+so a laptop that went to sleep meanwhile does not fail the update and no
+single storage device decides it, unless it is the only one the agent had
+a session with (`peersBack` in
 `cmd/redundanet`; the hub's probation applies the same rule to its
 connected devices). Only then is the new binary renamed
 into place, the old one kept beside it as `redundanet.old`, and the agent
@@ -329,7 +331,10 @@ twice) and waits for `update retry` after one failure more than that; a
 probation whose context was cancelled, the service stopping, is not
 recorded. The state file keeps `failed` as the map of reasons older
 binaries read, with time, attempts and the next attempt in `failed_info`
-beside it.
+beside it. A failed version the manifest's `min_version` requires (the
+running version is below it, the failed one is not) is tried once more for
+each manifest revision, whatever its wait (`Updater.required`); the attempt
+is counted before it runs.
 The release key rotates only through records in the index signed by the
 key being retired, so a binary that embeds an old key still verifies a
 newer index; nothing in the manifest can name a release.

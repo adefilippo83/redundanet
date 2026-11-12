@@ -63,7 +63,7 @@ func TestPeersBack(t *testing.T) {
 		{"one laptop away, after the grace", have(keys[0], keys[1], keys[2], keys[3]), probationGrace, true, 1},
 		{"two laptops away of five, after the grace: three back is half rounded up", have(keys[0], keys[1], keys[2]), probationGrace, true, 2},
 		{"three away of five: two back is not half", have(keys[0], keys[1]), probationDeadline, false, 3},
-		{"the storage device away, everyone else back, after the grace", have(keys[1], keys[2], keys[3], keys[4]), probationDeadline, false, 1},
+		{"the only storage device away, everyone else back, after the grace", have(keys[1], keys[2], keys[3], keys[4]), probationDeadline, false, 1},
 	}
 	for _, c := range cases {
 		ok, missing := peersBack(all, c.have, storage, c.elapsed)
@@ -74,6 +74,31 @@ func TestPeersBack(t *testing.T) {
 	_, missing := peersBack(all, have(keys[1], keys[2], keys[3], keys[4]), storage, probationDeadline)
 	if len(missing) != 1 || !strings.HasSuffix(missing[0], " (storage)") {
 		t.Fatalf("the storage device away is named as such: %v", missing)
+	}
+	// Several storage devices: half of them is enough, so one alone does
+	// not decide; most of them away does.
+	three := have(keys[0], keys[1], keys[2])
+	for _, c := range []struct {
+		name    string
+		have    map[string]bool
+		elapsed time.Duration
+		ok      bool
+	}{
+		{"one storage device of three away, before the grace", have(keys[1], keys[2], keys[3], keys[4]), probationGrace - time.Second, false},
+		{"one storage device of three away, after the grace", have(keys[1], keys[2], keys[3], keys[4]), probationGrace, true},
+		{"two storage devices of three away", have(keys[2], keys[3], keys[4]), probationDeadline, false},
+		{"every storage device back, both laptops away: three of five is half", have(keys[0], keys[1], keys[2]), probationGrace, true},
+	} {
+		if ok, _ := peersBack(all, c.have, three, c.elapsed); ok != c.ok {
+			t.Errorf("%s: ok=%v", c.name, ok)
+		}
+	}
+	two := have(keys[0], keys[1])
+	if ok, _ := peersBack(all, have(keys[1], keys[2], keys[3], keys[4]), two, probationGrace); !ok {
+		t.Error("one storage device of two away: the other is half")
+	}
+	if ok, _ := peersBack(all, have(keys[2], keys[3], keys[4]), two, probationDeadline); ok {
+		t.Error("both storage devices away passed")
 	}
 	if ok, _ := peersBack(nil, nil, nil, 0); !ok {
 		t.Fatal("no devices to wait for is healthy")
