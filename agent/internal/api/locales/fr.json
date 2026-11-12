@@ -69,6 +69,7 @@
   "issue.verify.button": "Voir les tests",
   "issue.updatefailed.title": "La version %s n'a pas pu être installée",
   "issue.updatefailed.text": "La version précédente est revenue toute seule. Il n'y aura pas de nouvel essai avant que vous le demandiez.",
+  "issue.updatefailed.retrytext": "La version précédente est revenue toute seule. Un nouvel essai aura lieu tout seul le %s, ou maintenant avec le bouton.",
   "issue.updatefailed.button": "Réessayer",
   "issue.update.title": "La version %s est prête",
   "issue.update.text": "Elle s'installe toute seule dans l'heure. L'ancienne version est conservée et revient si la nouvelle échoue.",

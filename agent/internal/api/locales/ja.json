@@ -69,6 +69,7 @@
   "issue.verify.button": "テストを見る",
   "issue.updatefailed.title": "バージョン %s をインストールできませんでした",
   "issue.updatefailed.text": "自動で前のバージョンに戻りました。指示があるまで再試行はしません。",
+  "issue.updatefailed.retrytext": "自動で前のバージョンに戻りました。%s に自動で再試行します。ボタンを押せば今すぐ再試行します。",
   "issue.updatefailed.button": "再試行",
   "issue.update.title": "バージョン %s の準備ができました",
   "issue.update.text": "1 時間以内に自動でインストールされます。古いバージョンは残してあり、新しいバージョンがうまく動かなければ元に戻ります。",

@@ -121,9 +121,13 @@ half of all, since a laptop may have gone to sleep meanwhile (a storage
 device that stays away is the candidate's fault until proven otherwise).
 Then the new binary is renamed into place beside `redundanet.old` and the
 hub exits for systemd to restart it. Devices see two reconnects of a few seconds. A
-candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`
-and never retried until `redundanet update retry VERSION`; the journal line
-from the candidate names the devices that did not come back.
+candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`.
+One that did not report healthy in time is tried again after 24 hours, and
+once more 24 hours after that; after a third failure, or when the candidate
+exited by itself, it waits for `redundanet update retry VERSION`. Each
+attempt is two reconnects for every device again. The journal line from the
+candidate names the devices that did not come back, and the line of the
+running hub says when the next attempt is.
 
 By hand, for an emergency: download the asset, check its hash, `install` it
 over `/var/lib/redundanet3/bin/redundanet` owned by `redundanet3`, and

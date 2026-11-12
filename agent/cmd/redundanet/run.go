@@ -270,12 +270,15 @@ func runHub(args []string) error {
 		}
 		hcfg := hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log}
 		if rc.member != nil {
-			// The hub keeps every revocation it is handed and sends the list
-			// to each device that connects.
-			hcfg.OnRevocation = func(_ identity.Peer, r *identity.SignedRevocation) {
-				if err := rc.member.AddRevocation(r); err != nil {
-					rc.log.Warn("revocation not kept", "err", err)
+			// The hub keeps a revocation of a listed member, once per
+			// certificate, passes on what was new, and sends the list to
+			// each device that connects.
+			hcfg.OnRevocation = func(from identity.Peer, r *identity.SignedRevocation) bool {
+				added, err := rc.member.AddRevocation(r)
+				if err != nil {
+					rc.log.Warn("revocation not kept", "err", err, "from", from.Device.Short(), "member", r.Revocation.Member.Short())
 				}
+				return added
 			}
 			hcfg.Revocations = rc.member.Revocations
 		}
@@ -359,7 +362,7 @@ func runHub(args []string) error {
 				}
 			}
 		}
-		u, err := newUpdater(rc.dataDir, *channel, probe, handover)
+		u, err := newUpdater(rc.dataDir, *channel, probe, handover, update.HubRetryAfter...)
 		if err != nil {
 			return err
 		}
@@ -611,7 +614,7 @@ func runAgent(args []string) error {
 		if rc.member == nil {
 			return
 		}
-		if err := rc.member.AddRevocation(r); err != nil {
+		if _, err := rc.member.AddRevocation(r); err != nil {
 			rc.log.Warn("revocation not kept", "err", err)
 		}
 	}
@@ -626,7 +629,7 @@ func runAgent(args []string) error {
 		if r.Revocation.Member != rc.state.Member {
 			return rep, errors.New("the record is another member's")
 		}
-		if err := rc.member.AddRevocation(r); err != nil {
+		if _, err := rc.member.AddRevocation(r); err != nil {
 			return rep, err
 		}
 		man := rc.current()
@@ -741,6 +744,9 @@ func runAgent(args []string) error {
 			switch {
 			case len(st.Failed) > 0:
 				cs.Update = st.Failed[len(st.Failed)-1] + " failed probation"
+				if at := st.FailedDetail[len(st.FailedDetail)-1].RetryAt; !at.IsZero() {
+					cs.Update += ", next attempt " + at.UTC().Format("2006-01-02 15:04") + " UTC"
+				}
 			case st.Available != "":
 				cs.Update = st.Available + " available"
 			case st.LastError != "":
@@ -1093,7 +1099,8 @@ func (p *manifestPolicy) Revoke(r *identity.SignedRevocation) error {
 	if p.rc.member == nil {
 		return errors.New("no membership on this device")
 	}
-	return p.rc.member.AddRevocation(r)
+	_, err := p.rc.member.AddRevocation(r)
+	return err
 }
 
 func (p *manifestPolicy) Device() identity.Key { return p.rc.device }

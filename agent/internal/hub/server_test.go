@@ -138,3 +138,49 @@ func TestADeviceThatStopsReadingStallsNobody(t *testing.T) {
 		t.Fatal("the device that reads lost its channel too")
 	}
 }
+
+// The hub passes a revocation on to the other devices only when its
+// membership says the record was new.
+func TestOnlyANewRevocationIsPassedOn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	hubKey, hubID := testDevice(t, 100, identity.RoleHub)
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	var memberSeed identity.Seed
+	memberSeed[0] = 1
+	newSerial := uint64(2)
+	s, err := Start(ctx, Config{Identity: hubID, Device: hubKey, Allow: func(identity.Peer) error { return nil }, UDP: "127.0.0.1:0", TCP: "127.0.0.1:0", Log: log,
+		OnRevocation: func(_ identity.Peer, r *identity.SignedRevocation) bool { return r.Revocation.Serial == newSerial }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cancel(); _ = s.Close() })
+
+	senderKey, senderID := testDevice(t, 1, identity.RoleClient)
+	sender := channel(t, s, hubKey, senderID)
+	otherKey, otherID := testDevice(t, 2, identity.RoleClient)
+	other := channel(t, s, hubKey, otherID)
+	waitFor(t, 5*time.Second, "both devices on the hub", func() bool { return connected(s, senderKey) && connected(s, otherKey) })
+
+	w := wire.NewWriter(sender)
+	for _, serial := range []uint64{1, newSerial} {
+		rv, err := identity.Revoke(memberSeed, identity.Revocation{Network: "testnet", Device: senderKey, Serial: serial})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Message(wire.FrameRevocation, rv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = other.SetReadDeadline(time.Now().Add(5 * time.Second))
+	typ, payload, err := wire.ReadFrame(other)
+	if err != nil || typ != wire.FrameRevocation {
+		t.Fatalf("no revocation passed on: type %d, %v", typ, err)
+	}
+	rv, err := identity.DecodeRevocation(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rv.Revocation.Serial != newSerial {
+		t.Fatalf("the record the membership did not take was passed on (serial %d)", rv.Revocation.Serial)
+	}
+}

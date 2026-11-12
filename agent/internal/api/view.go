@@ -267,8 +267,12 @@ func buildOverview(s Snapshot, online string, l tr) overviewData {
 		}
 	}
 	if u := s.Update; u != nil {
-		for _, v := range u.Failed {
-			add(issue{Kind: "warn", Title: l.T("issue.updatefailed.title", v), Text: l.T("issue.updatefailed.text"), Action: "update-retry", Version: v, Label: l.T("issue.updatefailed.button")})
+		for i, v := range u.Failed {
+			text := l.T("issue.updatefailed.text")
+			if i < len(u.FailedDetail) && !u.FailedDetail[i].RetryAt.IsZero() {
+				text = l.T("issue.updatefailed.retrytext", u.FailedDetail[i].RetryAt.Local().Format("2006-01-02 15:04"))
+			}
+			add(issue{Kind: "warn", Title: l.T("issue.updatefailed.title", v), Text: text, Action: "update-retry", Version: v, Label: l.T("issue.updatefailed.button")})
 		}
 		if u.Available != "" {
 			add(issue{Kind: "info", Title: l.T("issue.update.title", u.Available), Text: l.T("issue.update.text"), Action: "update-apply", Label: l.T("issue.update.button", u.Available)})

@@ -69,6 +69,7 @@
   "issue.verify.button": "테스트 보기",
   "issue.updatefailed.title": "버전 %s 설치에 실패했습니다",
   "issue.updatefailed.text": "이전 버전으로 저절로 돌아왔습니다. 요청하기 전에는 다시 시도하지 않습니다.",
+  "issue.updatefailed.retrytext": "이전 버전으로 저절로 돌아왔습니다. %s에 저절로 다시 시도하며, 버튼을 누르면 지금 다시 시도합니다.",
   "issue.updatefailed.button": "다시 시도",
   "issue.update.title": "버전 %s 준비 완료",
   "issue.update.text": "한 시간 안에 저절로 설치됩니다. 이전 버전은 보관되며, 새 버전이 실패하면 되돌아옵니다.",

@@ -69,6 +69,7 @@
   "issue.verify.button": "查看测试",
   "issue.updatefailed.title": "版本 %s 未能安装",
   "issue.updatefailed.text": "已自动退回上一个版本。除非你要求，否则不会再次尝试。",
+  "issue.updatefailed.retrytext": "已自动退回上一个版本。将于 %s 自动再次尝试，也可以点击按钮立即尝试。",
   "issue.updatefailed.button": "重试",
   "issue.update.title": "版本 %s 已就绪",
   "issue.update.text": "它会在一小时内自动安装。旧版本会保留，新版本出问题时会自动退回。",
