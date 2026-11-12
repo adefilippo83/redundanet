@@ -76,6 +76,7 @@ function Install-RedundaNet([string]$Channel, [string]$Version) {
         }
         if ($rel.Sha256.Length -ne 64) { throw "the index entry for $($rel.Version) has no usable sha256" }
         $name = $rel.Url.Substring($rel.Url.LastIndexOf('/') + 1)
+        $stage = ''
 
         $real = Join-Path (Join-Path (Get-DataDir) 'bin') 'redundanet.exe'
         $have = ''
@@ -93,24 +94,33 @@ function Install-RedundaNet([string]$Channel, [string]$Version) {
             if ($got -ne $rel.Size) { throw "$name is $got bytes, the index says $($rel.Size): refusing it" }
             $gotSha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($gotSha -ne $rel.Sha256) { throw "$name has sha256 $gotSha, the index says $($rel.Sha256): refusing it" }
-            $x = Join-Path $tmp 'x'
-            Expand-Archive -LiteralPath $zip -DestinationPath $x -Force
-            $exe = Get-ChildItem -LiteralPath $x -Recurse -Filter 'redundanet.exe' | Select-Object -First 1
+            # Unpacked beside its final place, in the data directory, and
+            # first run from there: a program started out of the temporary
+            # folder by the script that just downloaded it is what an
+            # antivirus takes for a dropper. Only the zip, which is never
+            # run, goes through the temporary folder.
+            $binDir = Split-Path -Parent $real
+            New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+            $stage = Join-Path $binDir ('incoming-' + [IO.Path]::GetRandomFileName())
+            Expand-Archive -LiteralPath $zip -DestinationPath $stage -Force
+            $exe = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'redundanet.exe' | Select-Object -First 1
             if (-not $exe) { throw "$name holds no redundanet.exe" }
-            Unblock-File -LiteralPath $exe.FullName -ErrorAction SilentlyContinue
-            $r = Invoke-Native $exe.FullName @('version')
-            if ($r.ExitCode -ne 0) { throw "the downloaded binary does not run on this machine: $($r.Output)" }
+            $staged = $exe.FullName
+            Unblock-File -LiteralPath $staged -ErrorAction SilentlyContinue
+            $r = $null
+            try { $r = Invoke-Native $staged @('version') } catch { }
+            if (-not (Test-Path -LiteralPath $staged)) {
+                throw "the downloaded binary was removed before it could run, most likely by an antivirus (see its quarantine); https://github.com/adefilippo83/redundanet/blob/main/docs/install.md#windows says what to do"
+            }
+            if (-not $r -or $r.ExitCode -ne 0) { throw "the downloaded binary does not run on this machine: $(if ($r) { $r.Output })" }
 
-            # Into the data directory, ours to write, so the agent can replace
-            # it when it updates itself; a running one is renamed aside first,
-            # as the updater does.
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $real) | Out-Null
-            Copy-Item -LiteralPath $exe.FullName -Destination "$real.new" -Force
+            # Into place, so the agent can replace it when it updates itself;
+            # a running one is renamed aside first, as the updater does.
             if (Test-Path -LiteralPath $real) {
                 if (Test-Path -LiteralPath "$real.old") { Remove-Item -LiteralPath "$real.old" -Force -ErrorAction SilentlyContinue }
                 Move-Item -LiteralPath $real -Destination "$real.old" -Force
             }
-            Move-Item -LiteralPath "$real.new" -Destination $real -Force
+            Move-Item -LiteralPath $staged -Destination $real -Force
             Note "installed redundanet $($rel.Version) at $real"
         }
 
@@ -165,6 +175,7 @@ function Install-RedundaNet([string]$Channel, [string]$Version) {
         }
     } finally {
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+        if ($stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
