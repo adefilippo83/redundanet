@@ -58,6 +58,20 @@ func openPlacement(path string) (*placement, error) {
 			return nil, fmt.Errorf("collector: placement table: %w", err)
 		}
 	}
+	// stale marks the shares a node's full census has not named yet while
+	// that census is arriving; see apply. Added to a table an earlier
+	// version made, whose statements name their columns and so still fit.
+	var hasStale int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('shares') WHERE name = 'stale'`).Scan(&hasStale); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("collector: placement table: %w", err)
+	}
+	if hasStale == 0 {
+		if _, err := db.Exec(`ALTER TABLE shares ADD COLUMN stale INTEGER NOT NULL DEFAULT 0`); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("collector: placement table: %w", err)
+		}
+	}
 	return &placement{db: db}, nil
 }
 
@@ -77,7 +91,14 @@ func (p *placement) apply(device identity.Key, sc *wire.ShareCensus, now time.Ti
 		return err
 	}
 	if sc.Since == 0 && gen.Valid && gen.Int64 != 0 && uint64(gen.Int64) != sc.Generation {
-		for _, q := range []string{`DELETE FROM shares WHERE device = ?`, `DELETE FROM tombstones WHERE device = ?`} {
+		// The node's whole list, and it differs from what the table holds:
+		// a node sends it on every new channel. The list is compared with
+		// the table, not put in its place: what it names again stays as it
+		// is, and only a share that appeared or went away is a change to
+		// its object. Replacing everything made every object the node
+		// holds look changed at each reconnect, which started the
+		// quiescence window of the under-placed ones again each time.
+		for _, q := range []string{`UPDATE shares SET stale = 1 WHERE device = ?`, `DELETE FROM tombstones WHERE device = ?`} {
 			if _, err := tx.Exec(q, device[:]); err != nil {
 				return err
 			}
@@ -91,12 +112,12 @@ func (p *placement) apply(device identity.Key, sc *wire.ShareCensus, now time.Ti
 		return err
 	}
 	for _, e := range sc.Added {
-		var have int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM shares WHERE device = ? AND si = ? AND n = ? AND dhash = ?`, device[:], e.StorageIndex[:], e.Number, e.DescriptorHash[:]).Scan(&have); err != nil {
+		res, err := tx.Exec(`UPDATE shares SET stale = 0 WHERE device = ? AND si = ? AND n = ? AND dhash = ?`, device[:], e.StorageIndex[:], e.Number, e.DescriptorHash[:])
+		if err != nil {
 			return err
 		}
-		if have > 0 {
-			continue // the node resent what the table holds
+		if have, _ := res.RowsAffected(); have > 0 {
+			continue // the node named again what the table holds
 		}
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO shares (device, si, n, owner, size, k, nn, dhash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			device[:], e.StorageIndex[:], e.Number, e.Owner[:], e.Size, e.K, e.N, e.DescriptorHash[:]); err != nil {
@@ -113,6 +134,38 @@ func (p *placement) apply(device identity.Key, sc *wire.ShareCensus, now time.Ti
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			if err := touch(k.StorageIndex); err != nil {
+				return err
+			}
+		}
+	}
+	// The end of a whole list: what the table held and the list did not
+	// name is gone from the node.
+	if sc.Since == 0 && !sc.More {
+		rows, err := tx.Query(`SELECT DISTINCT si FROM shares WHERE device = ? AND stale = 1`, device[:])
+		if err != nil {
+			return err
+		}
+		var gone [][16]byte
+		for rows.Next() {
+			var b []byte
+			if err := rows.Scan(&b); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			var si [16]byte
+			copy(si[:], b)
+			gone = append(gone, si)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, si := range gone {
+			if err := touch(si); err != nil {
+				return err
+			}
+		}
+		if len(gone) > 0 {
+			if _, err := tx.Exec(`DELETE FROM shares WHERE device = ? AND stale = 1`, device[:]); err != nil {
 				return err
 			}
 		}

@@ -92,6 +92,7 @@ func (c *Collector) Schedule(ctx context.Context) {
 	if _, err := c.pl.db.Exec(`UPDATE tasks SET state = 'expired', outcome = 'the worker did not finish in time', ended = ? WHERE state = 'running' AND expires <= ?`, now.Unix(), now.Unix()); err != nil {
 		c.log.Warn("tasks not expired", "err", err)
 	}
+	c.closeLostTasks(now)
 	alive, servers := c.aliveServers(now, m)
 	enc, conv := encodingOfManifest(m)
 	objects, _, err := c.pl.compute(now, alive, servers, enc, conv)
@@ -171,6 +172,46 @@ func objectID(si [16]byte) string {
 	return b.String()
 }
 
+// lostTaskOutcome is recorded for a task closed by closeLostTasks.
+const lostTaskOutcome = "the worker's connection dropped before it reported"
+
+// closeLostTasks closes the running tasks whose worker cannot have them
+// any more as far as this hub can tell: a task is handed over on the
+// worker's channel, so a worker with no channel, or with one that began
+// after the task was issued, most likely never got it. Waiting for the
+// expiry would leave the object alone for an hour; closed, it is offered
+// again after retryAfterFailure. A worker that did get the task and
+// finishes it across a reconnect stores a share another worker may store
+// too, which the surplus release takes care of; its report then finds no
+// running task and is ignored. The caller holds c.mu.
+func (c *Collector) closeLostTasks(now time.Time) {
+	live := c.cfg.Live
+	if live == nil {
+		return
+	}
+	running, err := c.runningTasks()
+	if err != nil || len(running) == 0 {
+		return
+	}
+	since := map[string]time.Time{}
+	for _, cl := range live().Clients {
+		since[cl.Device] = cl.Since
+	}
+	for _, t := range running {
+		began, connected := since[t.Worker.String()]
+		// Whole seconds, as the table keeps them: a channel that began in
+		// the second the task was issued may well have carried it.
+		if connected && began.Unix() <= t.Issued.Unix() {
+			continue
+		}
+		if _, err := c.pl.db.Exec(`UPDATE tasks SET state = 'expired', outcome = ?, ended = ? WHERE id = ? AND state = 'running'`, lostTaskOutcome, now.Unix(), t.ID); err != nil {
+			c.log.Warn("lost task not closed", "task", t.ID, "err", err)
+			continue
+		}
+		c.log.Info("repair task closed: "+lostTaskOutcome, "task", t.ID, "worker", t.Worker.Short(), "connected", connected)
+	}
+}
+
 // electScheduler is the one-scheduler rule: the first hub in manifest
 // order whose status page was generated within the down threshold
 // schedules; this hub does when every hub before it is gone, or when it
@@ -224,12 +265,13 @@ type runningTask struct {
 	ID           uint64
 	StorageIndex [16]byte
 	Worker       identity.Key
+	Issued       time.Time
 	Shares       []wire.RepairShare
 	Bytes        int64
 }
 
 func (c *Collector) runningTasks() ([]runningTask, error) {
-	rows, err := c.pl.db.Query(`SELECT id, si, worker, bytes, task FROM tasks WHERE state = 'running'`)
+	rows, err := c.pl.db.Query(`SELECT id, si, worker, issued, bytes, task FROM tasks WHERE state = 'running'`)
 	if err != nil {
 		return nil, err
 	}
@@ -238,9 +280,11 @@ func (c *Collector) runningTasks() ([]runningTask, error) {
 	for rows.Next() {
 		var t runningTask
 		var si, worker, blob []byte
-		if err := rows.Scan(&t.ID, &si, &worker, &t.Bytes, &blob); err != nil {
+		var issued int64
+		if err := rows.Scan(&t.ID, &si, &worker, &issued, &t.Bytes, &blob); err != nil {
 			return nil, err
 		}
+		t.Issued = time.Unix(issued, 0)
 		copy(t.StorageIndex[:], si)
 		copy(t.Worker[:], worker)
 		var task wire.RepairTask
