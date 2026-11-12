@@ -102,6 +102,8 @@ redundanet open                # the page walks you through the rest; or redunda
 
 The Windows binary carries a version resource (product name and version in its properties) and is unsigned for now, so Windows may warn before it runs; the script checks the sha256 against the index, and so can you, as the download page shows.
 
+An antivirus may also stop it, for the same reason: the binary is unsigned and new to it. The script unpacks the download into `%AppData%\redundanet\bin` and runs it only from there, never from the temporary folder, which is the pattern such tools react to most. If yours still moves `redundanet.exe` to quarantine, the script says so and stops. Restore the file from the quarantine, add an exception for the folder `%AppData%\redundanet`, and run the one line again. What it caught is the file the release index lists: the script refuses a download whose sha256 differs.
+
 ## By hand, without the script
 
 Every release is at <https://github.com/adefilippo83/redundanet/releases>, as `redundanet-<version>-<os>-<arch>.tar.gz`, with a zip on Windows:
