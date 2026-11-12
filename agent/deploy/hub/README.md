@@ -116,9 +116,11 @@ index on its channel (`--channel early` in the unit), downloads the asset,
 checks its hash, hands the relay, the status listener and the collector to
 the candidate, which runs `hub --probation` on the same ports and reports
 healthy once the devices that were connected are back on a channel: all of
-them, or after thirty seconds every storage device among them and at least
-half of all, since a laptop may have gone to sleep meanwhile (a storage
-device that stays away is the candidate's fault until proven otherwise).
+them, or after thirty seconds at least half of all and at least half of
+the storage devices among them, since a laptop may have gone to sleep
+meanwhile and one storage device that stays away must not decide the hub's
+update (most of them staying away is the candidate's fault until proven
+otherwise).
 Then the new binary is renamed into place beside `redundanet.old` and the
 hub exits for systemd to restart it. Devices see two reconnects of a few seconds. A
 candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`.

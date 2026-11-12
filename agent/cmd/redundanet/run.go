@@ -372,6 +372,12 @@ func runHub(args []string) error {
 			}
 			return ""
 		})
+		u.ManifestRevisionFrom(func() uint64 {
+			if m := rc.current(); m != nil {
+				return m.Revision
+			}
+			return 0
+		})
 		go func() {
 			if err := u.Run(ctx); errors.Is(err, update.ErrRestart) {
 				rc.log.Info("new version installed, exiting so the service starts it")
@@ -407,10 +413,13 @@ func runHub(args []string) error {
 
 // A candidate, hub or agent, has probationDeadline to prove itself. It
 // passes as soon as every device the previous process had is back; after
-// probationGrace it also passes with every storage device among them back
-// and at least half of all, since a laptop may have closed its lid in the
-// meantime and must not fail the update for good. Storage devices are
-// always on, so one that stays away points at the candidate.
+// probationGrace it also passes with at least half of all back and at
+// least half of the storage devices among them, since a laptop may have
+// closed its lid in the meantime and must not fail the update. Storage
+// devices are always on, so when most of them stay away that points at
+// the candidate; one alone that stays away points at that device, and no
+// single device decides whether another one updates, unless it is the
+// only storage device the previous process had.
 const (
 	probationDeadline = 110 * time.Second
 	probationGrace    = 30 * time.Second
@@ -422,12 +431,10 @@ const (
 // deadline passes.
 func peersBack(wanted []identity.Key, have map[string]bool, storage map[string]bool, elapsed time.Duration) (bool, []string) {
 	var missing []string
-	storageMissing := false
 	for _, p := range wanted {
 		if k := p.String(); !have[k] {
 			if storage[k] {
 				missing = append(missing, p.Short()+" (storage)")
-				storageMissing = true
 			} else {
 				missing = append(missing, p.Short())
 			}
@@ -436,7 +443,19 @@ func peersBack(wanted []identity.Key, have map[string]bool, storage map[string]b
 	if len(missing) == 0 {
 		return true, nil
 	}
-	if elapsed < probationGrace || storageMissing {
+	if elapsed < probationGrace {
+		return false, missing
+	}
+	storageWanted, storageBack := 0, 0
+	for _, p := range wanted {
+		if k := p.String(); storage[k] {
+			storageWanted++
+			if have[k] {
+				storageBack++
+			}
+		}
+	}
+	if storageBack < (storageWanted+1)/2 {
 		return false, missing
 	}
 	back := len(wanted) - len(missing)
@@ -507,7 +526,7 @@ func runAgent(args []string) error {
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
-	probationPeers := fs.String("probation-peers", "", "device keys the previous agent had sessions with; the candidate passes when it reaches them: all, or after 30 s every storage device among them and at least half of all")
+	probationPeers := fs.String("probation-peers", "", "device keys the previous agent had sessions with; the candidate passes when it reaches them: all, or after 30 s at least half of all and at least half of the storage devices among them")
 	verbose := fs.Bool("v", false, "debug logging")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -933,6 +952,12 @@ func runAgent(args []string) error {
 				return m.Network.MinVersion
 			}
 			return ""
+		})
+		nu.ManifestRevisionFrom(func() uint64 {
+			if m := rc.current(); m != nil {
+				return m.Revision
+			}
+			return 0
 		})
 		go func() {
 			if err := nu.Run(ctx); errors.Is(err, update.ErrRestart) {

@@ -80,7 +80,7 @@ network:
 ## Grace, minimum version, signature age
 
 - `grace_days`: how long servers keep a leaving member's data. Deletion waits for it on every server's own clock, which is also the time a signed manifest nobody merged would be noticed.
-- `min_version`: the lowest agent version admitted. The self-updater installs a release that satisfies it, so raise it only to a version the index already carries on the `stable` channel.
+- `min_version`: the lowest agent version admitted. The self-updater installs a release that satisfies it, so raise it only to a version the index already carries on the `stable` channel. A device on which that version failed probation tries it once more for each manifest revision signed while `min_version` requires it, also when it was waiting for `redundanet update retry`: raising the revision is how you ask every device again.
 - `signature_max_age_days` (90 by default): re-sign before it runs out, even with no change, or new devices wait.
 
 ## Releases
