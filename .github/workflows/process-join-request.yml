@@ -26,17 +26,15 @@ jobs:
     # usually absent on `opened`. Process when a maintainer has applied the
     # label, OR when the issue both carries the title the join form sets AND
     # contains one of the form's body markers (`## RedundaNet 3 membership`
-    # for a RedundaNet 3 member, `## RedundaNet 3 storage device` for a
-    # listed member's new node, `## New Node Application` for a RedundaNet 2
-    # node); requiring both narrows the attacker-controlled trigger surface to
+    # for a new member, `## RedundaNet 3 storage device` for a listed
+    # member's new node); requiring both narrows the attacker-controlled trigger surface to
     # genuine submissions. (The issue body is still untrusted; it is strictly
     # validated in the parse step.)
     if: >-
       contains(github.event.issue.labels.*.name, 'join-request') ||
       (startsWith(github.event.issue.title, '[Join Request]') &&
        (contains(github.event.issue.body, 'RedundaNet 3 membership') ||
-        contains(github.event.issue.body, 'RedundaNet 3 storage device') ||
-        contains(github.event.issue.body, 'New Node Application')))
+        contains(github.event.issue.body, 'RedundaNet 3 storage device')))
     steps:
       - name: Ensure join-request label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -100,7 +98,6 @@ jobs:
           case "$ISSUE_BODY" in
             *"## RedundaNet 3 storage device"*) kind=v3 ;;
             *"## RedundaNet 3 membership"*) kind=v3 ;;
-            *"## New Node Application"*) kind=v2 ;;
             *) kind=unknown ;;
           esac
           echo "Request kind: $kind"
@@ -111,12 +108,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      # The locked environment, as validate.yml installs it: poetry.lock
+      # The locked environment of the script: poetry.lock
       # names every package with its hash.
       - name: Install Poetry
         uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
         with:
-          version: 1.7.1
+          version: 2.2.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
@@ -132,12 +129,12 @@ jobs:
           cache-dependency-path: agent/go.sum
 
       # The parsing, checks and manifest edit live in .github/scripts so they
-      # are unit-tested (tests/unit/test_process_join*.py). Both scripts
-      # strictly validate every attacker-controlled value before use, edit
-      # the manifest textually (the v3 half and manifest.sig's revision
-      # survive), write outputs with random-delimiter heredocs, and exit
+      # are unit-tested (.github/scripts/tests). The script strictly
+      # validates every attacker-controlled value before use, edits the
+      # manifest textually (comments and the members' signature blocks
+      # survive), writes outputs with random-delimiter heredocs, and exits
       # non-zero with `success=false` and an `error` on any failure; the
-      # steps continue so the applicant gets the reason as a comment.
+      # step continues so the applicant gets the reason as a comment.
       - name: Parse the issue and update the manifest (RedundaNet 3)
         id: v3
         if: steps.kind.outputs.kind == 'v3'
@@ -148,17 +145,7 @@ jobs:
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
         run: poetry run python .github/scripts/process_join_v3.py
 
-      - name: Parse the issue and update the manifest (RedundaNet 2)
-        id: v2
-        if: steps.kind.outputs.kind == 'v2'
-        continue-on-error: true
-        env:
-          ISSUE_BODY: ${{ github.event.issue.body }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-        run: poetry run python .github/scripts/process_join.py
-
-      # One set of outputs for the jobs below, whichever script ran:
+      # One set of outputs for the jobs below:
       # success, error, pr_title, pr_body, commit_message, next_steps.
       - name: Collect the result
         id: process
@@ -166,15 +153,14 @@ jobs:
         env:
           KIND: ${{ steps.kind.outputs.kind }}
           V3_OUTPUTS: ${{ toJSON(steps.v3.outputs) }}
-          V2_OUTPUTS: ${{ toJSON(steps.v2.outputs) }}
         with:
           script: |
             const kind = process.env.KIND;
-            const raw = kind === 'v3' ? process.env.V3_OUTPUTS : process.env.V2_OUTPUTS;
+            const raw = kind === 'v3' ? process.env.V3_OUTPUTS : '';
             const outputs = JSON.parse(raw || '{}') || {};
             if (kind === 'unknown') {
               outputs.success = 'false';
-              outputs.error = 'The issue has none of the `## RedundaNet 3 membership`, `## RedundaNet 3 storage device` and `## New Node Application` headings. Please use the form at https://redundanet.com/join.html.';
+              outputs.error = 'The issue has neither the `## RedundaNet 3 membership` nor the `## RedundaNet 3 storage device` heading. Please use the form at https://redundanet.com/join.html.';
             } else if (outputs.success !== 'true' && outputs.success !== 'false') {
               outputs.success = 'false';
               outputs.error = outputs.error || 'The processing step stopped before reporting a result; see the workflow log.';
@@ -284,21 +270,6 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.11'
-
-      - name: Install Poetry
-        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
-        with:
-          version: 1.7.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Install the locked packages
-        run: poetry install --no-interaction
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -319,11 +290,6 @@ jobs:
               failed="$failed, $name"
             fi
           }
-          for m in manifests/*.yaml; do
-            check "redundanet validate $m" poetry run redundanet validate "$m"
-            check "validate_pr.py $m" poetry run python .github/scripts/validate_pr.py "$m"
-            check "validate_v3_members.py $m" poetry run python .github/scripts/validate_v3_members.py "$m"
-          done
           cd agent
           for m in ../manifests/*.yaml; do
             grep -q '^schema: 3' "$m" || continue
@@ -380,7 +346,7 @@ jobs:
             const signature = signed
               ? 'manifest.sig verifies against this manifest.'
               : 'manifest.sig does not match this manifest yet; expected until the maintainer signs the revision on this branch.';
-            const checks = 'redundanet validate, validate_pr.py, validate_v3_members.py and the agent\'s `validate`';
+            const checks = 'the agent\'s `validate`';
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,

@@ -30,12 +30,11 @@ preceded it and is not edited.
 
 There is a LIVE production network: one hub (`hub-hetzner`), storage nodes
 and laptops that self-update from the signed index within an hour of a
-release on their channel, and the RedundaNet 2 grid still holding members'
-data beside it. Changes ship to real machines.
+release on their channel. Changes ship to real machines.
 
-RedundaNet 2 (the Python CLI in `src/`, Docker Compose, Tinc, Tahoe-LAFS,
-the fly.io hub) is the legacy product, live until the stop date the
-maintainer announces; its section is below.
+RedundaNet 2 (a Python CLI, Docker Compose, Tinc, Tahoe-LAFS) ended on
+13 November 2026 and its code is no longer in this repository; what is
+left of it here is listed in its section below.
 
 ## Commands
 
@@ -45,18 +44,17 @@ cd agent && go build ./cmd/redundanet
 cd agent && go vet ./... && test -z "$(gofmt -l .)"   # CI runs both too
 ```
 
-Legacy Python (only when `src/`, `tests/`, `docker/` or `scripts/` change):
+The join pipeline's Python scripts (only when `.github/scripts/`,
+`pyproject.toml` or `poetry.lock` change):
 
 ```bash
-poetry install --sync                 # env
-poetry run pytest tests/unit -q       # unit tests (fast; run before proposing changes)
-poetry run ruff check src tests       # lint (also: ruff format)
-poetry run mypy src                   # strict typing
-bash scripts/grid-test.sh             # dockerized 3-node erasure-coding e2e (slow)
+poetry install --sync                      # env: the scripts' packages, nothing else
+poetry run pytest                          # the scripts' unit tests (.github/scripts/tests)
+poetry run ruff check .github/scripts      # lint (also: ruff format)
 ```
 
-CI gates publishing: binaries, images and PyPI only build from green
-commits. Never weaken that chain.
+CI gates publishing: binaries only build from green commits. Never weaken
+that chain.
 
 ## Hard rules, RedundaNet 3
 
@@ -76,8 +74,7 @@ commits. Never weaken that chain.
   for byte: nothing in it may depend on the machine, the path or the time.
 - **Agents apply only a signed manifest with a higher revision.** Every
   manifest edit raises `revision` by one; `redundanet validate --manifest
-  manifests/manifest.yaml` must pass (CI runs it, and the legacy validator
-  for the v2 half); the maintainer signs `manifest.sig` offline. Unknown
+  manifests/manifest.yaml` must pass (CI runs it); the maintainer signs `manifest.sig` offline. Unknown
   keys are errors; the v2 keys are the only ones set aside.
 - **`migrate-node` stops and starts the whole stack.** The Tahoe services
   share tinc's network namespace, so the stack is only ever taken down whole
@@ -128,55 +125,30 @@ commits. Never weaken that chain.
 5. Every user-facing change updates the docs under `docs/` in the same
    change. Docs describe what the code DOES.
 
-## RedundaNet 2 (legacy, live until the stop date)
+## RedundaNet 2 (ended 13 November 2026)
 
-The Python CLI (`src/redundanet`, package `redundanet` on PyPI), Docker
-Compose, Tinc mesh VPN, GPG keys as node identities, Tahoe-LAFS 2-of-4, and
-the fly.io hub.
-Its docs are under `docs/legacy/`. Its hard rules, learned in production,
-stay in force on the old grid:
+The Python CLI (package `redundanet` on PyPI, 2.7.40 the last), Docker
+Compose, Tinc mesh VPN, GPG keys as node identities, Tahoe-LAFS 2-of-4 and
+its two hubs. The hubs are shut down and removed; `src/`, `tests/`,
+`docker/`, `docs/legacy/`, `fly.toml` and the workflows that built and
+published it are gone from the tree and live in the history at the tag
+`v2.7.40`. Do not bring any of it back. What is left, on purpose:
 
-- **Never restart the tinc container alone.** The Tahoe containers live in its
-  network namespace; a tinc restart strands them ("0 shares connected").
-  Recreates must name tinc first: see `Deployment.recreate()`.
-- **Every CLI compose invocation must include the override file.** Passing
-  `-f` disables Docker's auto-load of `docker-compose.override.yml`, which
-  holds storage disk bind-mounts; dropping it silently detaches node disks.
-  `Deployment._base()` handles this — route compose calls through it. The
-  override is found next to the compose file the CLI resolved, so that file
-  must be the installed one: `join` pins it (`REDUNDANET_COMPOSE_FILE`), the
-  repo clone is the last candidate, and `update` refuses when the installed
-  override would be dropped.
-- **Compose project name is `redundanet`** (`-p redundanet`); without it the
-  CLI cannot see the containers.
-- **GPG identities are full 40-char fingerprints, exact match, fail closed.**
-  Short 8/16-char ids are Evil32-forgeable and rejected everywhere (manifest
-  validation, join bot, keyserver client). Never reintroduce suffix matching.
-- **The manifest is read at runtime with `yaml.safe_load` by entrypoints** —
-  a broken manifest on main reaches live nodes in ~5 minutes. `redundanet
-  validate` exits non-zero on blocking errors; keep it that way.
-- **`.env` files are merged, never overwritten** (`_merge_env`): operators add
-  keys (SFTP_*, SYNC_*) that a re-join must preserve.
-- **Tahoe upstream is dormant** (1.20.0, Dec 2024). Its transitive deps are
-  pinned in the Dockerfiles (`pyopenssl<25`, `service-identity<25`) — scars,
-  not suggestions. The SFTP frontend never closes sessions (known, upstream,
-  routed around; do not chase it). Its lease crawler crashes after a restart
-  mid-cycle; `docker/patches/tahoe_expirer_json_state.py` fixes that in the
-  base image and the build fails if Tahoe moves the patched code.
-- **Encoding parameters are per-file at upload time.** Changing k-of-n in the
-  manifest affects only new uploads; old files need re-upload to re-encode.
+- **The v2 half of the manifest** (`nodes`, `introducer_furl` and the v2
+  keys under `network`) and the `legacy_pgp` records of two members. The
+  agent's parser sets exactly those v2 keys aside and still accepts
+  `legacy_pgp`; nothing checks the records any more. The join script reads
+  `nodes` for one rule: the name of a former member is given only to a
+  request from that GitHub account. Removing the v2 half is a manifest
+  revision the maintainer signs.
+- **`redundanet migrate-node`** (`agent/internal/migrate`), for members
+  whose nodes still run the old containers: the hard rule above stays.
+- **`--legacy-status` and `--publish`** in hub mode, unused by the live hub.
+- **The name `redundanet3`** on storage nodes, because a node that ran
+  RedundaNet 2 has the Python `redundanet` on PATH.
 
-Legacy release flow: bump `pyproject.toml` (version lives there only; every
-user-facing Python change bumps the patch version; `readme` points at
-`docs/legacy/README.md`, the PyPI long description), run the Python gate,
-maintainer tags `vX.Y.Z`; the release workflow publishes PyPI and ghcr
-images. The Raspberry Pi image is RedundaNet 3's since 3.0.0: built by
-`build-rpi-image.yml` after a stable agent release, never for a `v*` tag.
-The tahoe-* images build
-FROM `redundanet-tahoe-base`, which `tahoe-base.yml` rebuilds only when
-`poetry.lock` or `docker/Dockerfile.tahoe-base` changes. Images are 64-bit
-only. Hub changes additionally need `fly deploy`. Nodes pick up images via
-`redundanet update` (health-checked, auto-rollback).
+The Raspberry Pi image is built by `build-rpi-image.yml` after a stable
+agent release. Images are 64-bit only.
 
 ## Conventions
 
@@ -184,10 +156,9 @@ only. Hub changes additionally need `fly deploy`. Nodes pick up images via
   and `go build` on Linux, macOS and Windows; all four must be clean. Tests
   sit beside the code; the jobs are tested on the engine fake in
   `internal/engine`, which has the same contract as the native engine.
-- Python 3.11+, strict mypy, ruff (rules in `pyproject.toml`). Line length
-  100. Entrypoints (`docker/entrypoints/*.py`) are pure, testable functions
-  with injected runners/clocks; the monitor (`src/redundanet/monitor/`) is
-  pure logic. Keep both that way.
+- Python 3.11+ and ruff (rules in `pyproject.toml`, line length 100) for
+  the scripts in `.github/scripts`, the only Python left. Their packages
+  come from `poetry.lock`, with hashes.
 - The human maintainer does all commits, tags, and pushes.
 - Workflows name every action by commit, with the version in a comment
   (Dependabot moves both). `process-join-request.yml` runs for any
@@ -196,11 +167,9 @@ only. Hub changes additionally need `fly deploy`. Nodes pick up images via
   them, and the job that reports the `validate` check runs nothing but
   `actions/github-script`. Keep that split.
 - Docs describe what the code DOES, not what it should do. When behavior and
-  docs disagree, fixing the drift is part of the change. `docs/legacy/` is
-  frozen except for the banner.
+  docs disagree, fixing the drift is part of the change.
 - The agent's page (`agent/internal/api`) is in the website's ten languages: a text added to `locales/en.json` is added to the nine others in the same change (`TestDictionaries` fails otherwise), and the page takes no inline style or script (its content policy forbids them).
-- No em dashes in user-facing prose (maintainer preference). The legacy
-  rules above are quoted as written.
+- No em dashes in user-facing prose (maintainer preference).
 - Commands meant for a storage node are written `sudo redundanet3`, the
   copy root owns at `/usr/local/bin/redundanet3`; on a laptop, bare
   `redundanet`. Root never runs `/var/lib/redundanet3/bin/redundanet`: the

@@ -36,7 +36,7 @@ func runSetup(args []string) error {
 		return errors.New("--network is required")
 	}
 	if runtime.GOOS == "linux" && os.Geteuid() == 0 {
-		return errors.New("setup is for the device you sit at, as yourself; a storage node is laid out with `sudo redundanet node install --storage-path DIR`")
+		return errors.New("setup is for the device you sit at, as yourself; a storage node is laid out by the one-line installer with --node DIR, and from then on its command is `sudo redundanet3`")
 	}
 	d, err := dataDir(*dir)
 	if err != nil {

@@ -2,8 +2,8 @@
 
 The one binary of [RFC 0001](../rfcs/0001-redundanet-3.md): agent, hub and
 CLI. This directory is its Go module, `github.com/adefilippo83/redundanet/agent`,
-beside the RedundaNet 2 Python code that keeps running the live network until
-the migration ends. The spike that preceded it is under `../spike/` and is
+the whole product. RedundaNet 2, the Python code that preceded it, ended on
+13 November 2026 and is no longer in this repository. The spike that preceded it is under `../spike/` and is
 reference material, not this code's ancestor.
 
 The binary, package by package:
@@ -475,8 +475,8 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
     authenticity; agents pin the keys from the network descriptor they
     joined with.
 
-sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
-    Phase 3, on a node that runs the agent beside the RedundaNet 2 stack:
+sudo redundanet3 migrate-node [--dry-run] [--force] [--rollback]
+    On a node that runs the agent beside what is left of the RedundaNet 2 stack:
     retires the stack. Refuses while the folder backup-sync pushed to the
     old grid is not held by a native set with a complete run and a passed
     restore test on this device, or while no hub is connected; --force
@@ -489,8 +489,8 @@ sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
     dependencies; a container that survives puts the stack back and fails
     the command, since it would run on tinc's dead network namespace.
     Then a marker in the data directory. The compose files, the .env and
-    the Tahoe share directories stay on disk; the shares go on the
-    network's stop date, not here. --rollback is `compose up -d
+    the Tahoe share directories stay on disk until the member deletes
+    them. --rollback is `compose up -d
     --force-recreate` naming every service the marker recorded, tinc
     first by its dependencies, and removes the marker: the stack is never
     restarted one container at a time. The agent is untouched throughout.

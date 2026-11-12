@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RedundaNet 2, the legacy product | RedundaNet</title>
-    <meta name="description" content="RedundaNet 2, the previous product: Python CLI, Docker Compose, tinc VPN and Tahoe-LAFS. Still running until the announced stop date. Its documentation lives under docs/legacy.">
+    <meta name="description" content="RedundaNet 2, the previous product: Python CLI, Docker Compose, tinc VPN and Tahoe-LAFS. It ended on 13 November 2026; its code and documentation are in the repository history.">
     <link rel="canonical" href="https://redundanet.com/legacy.html">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -212,6 +212,41 @@
             color: var(--text);
         }
 
+        .guide h3 {
+            font-size: 1.2rem;
+            margin: 28px 0 12px;
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        .warn {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid var(--error);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 0 0 18px;
+            color: var(--text-muted);
+        }
+
+        .warn strong {
+            color: var(--text);
+        }
+
         .buttons {
             display: flex;
             gap: 16px;
@@ -258,7 +293,6 @@
                 <li><a href="download.html" data-i18n="nav.download">Download</a></li>
                 <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
                 <li><a href="join.html" data-i18n="nav.join">Join</a></li>
-                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
                 <li><a href="https://hub.redundanet.com/" data-i18n="nav.status">Status</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
@@ -271,38 +305,38 @@
     <main class="container">
         <div class="page-header">
             <h1 data-i18n="leg.header.title">RedundaNet 2, the legacy product</h1>
-            <p data-i18n="leg.header.subtitle">The grid that came before RedundaNet 3. It still runs, and its members are moving over at their own pace.</p>
+            <p data-i18n="leg.header.subtitle">The grid that came before RedundaNet 3. It ended on 13 November 2026.</p>
         </div>
 
         <div class="guide">
-            <div class="note" data-i18n="leg.notice"><strong>Still live.</strong> RedundaNet 2 stays up until a stop date the maintainer announces, because its Tahoe shares still hold members' data. The wind-down is manual: no countdown and no automatic deletion exist. New members join <a href="join.html">RedundaNet 3</a>; existing members follow the <a href="migration.html">migration guide</a>.</div>
+            <div class="note" data-i18n="leg.notice"><strong>Ended.</strong> RedundaNet 2 stopped on 13 November 2026, when its hubs were shut down. The old grid can no longer be read or written. Nothing was deleted on members' nodes: each member retires their own stack and deletes the old shares when they choose. New members join <a href="join.html">RedundaNet 3</a>; former members follow the <a href="#former">steps below</a>.</div>
 
             <section id="what">
                 <h2 data-i18n="leg.what.title">What it was</h2>
                 <p data-i18n="leg.what.p1">RedundaNet 2 was a Python command line tool and a Docker Compose stack. Nodes joined a tinc mesh VPN; GPG keys were the node identities and doubled as the tinc keys; a YAML manifest on GitHub was the source of truth for membership; files were stored with Tahoe-LAFS, erasure coded 2-of-4 across the storage nodes; a hub on fly.io relayed peers behind NAT, ran the Tahoe introducer and served the public status page.</p>
-                <p data-i18n="leg.what.p2">Six members and eight storage nodes are on it today; one member and two nodes also run RedundaNet 3. The Python package <code>redundanet</code> on PyPI (version 2.7.x) is its command line tool. Its operational rules stay valid for the old grid: in particular the tinc container is never restarted alone, and every compose call includes the override file.</p>
+                <p data-i18n="leg.what.p2">Six members and eight storage nodes were on it at the end. The Python package <code>redundanet</code> on PyPI (2.7.40 was the last version) was its command line tool.</p>
                 <div class="buttons">
-                    <a href="https://redundanet-hub.fly.dev/" class="btn btn-secondary" data-i18n="leg.what.statusBtn">RedundaNet 2 status page &#8594;</a>
                     <a href="https://pypi.org/project/redundanet/" class="btn btn-secondary" data-i18n="leg.what.pypiBtn">The Python package on PyPI &#8594;</a>
                 </div>
             </section>
 
+            <section id="former">
+                <h2 data-i18n="leg.former.title">If you were a member</h2>
+                <p data-i18n="leg.former.join">Former members join RedundaNet 3 like anyone else: <a href="installation.html">install the agent</a>, then send the <a href="join.html">join request</a> from the GitHub account your old nodes were listed under.</p>
+                <h3 data-i18n="leg.retire.title">Retire the Docker stack</h3>
+                <div class="warn" data-i18n="leg.retire.warn"><strong>The old grid is off.</strong> Nothing reads your node's Tahoe shares any more. Nothing is deleted for you either: the shares stay on disk until you delete them.</div>
+                <p data-i18n="leg.retire.desc"><code>migrate-node</code> stops and removes the containers, whole, tinc first; files and shares stay on disk. It refuses while anything is missing from the native grid. Dry run first; <code>--rollback</code> brings every service back together.</p>
+                <pre><code>sudo redundanet3 migrate-node --dry-run    # the plan, and what is not yet on the native grid
+sudo redundanet3 migrate-node              # retire the stack
+sudo redundanet3 migrate-node --rollback   # every service again, tinc first
+sudo redundanet3 migrate-node --force      # past a refusal, on purpose</code></pre>
+                <p data-i18n="leg.retire.after">The agent keeps running through all of it and the node stays on the status page.</p>
+                <p><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/migration.md" data-i18n="leg.retire.doc">docs/migration.md, the long form</a></p>
+            </section>
+
             <section id="docs">
                 <h2 data-i18n="leg.docs.title">Documentation</h2>
-                <p data-i18n="leg.docs.intro">All RedundaNet 2 documentation moved under <code>docs/legacy/</code> unchanged, each file with a one-line banner saying it describes the legacy product.</p>
-                <ul>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/README.md">docs/legacy/README.md</a>: <span data-i18n="leg.docs.readme">the old project README</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/quickstart.md">docs/legacy/quickstart.md</a>: <span data-i18n="leg.docs.quickstart">quick start</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/installation.md">docs/legacy/installation.md</a>: <span data-i18n="leg.docs.installation">installation</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/installation-debian.md">docs/legacy/installation-debian.md</a>: <span data-i18n="leg.docs.debian">installation on Debian</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/configuration.md">docs/legacy/configuration.md</a>: <span data-i18n="leg.docs.configuration">configuration</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/architecture.md">docs/legacy/architecture.md</a>: <span data-i18n="leg.docs.architecture">architecture</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/quotas.md">docs/legacy/quotas.md</a>: <span data-i18n="leg.docs.quotas">quotas</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/nas-backup.md">docs/legacy/nas-backup.md</a>: <span data-i18n="leg.docs.nas">NAS backup</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/bootstrap-hub.md">docs/legacy/bootstrap-hub.md</a>: <span data-i18n="leg.docs.hub">bootstrapping the hub</span></li>
-                    <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/legacy/Design_doc.md">docs/legacy/Design_doc.md</a>: <span data-i18n="leg.docs.design">the design document</span></li>
-                </ul>
-                <p data-i18n="leg.docs.privacy">What the RedundaNet 2 stack sends and to whom is in the <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md">privacy policy</a>, under "RedundaNet 2, the Docker stack".</p>
+                <p data-i18n="leg.docs.intro">The RedundaNet 2 code, containers and documentation are no longer in the repository. They are in its history: <a href="https://github.com/adefilippo83/redundanet/tree/v2.7.40">the tree at the tag <code>v2.7.40</code></a>, the last release.</p>
             </section>
 
             <section id="why">
@@ -317,7 +351,6 @@
             <div class="footer-links">
                 <a href="./" data-i18n="nav.home">Home</a>
                 <a href="download.html" data-i18n="footer.download">Download</a>
-                <a href="migration.html" data-i18n="footer.migrate">Migrate</a>
                 <a href="https://hub.redundanet.com/" data-i18n="footer.status">Status</a>
                 <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
                 <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>

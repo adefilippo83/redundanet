@@ -1,6 +1,7 @@
 version: 2
 updates:
-  # Python dependencies (Poetry — Dependabot reads pyproject.toml + poetry.lock).
+  # The Python environment of the repository's scripts (.github/scripts):
+  # Dependabot reads pyproject.toml and poetry.lock.
   - package-ecosystem: pip
     directory: "/"
     schedule:
