@@ -71,7 +71,8 @@ type Membership struct {
 	signature   *manifest.Signature
 	policy      *manifest.Policy
 	revocations []*identity.SignedRevocation
-	seen        map[identity.Key]bool // devices admitted while the manifest was fresh
+	held        []*identity.SignedRevocation // of members no manifest lists yet; see hold
+	seen        map[identity.Key]bool        // devices admitted while the manifest was fresh
 	lastFetch   time.Time
 	lastErr     string
 	expired     bool
@@ -140,7 +141,17 @@ func Open(cfg Config) (*Membership, error) {
 			m.log.Warn("the operator keys were replaced by a new network descriptor; the member list on disk stays in force until one signed by a new key arrives", "operators", len(a.Operators), "dropped", len(a.Dropped))
 		}
 	}
-	m.revocations = loadRevocations(filepath.Join(cfg.DataDir, fileRevocations), m.log)
+	// One record per certificate, whatever an earlier version kept.
+	loaded := loadRevocations(filepath.Join(cfg.DataDir, fileRevocations), m.log)
+	for _, r := range loaded {
+		_, _ = m.keep(r)
+	}
+	if len(m.revocations) != len(loaded) {
+		m.log.Info("revocations on disk reduced to one per certificate", "before", len(loaded), "after", len(m.revocations))
+		if err := saveRevocations(filepath.Join(cfg.DataDir, fileRevocations), m.revocations); err != nil {
+			m.log.Warn("revocation file not rewritten", "err", err)
+		}
+	}
 	if err := m.loadFromDisk(); err != nil {
 		m.log.Info("no manifest on disk yet", "reason", err)
 	}
@@ -210,23 +221,95 @@ func (m *Membership) MayWrite(p identity.Peer) error {
 	return pol.MayWrite(p)
 }
 
-// AddRevocation applies and persists a revocation.
-func (m *Membership) AddRevocation(r *identity.SignedRevocation) error {
+// What bounds the revocations a device keeps. A member has a handful of
+// devices and each certificate is revoked once, so the first is far above
+// any honest use; the second is the records that wait for a manifest that
+// lists their member.
+const (
+	maxRevocationsPerMember = 256
+	maxHeldRevocations      = 64
+)
+
+// ErrTooManyRevocations refuses a record of a member that has
+// maxRevocationsPerMember already.
+var ErrTooManyRevocations = errors.New("the member has too many revocations already")
+
+func sameCertificate(a, b identity.Revocation) bool {
+	return a.Member == b.Member && a.Device == b.Device && a.Serial == b.Serial
+}
+
+// listed reports whether the manifest lists the member as active or
+// leaving, the rule the share server has for a revocation too.
+func listed(man *manifest.Manifest, member identity.Key) bool {
+	if man == nil {
+		return false
+	}
+	mem := man.MemberByKey(member)
+	return mem != nil && (mem.Status == manifest.StatusActive || mem.Status == manifest.StatusLeaving)
+}
+
+// keep puts a record in the list: one per certificate, the earliest date
+// when two name the same one, since signatures before that date stay good
+// and a later record must not widen that. The caller holds m.mu.
+func (m *Membership) keep(r *identity.SignedRevocation) (bool, error) {
+	ofMember := 0
+	for i, have := range m.revocations {
+		if sameCertificate(have.Revocation, r.Revocation) {
+			if !r.Revocation.RevokedAt.Before(have.Revocation.RevokedAt) {
+				return false, nil
+			}
+			m.revocations[i] = r
+			return true, nil
+		}
+		if have.Revocation.Member == r.Revocation.Member {
+			ofMember++
+		}
+	}
+	if ofMember >= maxRevocationsPerMember {
+		return false, ErrTooManyRevocations
+	}
+	m.revocations = append(m.revocations, r)
+	return true, nil
+}
+
+// hold keeps a record of a member the manifest does not list, in memory
+// only, until a manifest that lists the member applies: a manifest that
+// lags must not cost a genuine record, and a key nobody listed must not
+// reach the disk. The oldest gives way. The caller holds m.mu.
+func (m *Membership) hold(r *identity.SignedRevocation) {
+	for _, have := range m.held {
+		if have.Revocation == r.Revocation {
+			return
+		}
+	}
+	if len(m.held) >= maxHeldRevocations {
+		m.held = append(m.held[:0], m.held[1:]...)
+	}
+	m.held = append(m.held, r)
+}
+
+// AddRevocation applies and persists a revocation, and reports whether it
+// changed the list: false for one already known, and for one whose member
+// the manifest does not list, which only waits.
+func (m *Membership) AddRevocation(r *identity.SignedRevocation) (bool, error) {
 	if err := r.Verify(); err != nil {
-		return err
+		return false, err
 	}
 	m.mu.Lock()
 	if r.Revocation.Network != m.cfg.Descriptor.Network {
 		m.mu.Unlock()
-		return errors.New("revocation for another network")
+		return false, errors.New("revocation for another network")
 	}
-	for _, have := range m.revocations {
-		if have.Revocation == r.Revocation {
-			m.mu.Unlock()
-			return nil
-		}
+	if !listed(m.manifest, r.Revocation.Member) {
+		m.hold(r)
+		m.mu.Unlock()
+		return false, nil
 	}
-	m.revocations = append(m.revocations, r)
+	added, err := m.keep(r)
+	if err != nil || !added {
+		m.mu.Unlock()
+		return false, err
+	}
 	if m.policy != nil {
 		m.policy.AddRevocation(r)
 	}
@@ -234,13 +317,13 @@ func (m *Membership) AddRevocation(r *identity.SignedRevocation) error {
 	man := m.manifest
 	m.mu.Unlock()
 	if err := saveRevocations(filepath.Join(m.cfg.DataDir, fileRevocations), revs); err != nil {
-		return err
+		return false, err
 	}
 	m.log.Info("revocation applied", "member", r.Revocation.Member.Short(), "device", r.Revocation.Device.Short())
 	if m.cfg.OnApply != nil && man != nil {
 		m.cfg.OnApply(man)
 	}
-	return nil
+	return true, nil
 }
 
 // Revocations is the current list: what arrived directly, plus what the
@@ -382,6 +465,20 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 	}
 	m.mu.Lock()
 	m.manifest, m.signature = man, s
+	// The records that waited for this manifest to list their member.
+	var promoted []*identity.SignedRevocation
+	stillHeld := m.held[:0]
+	for _, r := range m.held {
+		if !listed(man, r.Revocation.Member) {
+			stillHeld = append(stillHeld, r)
+			continue
+		}
+		if added, _ := m.keep(r); added {
+			promoted = append(promoted, r)
+		}
+	}
+	m.held = stillHeld
+	revs := append([]*identity.SignedRevocation(nil), m.revocations...)
 	m.policy = manifest.NewPolicy(man, m.revocations)
 	if adopt {
 		m.trusted = ops
@@ -391,6 +488,14 @@ func (m *Membership) apply(data, sig []byte, persist bool) error {
 	}
 	m.seen = map[identity.Key]bool{}
 	m.mu.Unlock()
+	if len(promoted) > 0 {
+		if err := saveRevocations(filepath.Join(m.cfg.DataDir, fileRevocations), revs); err != nil {
+			return err
+		}
+		for _, r := range promoted {
+			m.log.Info("revocation applied", "member", r.Revocation.Member.Short(), "device", r.Revocation.Device.Short())
+		}
+	}
 	if persist {
 		dir := m.cfg.DataDir
 		if err := writeFile(filepath.Join(dir, fileManifest), data, 0o644); err != nil {

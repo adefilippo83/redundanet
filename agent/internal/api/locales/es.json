@@ -69,6 +69,7 @@
   "issue.verify.button": "Ver las pruebas",
   "issue.updatefailed.title": "No se pudo instalar la versión %s",
   "issue.updatefailed.text": "La versión anterior ha vuelto sola. No se intenta de nuevo hasta que lo pidas.",
+  "issue.updatefailed.retrytext": "La versión anterior ha vuelto sola. Se intenta de nuevo sola el %s, o ahora con el botón.",
   "issue.updatefailed.button": "Reintentar",
   "issue.update.title": "La versión %s está lista",
   "issue.update.text": "Se instala sola en menos de una hora. La versión anterior se conserva y vuelve si la nueva falla.",

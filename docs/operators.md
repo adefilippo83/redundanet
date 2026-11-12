@@ -63,7 +63,7 @@ A member revokes a lost or stolen device from any other device of theirs:
 redundanet device revoke --device KEY
 ```
 
-It asks for the phrase, signs a revocation record, and the running agent applies it and sends it to every storage server and every hub; the hubs keep it, send it to every connected device at once and to each device that connects later. The member also sends you the printed record: add it to the manifest under `revocations:`, raise the revision, sign and merge, so it survives every later manifest and reaches whoever was unreachable. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
+It asks for the phrase, signs a revocation record, and the running agent applies it and sends it to every storage server and every hub; the hubs keep it, send it to every connected device at once and to each device that connects later. A hub or a device keeps one record per certificate (the earliest date), only for a member the manifest lists as active or leaving, and at most 256 for one member; a record for a member the manifest does not list yet waits in memory until a manifest lists that member. The member also sends you the printed record: add it to the manifest under `revocations:`, raise the revision, sign and merge, so it survives every later manifest and reaches whoever was unreachable. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
 
 ## Changing k-of-n
 
@@ -89,7 +89,7 @@ Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it and op
 
 ## The hub
 
-The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a failed candidate is never retried until `redundanet update retry VERSION`.
+The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a candidate that does not report healthy in time is tried again after 24 hours, twice; after a third failure, or when the candidate exits by itself, it waits for `redundanet update retry VERSION`.
 
 The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. The earlier publish to the fly.io app of the old product (`--publish`, `--publish-token-file`) is a handover kept for a short time and then removed from the unit; its fly side is in the legacy hub runbook, [legacy/bootstrap-hub.md](legacy/bootstrap-hub.md), section "RedundaNet 3 status under /v3/". The hub also mirrors the RedundaNet 2 status page (`--legacy-status`) so today's nodes stay visible beside the new devices until the old grid stops.
 

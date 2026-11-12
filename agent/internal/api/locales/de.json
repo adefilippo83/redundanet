@@ -69,6 +69,7 @@
   "issue.verify.button": "Tests ansehen",
   "issue.updatefailed.title": "Version %s konnte nicht installiert werden",
   "issue.updatefailed.text": "Die vorherige Version ist von selbst zurückgekehrt. Ein neuer Versuch erfolgt erst, wenn Sie es wünschen.",
+  "issue.updatefailed.retrytext": "Die vorherige Version ist von selbst zurückgekehrt. Ein neuer Versuch erfolgt von selbst am %s oder sofort mit der Schaltfläche.",
   "issue.updatefailed.button": "Erneut versuchen",
   "issue.update.title": "Version %s ist bereit",
   "issue.update.text": "Sie installiert sich von selbst innerhalb einer Stunde. Die alte Version bleibt erhalten und kehrt zurück, falls die neue versagt.",

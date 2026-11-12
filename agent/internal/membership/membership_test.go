@@ -2,6 +2,7 @@ package membership
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -338,11 +339,11 @@ func TestRevocationsPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	rv, _ := identity.Revoke(w.alice, identity.Revocation{Network: "testnet", Device: lost.Device, Serial: 7})
-	if err := m.AddRevocation(rv); err != nil {
-		t.Fatal(err)
+	if added, err := m.AddRevocation(rv); err != nil || !added {
+		t.Fatalf("a revocation of a listed member: added %v, %v", added, err)
 	}
-	if err := m.AddRevocation(rv); err != nil {
-		t.Fatal("a duplicate revocation errored")
+	if added, err := m.AddRevocation(rv); err != nil || added {
+		t.Fatalf("a duplicate revocation: added %v, %v", added, err)
 	}
 	if err := m.Allow(lost); err == nil {
 		t.Fatal("a revoked device was admitted")
@@ -351,7 +352,7 @@ func TestRevocationsPersist(t *testing.T) {
 		t.Fatal("another device of the member was refused")
 	}
 	other, _ := identity.Revoke(w.alice, identity.Revocation{Network: "othernet", Device: lost.Device, Serial: 7})
-	if err := m.AddRevocation(other); err == nil {
+	if _, err := m.AddRevocation(other); err == nil {
 		t.Fatal("a revocation for another network was accepted")
 	}
 	m2, err := Open(Config{DataDir: dir, Fetch: fetchFrom(r)})
@@ -387,5 +388,158 @@ func TestMinVersion(t *testing.T) {
 	}
 	if semver.Less("3.10.0", "3.9.0") || !semver.Less("3.9.0", "3.10.0") || !semver.Less("3.2.0-alpha.1", "3.2.0") {
 		t.Fatal("version compare is lexical")
+	}
+}
+
+// The list holds one record per certificate, the earliest date, only of
+// members the manifest lists, and a bounded number for each.
+func TestRevocationsAreBounded(t *testing.T) {
+	w := newWorld(t)
+	r := newRepo(t)
+	r.publish(t, w.op, w.manifestYAML(1, false, w.op), time.Now())
+	dir := t.TempDir()
+	m, err := Open(Config{DataDir: dir, Descriptor: w.descriptor(r), Fetch: fetchFrom(r)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh(context.Background())
+	lost := peerFor(t, w.alice, 7)
+	at := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	revoke := func(s identity.Seed, device identity.Key, serial uint64, when time.Time) *identity.SignedRevocation {
+		t.Helper()
+		rv, err := identity.Revoke(s, identity.Revocation{Network: "testnet", Device: device, Serial: serial, RevokedAt: when})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rv
+	}
+
+	// The same certificate with another date: a later one changes nothing,
+	// an earlier one takes the place of the record kept.
+	if added, err := m.AddRevocation(revoke(w.alice, lost.Device, 7, at)); err != nil || !added {
+		t.Fatalf("first record: added %v, %v", added, err)
+	}
+	for i := 1; i <= 20; i++ {
+		if added, err := m.AddRevocation(revoke(w.alice, lost.Device, 7, at.Add(time.Duration(i)*time.Hour))); err != nil || added {
+			t.Fatalf("a later record for the same certificate: added %v, %v", added, err)
+		}
+	}
+	if added, err := m.AddRevocation(revoke(w.alice, lost.Device, 7, at.Add(-time.Hour))); err != nil || !added {
+		t.Fatalf("an earlier record for the same certificate: added %v, %v", added, err)
+	}
+	if got := m.Revocations(); len(got) != 1 || !got[0].Revocation.RevokedAt.Equal(at.Add(-time.Hour)) {
+		t.Fatalf("kept: %d records, first dated %v", len(got), got[0].Revocation.RevokedAt)
+	}
+
+	// A key the manifest does not list: correctly signed, and kept nowhere
+	// that lasts.
+	for i := 0; i < 3*maxHeldRevocations; i++ {
+		stranger := seed(byte(200))
+		stranger[1] = byte(i)
+		if added, err := m.AddRevocation(revoke(stranger, lost.Device, uint64(i), at)); err != nil || added {
+			t.Fatalf("a record of an unlisted member: added %v, %v", added, err)
+		}
+	}
+	m.mu.Lock()
+	held := len(m.held)
+	m.mu.Unlock()
+	if held != maxHeldRevocations {
+		t.Fatalf("%d records wait, the bound is %d", held, maxHeldRevocations)
+	}
+	if got := m.Revocations(); len(got) != 1 {
+		t.Fatalf("%d records kept after those of unlisted members", len(got))
+	}
+
+	// A listed member cannot fill the list either.
+	for i := 0; i < maxRevocationsPerMember-1; i++ {
+		if added, err := m.AddRevocation(revoke(w.alice, lost.Device, uint64(1000+i), at)); err != nil || !added {
+			t.Fatalf("record %d of a listed member: added %v, %v", i, added, err)
+		}
+	}
+	if _, err := m.AddRevocation(revoke(w.alice, lost.Device, 5000, at)); !errors.Is(err, ErrTooManyRevocations) {
+		t.Fatalf("one record over the bound: %v", err)
+	}
+	if err := m.Allow(lost); err == nil {
+		t.Fatal("the revoked device was admitted")
+	}
+}
+
+// A record that arrives before the manifest that lists its member is not
+// lost: it applies when that manifest does.
+func TestARevocationWaitsForTheManifestThatListsItsMember(t *testing.T) {
+	w := newWorld(t)
+	r := newRepo(t)
+	r.publish(t, w.op, w.manifestYAML(1, false, w.op), time.Now())
+	dir := t.TempDir()
+	m, err := Open(Config{DataDir: dir, Descriptor: w.descriptor(r), Fetch: fetchFrom(r)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh(context.Background())
+	lost := peerFor(t, w.bob, 3)
+	rv, _ := identity.Revoke(w.bob, identity.Revocation{Network: "testnet", Device: lost.Device, Serial: 3})
+	if added, err := m.AddRevocation(rv); err != nil || added {
+		t.Fatalf("a record of a member not listed yet: added %v, %v", added, err)
+	}
+	if got := m.Revocations(); len(got) != 0 {
+		t.Fatalf("%d records kept before the member is listed", len(got))
+	}
+
+	r.publish(t, w.op, w.manifestYAML(2, true, w.op), time.Now())
+	m.Refresh(context.Background())
+	if got := m.Revocations(); len(got) != 1 {
+		t.Fatalf("%d records after the manifest that lists the member", len(got))
+	}
+	if err := m.Allow(lost); err == nil {
+		t.Fatal("the revoked device was admitted")
+	}
+	if err := m.Allow(peerFor(t, w.bob, 4)); err != nil {
+		t.Fatalf("the member's other device: %v", err)
+	}
+	// And it is on disk.
+	m2, err := Open(Config{DataDir: dir, Fetch: fetchFrom(r)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m2.Allow(lost); err == nil {
+		t.Fatal("the revoked device was admitted after a restart")
+	}
+}
+
+// A file an earlier version filled with many records for one certificate
+// comes down to one at the next start.
+func TestRevocationsOnDiskCollapseAtLoad(t *testing.T) {
+	w := newWorld(t)
+	r := newRepo(t)
+	r.publish(t, w.op, w.manifestYAML(1, false, w.op), time.Now())
+	dir := t.TempDir()
+	m, err := Open(Config{DataDir: dir, Descriptor: w.descriptor(r), Fetch: fetchFrom(r)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Refresh(context.Background())
+	lost := peerFor(t, w.alice, 7)
+	at := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	var many []*identity.SignedRevocation
+	for i := 0; i < 50; i++ {
+		rv, _ := identity.Revoke(w.alice, identity.Revocation{Network: "testnet", Device: lost.Device, Serial: 7, RevokedAt: at.Add(time.Duration(50-i) * time.Minute)})
+		many = append(many, rv)
+	}
+	if err := saveRevocations(filepath.Join(dir, fileRevocations), many); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := Open(Config{DataDir: dir, Fetch: fetchFrom(r)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := m2.Revocations()
+	if len(got) != 1 || !got[0].Revocation.RevokedAt.Equal(at.Add(time.Minute)) {
+		t.Fatalf("%d records after load", len(got))
+	}
+	if onDisk := loadRevocations(filepath.Join(dir, fileRevocations), m2.log); len(onDisk) != 1 {
+		t.Fatalf("%d records left on disk", len(onDisk))
+	}
+	if err := m2.Allow(lost); err == nil {
+		t.Fatal("the revoked device was admitted")
 	}
 }

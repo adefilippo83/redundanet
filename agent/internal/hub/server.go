@@ -34,10 +34,11 @@ type Config struct {
 	// OnTaskReport receives a repair worker's word on a task.
 	OnTaskReport func(peer identity.Peer, r *wire.TaskReport)
 	// OnRevocation receives a member's signed device revocation a device
-	// delivered, verified; the hub's membership keeps it. Revocations is
-	// what a device that connects is sent, so one that was offline learns
-	// what it missed.
-	OnRevocation func(peer identity.Peer, r *identity.SignedRevocation)
+	// delivered, verified; the hub's membership keeps it and answers
+	// whether it was new, and only a new one is passed on to the other
+	// devices. Revocations is what a device that connects is sent, so one
+	// that was offline learns what it missed.
+	OnRevocation func(peer identity.Peer, r *identity.SignedRevocation) bool
 	Revocations  func() []*identity.SignedRevocation
 	Log          *slog.Logger
 }
@@ -361,8 +362,8 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			if err != nil {
 				return
 			}
-			if s.cfg.OnRevocation != nil {
-				s.cfg.OnRevocation(c.peer, rv)
+			if s.cfg.OnRevocation == nil || !s.cfg.OnRevocation(c.peer, rv) {
+				continue
 			}
 			s.mu.Lock()
 			others := make([]*client, 0, len(s.clients))

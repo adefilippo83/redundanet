@@ -100,10 +100,16 @@ func newTestNet(t *testing.T, tcp bool) *testNet {
 		n.shares[p.Device] = append(n.shares[p.Device], c)
 		n.mu.Unlock()
 	}
-	onRevocation := func(_ identity.Peer, r *identity.SignedRevocation) {
+	onRevocation := func(_ identity.Peer, r *identity.SignedRevocation) bool {
 		n.mu.Lock()
+		defer n.mu.Unlock()
+		for _, have := range n.revoked {
+			if have.Revocation == r.Revocation {
+				return false // known already: the hub passes on only what is new
+			}
+		}
 		n.revoked = append(n.revoked, r)
-		n.mu.Unlock()
+		return true
 	}
 	revocations := func() []*identity.SignedRevocation {
 		n.mu.RLock()

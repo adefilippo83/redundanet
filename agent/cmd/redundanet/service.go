@@ -229,7 +229,7 @@ func runRelease(args []string) error {
 
 // ---- update check | apply | status ----
 
-func newUpdater(dir, channel string, probation func(context.Context, string) error, handover func(bool)) (*update.Updater, error) {
+func newUpdater(dir, channel string, probation func(context.Context, string) error, handover func(bool), retryAfter ...time.Duration) (*update.Updater, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -244,7 +244,7 @@ func newUpdater(dir, channel string, probation func(context.Context, string) err
 		}
 	}
 	return update.New(update.Config{DataDir: dir, Version: version.Version, Embedded: key, IndexURL: version.ReleaseIndexURL,
-		Channel: channel, Exe: exe, Probation: probation, Handover: handover}), nil
+		Channel: channel, Exe: exe, Probation: probation, Handover: handover, RetryAfter: retryAfter}), nil
 }
 
 func runUpdate(args []string) error {
@@ -324,12 +324,14 @@ func runUpdate(args []string) error {
 
 // probeVersion is the CLI's probation: the candidate starts and names itself.
 func probeVersion(ctx context.Context, exe string) error {
+	// Either failure speaks against the binary, so the version waits for
+	// `update retry`.
 	out, err := exec.CommandContext(ctx, exe, "version").Output()
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", update.ErrCandidateExited, err)
 	}
 	if !strings.HasPrefix(string(out), "redundanet ") {
-		return fmt.Errorf("unexpected output %q", strings.TrimSpace(string(out)))
+		return fmt.Errorf("%w: unexpected output %q", update.ErrCandidateExited, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -345,7 +347,8 @@ func probeAgent(ctx context.Context, exe string, args []string) error {
 		return err
 	}
 	if err := cmd.Start(); err != nil {
-		return err
+		// A binary that does not start speaks against the binary too.
+		return fmt.Errorf("%w: %v", update.ErrCandidateExited, err)
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	sc := bufio.NewScanner(out)
@@ -357,7 +360,7 @@ func probeAgent(ctx context.Context, exe string, args []string) error {
 	if ctx.Err() != nil {
 		return errors.New("the candidate did not report healthy in time")
 	}
-	return errors.New("the candidate exited before reporting healthy")
+	return update.ErrCandidateExited
 }
 
 const probationOK = "PROBATION OK"

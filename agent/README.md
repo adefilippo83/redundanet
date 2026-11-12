@@ -14,7 +14,7 @@ The binary, package by package:
 | `internal/manifest` | The v3 manifest: strict parser that sets aside the RedundaNet 2 keys of a transitional file, the validation rules of the RFC's Membership section, allocations, the operator key and `manifest.sig`, invite and confirmation signatures behind `vouched_by`, and the connection policy (`Allow`, `MayWrite`) from the manifest and the revocation list | Done, with tests |
 | `internal/membership` | The device's live view of the network: the network descriptor (the invite link's payload and the trust anchor), the fetch loop for `manifest.yaml` and `manifest.sig` from the repository, verification against the pinned operators, the last good copy on disk for offline starts, operator rotation through a manifest the current keys signed, or, for a stolen key, through a descriptor whose keys differ from both the last descriptor's and the pinned ones (`anchor.go`: the list on disk stays in force, its revision the floor, the dropped keys never return through a manifest), the list on disk kept across restarts also after its signer left, expiry (known devices stay, new ones wait for a re-sign), persisted revocations, and one `Allow` the transport keeps for good | Done, with tests |
 | `internal/release` | The signed release index: versions, channels, withdrawn flags, per-target assets with hashes, and the release key's rotation chain; download with hash and size checks and extraction of the executable from tar.gz or zip | Done, with tests |
-| `internal/update` | The two-stage self-update: fetch and verify the index, pick a release (channel, `min_version`, failed ones never retried), download, run the candidate on probation, rename it into place keeping the old binary, ask to be restarted | Done, with tests |
+| `internal/update` | The two-stage self-update: fetch and verify the index, pick a release (channel, `min_version`, failed ones retried after a backoff or not at all), download, run the candidate on probation, rename it into place keeping the old binary, ask to be restarted | Done, with tests |
 | `internal/service` | The per-user service: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task with restart on failure on Windows | Done, definitions tested; installs tried by hand |
 | `internal/api` | The local HTTP API and page on 127.0.0.1: a token in `api.token` with which the CLI checks the agent and signs its requests, never sending it, a session cookie (HttpOnly, SameSite=Strict, limited to the session's own address `/s/<key>/`) that a one-time link from `redundanet open` starts for the browser, a CSRF token on every change, Host and Origin checks on every request, no GET that changes anything, and a content policy that allows the agent's own stylesheet and script only. The page is six server-rendered views (`templates/`, view model in `view.go`) in ten languages (`locales/*.json`, English the reference; `TestDictionaries` keeps keys and format verbs in step and forbids unused keys); `static/app.js` refreshes the parts marked `data-live`. `REDUNDANET_PAGE_PREVIEW=127.0.0.1:4499 go test -v ./internal/api -run TestPreview -timeout 0` serves it with sample data | Done, with tests |
 | `internal/logbuf` | The last 500 log records in memory, for the page and `redundanet logs` | Done, with tests |
@@ -321,7 +321,15 @@ went to sleep meanwhile does not fail the update (`peersBack` in
 connected devices). Only then is the new binary renamed
 into place, the old one kept beside it as `redundanet.old`, and the agent
 exits so the service starts the new version. A candidate that fails is
-recorded and never retried; the agent restarts its endpoint and carries on.
+recorded and the agent restarts its endpoint and carries on. What happens
+next depends on how it failed: a candidate that exited by itself
+(`update.ErrCandidateExited`) waits for `update retry`; one that ran out of
+time is tried again after `RetryAfter` (agent 6 h then 24 h, hub 24 h
+twice) and waits for `update retry` after one failure more than that; a
+probation whose context was cancelled, the service stopping, is not
+recorded. The state file keeps `failed` as the map of reasons older
+binaries read, with time, attempts and the next attempt in `failed_info`
+beside it.
 The release key rotates only through records in the index signed by the
 key being retired, so a binary that embeds an old key still verifies a
 newer index; nothing in the manifest can name a release.
@@ -480,7 +488,11 @@ device": the agent applies the member's signed record, delivers it to every
 storage server over the storage protocol (`revoke`) and to every hub over
 the channel; a hub keeps it, sends it to every connected device at once and
 to each device that connects later, so a server that was offline learns it
-on its next connection. The manifest carries it for good: the operator
+on its next connection. `membership.AddRevocation` keeps one record per
+certificate (member, device, serial; the earliest date wins), only for a
+member the manifest lists as active or leaving, at most 256 per member; a
+record of a member not listed waits in memory (at most 64) for a manifest
+that lists it, and a hub passes on only a record that changed its list. The manifest carries it for good: the operator
 appends the printed record under `revocations:` (member key, device key,
 serial, revoked_at, signature), raises the revision and signs; `validate`
 checks every record's signature against the member's key and warns when

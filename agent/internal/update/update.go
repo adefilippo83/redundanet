@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/release"
+	"github.com/adefilippo83/redundanet/agent/internal/semver"
 )
 
 // Config wires an updater.
@@ -35,7 +37,14 @@ type Config struct {
 	// Exe is the running executable's path, the file that gets replaced.
 	Exe string
 	// Probation runs the candidate and returns nil when it proved healthy.
+	// ErrCandidateExited, wrapped or not, says the candidate stopped by
+	// itself; any other error says it did not prove healthy in time.
 	Probation func(ctx context.Context, exe string) error
+	// RetryAfter is how long a version that did not prove healthy in time
+	// waits before it is tried again: the first entry after the first
+	// failure, and so on. One failure more than it has entries and the
+	// version waits for `update retry`. Nil is DefaultRetryAfter.
+	RetryAfter []time.Duration
 	// Handover stops the running agent's own work before probation (true)
 	// and restarts it when probation fails (false). Optional.
 	Handover func(stop bool)
@@ -50,15 +59,45 @@ type Config struct {
 // caller exits and the service manager starts the new version.
 var ErrRestart = errors.New("update installed: restart to run it")
 
+// ErrCandidateExited is a probation's answer when the candidate stopped by
+// itself before it reported healthy. That speaks against the binary, so
+// the version is not tried again by itself; a candidate that only ran out
+// of time may have met a hub or a peer that was away, and is.
+var ErrCandidateExited = errors.New("the candidate exited before reporting healthy")
+
+// DefaultRetryAfter is an agent's backoff. A hub waits longer, since each
+// of its attempts takes the relay away from everybody for up to two minutes.
+var DefaultRetryAfter = []time.Duration{6 * time.Hour, 24 * time.Hour}
+
+// HubRetryAfter is a hub's backoff.
+var HubRetryAfter = []time.Duration{24 * time.Hour, 24 * time.Hour}
+
+// failure is what is known about a version that failed probation, beside
+// the reason in state.Failed.
+type failure struct {
+	At       time.Time `yaml:"at"`
+	Attempts int       `yaml:"attempts"`
+	// RetryAt is when the version is tried again, set when it failed, so
+	// another process (the CLI's `update status`) reads the same time
+	// whatever backoff it was started with. Zero: not without `update retry`.
+	RetryAt time.Time `yaml:"retry_at,omitempty"`
+}
+
 // state is what persists between runs.
 type state struct {
 	Channel      string            `yaml:"channel,omitempty"`        // the channel of the last check, for `update status` from another process
 	Chosen       string            `yaml:"chosen_channel,omitempty"` // a channel chosen on this device, over the service's flag
 	LastRevision uint64            `yaml:"last_index_revision"`
 	Failed       map[string]string `yaml:"failed"` // version -> why probation failed
-	Installed    map[string]string `yaml:"installed"`
-	LastCheck    time.Time         `yaml:"last_check"`
-	LastError    string            `yaml:"last_error,omitempty"`
+	// FailedInfo says when and how often, for the versions in Failed. It is
+	// a field of its own because a rollback puts an older binary back, and
+	// that one reads Failed as the map it always was. A version in Failed
+	// without an entry here was marked by such a binary and waits for
+	// `update retry`, as it did then.
+	FailedInfo map[string]failure `yaml:"failed_info,omitempty"`
+	Installed  map[string]string  `yaml:"installed"`
+	LastCheck  time.Time          `yaml:"last_check"`
+	LastError  string             `yaml:"last_error,omitempty"`
 }
 
 // Updater checks and applies releases.
@@ -74,14 +113,26 @@ type Updater struct {
 
 // Status for the local page.
 type Status struct {
-	Enabled      bool      `json:"enabled"`
-	Running      string    `json:"running"`
-	Channel      string    `json:"channel"`
-	Available    string    `json:"available,omitempty"`
-	LastCheck    time.Time `json:"last_check,omitempty"`
-	LastError    string    `json:"last_error,omitempty"`
-	Failed       []string  `json:"failed,omitempty"`
-	LastRevision uint64    `json:"last_index_revision"`
+	Enabled   bool      `json:"enabled"`
+	Running   string    `json:"running"`
+	Channel   string    `json:"channel"`
+	Available string    `json:"available,omitempty"`
+	LastCheck time.Time `json:"last_check,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
+	Failed    []string  `json:"failed,omitempty"`
+	// FailedDetail has one entry per version in Failed, in the same order.
+	FailedDetail []FailedVersion `json:"failed_detail,omitempty"`
+	LastRevision uint64          `json:"last_index_revision"`
+}
+
+// FailedVersion is a version that failed probation.
+type FailedVersion struct {
+	Version  string `json:"version"`
+	Reason   string `json:"reason"`
+	Attempts int    `json:"attempts,omitempty"`
+	// RetryAt is when the updater tries it again by itself; zero when it
+	// waits for `update retry`.
+	RetryAt time.Time `json:"retry_at,omitempty"`
 }
 
 // New loads the persisted state.
@@ -97,6 +148,9 @@ func New(cfg Config) *Updater {
 	}
 	if cfg.Fetch == nil {
 		cfg.Fetch = release.FetchBytes
+	}
+	if cfg.RetryAfter == nil {
+		cfg.RetryAfter = DefaultRetryAfter
 	}
 	u := &Updater{cfg: cfg, log: cfg.Log.With("component", "update")}
 	u.st = u.load()
@@ -135,7 +189,23 @@ func (u *Updater) load() state {
 			st.Installed = map[string]string{}
 		}
 	}
+	if st.FailedInfo == nil {
+		st.FailedInfo = map[string]failure{}
+	}
+	// An entry without its reason is one `update retry` of an older binary
+	// cleared: it knows only the map of reasons.
+	for v := range st.FailedInfo {
+		if _, ok := st.Failed[v]; !ok {
+			delete(st.FailedInfo, v)
+		}
+	}
 	return st
+}
+
+// retryAt is when a failed version is tried again; zero for never without
+// `update retry`. The caller holds u.mu.
+func (u *Updater) retryAt(version string) time.Time {
+	return u.st.FailedInfo[version].RetryAt
 }
 
 // reload takes the state on disk over the one in memory, so a change made
@@ -176,6 +246,7 @@ func (u *Updater) Retry(version string) error {
 		return fmt.Errorf("%s is not marked as failed", version)
 	}
 	delete(u.st.Failed, version)
+	delete(u.st.FailedInfo, version)
 	u.save()
 	return nil
 }
@@ -194,6 +265,10 @@ func (u *Updater) Status() Status {
 	}
 	for v := range u.st.Failed {
 		st.Failed = append(st.Failed, v)
+	}
+	sort.Slice(st.Failed, func(i, j int) bool { return semver.Less(st.Failed[i], st.Failed[j]) })
+	for _, v := range st.Failed {
+		st.FailedDetail = append(st.FailedDetail, FailedVersion{Version: v, Reason: u.st.Failed[v], Attempts: u.st.FailedInfo[v].Attempts, RetryAt: u.retryAt(v)})
 	}
 	return st
 }
@@ -244,7 +319,6 @@ func (u *Updater) check(ctx context.Context) (*release.Release, error) {
 	}
 	u.mu.Lock()
 	last := u.st.LastRevision
-	failed := u.st.Failed
 	u.mu.Unlock()
 	if idx.Revision < last {
 		return nil, fmt.Errorf("release index revision %d is older than the %d already seen", idx.Revision, last)
@@ -263,8 +337,16 @@ func (u *Updater) check(ctx context.Context) (*release.Release, error) {
 	if rel == nil {
 		return nil, nil
 	}
-	if why, ok := failed[rel.Version]; ok {
+	u.mu.Lock()
+	why, failed := u.st.Failed[rel.Version]
+	next := u.retryAt(rel.Version)
+	u.mu.Unlock()
+	switch {
+	case !failed:
+	case next.IsZero():
 		return nil, fmt.Errorf("release %s failed probation earlier (%s) and is not retried", rel.Version, why)
+	case time.Now().Before(next):
+		return nil, fmt.Errorf("release %s failed probation earlier (%s) and is tried again after %s", rel.Version, why, next.UTC().Format(time.RFC3339))
 	}
 	return rel, nil
 }
@@ -306,13 +388,28 @@ func (u *Updater) Apply(ctx context.Context, rel *release.Release) error {
 		pctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		err := u.cfg.Probation(pctx, candidate)
 		cancel()
+		if err != nil && ctx.Err() != nil {
+			// The service is stopping: that says nothing about the
+			// candidate, so nothing is held against the version.
+			if u.cfg.Handover != nil {
+				u.cfg.Handover(false)
+			}
+			return fmt.Errorf("probation of %s was interrupted: %w", rel.Version, ctx.Err())
+		}
 		if err != nil {
 			u.mu.Lock()
+			f := u.st.FailedInfo[rel.Version]
+			f.At, f.Attempts, f.RetryAt = time.Now().UTC(), f.Attempts+1, time.Time{}
+			if !errors.Is(err, ErrCandidateExited) && f.Attempts <= len(u.cfg.RetryAfter) {
+				f.RetryAt = f.At.Add(u.cfg.RetryAfter[f.Attempts-1])
+			}
+			u.st.FailedInfo[rel.Version] = f
 			u.st.Failed[rel.Version] = err.Error()
 			u.st.LastError = "probation of " + rel.Version + " failed: " + err.Error()
+			next := u.retryAt(rel.Version)
 			u.save()
 			u.mu.Unlock()
-			u.log.Error("probation failed, keeping the running version", "version", rel.Version, "err", err)
+			u.log.Error("probation failed, keeping the running version", "version", rel.Version, "attempt", f.Attempts, "retry", retryText(next), "err", err)
 			if u.cfg.Handover != nil {
 				u.cfg.Handover(false)
 			}
@@ -327,11 +424,20 @@ func (u *Updater) Apply(ctx context.Context, rel *release.Release) error {
 	}
 	u.mu.Lock()
 	u.st.Installed[rel.Version] = time.Now().UTC().Format(time.RFC3339)
+	delete(u.st.Failed, rel.Version)
+	delete(u.st.FailedInfo, rel.Version)
 	u.st.LastError = ""
 	u.save()
 	u.mu.Unlock()
 	u.log.Info("release installed", "version", rel.Version, "exe", u.cfg.Exe)
 	return ErrRestart
+}
+
+func retryText(at time.Time) string {
+	if at.IsZero() {
+		return "not by itself: redundanet update retry VERSION"
+	}
+	return at.UTC().Format(time.RFC3339)
 }
 
 // commit puts the candidate in place of the running executable. The old

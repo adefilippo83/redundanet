@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/adefilippo83/redundanet/agent/internal/release"
 )
 
@@ -153,8 +155,8 @@ func TestProbationFailureKeepsTheRunningVersion(t *testing.T) {
 	if len(handovers) != 2 || handovers[0] != true || handovers[1] != false {
 		t.Fatalf("handovers %v", handovers)
 	}
-	// The failed version is remembered and not retried.
-	if _, err := u.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "not retried") {
+	// The failed version is remembered and not offered at the next check.
+	if _, err := u.Check(context.Background()); err == nil || !strings.Contains(err.Error(), "tried again after") {
 		t.Fatalf("second check: %v", err)
 	}
 	u2, _ := newUpdater(t, r, dir, nil)
@@ -277,5 +279,164 @@ func TestChosenChannelOverridesTheFlag(t *testing.T) {
 	again := New(Config{DataDir: dir, Version: "3.0.1", Channel: "stable"})
 	if again.Status().Channel != "early" {
 		t.Fatalf("the choice did not survive a restart: %s", again.Status().Channel)
+	}
+}
+
+// due makes a failed version's next attempt due now, as if the wait were over.
+func due(t *testing.T, u *Updater, version string) {
+	t.Helper()
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	f := u.st.FailedInfo[version]
+	if f.RetryAt.IsZero() {
+		t.Fatalf("%s has no next attempt", version)
+	}
+	f.RetryAt = time.Now().Add(-time.Minute)
+	u.st.FailedInfo[version] = f
+	u.save()
+}
+
+func TestAProbationThatRanOutOfTimeIsTriedAgainLater(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	late := func(context.Context, string) error { return errors.New("the candidate did not report healthy in time") }
+	u, _ := newUpdater(t, r, dir, late)
+	fail := func() {
+		t.Helper()
+		rel, err := u.Check(context.Background())
+		if err != nil || rel == nil {
+			t.Fatalf("check: %v %v", rel, err)
+		}
+		if err := u.Apply(context.Background(), rel); err == nil {
+			t.Fatal("a failed probation must fail the apply")
+		}
+	}
+	waits := func(want time.Duration) {
+		t.Helper()
+		d := u.Status().FailedDetail
+		if len(d) != 1 || d[0].Version != "3.0.1" {
+			t.Fatalf("failed detail: %+v", d)
+		}
+		if got := time.Until(d[0].RetryAt); got < want-time.Minute || got > want+time.Minute {
+			t.Fatalf("attempt %d: the next one is in %s, want %s", d[0].Attempts, got, want)
+		}
+		if rel, err := u.Check(context.Background()); rel != nil || err == nil || !strings.Contains(err.Error(), "tried again after") {
+			t.Fatalf("a version that waits was offered: %v %v", rel, err)
+		}
+	}
+
+	fail()
+	waits(DefaultRetryAfter[0])
+	due(t, u, "3.0.1")
+	fail()
+	waits(DefaultRetryAfter[1])
+	due(t, u, "3.0.1")
+	fail()
+	d := u.Status().FailedDetail
+	if len(d) != 1 || d[0].Attempts != 3 || !d[0].RetryAt.IsZero() {
+		t.Fatalf("after the third failure: %+v", d)
+	}
+	if rel, err := u.Check(context.Background()); rel != nil || err == nil || !strings.Contains(err.Error(), "not retried") {
+		t.Fatalf("a version that failed three times was offered: %v %v", rel, err)
+	}
+	// Asking still works, and starts the count again.
+	if err := u.Retry("3.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	fail()
+	waits(DefaultRetryAfter[0])
+}
+
+func TestACandidateThatExitedIsNotTriedAgainByItself(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	u, _ := newUpdater(t, r, t.TempDir(), func(context.Context, string) error {
+		return fmt.Errorf("probe: %w", ErrCandidateExited)
+	})
+	rel, err := u.Check(context.Background())
+	if err != nil || rel == nil {
+		t.Fatalf("check: %v %v", rel, err)
+	}
+	if err := u.Apply(context.Background(), rel); err == nil {
+		t.Fatal("a failed probation must fail the apply")
+	}
+	if d := u.Status().FailedDetail; len(d) != 1 || !d[0].RetryAt.IsZero() {
+		t.Fatalf("failed detail: %+v", d)
+	}
+	if rel, err := u.Check(context.Background()); rel != nil || err == nil || !strings.Contains(err.Error(), "not retried") {
+		t.Fatalf("a candidate that exited was offered again: %v %v", rel, err)
+	}
+}
+
+func TestAProbationCutShortByAStopIsHeldAgainstNothing(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	ctx, cancel := context.WithCancel(context.Background())
+	u, _ := newUpdater(t, r, t.TempDir(), func(pctx context.Context, _ string) error {
+		cancel() // the service is told to stop while the candidate runs
+		<-pctx.Done()
+		return errors.New("the candidate did not report healthy in time")
+	})
+	rel, err := u.Check(ctx)
+	if err != nil || rel == nil {
+		t.Fatalf("check: %v %v", rel, err)
+	}
+	if err := u.Apply(ctx, rel); err == nil {
+		t.Fatal("an interrupted probation must not install")
+	}
+	if st := u.Status(); len(st.Failed) != 0 {
+		t.Fatalf("held against the version: %v", st.Failed)
+	}
+	if rel, err := u.Check(context.Background()); err != nil || rel == nil {
+		t.Fatalf("the version is no longer offered: %v %v", rel, err)
+	}
+}
+
+// A rollback puts an older binary back, which knows only the map of
+// reasons: it must read what this one writes, and what it wrote waits for
+// `update retry` as it did then.
+func TestTheFailedMapStaysWhatOlderBinariesRead(t *testing.T) {
+	r := newFakeRepo(t, 1, "3.0.1")
+	dir := t.TempDir()
+	u, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("late") })
+	rel, _ := u.Check(context.Background())
+	if rel == nil || u.Apply(context.Background(), rel) == nil {
+		t.Fatal("setup: the probation did not fail")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "updates", "state.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old struct {
+		Failed map[string]string `yaml:"failed"`
+	}
+	if err := yaml.Unmarshal(b, &old); err != nil || old.Failed["3.0.1"] == "" {
+		t.Fatalf("an older binary would not read the failure: %v %v\n%s", err, old.Failed, b)
+	}
+
+	// What an older binary wrote: a reason and nothing else.
+	if err := os.WriteFile(filepath.Join(dir, "updates", "state.yaml"), []byte("failed:\n  3.0.1: the candidate did not report healthy in time\ninstalled: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := newUpdater(t, r, dir, nil)
+	if rel, err := again.Check(context.Background()); rel != nil || err == nil || !strings.Contains(err.Error(), "not retried") {
+		t.Fatalf("a mark of an older binary was dropped: %v %v", rel, err)
+	}
+
+	// An older binary's `update retry` removes the reason only; the rest
+	// goes with it.
+	u2, _ := newUpdater(t, r, dir, func(context.Context, string) error { return errors.New("late") })
+	_ = u2.Retry("3.0.1")
+	rel, _ = u2.Check(context.Background())
+	if rel == nil || u2.Apply(context.Background(), rel) == nil {
+		t.Fatal("setup: the probation did not fail")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "updates", "state.yaml"), []byte("failed: {}\ninstalled: {}\nfailed_info:\n  3.0.1:\n    at: 2026-11-12T00:00:00Z\n    attempts: 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u3, _ := newUpdater(t, r, dir, nil)
+	if rel, err := u3.Check(context.Background()); err != nil || rel == nil {
+		t.Fatalf("a version an older binary cleared is not offered: %v %v", rel, err)
+	}
+	if d := u3.Status().FailedDetail; len(d) != 0 {
+		t.Fatalf("left over: %+v", d)
 	}
 }

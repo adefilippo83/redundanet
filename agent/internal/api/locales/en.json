@@ -69,6 +69,7 @@
   "issue.verify.button": "See the tests",
   "issue.updatefailed.title": "Version %s could not be installed",
   "issue.updatefailed.text": "The previous version came back by itself. It is not tried again until you ask.",
+  "issue.updatefailed.retrytext": "The previous version came back by itself. It is tried again by itself on %s, or now with the button.",
   "issue.updatefailed.button": "Try again",
   "issue.update.title": "Version %s is ready",
   "issue.update.text": "It installs by itself within the hour. The old version is kept and comes back if the new one fails.",

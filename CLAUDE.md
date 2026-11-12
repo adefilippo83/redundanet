@@ -120,8 +120,10 @@ commits. Never weaken that chain.
 4. Nodes and laptops update themselves within an hour: probation up to two
    minutes, `redundanet.old` kept, automatic rollback. The hub updates
    itself the same way with probation on the same ports
-   (`agent/deploy/hub/README.md`); a failed candidate is never retried
-   until `redundanet update retry VERSION`. A withdrawn release is
+   (`agent/deploy/hub/README.md`); a candidate that ran out of time is
+   tried again after a backoff (agent 6 h then 24 h, hub 24 h twice), one
+   that exited or failed three times waits for `redundanet update retry
+   VERSION`. A withdrawn release is
    `withdrawn: true` in the index, revision raised, signed again.
 5. Every user-facing change updates the docs under `docs/` in the same
    change. Docs describe what the code DOES.
