@@ -1,8 +1,7 @@
 // Package collector is the hub's status collector for phase 1. It keeps the
 // census heartbeats devices send over the hub channel, joins them with the
-// manifest and the hub's live channels, mirrors the RedundaNet 2 status
-// page so today's nodes stay visible beside the new devices until G3, and
-// serves the hub's status page and status.json.
+// manifest and the hub's live channels, and serves the hub's status page
+// and status.json.
 //
 // It publishes only the projection the RFC allows: names, roles, versions,
 // liveness, free space, relay traffic. Never an address, a path, or a key
@@ -39,9 +38,7 @@ import (
 const (
 	downAfter        = 10 * time.Minute
 	defaultDeadAfter = 72 * time.Hour
-	legacyEvery      = 2 * time.Minute
 	saveEvery        = 30 * time.Second
-	publishEvery     = time.Minute
 )
 
 // Config wires a collector.
@@ -50,22 +47,16 @@ type Config struct {
 	Manifest func() *manifest.Manifest                             // the current manifest, may return nil
 	Live     func() hub.Status                                     // the hub's channels right now; set with SetLive after the hub starts
 	Path     string                                                // the census file kept across restarts; "" keeps it in memory
-	Legacy   string                                                // the RedundaNet 2 status.json to mirror; "" for none
 	Fetch    func(ctx context.Context, url string) ([]byte, error) // defaults to an HTTP GET with a timeout
 	// Placement is the SQLite file of the placement table; "" keeps it in
 	// memory, for tests.
 	Placement string
 	// Signer is the hub's device key, which signs repair tasks; nil means
 	// this hub never schedules repair.
-	Signer *identity.DeviceKey
-	// Publish is a base URL the page and status.json are PUT under every
-	// minute, with PublishToken as the bearer token; "" publishes nothing.
-	Publish      string
-	PublishToken string
-	Put          func(ctx context.Context, url, contentType string, body []byte, token string) error // defaults to an HTTP PUT
-	Started      time.Time
-	Now          func() time.Time
-	Log          *slog.Logger
+	Signer  *identity.DeviceKey
+	Started time.Time
+	Now     func() time.Time
+	Log     *slog.Logger
 	// Pair, when set, answers /pair/ on the status page: the hub's mailbox
 	// that relays a pairing between two devices that cannot reach each other.
 	Pair http.Handler
@@ -85,15 +76,12 @@ type Collector struct {
 	log  *slog.Logger
 	tmpl *template.Template
 
-	mu          sync.Mutex
-	entries     map[identity.Key]*entry
-	pl          *placement // the placement table, from the share census
-	send        func(device identity.Key, typ byte, v any) error
-	rep         repairState
-	dirty       bool
-	legacy      *Legacy
-	publishedAt time.Time
-	publishErr  string
+	mu      sync.Mutex
+	entries map[identity.Key]*entry
+	pl      *placement // the placement table, from the share census
+	send    func(device identity.Key, typ byte, v any) error
+	rep     repairState
+	dirty   bool
 
 	pageMu   sync.Mutex // the served copy; never held with mu
 	pageAt   time.Time
@@ -121,23 +109,12 @@ func New(cfg Config) (*Collector, error) {
 	if cfg.Fetch == nil {
 		cfg.Fetch = httpFetch
 	}
-	if cfg.Put == nil {
-		cfg.Put = httpPut
-	}
-	if cfg.Publish != "" {
-		if !strings.HasSuffix(cfg.Publish, "/") {
-			cfg.Publish += "/"
-		}
-		if cfg.PublishToken == "" {
-			return nil, errors.New("collector: publishing needs a token")
-		}
-	}
 	pl, err := openPlacement(cfg.Placement)
 	if err != nil {
 		return nil, err
 	}
 	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
-	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "fnum": fnum, "pct": pct, "plural": plural}
+	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "pct": pct, "plural": plural}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
 		_ = pl.close()
@@ -253,21 +230,11 @@ func (c *Collector) aliveServers(now time.Time, m *manifest.Manifest) (map[ident
 	return alive, len(alive)
 }
 
-// Run refreshes the legacy mirror, publishes and saves the census until ctx
-// ends, then saves once more.
+// Run schedules repair and saves the census until ctx ends, then saves
+// once more.
 func (c *Collector) Run(ctx context.Context) {
-	if c.cfg.Legacy != "" {
-		c.refreshLegacy(ctx)
-	}
-	if c.cfg.Publish != "" {
-		c.publish(ctx)
-	}
-	legacy := time.NewTicker(legacyEvery)
-	publish := time.NewTicker(publishEvery)
 	save := time.NewTicker(saveEvery)
 	schedule := time.NewTicker(scheduleEvery)
-	defer legacy.Stop()
-	defer publish.Stop()
 	defer save.Stop()
 	defer schedule.Stop()
 	for {
@@ -279,14 +246,6 @@ func (c *Collector) Run(ctx context.Context) {
 			return
 		case <-schedule.C:
 			c.Schedule(ctx)
-		case <-legacy.C:
-			if c.cfg.Legacy != "" {
-				c.refreshLegacy(ctx)
-			}
-		case <-publish.C:
-			if c.cfg.Publish != "" {
-				c.publish(ctx)
-			}
 		case <-save.C:
 			if err := c.Save(); err != nil {
 				c.log.Warn("census not saved", "err", err)
@@ -297,70 +256,14 @@ func (c *Collector) Run(ctx context.Context) {
 
 // Health is the collector's own state, for the hub's status line.
 type Health struct {
-	Devices     int       `json:"devices"`
-	Legacy      string    `json:"legacy,omitempty"`
-	LegacyError string    `json:"legacy_error,omitempty"`
-	Publish     string    `json:"publish,omitempty"`
-	PublishedAt time.Time `json:"published_at,omitempty"`
-	PublishErr  string    `json:"publish_error,omitempty"`
+	Devices int `json:"devices"`
 }
 
 // Health reports the collector's own state.
 func (c *Collector) Health() Health {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	h := Health{Devices: len(c.entries), Legacy: c.cfg.Legacy, Publish: c.cfg.Publish, PublishedAt: c.publishedAt, PublishErr: c.publishErr}
-	if c.legacy != nil {
-		h.LegacyError = c.legacy.Error
-	}
-	return h
-}
-
-// publish PUTs status.json and index.html under the publish URL.
-func (c *Collector) publish(ctx context.Context) {
-	st := c.Status()
-	var err error
-	if body, e := json.Marshal(st); e != nil {
-		err = e
-	} else if e := c.cfg.Put(ctx, c.cfg.Publish+"status.json", "application/json", body, c.cfg.PublishToken); e != nil {
-		err = e
-	} else if html, e := c.render(st); e != nil {
-		err = e
-	} else if e := c.cfg.Put(ctx, c.cfg.Publish+"index.html", "text/html; charset=utf-8", html, c.cfg.PublishToken); e != nil {
-		err = e
-	}
-	c.mu.Lock()
-	first := c.publishedAt.IsZero()
-	if err != nil {
-		c.publishErr = err.Error()
-		c.log.Warn("status not published", "url", c.cfg.Publish, "err", err)
-	} else {
-		c.publishErr = ""
-		c.publishedAt = c.cfg.Now()
-		if first {
-			c.log.Info("status published", "url", c.cfg.Publish)
-		}
-	}
-	c.mu.Unlock()
-}
-
-func httpPut(ctx context.Context, url, contentType string, body []byte, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s: %s", url, resp.Status)
-	}
-	return nil
+	return Health{Devices: len(c.entries)}
 }
 
 type file struct {
@@ -427,7 +330,6 @@ type Status struct {
 	Devices          []Device  `json:"devices"`
 	Members          []Member  `json:"members"`
 	Grid             *Grid     `json:"grid,omitempty"`
-	Legacy           *Legacy   `json:"redundanet2,omitempty"`
 }
 
 // Device is one device of the network as the collector knows it.
@@ -487,7 +389,6 @@ func (c *Collector) Status() Status {
 	for k, e := range c.entries {
 		entries[k] = *e
 	}
-	legacy := c.legacy
 	enc, conv := encodingOfManifest(m)
 	var old *manifest.Encoding
 	counting := false
@@ -515,7 +416,7 @@ func (c *Collector) Status() Status {
 	}
 	c.mu.Unlock()
 
-	st := Status{Hub: c.cfg.Device.String(), HubUptime: now.Sub(c.cfg.Started).Round(time.Second).String(), GeneratedAt: now, Legacy: legacy}
+	st := Status{Hub: c.cfg.Device.String(), HubUptime: now.Sub(c.cfg.Started).Round(time.Second).String(), GeneratedAt: now}
 	deadAfter := defaultDeadAfter
 	type listed struct{ name, member string }
 	storage := map[identity.Key]listed{}
@@ -708,88 +609,6 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-// ---- the RedundaNet 2 mirror ----
-
-// Legacy is the RedundaNet 2 status page as last fetched.
-type Legacy struct {
-	Source      string         `json:"source"`
-	FetchedAt   time.Time      `json:"fetched_at"`
-	Error       string         `json:"error,omitempty"`
-	Overall     string         `json:"overall,omitempty"`
-	GeneratedAt string         `json:"generated_at,omitempty"`
-	Grid        map[string]any `json:"grid,omitempty"`
-	Nodes       []LegacyNode   `json:"nodes"`
-}
-
-// LegacyNode is one RedundaNet 2 node as its monitor reports it.
-type LegacyNode struct {
-	Name             string   `json:"name"`
-	VPNIP            string   `json:"vpn_ip,omitempty"`
-	Roles            []string `json:"roles"`
-	Reachable        bool     `json:"reachable"`
-	RTTms            *float64 `json:"rtt_ms,omitempty"`
-	Uptime24h        *float64 `json:"uptime_24h,omitempty"`
-	Uptime7d         *float64 `json:"uptime_7d,omitempty"`
-	Uptime30d        *float64 `json:"uptime_30d,omitempty"`
-	StorageListening *bool    `json:"storage_listening,omitempty"`
-}
-
-type legacyFile struct {
-	Overall     string          `json:"overall"`
-	GeneratedAt string          `json:"generated_at"`
-	Grid        map[string]any  `json:"grid"`
-	Nodes       json.RawMessage `json:"nodes"`
-}
-
-func (c *Collector) refreshLegacy(ctx context.Context) {
-	l := &Legacy{Source: c.cfg.Legacy, FetchedAt: c.cfg.Now(), Nodes: []LegacyNode{}}
-	data, err := c.cfg.Fetch(ctx, c.cfg.Legacy)
-	if err == nil {
-		err = parseLegacy(data, l)
-	}
-	c.mu.Lock()
-	if err != nil {
-		// Keep the last good nodes; say what went wrong beside them.
-		if c.legacy != nil {
-			keep := *c.legacy
-			l.Overall, l.GeneratedAt, l.Grid, l.Nodes = keep.Overall, keep.GeneratedAt, keep.Grid, keep.Nodes
-		}
-		l.Error = err.Error()
-		c.log.Warn("legacy status not refreshed", "url", c.cfg.Legacy, "err", err)
-	}
-	c.legacy = l
-	c.mu.Unlock()
-}
-
-func parseLegacy(data []byte, l *Legacy) error {
-	var f legacyFile
-	if err := json.Unmarshal(data, &f); err != nil {
-		return err
-	}
-	l.Overall, l.GeneratedAt, l.Grid = f.Overall, f.GeneratedAt, f.Grid
-	var list []LegacyNode
-	if err := json.Unmarshal(f.Nodes, &list); err != nil {
-		var byName map[string]LegacyNode
-		if err := json.Unmarshal(f.Nodes, &byName); err != nil {
-			return fmt.Errorf("nodes: %w", err)
-		}
-		for name, n := range byName {
-			if n.Name == "" {
-				n.Name = name
-			}
-			list = append(list, n)
-		}
-	}
-	for i := range list {
-		if list[i].Roles == nil {
-			list[i].Roles = []string{}
-		}
-	}
-	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-	l.Nodes = list
-	return nil
 }
 
 func httpFetch(ctx context.Context, url string) ([]byte, error) {
@@ -1033,14 +852,6 @@ func sizeOf(b uint64, v float64) string {
 		return fmt.Sprintf("%.0f kB", v/(1<<10))
 	}
 	return fmt.Sprintf("%d B", b)
-}
-
-// fnum formats an optional number, nothing when it is absent.
-func fnum(p *float64, format string) string {
-	if p == nil {
-		return ""
-	}
-	return fmt.Sprintf(format, *p)
 }
 
 func dur(secs uint64) string {

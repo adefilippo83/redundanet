@@ -32,7 +32,7 @@
 <div class="shell">
 <nav aria-label="{{.T "nav.label"}}">{{range .Nav}}<a href="{{rel .Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
 <main>
-<p id="gone" class="flash flash-bad" role="alert" hidden>{{.T "session.gone"}}</p>
+<p id="gone" class="flash flash-bad" role="alert" hidden>{{.Gone}}</p>
 {{with .Flash}}<p class="flash {{if .Bad}}flash-bad{{else}}flash-ok{{end}}" role="status">{{.Text}}</p>{{end}}
 {{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "restore"}}{{template "restore" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else}}{{template "advanced" .}}{{end}}
 </main>

@@ -890,6 +890,7 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := buildPage(s.snapshot(), v, l)
+	data.Gone = goneText(l, s.cfg.DataDir)
 	data.CSRF, data.Flash = sess.csrf, f
 	// The restore view reads the network; its own refresh, which only
 	// follows a running restore, does not.

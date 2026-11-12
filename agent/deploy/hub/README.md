@@ -88,13 +88,15 @@ The hub serves the status page on loopback (`127.0.0.1:4480`) and Caddy
 publishes it as <https://hub.redundanet.com/> with `/status.json` beside
 it. Over SSH it is `ssh -L 4480:127.0.0.1:4480 root@hub-hetzner` as well.
 
-The hub depends on nothing outside its host for the page. The unit no
-longer publishes a copy to the fly.io app of RedundaNet 2 (`--publish`,
-`--publish-token-file`) and no longer mirrors that product's status
-(`--legacy-status`). A host installed before that change still has the
-three lines: replace `/etc/systemd/system/redundanet-hub.service` with
-the file here, remove `/etc/redundanet3/publish.token`,
-`systemctl daemon-reload`, and restart the hub at a quiet moment.
+The hub depends on nothing outside its host for the page. Until 3.0.19
+it could publish a copy elsewhere (`--publish`, `--publish-token-file`)
+and mirror the RedundaNet 2 status (`--legacy-status`); those flags are
+gone from the binary. A unit that still passes one of them makes a newer
+hub refuse to start, which the self-update answers by keeping the old
+version. Such a host is brought in line before it updates: replace
+`/etc/systemd/system/redundanet-hub.service` with the file here, remove
+`/etc/redundanet3/publish.token`, `systemctl daemon-reload`, and restart
+the hub at a quiet moment.
 
 ## Check
 

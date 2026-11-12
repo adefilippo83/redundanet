@@ -331,7 +331,7 @@ func TestOneSchedulerAtATime(t *testing.T) {
 		t.Fatalf("with the first hub gone: %q, %d tasks", st.Grid.Scheduler, len(sw.tasks()))
 	}
 	// Without a signing key a hub never schedules.
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	w.c.Schedule(ctx)
 	if st := w.c.Status(); st.Grid.Scheduler != "" {
 		t.Fatalf("unsigned hub schedules: %q", st.Grid.Scheduler)

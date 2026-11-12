@@ -194,9 +194,6 @@ func runHub(args []string) error {
 	udp := fs.String("udp", ":4433", "QUIC listener")
 	tcp := fs.String("tcp", ":4443", "TLS listener for UDP-blocked devices; empty disables")
 	status := fs.String("status", "127.0.0.1:4480", "status page and status.json; empty disables")
-	legacy := fs.String("legacy-status", "", "a RedundaNet 2 status.json to show beside the mesh census, for example https://redundanet-hub.fly.dev/status.json")
-	publish := fs.String("publish", "", "publish the page and status.json under this URL every minute, for example https://redundanet-hub.fly.dev/v3/")
-	tokenFile := fs.String("publish-token-file", "", "file holding the bearer token --publish sends")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
@@ -214,19 +211,6 @@ func runHub(args []string) error {
 	}
 	if rc.current().HubByKey(rc.device) == nil {
 		return fmt.Errorf("device %s is not listed as a hub in the manifest", rc.device.Short())
-	}
-	var token string
-	if *publish != "" {
-		if *tokenFile == "" {
-			return errors.New("--publish needs --publish-token-file")
-		}
-		b, err := os.ReadFile(*tokenFile)
-		if err != nil {
-			return err
-		}
-		if token = strings.TrimSpace(string(b)); token == "" {
-			return fmt.Errorf("%s is empty", *tokenFile)
-		}
 	}
 	var wanted []identity.Key
 	for _, c := range strings.Split(*probationPeers, ",") {
@@ -262,7 +246,7 @@ func runHub(args []string) error {
 	start := func() (*bundle, error) {
 		bctx, cancel := context.WithCancel(ctx)
 		col, err := collector.New(collector.Config{Device: rc.device, Signer: hubKey, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
-			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Legacy: *legacy, Publish: *publish, PublishToken: token, Started: rc.started, Log: rc.log,
+			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Started: rc.started, Log: rc.log,
 			Pair: pairRelay})
 		if err != nil {
 			cancel()

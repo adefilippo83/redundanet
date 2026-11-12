@@ -491,7 +491,7 @@ func (u *Updater) Apply(ctx context.Context, rel *release.Release) error {
 
 func retryText(at time.Time) string {
 	if at.IsZero() {
-		return "not by itself: redundanet update retry VERSION"
+		return "not by itself: update retry VERSION"
 	}
 	return at.UTC().Format(time.RFC3339)
 }

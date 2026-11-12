@@ -1,10 +1,7 @@
 package collector
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,11 +22,6 @@ func key(b byte) identity.Key {
 	k[0], k[31] = b, b
 	return k
 }
-
-const legacyJSON = `{"network_name":"redundanet","overall":"degraded","generated_at":"2026-11-02T09:53:45+00:00",
-"grid":{"storage_connected":6,"storage_expected":8},
-"nodes":{"node-2680cd08":{"vpn_ip":"10.100.0.3","roles":["tahoe_storage"],"reachable":true,"rtt_ms":38.6,"uptime_24h":100.0,"storage_listening":true},
-"hub-fly":{"roles":["tinc_vpn"],"reachable":true,"is_self":true}}}`
 
 type world struct {
 	c    *Collector
@@ -63,15 +55,15 @@ func demoManifest() *manifest.Manifest {
 		Storage: []manifest.StorageDevice{{Member: "alice", Device: falcon, Name: "falcon"}, {Member: "alice", Device: spare, Name: "spare"}}}
 }
 
-func newWorld(t *testing.T, path, legacyURL string) *world {
+func newWorld(t *testing.T, path string) *world {
 	t.Helper()
-	return newWorldWith(t, demoManifest(), path, "", legacyURL)
+	return newWorldWith(t, demoManifest(), path, "")
 }
 
-func newWorldWith(t *testing.T, m *manifest.Manifest, path, placement, legacyURL string) *world {
+func newWorldWith(t *testing.T, m *manifest.Manifest, path, placement string) *world {
 	t.Helper()
 	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
-	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Placement: placement, Legacy: legacyURL,
+	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Path: path, Placement: placement,
 		Started: w.now.Add(-time.Hour), Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
 	if err != nil {
 		t.Fatal(err)
@@ -83,15 +75,12 @@ func newWorldWith(t *testing.T, m *manifest.Manifest, path, placement, legacyURL
 }
 
 func TestStatusPageAndJSON(t *testing.T) {
-	legacy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, legacyJSON) }))
-	defer legacy.Close()
-	w := newWorld(t, "", legacy.URL)
+	w := newWorld(t, "")
 	w.setLive(hub.Status{Clients: []hub.ClientStatus{{Device: falcon.String(), Member: alice.String(), Carrier: "udp", Observed: "203.0.113.5:4000", Since: w.now.Add(-time.Minute), BytesIn: 2048, BytesOut: 4096}}})
 	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Version: "3.0.0-alpha.1", Uptime: 50 * 3600, OS: "linux/arm64", Roles: []string{"client", "storage"}, Manifest: 7,
 		Storage: &wire.CensusStorage{FreeBytes: 40 << 30, TotalBytes: 100 << 30, State: "ok"},
 		Peers:   []wire.CensusPeer{{Device: bobPC, Direct: true, Relay: true}, {Device: spare, Relay: true}}})
 	w.c.Record(identity.Peer{Device: bobPC, Member: bob}, "tcp", wire.Census{Version: "3.0.0-alpha.1", OS: "windows/amd64", Roles: []string{"client"}, Manifest: 7})
-	w.c.refreshLegacy(context.Background())
 
 	st := w.c.Status()
 	if st.Network != "demo" || st.ManifestRevision != 7 || len(st.Devices) != 3 {
@@ -115,10 +104,6 @@ func TestStatusPageAndJSON(t *testing.T) {
 		st.Members[1].Name != "bob" || st.Members[1].Devices != 1 || st.Members[1].Online != 0 {
 		t.Fatalf("members: %+v", st.Members)
 	}
-	if st.Legacy == nil || st.Legacy.Overall != "degraded" || len(st.Legacy.Nodes) != 2 || st.Legacy.Nodes[0].Name != "hub-fly" ||
-		st.Legacy.Nodes[1].Name != "node-2680cd08" || !st.Legacy.Nodes[1].Reachable || st.Legacy.Nodes[1].RTTms == nil || *st.Legacy.Nodes[1].RTTms != 38.6 || st.Legacy.Error != "" {
-		t.Fatalf("legacy: %+v", st.Legacy)
-	}
 
 	srv := httptest.NewServer(w.c.Handler())
 	defer srv.Close()
@@ -132,17 +117,17 @@ func TestStatusPageAndJSON(t *testing.T) {
 		return resp.StatusCode, string(body)
 	}
 	code, page := get("/")
-	for _, want := range []string{"falcon", "node-2680cd08", "3.0.0-alpha.1", "40 GB of 100 GB", "6 of 8 connected", "reconnecting", "never seen", "status.json", "39 ms", "100.0%"} {
+	for _, want := range []string{"falcon", "3.0.0-alpha.1", "40 GB of 100 GB", "reconnecting", "never seen", "status.json"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
-	if code != 200 || strings.Contains(page, "203.0.113.5") || strings.Contains(page, "%!") {
+	if code != 200 || strings.Contains(page, "203.0.113.5") || strings.Contains(page, "%!") || strings.Contains(page, "RedundaNet 2") {
 		t.Fatalf("page: %d, leaks the observed address: %v, formatting error: %v", code, strings.Contains(page, "203.0.113.5"), strings.Contains(page, "%!"))
 	}
 	code, body := get("/status.json")
 	var back Status
-	if code != 200 || json.Unmarshal([]byte(body), &back) != nil || len(back.Devices) != 3 || strings.Contains(body, "203.0.113.5") || strings.Contains(body, "10.100.0.3") == false {
+	if code != 200 || json.Unmarshal([]byte(body), &back) != nil || len(back.Devices) != 3 || strings.Contains(body, "203.0.113.5") || strings.Contains(body, "redundanet2") {
 		t.Fatalf("status.json: %d %s", code, body[:120])
 	}
 	if code, _ := get("/nope"); code != 404 {
@@ -176,12 +161,12 @@ func deviceState(st Status, k identity.Key) string {
 
 func TestPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "census.json")
-	w := newWorld(t, path, "")
+	w := newWorld(t, path)
 	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Version: "3.0.0-alpha.1", Roles: []string{"storage"}})
 	if err := w.c.Save(); err != nil {
 		t.Fatal(err)
 	}
-	again := newWorld(t, path, "")
+	again := newWorld(t, path)
 	again.advance(time.Minute)
 	st := again.c.Status()
 	f := st.Devices[0]
@@ -193,89 +178,8 @@ func TestPersistence(t *testing.T) {
 	}
 }
 
-func TestPublish(t *testing.T) {
-	type put struct {
-		path, auth, ctype string
-		body              []byte
-	}
-	var mu sync.Mutex
-	var puts []put
-	var refuse bool
-	fly := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		mu.Lock()
-		puts = append(puts, put{r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("Content-Type"), body})
-		mu.Unlock()
-		if r.Method != http.MethodPut || refuse {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer fly.Close()
-	if _, err := New(Config{Device: hubKey, Manifest: demoManifest, Publish: fly.URL + "/v3"}); err == nil {
-		t.Fatal("publishing without a token was accepted")
-	}
-	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
-	m := demoManifest()
-	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m }, Publish: fly.URL + "/v3", PublishToken: "s3cret",
-		Started: w.now.Add(-time.Hour), Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Version: "3.0.0-alpha.2", Roles: []string{"storage"}})
-	c.publish(context.Background())
-	mu.Lock()
-	got := append([]put(nil), puts...)
-	mu.Unlock()
-	if len(got) != 2 || got[0].path != "/v3/status.json" || got[1].path != "/v3/index.html" {
-		t.Fatalf("puts: %+v", got)
-	}
-	for _, p := range got {
-		if p.auth != "Bearer s3cret" {
-			t.Fatalf("auth: %q", p.auth)
-		}
-	}
-	var st Status
-	if got[0].ctype != "application/json" || json.Unmarshal(got[0].body, &st) != nil || len(st.Devices) != 2 || st.Devices[0].Version != "3.0.0-alpha.2" {
-		t.Fatalf("status.json: %s", got[0].body)
-	}
-	if !strings.HasPrefix(got[1].ctype, "text/html") || !strings.Contains(string(got[1].body), `href="status.json"`) || !strings.Contains(string(got[1].body), "falcon") {
-		t.Fatalf("index.html: %.200s", got[1].body)
-	}
-	if h := c.Health(); h.PublishErr != "" || !h.PublishedAt.Equal(w.now) || h.Publish != fly.URL+"/v3/" || h.Devices != 1 {
-		t.Fatalf("health: %+v", h)
-	}
-	refuse = true
-	c.publish(context.Background())
-	if h := c.Health(); !strings.Contains(h.PublishErr, "401") || !h.PublishedAt.Equal(w.now) {
-		t.Fatalf("health after a refusal: %+v", h)
-	}
-}
-
-func TestLegacyKeepsTheLastGoodNodes(t *testing.T) {
-	var fail bool
-	w := newWorld(t, "", "http://legacy.invalid/status.json")
-	w.c.cfg.Fetch = func(ctx context.Context, url string) ([]byte, error) {
-		if fail {
-			return nil, errors.New("connection refused")
-		}
-		return []byte(legacyJSON), nil
-	}
-	w.c.refreshLegacy(context.Background())
-	fail = true
-	w.c.refreshLegacy(context.Background())
-	l := w.c.Status().Legacy
-	if l == nil || l.Error != "connection refused" || len(l.Nodes) != 2 || l.Overall != "degraded" {
-		t.Fatalf("legacy after a failed fetch: %+v", l)
-	}
-	if err := parseLegacy([]byte(`{"nodes": 5}`), &Legacy{}); err == nil {
-		t.Fatal("nodes of the wrong shape accepted")
-	}
-}
-
 func TestShareCensusMakesMemberUsage(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	entry := func(si byte, n uint8, owner identity.Key, size int64) wire.ShareEntry {
 		var e wire.ShareEntry
 		e.StorageIndex[0], e.Number, e.Owner, e.Size = si, n, owner, size
@@ -313,7 +217,7 @@ func TestShareCensusMakesMemberUsage(t *testing.T) {
 // The restore test streak travels in the heartbeat and the member row
 // shows it beside the last verified restore.
 func TestVerifyStreakOnTheMemberRow(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	when := w.now.Add(-2 * time.Hour)
 	w.c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Roles: []string{"client"},
 		Backup: &wire.CensusBackup{LastBackup: when, LastVerify: when, VerifyOK: true, VerifyStreak: 3}})
@@ -335,7 +239,7 @@ func TestVerifyStreakOnTheMemberRow(t *testing.T) {
 // The page is public: however many ask, the status is computed once in
 // pageTTL, and what changed shows after it.
 func TestTheListenerAnswersFromOneComputedStatus(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	h := w.c.Handler()
 	get := func(path string) string {
 		rec := httptest.NewRecorder()

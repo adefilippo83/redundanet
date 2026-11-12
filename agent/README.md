@@ -21,7 +21,7 @@ The binary, package by package:
 | `internal/wire` | The hub channel protocol: typed frames with CBOR control messages, relay payloads, the census heartbeat, the hub-signed repair task with the worker's report and the surplus release hint, the synthetic relay address, and the stream interface the protocols speak with its in-process loopback pair | Done, with tests |
 | `internal/transport` | The mesh endpoint: one UDP socket owned by quic-go, the hub channel (QUIC, or TLS over TCP when UDP is blocked), relayed connections over hub datagrams, hole punching through quic-go's non-QUIC packet hook, port mapping, and a session per peer with a relay and a direct connection, new streams on the best live one; no session with oneself, that path is refused | Done, with end-to-end tests |
 | `internal/hub` | Hub mode's rendezvous and relay: address reflection, sticky dialer roles, datagram relay with bounded dropping queues, a TLS carrier for UDP-blocked devices, the census hook, status | Done, tested through the transport |
-| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules, the repair scheduler (phase 2, M5: signed tasks to volunteering nodes, the one-scheduler rule between hubs, expiry and retry, blocked when the live servers lack room above their floors, surplus hints), joins them with the manifest and the live channels, mirrors the RedundaNet 2 status page so today's nodes stay visible beside the new devices, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement and repair counts; never an address, a path or a storage index | Done, with tests |
+| `internal/collector` | The hub's status collector: keeps each device's census heartbeat (version, uptime, platform, roles, manifest revision, free space, peers), the placement table in SQLite from the share census with the RFC's copies, dead-server, quiescence and surplus rules, the repair scheduler (phase 2, M5: signed tasks to volunteering nodes, the one-scheduler rule between hubs, expiry and retry, blocked when the live servers lack room above their floors, surplus hints), joins them with the manifest and the live channels, and serves the status page and `status.json`. Publishes names, roles, versions, liveness, free space, relay traffic and placement and repair counts; never an address, a path or a storage index | Done, with tests |
 | `internal/diskfree` | Free and total space of the filesystem that holds a path, for the census | Done, with tests |
 | `internal/portmap` | PCP, NAT-PMP and UPnP port mapping, from the spike | Done |
 | `internal/object` | The native engine's format (RFC 0001, phase 2, M1): segments, the convergent key and storage index, AES-256-GCM per segment, Reed-Solomon shares, BLAKE3 share roots, the signed deterministic descriptor, read and verify capabilities, the two-pass encoder, the verifying decoder and the share stream layout; pure, pinned by known-answer tests | Done, with tests |
@@ -72,8 +72,8 @@ redundanet network join [descriptor]
 
 redundanet network status [--refresh]
 
-redundanet hub   [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
-                 [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
+redundanet hub   [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480]
+                 [--channel stable|early] [--no-update]
 redundanet agent [--network NAME] [--connect DEVICEKEY,...] [--portmap] [--tcp-only] [--storage-path DIR] [--storage-floor-gb N]
     Without an identity it serves the local page alone, with the setup
     wizard, and continues as the agent once the page or the CLI made one.
@@ -265,12 +265,8 @@ placed, the hub issues a task at once. That is how repair is drilled on
 a live network, and `object check CAP` from any device of the owner
 prints the storage index and the holders to pick from.
 The collector serves the status page and `status.json` on
-`--status`, both from one status computed at most once in five seconds. With
-`--legacy-status` it mirrors a RedundaNet 2 status page beside the new
-devices, and with `--publish` it also PUTs `status.json` and `index.html`
-under that URL every minute with the bearer token from
-`--publish-token-file`. The live hub sets neither: it serves its page
-itself and takes nothing from the fly.io app of RedundaNet 2.
+`--status`, both from one status computed at most once in five seconds.
+It takes nothing from another host and sends the page nowhere.
 A hub entry in the manifest names its QUIC relay as `relay: host:port` and,
 when its TLS carrier is not on port 443 of the same host, `tcp: host:port`.
 `--manifest FILE` runs them from a signed file
