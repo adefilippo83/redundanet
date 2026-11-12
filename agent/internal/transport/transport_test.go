@@ -1,7 +1,9 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log/slog"
@@ -524,4 +526,119 @@ func TestAPeerLongOutOfReachFailsFast(t *testing.T) {
 		t.Fatal("a connected peer is still taken for unreachable")
 	}
 	roundTrip(t, a, peer, "back")
+}
+
+// A punch packet confirms an address only as the answer to a punch of this
+// device: an open confirms nothing, an ack with a number this device never
+// sent confirms nothing, and what a session remembers is bounded.
+func TestOnlyAnEchoedPunchConfirmsAnAddress(t *testing.T) {
+	n := newTestNet(t, false)
+	a, aID := n.endpoint(seed(1), true, nil)
+	absent, _ := device(t, seed(2), identity.RoleClient, identity.RoleStorage)
+	peer := absent.ID()
+	n.permit(peer)
+	s := a.Connect(peer).session
+	confirmed := func() int {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.seen)
+	}
+
+	// Somebody who knows the peer's key, on a socket of their own.
+	forger, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer forger.Close()
+	packet := func(kind byte, nonce uint64) []byte {
+		b := make([]byte, punchLen)
+		copy(b, punchMagic)
+		b[len(punchMagic)] = kind
+		copy(b[len(punchMagic)+1:], peer[:])
+		binary.BigEndian.PutUint64(b[len(punchMagic)+33:], nonce)
+		return b
+	}
+	send := func(kind byte, nonce uint64) {
+		t.Helper()
+		if _, err := forger.WriteToUDP(packet(kind, nonce), a.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An open is still answered, since that is what opens a mapping, with
+	// its own number and this device's key.
+	send(punchOpen, 7)
+	buf := make([]byte, 2048)
+	_ = forger.SetReadDeadline(time.Now().Add(5 * time.Second))
+	got, _, err := forger.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("no answer to an open: %v", err)
+	}
+	want := make([]byte, punchLen)
+	copy(want, punchMagic)
+	want[len(punchMagic)] = punchAck
+	copy(want[len(punchMagic)+1:], aID[:])
+	binary.BigEndian.PutUint64(want[len(punchMagic)+33:], 7)
+	if !bytes.Equal(buf[:got], want) {
+		t.Fatalf("the answer to an open: %x", buf[:got])
+	}
+	send(punchAck, 7)
+	send(punchAck, 0)
+	time.Sleep(300 * time.Millisecond)
+	if c := confirmed(); c != 0 {
+		t.Fatalf("%d addresses confirmed by packets that answer nothing", c)
+	}
+
+	// The answer to a punch of this session counts, for a while.
+	s.mu.Lock()
+	s.nonces[0] = punchNonce{value: 0xfeedface, at: time.Now()}
+	s.nonces[1] = punchNonce{value: 0xdecafbad, at: time.Now().Add(-2 * punchNonceLife)}
+	s.mu.Unlock()
+	send(punchAck, 0xdecafbad) // too old
+	time.Sleep(300 * time.Millisecond)
+	if c := confirmed(); c != 0 {
+		t.Fatalf("%d addresses confirmed by an answer to a punch long over", c)
+	}
+	send(punchAck, 0xfeedface)
+	eventually(t, 5*time.Second, "the echoed answer to confirm its address", func() bool { return confirmed() == 1 })
+
+	// However many addresses answer, a session keeps a bounded number.
+	for port := 20000; port < 20000+3*maxConfirmed; port++ {
+		s.confirmed(&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
+	}
+	if c := confirmed(); c != maxConfirmed {
+		t.Fatalf("%d addresses remembered, the bound is %d", c, maxConfirmed)
+	}
+}
+
+// An address whose direct dial fails is forgotten, so it does not stay the
+// one every later attempt goes to.
+func TestAFailedDirectDialForgetsTheAddress(t *testing.T) {
+	n := newTestNet(t, false)
+	a, _ := n.endpoint(seed(1), true, nil)
+	absent, _ := device(t, seed(2), identity.RoleClient, identity.RoleStorage)
+	peer := absent.ID()
+	n.permit(peer)
+	s := a.Connect(peer).session
+
+	// A socket that answers nothing, and the session not the dialer yet, so
+	// confirming it starts no dial of its own.
+	silent, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer silent.Close()
+	addr := silent.LocalAddr().(*net.UDPAddr)
+	s.mu.Lock()
+	s.dialer = false
+	s.seen[addr.String()] = true
+	s.direct = addr
+	s.mu.Unlock()
+
+	s.dialDirect(addr)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.direct != nil || s.seen[addr.String()] {
+		t.Fatalf("after a failed dial the address is still remembered: direct %v, seen %v", s.direct, s.seen)
+	}
 }

@@ -337,7 +337,14 @@ survives every later manifest.
 How a session comes up: the agent asks a hub for the peer's candidates; the
 device the hub names dials through the relay at once, both punch the
 candidates, and the dialer opens a second, direct connection on the first
-address that answers, ranked LAN, global IPv6, public IPv4. The candidates
+address that answers, ranked LAN, global IPv6, public IPv4. A punch
+carries a random number per run, an open is answered with an ack that
+echoes it, and only an ack with a number of this session's last two runs
+(30 s) confirms the address it came from; a session keeps at most 32
+confirmed addresses and drops one whose direct dial fails. The hub writes
+to a device from one goroutine per device, with a bounded control queue
+(64 frames) and a ten-second write deadline: a full queue or a late write
+closes that device's connection, and `Server.Send` never waits. The candidates
 are a peer's own claim passed on by the hub, so both the hub and the device
 keep only literal addresses with a port, no name to look up, and a bounded
 number (`wire.Addrs`, 32 announced). New streams take

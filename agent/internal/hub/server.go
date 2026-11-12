@@ -57,6 +57,19 @@ var quicConfig = &quic.Config{
 // packets instead of buffering them.
 const relayQueue = 256
 
+// controlQueue bounds the control frames that wait for one device. They
+// are few (candidates, pongs, a repair task now and then), so a full queue
+// means the device is not reading, and the hub closes its channel.
+const controlQueue = 64
+
+// writeTimeout is how long one write to a device may take. A device that
+// does not take a frame in that time loses its channel and connects again.
+// A variable so tests need not wait for it.
+var writeTimeout = 10 * time.Second
+
+// ErrNotReading is the answer for a device whose control queue is full.
+var ErrNotReading = errors.New("hub: the device is not reading its channel")
+
 // Server is a running hub.
 type Server struct {
 	cfg   Config
@@ -73,16 +86,27 @@ type Server struct {
 	dropped uint64
 }
 
+// client is one connected device. Nothing but its own goroutines ever
+// waits on its socket: every other part of the hub hands it a frame with
+// enqueue, which never blocks, so a device that stops reading costs only
+// itself.
+type controlFrame struct {
+	typ     byte
+	payload []byte
+}
+
 type client struct {
-	peer    identity.Peer
-	carrier string
-	w       *wire.Writer
-	conn    *quic.Conn // datagrams, nil over TCP
-	out     chan []byte
-	remote  func() string
-	locals  []string
-	since   time.Time
-	close   func()
+	peer     identity.Peer
+	carrier  string
+	w        *wire.Writer
+	deadline func(time.Time) error // the write deadline of what w writes to
+	conn     *quic.Conn            // datagrams, nil over TCP
+	out      chan []byte           // relayed packets
+	ctl      chan controlFrame     // control frames, written before relayed packets
+	remote   func() string
+	locals   []string
+	since    time.Time
+	close    func()
 
 	mu       sync.Mutex
 	bytesIn  uint64
@@ -184,7 +208,7 @@ func (s *Server) acceptQUIC(ctx context.Context) {
 			if conn.ConnectionState().SupportsDatagrams.Remote {
 				dg = conn
 			}
-			c := &client{peer: *peer, carrier: "udp", w: wire.NewWriter(st), conn: dg, since: time.Now(),
+			c := &client{peer: *peer, carrier: "udp", w: wire.NewWriter(st), deadline: st.SetWriteDeadline, conn: dg, since: time.Now(),
 				remote: func() string { return conn.RemoteAddr().String() },
 				close:  func() { _ = conn.CloseWithError(0, "replaced") }}
 			if dg != nil {
@@ -226,7 +250,7 @@ func (s *Server) acceptTCP(ctx context.Context) {
 				return
 			}
 			remote := tc.RemoteAddr().String()
-			c := &client{peer: *peer, carrier: "tcp", w: wire.NewWriter(tc), since: time.Now(),
+			c := &client{peer: *peer, carrier: "tcp", w: wire.NewWriter(tc), deadline: tc.SetWriteDeadline, since: time.Now(),
 				remote: func() string { return remote }, close: func() { _ = tc.Close() }}
 			s.serve(ctx, c, tc)
 			_ = tc.Close()
@@ -236,9 +260,10 @@ func (s *Server) acceptTCP(ctx context.Context) {
 
 func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	c.out = make(chan []byte, relayQueue)
+	c.ctl = make(chan controlFrame, controlQueue)
 	done := make(chan struct{})
 	defer close(done)
-	go c.writeRelay(done)
+	go c.writeLoop(done)
 
 	// Hello and Welcome come first, before the device is registered: once
 	// it is, a peer's rendezvous may write to it at any moment, and the
@@ -254,7 +279,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	c.mu.Lock()
 	c.locals = wire.Addrs(hello.Locals, wire.MaxCandidates)
 	c.mu.Unlock()
-	if err := c.w.Message(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
+	if err := c.writeMessage(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
 		return
 	}
 
@@ -267,8 +292,13 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	s.mu.Unlock()
 	s.log.Info("device up", "device", id.Short(), "carrier", c.carrier, "from", c.remote())
 	if s.cfg.Revocations != nil {
+		// Written here and not queued: the list can be longer than the
+		// queue, and this goroutine waits on no socket but its own device's.
 		for _, r := range s.cfg.Revocations() {
-			_ = c.w.Message(wire.FrameRevocation, r)
+			if err := c.writeMessage(wire.FrameRevocation, r); err != nil {
+				c.close()
+				break
+			}
 		}
 	}
 	defer func() {
@@ -343,7 +373,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 			}
 			s.mu.Unlock()
 			for _, o := range others {
-				_ = o.w.Message(wire.FrameRevocation, rv)
+				_ = o.enqueueMessage(wire.FrameRevocation, rv)
 			}
 		case wire.FrameTaskReport:
 			var r wire.TaskReport
@@ -354,7 +384,7 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 				s.cfg.OnTaskReport(c.peer, &r)
 			}
 		case wire.FramePing:
-			_ = c.w.Frame(wire.FramePong, nil)
+			_ = c.enqueue(wire.FramePong, nil)
 		case wire.FramePong:
 		}
 	}
@@ -363,8 +393,10 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 // ErrNoChannel is Send's answer for a device without a channel right now.
 var ErrNoChannel = errors.New("hub: the device has no channel")
 
-// Send writes a control frame to a device on its channel: how the
-// collector hands a repair task or a release hint to a storage node.
+// Send queues a control frame for a device on its channel: how the
+// collector hands a repair task or a release hint to a storage node. It
+// never waits for the device, so it is safe under the caller's own locks;
+// nil means queued, not received.
 func (s *Server) Send(device identity.Key, typ byte, v any) error {
 	s.mu.Lock()
 	c := s.clients[device]
@@ -372,7 +404,7 @@ func (s *Server) Send(device identity.Key, typ byte, v any) error {
 	if c == nil {
 		return ErrNoChannel
 	}
-	return c.w.Message(typ, v)
+	return c.enqueueMessage(typ, v)
 }
 
 func (c *client) candidates() []string {
@@ -385,16 +417,79 @@ func (c *client) candidates() []string {
 	return append(out, c.locals...)
 }
 
-func (c *client) writeRelay(done <-chan struct{}) {
+// write puts one frame on the device's socket within writeTimeout. Only
+// the device's own two goroutines call it: serve, before the device is
+// registered and for the revocation list, and writeLoop.
+func (c *client) write(typ byte, payload []byte) error {
+	if c.deadline != nil {
+		_ = c.deadline(time.Now().Add(writeTimeout))
+	}
+	return c.w.Frame(typ, payload)
+}
+
+func (c *client) writeMessage(typ byte, v any) error {
+	b, err := identity.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return c.write(typ, b)
+}
+
+// enqueue hands the device a control frame without waiting for it. A full
+// queue closes the device's channel: it has not read for a long while.
+func (c *client) enqueue(typ byte, payload []byte) error {
+	select {
+	case c.ctl <- controlFrame{typ, payload}:
+		return nil
+	default:
+		c.close()
+		return ErrNotReading
+	}
+}
+
+func (c *client) enqueueMessage(typ byte, v any) error {
+	b, err := identity.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return c.enqueue(typ, b)
+}
+
+// writeLoop is the one writer of a registered device: control frames
+// first, then relayed packets. A write that fails or runs out of time
+// closes the whole connection, since a frame may be half written.
+func (c *client) writeLoop(done <-chan struct{}) {
+	control := func(f controlFrame) bool {
+		if err := c.write(f.typ, f.payload); err != nil {
+			c.close()
+			return false
+		}
+		return true
+	}
 	for {
 		select {
 		case <-done:
 			return
+		case f := <-c.ctl:
+			if !control(f) {
+				return
+			}
+			continue
+		default:
+		}
+		select {
+		case <-done:
+			return
+		case f := <-c.ctl:
+			if !control(f) {
+				return
+			}
 		case b := <-c.out:
 			if c.conn != nil && c.conn.SendDatagram(b) == nil {
 				continue
 			}
-			if err := c.w.Frame(wire.FrameRelay, b); err != nil {
+			if err := c.write(wire.FrameRelay, b); err != nil {
+				c.close()
 				return
 			}
 		}
@@ -422,11 +517,11 @@ func (s *Server) rendezvous(c *client, peerID identity.Key) {
 	cDials := !ok || dialer == c.peer.Device
 	s.mu.Unlock()
 	if peer == nil {
-		_ = c.w.Message(wire.FrameCandidates, wire.Candidates{Peer: peerID, Dialer: cDials})
+		_ = c.enqueueMessage(wire.FrameCandidates, wire.Candidates{Peer: peerID, Dialer: cDials})
 		return
 	}
-	_ = c.w.Message(wire.FrameCandidates, wire.Candidates{Peer: peerID, Addrs: peer.candidates(), Dialer: cDials, Online: true})
-	_ = peer.w.Message(wire.FrameCandidates, wire.Candidates{Peer: c.peer.Device, Addrs: c.candidates(), Dialer: !cDials, Online: true})
+	_ = c.enqueueMessage(wire.FrameCandidates, wire.Candidates{Peer: peerID, Addrs: peer.candidates(), Dialer: cDials, Online: true})
+	_ = peer.enqueueMessage(wire.FrameCandidates, wire.Candidates{Peer: c.peer.Device, Addrs: c.candidates(), Dialer: !cDials, Online: true})
 }
 
 func (s *Server) relay(src *client, dst identity.Key, pkt []byte) {

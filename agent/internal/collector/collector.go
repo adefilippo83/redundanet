@@ -168,7 +168,9 @@ func (c *Collector) SetLive(live func() hub.Status) {
 }
 
 // SetSend gives the collector the hub's channel writer, for repair tasks
-// and release hints; the hub's Send fits.
+// and release hints; the hub's Send fits. The collector calls it with its
+// lock held, so send must never wait for the device: the hub's queues the
+// frame and returns.
 func (c *Collector) SetSend(send func(device identity.Key, typ byte, v any) error) {
 	c.mu.Lock()
 	c.send = send

@@ -327,7 +327,9 @@ func (e *Endpoint) acceptLoop(ctx context.Context, ln *quic.Listener, path strin
 }
 
 // punch packets: magic, kind, sender, nonce. Unauthenticated; they only
-// open NAT mappings, the QUIC handshake proves who is at an address.
+// open NAT mappings, the QUIC handshake proves who is at an address. An
+// open is answered with an ack that echoes its nonce, and only an ack that
+// echoes a nonce this device sent confirms the address it came from.
 const punchMagic = "\x00RN3PNCH"
 
 const (
@@ -364,11 +366,13 @@ func (e *Endpoint) punchLoop(ctx context.Context) {
 		var from identity.Key
 		copy(from[:], buf[len(punchMagic)+1:])
 		nonce := binary.BigEndian.Uint64(buf[len(punchMagic)+33:])
-		if kind == punchOpen {
+		switch kind {
+		case punchOpen:
 			e.sendPunch(udp, punchAck, nonce)
-		}
-		if s := e.session(from, false); s != nil {
-			s.confirmed(udp)
+		case punchAck:
+			if s := e.session(from, false); s != nil {
+				s.acked(udp, nonce)
+			}
 		}
 	}
 }

@@ -2,6 +2,8 @@ package transport
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"net/netip"
@@ -15,8 +17,12 @@ import (
 )
 
 const (
-	punchRounds     = 5
-	punchInterval   = 300 * time.Millisecond
+	punchRounds   = 5
+	punchInterval = 300 * time.Millisecond
+	// punchNonceLife is how long an answer to a punch run still counts, and
+	// maxConfirmed bounds the addresses one session remembers.
+	punchNonceLife  = 30 * time.Second
+	maxConfirmed    = 32
 	rendezvousEvery = 15 * time.Second
 	dialTimeout     = 10 * time.Second
 	idleSession     = 60 * time.Second // a session nobody here asked for is dropped after this long without a connection
@@ -75,7 +81,8 @@ type session struct {
 	hub        *hubClient
 	cands      []string
 	seen       map[string]bool
-	direct     *net.UDPAddr // best confirmed direct address
+	nonces     [2]punchNonce // the last two punch runs' nonces, newest first
+	direct     *net.UDPAddr  // best confirmed direct address
 	relayConn  *quic.Conn
 	directConn *quic.Conn
 	dialing    map[string]bool
@@ -83,6 +90,14 @@ type session struct {
 	created    time.Time
 	lastConn   time.Time
 	down       time.Time // since when no connection is up; zero while one is
+}
+
+// punchNonce is the random number one punch run puts in its packets. Only
+// an answer that echoes it confirms an address: a packet from somebody who
+// never saw a packet of ours confirms nothing.
+type punchNonce struct {
+	value uint64
+	at    time.Time
 }
 
 func newSession(e *Endpoint, peer identity.Key) *session {
@@ -297,9 +312,18 @@ func (s *session) punch(addrs []string) {
 	if len(targets) == 0 {
 		return
 	}
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return
+	}
+	nonce := binary.BigEndian.Uint64(raw[:])
+	s.mu.Lock()
+	s.nonces[1] = s.nonces[0]
+	s.nonces[0] = punchNonce{value: nonce, at: time.Now()}
+	s.mu.Unlock()
 	for i := 0; i < punchRounds; i++ {
 		for _, t := range targets {
-			s.ep.sendPunch(t, punchOpen, uint64(i))
+			s.ep.sendPunch(t, punchOpen, nonce)
 		}
 		select {
 		case <-s.ctx.Done():
@@ -312,10 +336,30 @@ func (s *session) punch(addrs []string) {
 // confirmed records a direct address a punch or its answer came from. The
 // dialer dials the best confirmed address whenever it has no direct
 // connection, so a dial that failed is retried at the next punch round.
+// acked is the peer's answer to a punch from addr. It confirms the address
+// only when it echoes the nonce of a recent punch run of this session.
+func (s *session) acked(addr *net.UDPAddr, nonce uint64) {
+	s.mu.Lock()
+	ours := false
+	for _, n := range s.nonces {
+		if !n.at.IsZero() && n.value == nonce && time.Since(n.at) < punchNonceLife {
+			ours = true
+		}
+	}
+	s.mu.Unlock()
+	if ours {
+		s.confirmed(addr)
+	}
+}
+
 func (s *session) confirmed(addr *net.UDPAddr) {
 	s.mu.Lock()
 	key := addr.String()
 	fresh := !s.seen[key]
+	if fresh && len(s.seen) >= maxConfirmed {
+		s.mu.Unlock()
+		return
+	}
 	s.seen[key] = true
 	if s.direct == nil || rank(addr) < rank(s.direct) {
 		s.direct = addr
@@ -373,6 +417,14 @@ func (s *session) dialDirect(addr *net.UDPAddr) {
 	conn, err := s.ep.tr.Dial(ctx, addr, s.ep.cfg.Identity.ClientConfig(s.peer, s.ep.cfg.Allow), peerQUICConfig)
 	if err != nil {
 		s.event("direct dial of %s failed after %s: %v", addr, time.Since(started).Round(time.Millisecond), err)
+		// Not the peer's address after all, or not now: forget it, so the
+		// next address confirmed is the one dialled.
+		s.mu.Lock()
+		if s.direct != nil && s.direct.String() == addr.String() {
+			s.direct = nil
+		}
+		delete(s.seen, addr.String())
+		s.mu.Unlock()
 		return
 	}
 	s.event("direct handshake with %s took %s", addr, time.Since(started).Round(time.Millisecond))
