@@ -1,8 +1,7 @@
 # The Python environment of the repository's own scripts: the join pipeline
-# in .github/scripts (process_join_v3.py, validate_v3_members.py) and their
-# tests. Nothing here is a product or a package; RedundaNet is the Go module
-# in agent/. poetry.lock names every package with its hash, and the
-# workflows install from it.
+# in .github/scripts (process_join_v3.py) and its tests. Nothing here is a
+# product or a package; RedundaNet is the Go module in agent/. poetry.lock
+# names every package with its hash, and the workflows install from it.
 [tool.poetry]
 name = "redundanet-repo-scripts"
 version = "0"

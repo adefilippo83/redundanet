@@ -74,8 +74,7 @@ that chain.
   for byte: nothing in it may depend on the machine, the path or the time.
 - **Agents apply only a signed manifest with a higher revision.** Every
   manifest edit raises `revision` by one; `redundanet validate --manifest
-  manifests/manifest.yaml` must pass (CI runs it, and the check of the
-  members' GPG attestations); the maintainer signs `manifest.sig` offline. Unknown
+  manifests/manifest.yaml` must pass (CI runs it); the maintainer signs `manifest.sig` offline. Unknown
   keys are errors; the v2 keys are the only ones set aside.
 - **`migrate-node` stops and starts the whole stack.** The Tahoe services
   share tinc's network namespace, so the stack is only ever taken down whole
@@ -136,19 +135,17 @@ published it are gone from the tree and live in the history at the tag
 `v2.7.40`. Do not bring any of it back. What is left, on purpose:
 
 - **The v2 half of the manifest** (`nodes`, `introducer_furl` and the v2
-  keys under `network`). The agent's parser sets exactly those keys aside,
-  and `.github/scripts/validate_v3_members.py` ties each member's
-  `legacy_pgp` attestation to the GPG key of one of that member's nodes
-  there. Removing it is a manifest revision the maintainer signs, and the
-  attestation check has to change with it.
+  keys under `network`) and the `legacy_pgp` records of two members. The
+  agent's parser sets exactly those v2 keys aside and still accepts
+  `legacy_pgp`; nothing checks the records any more. The join script reads
+  `nodes` for one rule: the name of a former member is given only to a
+  request from that GitHub account. Removing the v2 half is a manifest
+  revision the maintainer signs.
 - **`redundanet migrate-node`** (`agent/internal/migrate`), for members
   whose nodes still run the old containers: the hard rule above stays.
 - **`--legacy-status` and `--publish`** in hub mode, unused by the live hub.
 - **The name `redundanet3`** on storage nodes, because a node that ran
   RedundaNet 2 has the Python `redundanet` on PATH.
-- **GPG identities are full 40-char fingerprints, exact match, fail
-  closed**, in the attestation check and the join scripts. Short ids are
-  forgeable; never reintroduce suffix matching.
 
 The Raspberry Pi image is built by `build-rpi-image.yml` after a stable
 agent release. Images are 64-bit only.

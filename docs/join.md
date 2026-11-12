@@ -1,6 +1,6 @@
 # Joining RedundaNet
 
-This page is for a new member. A former RedundaNet 2 member whose nodes the manifest still lists follows [migration.md](migration.md) instead. Install the agent first: [install.md](install.md).
+This page is for a new member. A former RedundaNet 2 member whose nodes the manifest still lists files the same request from the GitHub account those nodes were listed under, and follows [migration.md](migration.md) for the rest. Install the agent first: [install.md](install.md).
 
 Joining takes an identity on your laptop, a form on the website, and a pull request the maintainer signs. Your member name and member key are public in the repository's history forever; see [../PRIVACY.md](../PRIVACY.md).
 
@@ -28,7 +28,6 @@ The issue title is `[Join Request] Member: <name>` and the body starts with the 
 | `Device key` | when Contribution GB is above 0 |
 | `Device name` | when Contribution GB is above 0 |
 | `UDP port` | optional: a port you forward on your router, so your node is reached directly more often |
-| `Legacy GPG fingerprint` | optional, former RedundaNet 2 members only |
 | `Notes` | optional |
 
 Leave the optional cells empty. The form also has a terms checkbox: the member name and key are public in the repository's history forever.
@@ -37,7 +36,7 @@ Nothing leaves the page until you open the issue on GitHub; the website loads no
 
 ## 4. What happens next
 
-1. A workflow validates the request and opens a pull request adding you under `members:` (name, key, contribution_gb, joined, status: active, legacy_pgp when given) and your node under `storage:` (member, device, name, udp_port when given), and raising `revision` by one.
+1. A workflow validates the request and opens a pull request adding you under `members:` (name, key, contribution_gb, joined, status: active) and your node under `storage:` (member, device, name, udp_port when given), and raising `revision` by one.
 2. The maintainer reviews, signs `manifest.sig` offline with the operator key, and merges.
 3. Every agent applies the new revision within five minutes. Your devices are admitted from then on; `redundanet network status --refresh` shows the new revision.
 

@@ -45,7 +45,7 @@ Every week the agent restores a sample and compares it to the source; `redundane
 Not in 3.0.0. The schedule and the retention policy are edited in `backup.yaml` by hand ([configuration.md](configuration.md)).
 
 **I was a RedundaNet 2 member. What must I do?**
-Create your identity on your laptop, sign the member key with one of your nodes' GPG keys, put the agent on each node, send the join request, make native backup sets for what `backup-sync` pushed to the old grid, pass a restore test, and retire the Docker stack with `migrate-node`. Step by step: [migration.md](migration.md). RedundaNet 2 ended on 13 November 2026: its hubs are shut down and the old grid can no longer be read or written.
+Create your identity on your laptop, put the agent on each node, send the join request from the GitHub account your old nodes were listed under, make native backup sets for what `backup-sync` pushed to the old grid, pass a restore test, and retire the Docker stack with `migrate-node`. Step by step: [migration.md](migration.md). RedundaNet 2 ended on 13 November 2026: its hubs are shut down and the old grid can no longer be read or written.
 
 **Why are there two programs called `redundanet`?**
 The Python package `redundanet` on PyPI is the RedundaNet 2 command line tool, which ended with that product. RedundaNet 3 is one Go binary from the GitHub releases. On a node that ran RedundaNet 2 both exist: the Python one on PATH as `redundanet`, the Go one as `redundanet3` (`/usr/local/bin/redundanet3` for you, `/var/lib/redundanet3/bin/redundanet` for the service).

@@ -37,7 +37,7 @@ jobs:
         with:
           languages: python
           # security-extended adds taint-tracking queries beyond the default set,
-          # relevant for untrusted manifest/keyserver input reaching subprocess/file ops.
+          # relevant for untrusted issue and manifest input reaching subprocess/file ops.
           queries: security-extended
 
       - name: Perform CodeQL Analysis

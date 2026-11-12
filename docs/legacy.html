@@ -212,6 +212,41 @@
             color: var(--text);
         }
 
+        .guide h3 {
+            font-size: 1.2rem;
+            margin: 28px 0 12px;
+        }
+
+        pre {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 0 0 18px;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            font-size: 0.875rem;
+            color: var(--text);
+            line-height: 1.7;
+        }
+
+        .warn {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid var(--error);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin: 0 0 18px;
+            color: var(--text-muted);
+        }
+
+        .warn strong {
+            color: var(--text);
+        }
+
         .buttons {
             display: flex;
             gap: 16px;
@@ -258,7 +293,6 @@
                 <li><a href="download.html" data-i18n="nav.download">Download</a></li>
                 <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
                 <li><a href="join.html" data-i18n="nav.join">Join</a></li>
-                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
                 <li><a href="https://hub.redundanet.com/" data-i18n="nav.status">Status</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
@@ -275,7 +309,7 @@
         </div>
 
         <div class="guide">
-            <div class="note" data-i18n="leg.notice"><strong>Ended.</strong> RedundaNet 2 stopped on 13 November 2026, when its hubs were shut down. The old grid can no longer be read or written. Nothing was deleted on members' nodes: each member retires their own stack and deletes the old shares when they choose. New members join <a href="join.html">RedundaNet 3</a>; former members follow the <a href="migration.html">migration guide</a>.</div>
+            <div class="note" data-i18n="leg.notice"><strong>Ended.</strong> RedundaNet 2 stopped on 13 November 2026, when its hubs were shut down. The old grid can no longer be read or written. Nothing was deleted on members' nodes: each member retires their own stack and deletes the old shares when they choose. New members join <a href="join.html">RedundaNet 3</a>; former members follow the <a href="#former">steps below</a>.</div>
 
             <section id="what">
                 <h2 data-i18n="leg.what.title">What it was</h2>
@@ -284,6 +318,20 @@
                 <div class="buttons">
                     <a href="https://pypi.org/project/redundanet/" class="btn btn-secondary" data-i18n="leg.what.pypiBtn">The Python package on PyPI &#8594;</a>
                 </div>
+            </section>
+
+            <section id="former">
+                <h2 data-i18n="leg.former.title">If you were a member</h2>
+                <p data-i18n="leg.former.join">Former members join RedundaNet 3 like anyone else: <a href="installation.html">install the agent</a>, then send the <a href="join.html">join request</a> from the GitHub account your old nodes were listed under.</p>
+                <h3 data-i18n="leg.retire.title">Retire the Docker stack</h3>
+                <div class="warn" data-i18n="leg.retire.warn"><strong>The old grid is off.</strong> Nothing reads your node's Tahoe shares any more. Nothing is deleted for you either: the shares stay on disk until you delete them.</div>
+                <p data-i18n="leg.retire.desc"><code>migrate-node</code> stops and removes the containers, whole, tinc first; files and shares stay on disk. It refuses while anything is missing from the native grid. Dry run first; <code>--rollback</code> brings every service back together.</p>
+                <pre><code>sudo redundanet3 migrate-node --dry-run    # the plan, and what is not yet on the native grid
+sudo redundanet3 migrate-node              # retire the stack
+sudo redundanet3 migrate-node --rollback   # every service again, tinc first
+sudo redundanet3 migrate-node --force      # past a refusal, on purpose</code></pre>
+                <p data-i18n="leg.retire.after">The agent keeps running through all of it and the node stays on the status page.</p>
+                <p><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/migration.md" data-i18n="leg.retire.doc">docs/migration.md, the long form</a></p>
             </section>
 
             <section id="docs">
@@ -303,7 +351,6 @@
             <div class="footer-links">
                 <a href="./" data-i18n="nav.home">Home</a>
                 <a href="download.html" data-i18n="footer.download">Download</a>
-                <a href="migration.html" data-i18n="footer.migrate">Migrate</a>
                 <a href="https://hub.redundanet.com/" data-i18n="footer.status">Status</a>
                 <a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="footer.privacy">Privacy</a>
                 <a href="https://github.com/adefilippo83/redundanet" data-i18n="footer.source">Source</a>

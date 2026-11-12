@@ -4,7 +4,7 @@ RedundaNet 3 has little to configure. The network's parameters are in the signed
 
 ## The manifest (schema 3)
 
-`manifests/manifest.yaml` in the repository is the source of truth for membership. The agent follows only a revision whose `manifests/manifest.sig` an operator key signed, fetches it every five minutes, and applies a newer signed revision at once. The same file still carries the RedundaNet 2 keys (`nodes`, `introducer_furl`, and `version`, `domain`, `vpn_network`, `tahoe`, `quota` under `network`); the agent sets exactly those aside and refuses any other key it does not know, so a typo is caught. Nothing reads them but the check of the members' attestations, which ties a `legacy_pgp` record to the GPG key of one of that member's old nodes.
+`manifests/manifest.yaml` in the repository is the source of truth for membership. The agent follows only a revision whose `manifests/manifest.sig` an operator key signed, fetches it every five minutes, and applies a newer signed revision at once. The same file still carries the RedundaNet 2 keys (`nodes`, `introducer_furl`, and `version`, `domain`, `vpn_network`, `tahoe`, `quota` under `network`); the agent sets exactly those aside and refuses any other key it does not know, so a typo is caught. Nothing reads them but the join workflow, which gives the name of a former member listed under `nodes` only to a request from that GitHub account.
 
 Top level:
 
@@ -44,7 +44,7 @@ A member entry:
 | `allocation_gb` | Client-only members: the allocation the community granted. A contributing member's allocation is computed, never declared. |
 | `sponsor` | Client-only members: `{member, gb}`, whose contribution pays for the allocation; `reserve` for the network's reserve. |
 | `vouched_by` | Invite and confirmation signatures, when a member was invited by another. |
-| `legacy_pgp` | Former RedundaNet 2 members: `fingerprint` (the full 40 characters) and `signature`, the PGP detached signature over the member key. |
+| `legacy_pgp` | A record from the time of RedundaNet 2: `fingerprint` (the full 40 characters) and `signature`, a PGP detached signature over the member key made with the key of one of the member's old nodes. The join form no longer asks for it and nothing checks it; the parser still accepts it. |
 | `joined` | A date, YYYY-MM-DD. |
 | `status` | `active` or `leaving`. |
 | `leaving_since` | A date, required when leaving, forbidden when active. |

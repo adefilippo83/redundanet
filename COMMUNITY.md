@@ -19,7 +19,7 @@ A second key, the release key, also held offline by the maintainer, signs the re
 
 ## Joining and leaving
 
-A new member fills the form at <https://redundanet.com/join.html>, which opens a GitHub issue; a workflow validates it and opens a pull request; the operator reviews, signs and merges ([docs/join.md](docs/join.md)). A former RedundaNet 2 member attests with the GPG key of one of their nodes ([docs/migration.md](docs/migration.md)). Who is admitted is the operator's decision, made in public on the pull request.
+A new member fills the form at <https://redundanet.com/join.html>, which opens a GitHub issue; a workflow validates it and opens a pull request; the operator reviews, signs and merges ([docs/join.md](docs/join.md)). A former RedundaNet 2 member files the same request from the GitHub account their old nodes were listed under ([docs/migration.md](docs/migration.md)). Who is admitted is the operator's decision, made in public on the pull request.
 
 A member leaves by telling the operator. They are marked `leaving` in the manifest; servers keep their shares for the grace period, 30 days today, then drop them.
 

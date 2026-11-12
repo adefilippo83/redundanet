@@ -23,7 +23,7 @@ func localClient(dir string) (*api.Client, error) {
 	}
 	// On a node set up by the node installer the agent's data lives under
 	// /var/lib/redundanet3. Root with no agent of its own talks to that
-	// one, so `sudo redundanet backup list` works without the flags the
+	// one, so `sudo redundanet3 backup list` works without the flags the
 	// service user needs.
 	if dir == "" && os.Getenv("REDUNDANET_DATA_DIR") == "" && runtime.GOOS == "linux" && os.Geteuid() == 0 {
 		if _, err := os.Stat(filepath.Join(d, "api.addr")); err != nil {

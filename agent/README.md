@@ -475,7 +475,7 @@ redundanet manifest verify --manifest ... [--sig ...] [--trust KEY,...]
     authenticity; agents pin the keys from the network descriptor they
     joined with.
 
-sudo redundanet migrate-node [--dry-run] [--force] [--rollback]
+sudo redundanet3 migrate-node [--dry-run] [--force] [--rollback]
     On a node that runs the agent beside what is left of the RedundaNet 2 stack:
     retires the stack. Refuses while the folder backup-sync pushed to the
     old grid is not held by a native set with a complete run and a passed

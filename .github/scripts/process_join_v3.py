@@ -9,11 +9,9 @@ they are unit-tested (.github/scripts/tests/test_process_join_v3.py).
 The issue body is what the join form (docs/join.html) produces. A new
 member's request: the heading `## RedundaNet 3 membership`, a Markdown table
 with the rows Member name, Member key, Contribution GB, Device key, Device
-name, UDP port, Legacy GPG fingerprint and Notes, and, for a RedundaNet 2
-member, a section `## Legacy signature` with an armored PGP detached
-signature over the member key string. The script appends a `members:` entry
-and, when the member contributes disk, a `storage:` entry, and raises
-`revision` by one.
+name, UDP port and Notes. Any other row is ignored. The script appends a
+`members:` entry and, when the member contributes disk, a `storage:` entry,
+and raises `revision` by one.
 
 A listed member's request to add a storage node: the heading
 `## RedundaNet 3 storage device`, a table with Member name, Device key,
@@ -30,14 +28,12 @@ role. The script appends the `storage:` entry, rewrites the member's
 SECURITY: the body is attacker-controlled (anyone can open an issue). Every
 value is validated against a closed charset before it is written anywhere:
 names against the agent's rule, keys as 52-character base32 that decodes to
-32 bytes, numbers as integers in range, the fingerprint as 40 hex digits, the
-signature as printable ASCII inside an armored block. The manifest is edited
-textually, never re-serialised, so the header comment and the existing
-signature blocks survive and manifest.sig stays the only thing the maintainer
-has to redo; the result must parse back to exactly the entries written. A
-legacy attestation is checked fail-closed: the fingerprint must belong to a
-RedundaNet 2 node of the same member and the signature must verify with the
-key the keyservers serve.
+32 bytes, numbers as integers in range. The manifest is edited textually,
+never re-serialised, so the header comment and the existing entries survive
+byte for byte and manifest.sig stays the only thing the maintainer has to
+redo; the result must parse back to exactly the entries written. The name
+of a former RedundaNet 2 member, one the manifest's `nodes:` still lists,
+is given only to a request filed from that GitHub account.
 """
 
 from __future__ import annotations
@@ -56,7 +52,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import validate_v3_members as legacy
 import yaml
 
 MARKER = "## RedundaNet 3 membership"
@@ -67,7 +62,6 @@ ROW_CONTRIBUTION = "contribution gb"
 ROW_DEVICE_KEY = "device key"
 ROW_DEVICE_NAME = "device name"
 ROW_UDP_PORT = "udp port"
-ROW_FINGERPRINT = "legacy gpg fingerprint"
 REQUIRED_ROWS = (ROW_KEY, ROW_CONTRIBUTION)
 # What a form writes into an optional cell it leaves out.
 EMPTY_CELLS = frozenset({"", "-", "none", "n/a"})
@@ -76,9 +70,7 @@ EMPTY_CELLS = frozenset({"", "-", "none", "n/a"})
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A key is a 32-byte Ed25519 public key: base32, no padding, lowercase.
 KEY_RE = re.compile(r"^[a-z2-7]{52}$")
-FINGERPRINT_RE = re.compile(r"^[0-9A-F]{40}$")
 PRINTABLE_RE = re.compile(r"^[\x20-\x7e]*$")
-LEGACY_HEADING_RE = re.compile(r"^#+\s*legacy signature\s*$", re.IGNORECASE)
 CERT_HEADING_RE = re.compile(r"^#+\s*device certificate\s*$", re.IGNORECASE)
 # A certificate as `identity show --certificate` prints it: base64url, one line.
 CERT_RE = re.compile(r"^[A-Za-z0-9_-]{64,4096}$")
@@ -86,9 +78,6 @@ AGENT_DIR = Path(__file__).resolve().parents[2] / "agent"
 MAX_CONTRIBUTION_GB = 1_000_000
 # The agent's rule: a forwarded port is never a privileged one.
 MIN_UDP_PORT, MAX_UDP_PORT = 1024, 65535
-MAX_SIGNATURE_LINES = 200
-SIGNATURE_BEGIN = "-----BEGIN PGP SIGNATURE-----"
-SIGNATURE_END = "-----END PGP SIGNATURE-----"
 STATUS_PAGE = "https://hub.redundanet.com/"
 
 
@@ -110,8 +99,6 @@ class JoinRequest:
     device_key: str | None = None
     device_name: str | None = None
     udp_port: int | None = None
-    legacy_fingerprint: str | None = None
-    legacy_signature: str | None = None
 
 
 @dataclass
@@ -122,7 +109,6 @@ class JoinResult:
     error: str = ""
     request: JoinRequest | None = None
     revision: int = 0
-    legacy: str = ""
 
 
 @dataclass
@@ -248,34 +234,6 @@ def parse_certificate(body: str) -> str:
     return certificate
 
 
-def parse_signature(body: str) -> str | None:
-    """The armored detached signature in the body, or None when there is none.
-
-    Lines are kept as they are (trailing whitespace removed), restricted to
-    printable ASCII so the block scalar they land in cannot be broken out of.
-    """
-    lines = _lines(body)
-    text = "\n".join(lines)
-    begin = text.find(SIGNATURE_BEGIN)
-    if begin < 0:
-        if any(LEGACY_HEADING_RE.match(line) for line in lines):
-            raise JoinError(
-                "the Legacy signature section has no armored PGP signature block "
-                f"({SIGNATURE_BEGIN} ... {SIGNATURE_END})"
-            )
-        return None
-    end = text.find(SIGNATURE_END, begin)
-    if end < 0:
-        raise JoinError(f"the PGP signature block has no {SIGNATURE_END} line")
-    block = [line.rstrip() for line in text[begin : end + len(SIGNATURE_END)].split("\n")]
-    if len(block) > MAX_SIGNATURE_LINES:
-        raise JoinError(f"the PGP signature block is longer than {MAX_SIGNATURE_LINES} lines")
-    for line in block:
-        if len(line) > 1024 or not PRINTABLE_RE.fullmatch(line):
-            raise JoinError("the PGP signature block contains characters outside printable ASCII")
-    return "\n".join(block) + "\n"
-
-
 def default_name(author: str | None) -> str | None:
     """The applicant's GitHub login lowercased, when it is a valid member name."""
     if author and NAME_RE.fullmatch(author.strip().lower()):
@@ -329,16 +287,6 @@ def parse_port(value: str) -> int:
     return int(value)
 
 
-def parse_fingerprint(value: str) -> str:
-    fingerprint = legacy.normalize(value)
-    if not FINGERPRINT_RE.fullmatch(fingerprint):
-        raise JoinError(
-            f"Legacy GPG fingerprint {shown(value)} must be the full 40-character fingerprint "
-            "(`gpg --fingerprint <key>`)"
-        )
-    return fingerprint
-
-
 def parse_request(body: str, author: str | None = None) -> JoinRequest:
     """Parse and validate a request body; raises JoinError with the reason."""
     rows = parse_table(body)
@@ -383,18 +331,6 @@ def parse_request(body: str, author: str | None = None) -> JoinRequest:
             raise JoinError("UDP port applies to a storage device: fill Device key and Device name")
         req.udp_port = parse_port(port)
 
-    fingerprint = rows.get(ROW_FINGERPRINT, "")
-    signature = parse_signature(body)
-    if fingerprint or signature:
-        if not fingerprint:
-            raise JoinError("a Legacy signature needs the Legacy GPG fingerprint row")
-        if not signature:
-            raise JoinError(
-                "a Legacy GPG fingerprint needs the `## Legacy signature` section with the "
-                "armored detached signature over the member key"
-            )
-        req.legacy_fingerprint = parse_fingerprint(fingerprint)
-        req.legacy_signature = signature
     return req
 
 
@@ -441,21 +377,17 @@ def check_manifest(req: JoinRequest, manifest: Any, author: str | None = None) -
             "pick another device name"
         )
 
-    # A RedundaNet 2 member's name is claimed by that GitHub account or by the
-    # legacy attestation, which validate_v3_members ties to the member's nodes.
+    # A former RedundaNet 2 member's name is claimed only by that GitHub
+    # account, for as long as the manifest's `nodes:` lists it.
     v2_members = {
         str(node.get("member")).lower()
         for node in _entries(manifest, "nodes")
         if node.get("member")
     }
-    if (
-        req.name in v2_members
-        and req.legacy_fingerprint is None
-        and req.name != (author or "").strip().lower()
-    ):
+    if req.name in v2_members and req.name != (author or "").strip().lower():
         raise JoinError(
             f"{req.name} is the member name of RedundaNet 2 nodes: file the request from "
-            "that GitHub account, or add the Legacy GPG fingerprint and the Legacy signature"
+            "that GitHub account"
         )
 
 
@@ -692,7 +624,7 @@ This PR adds a storage device of member `{req.member}` to the RedundaNet 3 manif
 - [ ] Review the entry{" and the contribution" if req.contribution_gb is not None else ""}
 - [ ] On the laptop with the operator key: `scripts/sign.sh manifest join-request/{issue_number}`. It checks out this branch, shows the manifest diff, checks that the revision rises and validates, signs, pushes `manifests/manifest.sig`, waits for the checks and merges; every agent applies revision {revision} within five minutes.
 
-The `validate` check on this PR runs the Python and Go validators inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
+The `validate` check on this PR runs the agent's validator inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
 
 Closes #{issue_number}
 
@@ -794,24 +726,14 @@ def bump_revision(text: str) -> tuple[str, int]:
 
 def render_member(req: JoinRequest, joined: str, indent: str) -> list[str]:
     """The `members:` entry, in the file's two-space style."""
-    i1, i2, i3 = indent + "  ", indent + "    ", indent + "      "
-    lines = [
+    i1 = indent + "  "
+    return [
         f"{indent}- name: {yaml_scalar(req.name)}",
         f"{i1}key: {yaml_scalar(req.key)}",
         f"{i1}contribution_gb: {req.contribution_gb}",
         f"{i1}joined: {joined}",
         f"{i1}status: active",
     ]
-    if req.legacy_fingerprint and req.legacy_signature:
-        lines += [
-            f"{i1}legacy_pgp:",
-            f"{i2}fingerprint: {yaml_scalar(req.legacy_fingerprint)}",
-            f"{i2}signature: |",
-        ]
-        lines += [
-            f"{i3}{line}" if line else "" for line in req.legacy_signature.rstrip("\n").split("\n")
-        ]
-    return lines
 
 
 def render_storage(req: JoinRequest, indent: str) -> list[str]:
@@ -828,19 +750,13 @@ def render_storage(req: JoinRequest, indent: str) -> list[str]:
 
 
 def expected_member(req: JoinRequest, joined: str) -> dict[str, Any]:
-    entry: dict[str, Any] = {
+    return {
         "name": req.name,
         "key": req.key,
         "contribution_gb": req.contribution_gb,
         "joined": joined,
         "status": "active",
     }
-    if req.legacy_fingerprint:
-        entry["legacy_pgp"] = {
-            "fingerprint": req.legacy_fingerprint,
-            "signature": req.legacy_signature,
-        }
-    return entry
 
 
 def expected_storage(req: JoinRequest) -> dict[str, Any]:
@@ -871,39 +787,10 @@ def verify_roundtrip(data: Any, req: JoinRequest, joined: str, revision: int) ->
             raise EditError(f"the storage entry read back as {devices[0]!r}")
 
 
-def attest(
-    req: JoinRequest,
-    data: dict[str, Any],
-    fetch: Callable[[str], list[str]],
-    verify_signature: Callable[[str, list[str], str, str], bool],
-) -> str:
-    """Check the new member's legacy attestation with the shared validator.
-
-    Returns the status line for the pull request. Fails closed: a record that
-    does not verify, or names a key of another member's nodes, rejects the
-    request.
-    """
-    member = next(m for m in _entries(data, "members") if str(m.get("name")) == req.name)
-    subset = {"schema": 3, "members": [member], "nodes": data.get("nodes") or []}
-    errors, notes = legacy.validate(subset, fetch=fetch, verify_signature=verify_signature)
-    if errors:
-        raise JoinError("the legacy attestation failed: " + "; ".join(errors))
-    if req.legacy_fingerprint:
-        return (
-            f"member key attested by GPG key {req.legacy_fingerprint} of a RedundaNet 2 node "
-            f"of {req.name} (signature verified against the keyservers)"
-        )
-    if any("still to come" in note for note in notes):
-        return f"none; {req.name} is a RedundaNet 2 member and the attestation is still to come"
-    return "none (new member)"
-
-
 def process(
     issue_body: str,
     manifest_path: Path,
     author: str | None = None,
-    fetch_key: Callable[[str], list[str]] = legacy.fetch_keys,
-    verify_signature: Callable[[str, list[str], str, str], bool] = legacy.verify,
     today: Callable[[], str] = utc_today,
 ) -> JoinResult:
     """Parse a request and add the member (and device) to the manifest on disk.
@@ -922,21 +809,18 @@ def process(
         new_text, revision = bump_revision(new_text)
         data = yaml.safe_load(new_text)
         verify_roundtrip(data, req, joined, revision)
-        status = attest(req, data, fetch_key, verify_signature)
     except JoinError as err:
         return JoinResult(success=False, error=str(err))
     except (EditError, yaml.YAMLError, OSError) as err:
         return JoinResult(success=False, error=f"could not update the manifest: {err}")
     manifest_path.write_text(new_text)
-    return JoinResult(success=True, request=req, revision=revision, legacy=status)
+    return JoinResult(success=True, request=req, revision=revision)
 
 
 # --- what the workflow posts ---------------------------------------------------
 
 
-def compose_pr(
-    req: JoinRequest, issue_number: str, revision: int, legacy_status: str
-) -> dict[str, str]:
+def compose_pr(req: JoinRequest, issue_number: str, revision: int) -> dict[str, str]:
     """Title, body and commit message of the pull request."""
     if req.device_key:
         device = f"`{req.device_name}` (`{req.device_key}`)"
@@ -962,7 +846,6 @@ This PR adds a member to the RedundaNet 3 manifest as revision {revision}: {adds
 | **Member key** | `{req.key}` |
 | **Contribution** | {req.contribution_gb} GB |
 | **Storage device** | {device} |
-| **Legacy attestation** | {legacy_status} |
 
 ### Maintainer checklist
 - [ ] {review}
@@ -970,7 +853,7 @@ This PR adds a member to the RedundaNet 3 manifest as revision {revision}: {adds
 
 By hand instead: `git fetch origin && git checkout join-request/{issue_number}`, then `cd agent && go run ./cmd/redundanet manifest sign --key operator.key --manifest ../manifests/manifest.yaml` (the operator key stays offline; writes `manifests/manifest.sig`), commit the signature, push, merge.
 
-The `validate` check on this PR runs the Python and Go validators inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
+The `validate` check on this PR runs the agent's validator inline (validate.yml does not run on bot-created PRs). The signature check is informational and fails until `manifest.sig` is signed.
 
 Closes #{issue_number}
 
@@ -1001,7 +884,7 @@ Member `{req.name}` goes into the RedundaNet 3 manifest as revision {revision}{d
 This issue is being closed. What happens next:
 
 1. The maintainer reviews, signs `manifest.sig` offline with the operator key, and merges. Every agent applies the new revision within five minutes. Your devices are admitted from then on.
-2. On your laptop, install the service: `redundanet service install --network redundanet`
+2. On your laptop, the service is installed already if you used the one-line installer; if not: `redundanet service install`
 3. Add a backup set: `redundanet backup add NAME FOLDER`
 4. `redundanet status` shows your device; the network page is {STATUS_PAGE}{storage}
 
@@ -1034,7 +917,6 @@ def main() -> int:
             device_key=dreq.device_key,
             device_name=dreq.device_name,
             udp_port=str(dreq.udp_port or ""),
-            legacy="",
             revision=str(device.revision),
             next_steps=compose_device_next_steps(dreq, device.revision),
             **compose_device_pr(dreq, issue_number, device.revision),
@@ -1054,7 +936,6 @@ def main() -> int:
     print(f"Member: {req.name} ({req.key}), {req.contribution_gb} GB")
     if req.device_key:
         print(f"Storage device: {req.device_name} ({req.device_key})")
-    print(f"Legacy attestation: {result.legacy}")
     print(f"Manifest revision: {result.revision}")
     set_output(
         success="true",
@@ -1064,10 +945,9 @@ def main() -> int:
         device_key=req.device_key or "",
         device_name=req.device_name or "",
         udp_port=str(req.udp_port or ""),
-        legacy=result.legacy,
         revision=str(result.revision),
         next_steps=compose_next_steps(req, result.revision),
-        **compose_pr(req, issue_number, result.revision, result.legacy),
+        **compose_pr(req, issue_number, result.revision),
     )
     print("Done!")
     return 0

@@ -49,7 +49,7 @@ A manifest that is broken on main does not reach an agent: it keeps its last goo
 
 ## Admitting a member
 
-The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution, and for a former RedundaNet 2 member the `legacy_pgp` signature, which the workflow verified against the fingerprint the manifest lists for their nodes. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
+The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution. The name of a former RedundaNet 2 member, one the manifest's `nodes:` still lists, is given only to a request filed from that GitHub account; the workflow refuses any other. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
 
 ## A member leaving
 
@@ -89,7 +89,7 @@ Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it and op
 
 ## The hub
 
-The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a candidate that does not report healthy in time is tried again after 24 hours, twice; after a third failure, or when the candidate exits by itself, it waits for `redundanet update retry VERSION`.
+The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a candidate that does not report healthy in time is tried again after 24 hours, twice; after a third failure, or when the candidate exits by itself, it waits for `redundanet3 update retry VERSION`, run as root on the hub.
 
 The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. It depends on nothing outside its host for that: the flags that once published a copy elsewhere and mirrored the RedundaNet 2 status page (`--publish` with `--publish-token-file`, and `--legacy-status`) are still in the binary and unused.
 

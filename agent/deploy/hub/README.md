@@ -124,7 +124,8 @@ hub exits for systemd to restart it. Devices see two reconnects of a few seconds
 candidate that fails is recorded in `/var/lib/redundanet3/updates/state.yaml`.
 One that did not report healthy in time is tried again after 24 hours, and
 once more 24 hours after that; after a third failure, or when the candidate
-exited by itself, it waits for `redundanet update retry VERSION`. Each
+exited by itself, it waits for `redundanet3 update retry VERSION`, run as
+root. Each
 attempt is two reconnects for every device again. The journal line from the
 candidate names the devices that did not come back, and the line of the
 running hub says when the next attempt is.

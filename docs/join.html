@@ -393,7 +393,6 @@
                 <li><a href="download.html" data-i18n="nav.download">Download</a></li>
                 <li><a href="installation.html" data-i18n="nav.install">Install</a></li>
                 <li><a href="join.html" data-i18n="nav.join">Join</a></li>
-                <li><a href="migration.html" data-i18n="nav.migrate" title="For RedundaNet 2 members">Migrate</a></li>
                 <li><a href="https://hub.redundanet.com/" data-i18n="nav.status">Status</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/README.md" data-i18n="nav.docs">Docs</a></li>
                 <li><a href="https://github.com/adefilippo83/redundanet/blob/main/PRIVACY.md" data-i18n="nav.privacy">Privacy</a></li>
@@ -420,7 +419,6 @@ curl -fsSL https://redundanet.com/install.sh | sh
 irm https://redundanet.com/install.ps1 | iex</code></pre></li>
                 <li data-i18n="join.before.s3">If you contribute disk, <a href="installation.html#node">prepare your storage node</a> first so you have its <strong>device key</strong>. Pick a name for it (lowercase letters, digits and hyphens).</li>
                 <li data-i18n="join.before.s4">You need a GitHub account. Your GitHub login, lowercased, is your member name unless you choose another lowercase name.</li>
-                <li data-i18n="join.before.s5">A RedundaNet 2 member also makes the legacy attestation; see the <a href="migration.html">migration guide</a>.</li>
                 <li data-i18n="join.before.s6">Already a member, adding a storage node? Pair it from your laptop, then <code>redundanet join-request</code> opens this form in that mode with the node's certificate as proof; or choose that case below and paste the certificate the node prints with <code>identity show --certificate</code>.</li>
             </ol>
         </div>
@@ -516,23 +514,6 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
                     </div>
                 </fieldset>
 
-                <fieldset id="fs-legacy">
-                    <legend data-i18n="join.form.legacy.legend">RedundaNet 2 members only</legend>
-
-                    <div class="form-group" id="g-legacyFingerprint">
-                        <label for="legacyFingerprint" data-i18n="join.form.fp.label">Legacy GPG fingerprint (optional)</label>
-                        <input type="text" id="legacyFingerprint" name="legacyFingerprint" class="mono" autocomplete="off" spellcheck="false" placeholder="40 hexadecimal characters" data-i18n-placeholder="join.form.fp.ph" pattern="[A-Fa-f0-9]{40}">
-                        <p class="hint" data-i18n="join.form.fp.hint">The full 40-character fingerprint of the GPG key of one of your RedundaNet 2 nodes, the one you signed with.</p>
-                        <p class="error-message" data-i18n="join.form.fp.err">A full fingerprint is 40 hexadecimal characters, and it needs the signature below.</p>
-                    </div>
-
-                    <div class="form-group" id="g-legacySignature">
-                        <label for="legacySignature" data-i18n="join.form.sig.label">Legacy signature (optional)</label>
-                        <textarea id="legacySignature" name="legacySignature" class="mono" rows="7" spellcheck="false" placeholder="-----BEGIN PGP SIGNATURE-----" data-i18n-placeholder="join.form.sig.ph"></textarea>
-                        <p class="hint" data-i18n="join.form.sig.hint">An armored detached signature over your member key string, made with that key: <code>printf '%s' &lt;member key&gt; | gpg --armor --detach-sign -u &lt;fingerprint&gt;</code>. Paste the whole block.</p>
-                        <p class="error-message" data-i18n="join.form.sig.err">Paste the whole armored block, from BEGIN PGP SIGNATURE to END PGP SIGNATURE, and give the fingerprint above.</p>
-                    </div>
-                </fieldset>
 
                 <div class="form-group" id="g-notes">
                     <label for="notes" data-i18n="join.form.notes.label">Notes (optional)</label>
@@ -559,7 +540,7 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
         <div class="requirements">
             <h3>&#9203; <span data-i18n="join.after.title">What happens after</span></h3>
             <ol>
-                <li data-i18n="join.after.s1">A workflow validates the request and opens a pull request adding you under <code>members:</code> (name, key, contribution, join date, status active, and the legacy PGP attestation when given) and your node under <code>storage:</code> (member, device, name, UDP port when given), raising the manifest revision by one.</li>
+                <li data-i18n="join.after.s1">A workflow validates the request and opens a pull request adding you under <code>members:</code> (name, key, contribution, join date, status active) and your node under <code>storage:</code> (member, device, name, UDP port when given), raising the manifest revision by one.</li>
                 <li data-i18n="join.after.s2">The maintainer reviews, signs <code>manifest.sig</code> offline with the operator key, and merges.</li>
                 <li data-i18n="join.after.s3">Every agent applies the new revision within five minutes. Your devices are admitted from then on.</li>
                 <li><span data-i18n="join.after.s4">Add a backup set; the service <code>setup</code> installed runs it daily:</span>
@@ -590,7 +571,6 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
         var GITHUB_REPO = "adefilippo83/redundanet";
         var NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
         var KEY_RE = /^[a-z2-7]{52}$/;
-        var FP_RE = /^[A-Fa-f0-9]{40}$/;
         var CERT_RE = /^[A-Za-z0-9_-]{64,4096}$/;
 
         var form = document.getElementById("joinForm");
@@ -598,12 +578,11 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
 
         // Two requests share the form: a new member's, and a listed member's
         // for a storage node, which carries the node's certificate instead of
-        // the member key and the legacy attestation.
+        // the member key.
         function deviceMode() { return document.getElementById("modeDevice").checked; }
         function applyMode() {
             var device = deviceMode();
             document.getElementById("g-memberKey").hidden = device;
-            document.getElementById("fs-legacy").hidden = device;
             document.getElementById("fs-cert").hidden = !device;
             document.getElementById("gbDeviceHint").hidden = !device;
             document.getElementById("gbMemberHint").hidden = device;
@@ -646,8 +625,6 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
             var deviceKey = val("deviceKey");
             var deviceName = val("deviceName");
             var udpPort = val("udpPort");
-            var fp = val("legacyFingerprint").replace(/\s/g, "").replace(/^0x/i, "").toUpperCase();
-            var sig = document.getElementById("legacySignature").value.trim();
             var notes = val("notes");
             var terms = document.getElementById("acceptTerms").checked;
 
@@ -655,8 +632,6 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
             var device = deviceMode();
             var cert = document.getElementById("certificate").value.replace(/\s+/g, "");
             var contributes = device || gb > 0;
-            var hasSig = !device && sig.length > 0;
-            var sigOk = !hasSig || (/-----BEGIN PGP SIGNATURE-----/.test(sig) && /-----END PGP SIGNATURE-----/.test(sig));
 
             var ok = true;
             ok = mark("memberName", !NAME_RE.test(memberName)) && ok;
@@ -666,8 +641,6 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
             ok = mark("deviceName", (contributes && !deviceName) || (deviceName && !NAME_RE.test(deviceName))) && ok;
             ok = mark("udpPort", udpPort && !(/^\d+$/.test(udpPort) && +udpPort >= 1024 && +udpPort <= 65535)) && ok;
             ok = mark("certificate", device && !CERT_RE.test(cert)) && ok;
-            ok = mark("legacyFingerprint", !device && ((fp && !FP_RE.test(fp)) || (fp && !hasSig))) && ok;
-            ok = mark("legacySignature", !device && (!sigOk || (hasSig && !fp))) && ok;
             ok = mark("acceptTerms", !terms) && ok;
 
             if (!ok) {
@@ -711,11 +684,7 @@ irm https://redundanet.com/install.ps1 | iex</code></pre></li>
                 "| Device key | " + cell(deviceKey) + " |\n" +
                 "| Device name | " + cell(deviceName) + " |\n" +
                 "| UDP port | " + cell(udpPort) + " |\n" +
-                "| Legacy GPG fingerprint | " + cell(fp) + " |\n" +
                 "| Notes | " + cell(notes) + " |\n";
-            if (hasSig) {
-                body += "\n## Legacy signature\n\n```\n" + sig + "\n```\n";
-            }
 
             var issueUrl = "https://github.com/" + GITHUB_REPO + "/issues/new?" + new URLSearchParams({
                 labels: "join-request",

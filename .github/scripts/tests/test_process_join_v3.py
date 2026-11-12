@@ -8,8 +8,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -19,7 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / ".github" / "scripts"))
 
 import process_join_v3 as v3  # noqa: E402
-import validate_v3_members  # noqa: E402
 
 MEMBER_KEY = "wekrreaqlio4j3m4vzxo6hn5be2sa2gxxv7gx3mq54m4xffztv2a"
 FPR = "1331C835A2B446B61A34959CD5294DA9303C084B"  # emiliano-giusti's node, below
@@ -150,9 +147,10 @@ def issue_body(
         ("Device key", f"`{device_key}`" if device_key else ""),
         ("Device name", device_name if device_key else ""),
         ("UDP port", udp_port),
-        ("Legacy GPG fingerprint", fingerprint),
         ("Notes", notes),
     ]
+    if fingerprint:  # a row of the earlier form, which the script ignores
+        rows.insert(-1, ("Legacy GPG fingerprint", fingerprint))
     lines = ["## RedundaNet 3 membership", "", "| Field | Value |", "|-------|-------|"]
     for field, value in rows:
         label = f"**{field}**" if bold else field
@@ -160,18 +158,6 @@ def issue_body(
     if signature is not None:
         lines += ["", "## Legacy signature", "", signature.rstrip("\n")]
     return newline.join(lines) + newline
-
-
-def ok_verify(_key: str, _armored: list[str], _sig: str, _fpr: str) -> bool:
-    return True
-
-
-def bad_verify(_key: str, _armored: list[str], _sig: str, _fpr: str) -> bool:
-    return False
-
-
-def one_key(_fingerprint: str) -> list[str]:
-    return ["-----BEGIN PGP PUBLIC KEY BLOCK-----\n...\n-----END PGP PUBLIC KEY BLOCK-----\n"]
 
 
 @pytest.fixture
@@ -184,8 +170,6 @@ def manifest_path(tmp_path: Path) -> Path:
 
 def run(body: str, path: Path, **kwargs: object) -> v3.JoinResult:
     kwargs.setdefault("author", "Alice")
-    kwargs.setdefault("fetch_key", one_key)
-    kwargs.setdefault("verify_signature", ok_verify)
     kwargs.setdefault("today", lambda: "2026-11-05")
     return v3.process(body, path, **kwargs)  # type: ignore[arg-type]
 
@@ -197,7 +181,6 @@ class TestParseTable:
         assert rows["member key"] == "k" * 52  # backticks removed
         assert rows["contribution gb"] == "500"
         assert rows["udp port"] == "4471"
-        assert rows["legacy gpg fingerprint"] == ""
         assert rows["notes"] == "hi there"
 
     def test_bold_names_and_crlf(self):
@@ -304,46 +287,18 @@ class TestParseRequest:
         with pytest.raises(v3.JoinError, match="UDP port applies"):
             v3.parse_request(issue_body(contribution="0", udp_port="4471"))
 
+    def test_rows_of_the_earlier_form_are_ignored(self):
+        key, device = new_key(), new_key()
+        plain = v3.parse_request(issue_body(key=key, device_key=device))
+        req = v3.parse_request(
+            issue_body(key=key, device_key=device, fingerprint=FPR, signature=FAKE_SIGNATURE)
+        )
+        assert req == plain
+
     def test_missing_required_rows(self):
         body = "## RedundaNet 3 membership\n\n| Field | Value |\n|--|--|\n| Member name | a |\n"
         with pytest.raises(v3.JoinError, match="member key, contribution gb"):
             v3.parse_request(body)
-
-    def test_legacy_fingerprint_normalised(self):
-        spaced = "0x" + " ".join(FPR.lower()[i : i + 4] for i in range(0, 40, 4))
-        req = v3.parse_request(issue_body(fingerprint=spaced, signature=FAKE_SIGNATURE))
-        assert req.legacy_fingerprint == FPR
-        assert req.legacy_signature == FAKE_SIGNATURE
-
-    def test_legacy_fingerprint_must_be_full(self):
-        with pytest.raises(v3.JoinError, match="40-character"):
-            v3.parse_request(issue_body(fingerprint=FPR[-16:], signature=FAKE_SIGNATURE))
-
-    def test_fingerprint_and_signature_go_together(self):
-        with pytest.raises(v3.JoinError, match="Legacy signature"):
-            v3.parse_request(issue_body(fingerprint=FPR))
-        with pytest.raises(v3.JoinError, match="fingerprint row"):
-            v3.parse_request(issue_body(signature=FAKE_SIGNATURE))
-
-    def test_signature_section_without_block(self):
-        with pytest.raises(v3.JoinError, match="no armored PGP signature block"):
-            v3.parse_request(issue_body(fingerprint=FPR, signature="pasted nothing"))
-
-    def test_signature_block_without_end(self):
-        with pytest.raises(v3.JoinError, match="END"):
-            v3.parse_request(
-                issue_body(fingerprint=FPR, signature="-----BEGIN PGP SIGNATURE-----\nabc\n")
-            )
-
-    def test_signature_must_be_printable_ascii(self):
-        tampered = FAKE_SIGNATURE.replace("=ai+a", "=ai\ta")
-        with pytest.raises(v3.JoinError, match="printable ASCII"):
-            v3.parse_request(issue_body(fingerprint=FPR, signature=tampered))
-
-    def test_signature_inside_a_code_fence(self):
-        fenced = "```\n" + FAKE_SIGNATURE + "```\n"
-        req = v3.parse_request(issue_body(fingerprint=FPR, signature=fenced))
-        assert req.legacy_signature == FAKE_SIGNATURE
 
 
 class TestCheckManifest:
@@ -372,16 +327,18 @@ class TestCheckManifest:
             with pytest.raises(v3.JoinError, match="already exists; pick another device name"):
                 self.check(issue_body(device_name=taken))
 
-    def test_v2_member_name_needs_the_account_or_the_attestation(self):
+    def test_v2_member_name_needs_the_account(self):
         with pytest.raises(v3.JoinError, match="member name of RedundaNet 2 nodes"):
             self.check(issue_body(name="alessiocappe"), author="mallory")
         self.check(issue_body(name="alessiocappe"), author="AlessioCappe")  # same login
         self.check(issue_body(name="emiliano-giusti"), author="emiliano-giusti")
-        # With the attestation the signature check decides, not the login.
-        self.check(
-            issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE),
-            author="mallory",
-        )
+        # A GPG fingerprint and signature, as the earlier form sent them, no
+        # longer stand in for the account.
+        with pytest.raises(v3.JoinError, match="member name of RedundaNet 2 nodes"):
+            self.check(
+                issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE),
+                author="mallory",
+            )
 
     def test_not_a_v3_manifest(self):
         with pytest.raises(v3.JoinError, match="schema: 3"):
@@ -440,7 +397,6 @@ class TestProcess:
         result = run(body, manifest_path, author="Alice")
         assert result.success, result.error
         assert result.revision == 5
-        assert result.legacy == "none (new member)"
 
         new_text = manifest_path.read_text()
         member_block = "\n".join(v3.render_member(result.request, "2026-11-05", "  ")) + "\n"
@@ -487,51 +443,8 @@ class TestProcess:
         result = run(issue_body(), tmp_path / "nope.yaml")
         assert not result.success and "could not update the manifest" in result.error
 
-    def test_legacy_attestation_written_as_block_scalar(self, manifest_path: Path):
-        """The v2 node says `member: AlessioCappe`; the v3 name is lowercase."""
-        body = issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE)
-        seen: list[tuple[str, str, str]] = []
-
-        def verify(key: str, armored: list[str], sig: str, fpr: str) -> bool:
-            seen.append((key, sig, fpr))
-            return armored == one_key(fpr)
-
-        result = run(body, manifest_path, author="mallory", verify_signature=verify)
-        assert result.success, result.error
-        assert seen == [(result.request.key, FAKE_SIGNATURE, ALESSIO_FPR)]
-        assert ALESSIO_FPR in result.legacy and "verified" in result.legacy
-        text = manifest_path.read_text()
-        assert "      signature: |\n        -----BEGIN PGP SIGNATURE-----\n\n        iQIz" in text
-        member = yaml.safe_load(text)["members"][-1]
-        assert member["legacy_pgp"] == {"fingerprint": ALESSIO_FPR, "signature": FAKE_SIGNATURE}
-
-    def test_bad_legacy_signature_fails_closed(self, manifest_path: Path):
-        body = issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE)
-        result = run(body, manifest_path, verify_signature=bad_verify)
-        assert not result.success and "does not verify" in result.error
-        assert manifest_path.read_text() == MANIFEST
-
-    def test_legacy_key_of_another_member_is_refused(self, manifest_path: Path):
-        body = issue_body(name="alice", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE)
-        result = run(body, manifest_path)
-        assert not result.success and "not a GPG key of alice" in result.error
-
-    def test_legacy_key_missing_from_keyservers(self, manifest_path: Path):
-        def nowhere(_fpr: str) -> list[str]:
-            raise LookupError("keys.openpgp.org: 404")
-
-        body = issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE)
-        result = run(body, manifest_path, fetch_key=nowhere)
-        assert not result.success and "not found on the keyservers" in result.error
-
-    def test_v2_member_without_attestation_is_noted(self, manifest_path: Path):
-        result = run(issue_body(name="emiliano-giusti"), manifest_path, author="emiliano-giusti")
-        assert result.success, result.error
-        assert "still to come" in result.legacy
-
     def test_live_manifest_shape(self, tmp_path: Path):
-        """The script against a copy of the live manifest (no network needed:
-        only the new member's attestation is checked)."""
+        """The script against a copy of the live manifest."""
         path = tmp_path / "manifest.yaml"
         shutil.copy(REPO_ROOT / "manifests" / "manifest.yaml", path)
         before = yaml.safe_load(path.read_text())
@@ -546,131 +459,11 @@ class TestProcess:
         assert path.read_text().startswith("# RedundaNet 3 (RFC 0001) keys live beside")
 
 
-class TestCaseInsensitiveLegacyMatch:
-    """validate_v3_members matches the v2 `member:` field ignoring case."""
-
-    def test_github_cased_member_matches_lowercase_name(self):
-        manifest = {
-            "schema": 3,
-            "members": [
-                {
-                    "name": "alessiocappe",
-                    "key": MEMBER_KEY,
-                    "legacy_pgp": {"fingerprint": ALESSIO_FPR, "signature": FAKE_SIGNATURE},
-                }
-            ],
-            "nodes": [{"name": "n", "member": "AlessioCappe", "gpg_key_id": ALESSIO_FPR}],
-        }
-        errors, notes = validate_v3_members.validate(
-            manifest, fetch=one_key, verify_signature=ok_verify
-        )
-        assert errors == [] and any("attested" in n for n in notes)
-        errors, notes = validate_v3_members.validate(
-            {**manifest, "members": [{"name": "alessiocappe", "key": MEMBER_KEY}]},
-            fetch=one_key,
-            verify_signature=ok_verify,
-        )
-        assert errors == [] and any("still to come" in n for n in notes)
-
-
-@pytest.fixture(scope="module")
-def gpg_key() -> Iterator[dict[str, str]]:
-    """A real GPG key and its detached signature over MEMBER_KEY's successor."""
-    gpg = shutil.which("gpg")
-    if gpg is None:
-        pytest.skip("gpg is not installed")
-    home = Path(tempfile.mkdtemp(prefix="rn3join-"))
-    home.chmod(0o700)
-    env = {**os.environ, "GNUPGHOME": str(home)}
-    base = [
-        gpg,
-        "--batch",
-        "--no-tty",
-        "--quiet",
-        "--pinentry-mode",
-        "loopback",
-        "--passphrase",
-        "",
-    ]
-    subprocess.run(
-        [*base, "--quick-gen-key", "Join Test <join@example.org>", "ed25519", "sign", "never"],
-        env=env,
-        check=True,
-    )
-    listing = subprocess.run(
-        [gpg, "--with-colons", "--list-keys"], env=env, check=True, capture_output=True, text=True
-    ).stdout
-    fingerprint = next(
-        line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:")
-    )
-    armored = subprocess.run(
-        [gpg, "--armor", "--export", fingerprint],
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    member_key = new_key()
-    signature = subprocess.run(
-        [*base, "--armor", "--detach-sign", "-u", fingerprint],
-        input=member_key,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    yield {
-        "fingerprint": fingerprint,
-        "armored": armored,
-        "member_key": member_key,
-        "signature": signature,
-    }
-    subprocess.run(
-        [shutil.which("gpgconf") or "gpgconf", "--kill", "gpg-agent"], env=env, check=False
-    )
-    shutil.rmtree(home, ignore_errors=True)
-
-
-class TestWithRealGPG:
-    def test_signature_verified_by_gpg(self, gpg_key: dict[str, str], tmp_path: Path):
-        path = tmp_path / "manifest.yaml"
-        path.write_text(MANIFEST.replace(ALESSIO_FPR, gpg_key["fingerprint"]))
-        body = issue_body(
-            name="alessiocappe",
-            key=gpg_key["member_key"],
-            fingerprint=gpg_key["fingerprint"],
-            signature=gpg_key["signature"],
-        )
-        result = v3.process(
-            body,
-            path,
-            author="mallory",  # the attestation, not the login, claims the name
-            fetch_key=lambda _f: [gpg_key["armored"]],
-            today=lambda: "2026-11-05",
-        )
-        assert result.success, result.error
-        member = yaml.safe_load(path.read_text())["members"][-1]
-        assert member["legacy_pgp"]["signature"] == gpg_key["signature"]
-
-        # The same request with the signature over a different key fails.
-        other = v3.process(
-            issue_body(
-                name="alessiocappe",
-                fingerprint=gpg_key["fingerprint"],
-                signature=gpg_key["signature"],
-            ),
-            tmp_path / "other.yaml",
-            fetch_key=lambda _f: [gpg_key["armored"]],
-            today=lambda: "2026-11-05",
-        )
-        assert not other.success
-
-
 class TestOutputs:
     req = v3.JoinRequest("alice", "k" * 52, 500, "d" * 52, "nas-1", 4471)
 
     def test_pr_text(self):
-        pr = v3.compose_pr(self.req, "123", 5, "none (new member)")
+        pr = v3.compose_pr(self.req, "123", 5)
         assert pr["pr_title"] == "Add member alice (Issue #123)"
         assert "revision 5" in pr["commit_message"]
         body = pr["pr_body"]
@@ -685,14 +478,14 @@ class TestOutputs:
         assert "allocation_gb" not in body
 
     def test_pr_text_for_a_client_only_member(self):
-        pr = v3.compose_pr(v3.JoinRequest("alice", "k" * 52, 0), "7", 5, "none (new member)")
+        pr = v3.compose_pr(v3.JoinRequest("alice", "k" * 52, 0), "7", 5)
         assert "allocation_gb" in pr["pr_body"] and "sponsor" in pr["pr_body"]
         assert "| **Storage device** | none |" in pr["pr_body"]
 
     def test_next_steps(self):
         text = v3.compose_next_steps(self.req, 5)
         assert "{PR_URL}" in text
-        assert "redundanet service install --network redundanet" in text
+        assert "`redundanet service install`" in text
         assert "redundanet backup add NAME FOLDER" in text
         assert "`nas-1`" in text
         assert "docker" not in text.lower()
@@ -704,7 +497,6 @@ class TestOutputs:
         monkeypatch.setenv("ISSUE_NUMBER", "123")
         monkeypatch.setenv("ISSUE_AUTHOR", "Alice")
         monkeypatch.setenv("ISSUE_BODY", issue_body(name=""))
-        monkeypatch.setattr(v3.legacy, "fetch_keys", one_key)
         assert v3.main() == 0
         text = outputs.read_text()
         assert "success<<" in text and "\ntrue\n" in text

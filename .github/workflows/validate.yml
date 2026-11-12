@@ -1,9 +1,8 @@
 name: Validate
 
 # Produces the "validate" status check required by the repo ruleset
-# ("Main protection"): the manifest must pass the agent's strict parser and
-# the members' attestations must verify, so a malformed manifest cannot be
-# merged.
+# ("Main protection"): the manifest must pass the agent's strict parser, so
+# a malformed manifest cannot be merged.
 
 on:
   push:
@@ -21,34 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.11"
-
-      - name: Install Poetry
-        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
-        with:
-          version: 2.2.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      # The locked environment of the repository's scripts: poetry.lock
-      # names every package with its hash.
-      - name: Install the locked packages
-        run: poetry install --no-interaction
-
-      # The GPG attestations of the members who came from RedundaNet 2.
-      - name: Check the members' attestations
-        run: |
-          for m in manifests/*.yaml; do
-            echo "== Attestations in $m =="
-            poetry run python .github/scripts/validate_v3_members.py "$m"
-          done
-
-      # The agent's strict parser and the RFC's rules, then manifest.sig against the operator key. REDUNDANET_OPERATOR_KEY
-      # pins that key; without the variable the check only proves the file
-      # is signed by a key it lists itself.
+      # The agent's strict parser and the RFC's rules, then manifest.sig
+      # against the operator key. REDUNDANET_OPERATOR_KEY pins that key;
+      # without the variable the check only proves the file is signed by a
+      # key it lists itself.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

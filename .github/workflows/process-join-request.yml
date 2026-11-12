@@ -108,7 +108,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      # The locked environment, as validate.yml installs it: poetry.lock
+      # The locked environment of the script: poetry.lock
       # names every package with its hash.
       - name: Install Poetry
         uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
@@ -270,21 +270,6 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.11'
-
-      - name: Install Poetry
-        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
-        with:
-          version: 2.2.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Install the locked packages
-        run: poetry install --no-interaction
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -305,9 +290,6 @@ jobs:
               failed="$failed, $name"
             fi
           }
-          for m in manifests/*.yaml; do
-            check "validate_v3_members.py $m" poetry run python .github/scripts/validate_v3_members.py "$m"
-          done
           cd agent
           for m in ../manifests/*.yaml; do
             grep -q '^schema: 3' "$m" || continue
@@ -364,7 +346,7 @@ jobs:
             const signature = signed
               ? 'manifest.sig verifies against this manifest.'
               : 'manifest.sig does not match this manifest yet; expected until the maintainer signs the revision on this branch.';
-            const checks = 'validate_v3_members.py and the agent\'s `validate`';
+            const checks = 'the agent\'s `validate`';
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,

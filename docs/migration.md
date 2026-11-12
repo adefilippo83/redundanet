@@ -12,34 +12,21 @@ Install the agent on your laptop ([install.md](install.md), one line):
 curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
-In the page it opens (or in `redundanet setup` in the terminal), choose the first case, a new identity. It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key, installs the service and opens the join form of step 4 with the key filled in; close it for now, the attestation of step 2 goes in too. The network is built into the binary; there is nothing to join by hand.
+In the page it opens (or in `redundanet setup` in the terminal), choose the first case, a new identity. It shows a twelve-word phrase once. Write it down and keep it like a passport: it is your member key, and every device you ever certify comes from it. It prints your member key (52 characters) and this laptop's device key, installs the service and opens the join form of step 3 with the key filled in; close it for now, the nodes of step 2 go in too. The network is built into the binary; there is nothing to join by hand.
 
-## 2. The attestation that you are you
-
-Your RedundaNet 2 nodes are listed in the manifest with GPG keys. Sign your new member key with one of them; that ties the new identity to the person the network already trusts:
-
-```bash
-printf '%s' <your member key> | gpg --armor --detach-sign -u <fingerprint of one of your nodes' keys>
-```
-
-If the key lives on the node, run the command there over SSH. The workflow verifies the signature against the fingerprint the manifest lists for your nodes, so it has to be one of those keys, published on a keyserver with its user IDs (keyserver.ubuntu.com keeps them; keys.openpgp.org strips them unless the e-mail is verified, and a key without them cannot be imported). Fingerprints are the full 40 characters; short ids are rejected everywhere.
-
-## 3. The agent on each node
+## 2. The agent on each node
 
 Follow [install.md](install.md), "Linux storage node": one line as root on the node lays the agent out and shows a pairing code, and `redundanet device pair --storage` on your laptop, on the node's network or anywhere (the hub relays the exchange), asks for that code and certifies it; the node joins and starts `redundanet-agent.service` by itself. For a node your laptop cannot reach, the runbook's certificate file over SSH does the same ([../agent/deploy/node/README.md](../agent/deploy/node/README.md)). The agent runs on the host beside the Docker stack, on the host's network, with no access to the containers. From then on it updates itself from the signed release index with probation and rollback, and the node appears on the RedundaNet 3 status page under your name once the manifest lists it.
 
 Do this on every node before the join request, so each node's device key and name can go in it.
 
-## 4. The join request
+## 3. The join request
 
-Fill the form at <https://redundanet.com/join.html> as a new member would ([join.md](join.md), step 4), with two additions:
+Fill the form at <https://redundanet.com/join.html> as a new member does ([join.md](join.md), step 4), from the GitHub account your old nodes were listed under: the workflow gives the name of a former RedundaNet 2 member only to a request filed from that account. Nothing else tells you apart from a new member; the GPG signature the earlier form asked for is no longer used.
 
-- the `Legacy GPG fingerprint` row carries the 40-character fingerprint you signed with;
-- after the table, a section `## Legacy signature` carries the armored PGP detached signature from step 2.
+Your contribution in GB is what your nodes contribute. The workflow opens the pull request adding you under `members:` and your nodes under `storage:`, the maintainer signs and merges, and every agent applies the new revision within five minutes.
 
-Your contribution in GB is what your nodes contribute. The workflow verifies the signature, opens the pull request adding you under `members:` with `legacy_pgp` and your nodes under `storage:`, the maintainer signs and merges, and every agent applies the new revision within five minutes. Your RedundaNet 2 node entries stay in the manifest as they are: the attestation is checked against them.
-
-## 5. Native backup sets
+## 4. Native backup sets
 
 The old grid received what `backup-sync` pushed from your node, and receives nothing any more. Make a native backup set for each of those folders, on the device that holds them. On a node:
 
@@ -49,9 +36,9 @@ sudo redundanet3 backup run NAME
 sudo redundanet3 backup list
 ```
 
-Runs are daily from then on. Your native allocation starts empty. The old Tahoe shares still take room on the node's disk until you delete them (step 7): the native store refuses writes below its floor, and the status page shows free space per server.
+Runs are daily from then on. Your native allocation starts empty. The old Tahoe shares still take room on the node's disk until you delete them (step 6): the native store refuses writes below its floor, and the status page shows free space per server.
 
-## 6. The restore test
+## 5. The restore test
 
 A restore test reads a sample of a snapshot back and compares it to the source. The agent runs one weekly; ask for one now and read the result:
 
@@ -62,7 +49,7 @@ sudo redundanet3 backup list
 
 `migrate-node` refuses to retire the stack until the folder `backup-sync` pushed is held by a native set with a complete run and a passed restore test on that device. Doing a real restore of something you care about is a good habit too: [backups.md](backups.md).
 
-## 7. Retire the Docker stack
+## 6. Retire the Docker stack
 
 The old grid is off, so nothing reads your node's Tahoe shares any more and the containers only take memory. Retire them:
 

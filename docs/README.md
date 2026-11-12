@@ -4,7 +4,7 @@ RedundaNet 3 is the current product. One page per topic; every page stands on it
 
 - [install.md](install.md): download, verify and install the agent on macOS, Linux, a Linux storage node, a Raspberry Pi 5 and Windows.
 - [join.md](join.md): become a member: identity, the join form, what happens next, more devices.
-- [migration.md](migration.md): for former RedundaNet 2 members: attestation, the agent on each node, native backup sets, the restore test, `migrate-node`, what the end of RedundaNet 2 means.
+- [migration.md](migration.md): for former RedundaNet 2 members: the agent on each node, the join request, native backup sets, the restore test, `migrate-node`, what the end of RedundaNet 2 means.
 - [backups.md](backups.md): backup sets, schedule, excludes, skipped files, restores, restore tests, cleanup and the 30-day window.
 - [configuration.md](configuration.md): the v3 manifest keys, `agent.env`, `backup.yaml`, data directories, channels, the local API.
 - [operators.md](operators.md): editing and signing the manifest, revocations, encoding transitions, grace and minimum version, the hub runbooks.
