@@ -84,8 +84,7 @@ stored, how many peers it reaches directly or through a relay, and relayed
 byte counts. Per member: name, status, contribution and allocation, devices
 and how many are online, bytes stored, object counts, the day of the last
 backup and the restore-test streak. Plus grid totals and repair counters.
-IP addresses are not published. The page also mirrors the RedundaNet 2
-status described below.
+IP addresses are not published.
 
 The status page is served by the hub itself at hub.redundanet.com, a
 server rented from Hetzner in Germany. Its web server sees the IP address

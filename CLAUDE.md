@@ -132,7 +132,7 @@ commits. Never weaken that chain.
 
 The Python CLI (`src/redundanet`, package `redundanet` on PyPI), Docker
 Compose, Tinc mesh VPN, GPG keys as node identities, Tahoe-LAFS 2-of-4, and
-the fly.io hub that also serves the RedundaNet 3 status page under `/v3/`.
+the fly.io hub.
 Its docs are under `docs/legacy/`. Its hard rules, learned in production,
 stay in force on the old grid:
 

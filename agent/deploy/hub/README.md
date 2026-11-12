@@ -27,11 +27,9 @@ What it needs before the first start, in this order:
 As root on the host:
 
 ```bash
-# user, directories, token
+# user and directories
 useradd --system --home /var/lib/redundanet3 --shell /usr/sbin/nologin redundanet3
 install -d -o redundanet3 -g redundanet3 -m 0750 /var/lib/redundanet3
-install -d -m 0750 -g redundanet3 /etc/redundanet3
-install -m 0640 -g redundanet3 /dev/stdin /etc/redundanet3/publish.token <<< "$TOKEN"   # the fly secret's value
 
 # binary: the asset named in releases/index.yaml, hash checked against it
 version=3.0.0
@@ -91,16 +89,17 @@ The hub serves the status page on loopback (`127.0.0.1:4480`) and Caddy
 publishes it as <https://hub.redundanet.com/> with `/status.json` beside
 it. Over SSH it is `ssh -L 4480:127.0.0.1:4480 root@hub-hetzner` as well.
 
-The fly.io publish (`--publish` and `--publish-token-file` in the unit)
-is the handover from the old address: keep it a week after the manifest
-names the new page, so the old link keeps working, then remove the two
-lines and `/etc/redundanet3/publish.token`, `systemctl daemon-reload`,
-and restart the hub at a quiet moment.
+The hub depends on nothing outside its host for the page. The unit no
+longer publishes a copy to the fly.io app of RedundaNet 2 (`--publish`,
+`--publish-token-file`) and no longer mirrors that product's status
+(`--legacy-status`). A host installed before that change still has the
+three lines: replace `/etc/systemd/system/redundanet-hub.service` with
+the file here, remove `/etc/redundanet3/publish.token`,
+`systemctl daemon-reload`, and restart the hub at a quiet moment.
 
 ## Check
 
-- `journalctl -u redundanet-hub` shows `hub up`, `status page up`,
-  `status published`, and a `device up` line per device that connects.
+- `journalctl -u redundanet-hub` shows `hub up`, `status page up`, and a `device up` line per device that connects.
 - `curl -s https://hub.redundanet.com/status.json | head -c 300` names the
   network and the hub, with `generated_at` within the last minute, and
   `curl -sI https://hub.redundanet.com/ | head -1` answers 200 over TLS.

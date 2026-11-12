@@ -265,11 +265,12 @@ placed, the hub issues a task at once. That is how repair is drilled on
 a live network, and `object check CAP` from any device of the owner
 prints the storage index and the holders to pick from.
 The collector serves the status page and `status.json` on
-`--status`, both from one status computed at most once in five seconds, and with `--legacy-status` mirrors the RedundaNet 2 status page
-so today's nodes stay visible beside the new devices until G3. With
-`--publish` it also PUTs `status.json` and `index.html` under that URL every
-minute with the bearer token from `--publish-token-file`, which is how the
-fly.io page serves the new network under `/v3/` while the hub has no domain.
+`--status`, both from one status computed at most once in five seconds. With
+`--legacy-status` it mirrors a RedundaNet 2 status page beside the new
+devices, and with `--publish` it also PUTs `status.json` and `index.html`
+under that URL every minute with the bearer token from
+`--publish-token-file`. The live hub sets neither: it serves its page
+itself and takes nothing from the fly.io app of RedundaNet 2.
 A hub entry in the manifest names its QUIC relay as `relay: host:port` and,
 when its TLS carrier is not on port 443 of the same host, `tcp: host:port`.
 `--manifest FILE` runs them from a signed file
