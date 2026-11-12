@@ -21,7 +21,7 @@ Every change to membership is a pull request against `manifests/manifest.yaml`: 
    redundanet validate --manifest manifests/manifest.yaml
    ```
 
-   It parses the v3 half (the RedundaNet 2 keys are set aside, anything else unknown is an error), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request, beside the legacy validator for the v2 half.
+   It parses the v3 half (the RedundaNet 2 keys are set aside, anything else unknown is an error), applies the rules, prints errors, warnings and the allocation per member, and exits 1 on errors. CI runs it on every pull request.
 3. Sign offline, on the laptop with the operator key, one command for a pull request:
 
    ```bash
@@ -49,7 +49,7 @@ A manifest that is broken on main does not reach an agent: it keeps its last goo
 
 ## Admitting a member
 
-The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution, and for a migrating RedundaNet 2 member the `legacy_pgp` signature, which the workflow verified against the fingerprint the manifest lists for their nodes. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
+The join form opens an issue; the workflow validates it and opens the pull request that adds the member under `members:` and their node under `storage:`. Review: the member key in the request against the issue, the storage device, the contribution, and for a former RedundaNet 2 member the `legacy_pgp` signature, which the workflow verified against the fingerprint the manifest lists for their nodes. A client-only member gets `contribution_gb: 0`, an `allocation_gb` and a `sponsor` (a member, or `reserve`); the validator checks that the sponsor covers it. Then sign and merge.
 
 ## A member leaving
 
@@ -91,7 +91,7 @@ Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it and op
 
 The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a candidate that does not report healthy in time is tried again after 24 hours, twice; after a third failure, or when the candidate exits by itself, it waits for `redundanet update retry VERSION`.
 
-The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. It depends on nothing outside its host for that: the live hub no longer publishes a copy to the fly.io app of the old product and no longer mirrors the RedundaNet 2 status page. The flags for both (`--publish` with `--publish-token-file`, and `--legacy-status`) are still in the binary and unused. The RedundaNet 2 status page stays at its own address on fly.io until the old grid stops.
+The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. It depends on nothing outside its host for that: the flags that once published a copy elsewhere and mirrored the RedundaNet 2 status page (`--publish` with `--publish-token-file`, and `--legacy-status`) are still in the binary and unused.
 
 The network descriptor (name, hubs, operator keys, where the signed manifest is served) is built into every binary, as `Network` in `agent/internal/version/version.go`, so members never see it: every `--network` flag defaults to its name and a device that never joined by hand is seeded from it. It is printed from the manifest:
 

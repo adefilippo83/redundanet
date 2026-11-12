@@ -4,7 +4,7 @@
 Invoked by .github/workflows/process-join-request.yml with the issue body in
 ISSUE_BODY, the issue number in ISSUE_NUMBER and the applicant's GitHub login
 in ISSUE_AUTHOR. The parsing, the checks and the manifest edit live here so
-they are unit-tested (tests/unit/test_process_join_v3.py).
+they are unit-tested (.github/scripts/tests/test_process_join_v3.py).
 
 The issue body is what the join form (docs/join.html) produces. A new
 member's request: the heading `## RedundaNet 3 membership`, a Markdown table

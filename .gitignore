@@ -28,13 +28,11 @@ ENV/
 env/
 .env
 
-# Local bootstrap-hub state (GPG keyring + exported private key)
-.bootstrap/
 
-# Poetry: poetry.lock is COMMITTED on purpose (applications lock their
-# dependencies). Ignoring it left CI and the Docker images resolving fresh on
-# every run — unpinned tool versions in CI and the pyOpenSSL breakage in the
-# Tahoe images both came from that.
+# Local state of the old bootstrap-hub script (a GPG keyring); never commit it
+.bootstrap/
+# Poetry: poetry.lock is COMMITTED on purpose. The join pipeline installs
+# its packages from it, each with its hash.
 
 # Testing
 .pytest_cache/

@@ -1,10 +1,10 @@
 # Architecture
 
-RedundaNet 3 as it runs today. The design is [RFC 0001](../rfcs/0001-redundanet-3.md); this page describes what the code does. The RedundaNet 2 architecture, still live on the old grid, is in [legacy/architecture.md](legacy/architecture.md).
+RedundaNet 3 as it runs today. The design is [RFC 0001](../rfcs/0001-redundanet-3.md); this page describes what the code does.
 
 ## One binary, three modes
 
-`redundanet` is one static Go binary with no cgo. It runs as the **agent** on every member device (client role, storage role, or both), as the **hub** on a server, and as the **CLI**, which talks to the local agent's API. Everything a device does happens inside the one agent process: there are no containers and no external daemons. On a RedundaNet 2 node the agent runs on the host beside the Docker stack, on the host's network, and never talks to Tahoe.
+`redundanet` is one static Go binary with no cgo. It runs as the **agent** on every member device (client role, storage role, or both), as the **hub** on a server, and as the **CLI**, which talks to the local agent's API. Everything a device does happens inside the one agent process: there are no containers and no external daemons. On a node that still has the RedundaNet 2 Docker stack the agent runs on the host beside it, on the host's network, and never talks to it.
 
 ## The pieces
 

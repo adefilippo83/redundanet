@@ -325,7 +325,7 @@
     <main class="container">
         <div class="page-header">
             <h1 data-i18n="mig.header.title">Migrate from RedundaNet 2</h1>
-            <p data-i18n="mig.header.subtitle">For members of the old grid. Six steps, at your own pace. Nothing on your RedundaNet 2 node changes until the last one, and that one has a rollback.</p>
+            <p data-i18n="mig.header.subtitle">For former members of the old grid, which ended on 13 November 2026. Six steps, at your own pace. The last one retires what is left of the old stack on your node, and it has a rollback.</p>
         </div>
 
         <nav class="toc" aria-label="On this page">
@@ -341,7 +341,7 @@
         </nav>
 
         <div class="guide">
-            <div class="note" data-i18n="mig.intro">RedundaNet 3 runs beside your RedundaNet 2 stack. The old grid stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. On a RedundaNet 2 node both tools exist: the Python <code>redundanet</code> on PATH is the legacy one, and the RedundaNet 3 command is <code>sudo redundanet3</code>, a copy of the program that root owns at <code>/usr/local/bin/redundanet3</code>. The long form is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/migration.md">docs/migration.md</a> on GitHub.</div>
+            <div class="note" data-i18n="mig.intro">RedundaNet 2 ended on 13 November 2026: its hubs were shut down, so the old grid can no longer be read or written and <code>backup-sync</code> no longer uploads. Your own files are on your own disks as before. On a node that ran RedundaNet 2 both tools exist: the Python <code>redundanet</code> on PATH is the old one, and the RedundaNet 3 command is <code>sudo redundanet3</code>, a copy of the program that root owns at <code>/usr/local/bin/redundanet3</code>. The long form is <a href="https://github.com/adefilippo83/redundanet/blob/main/docs/migration.md">docs/migration.md</a> on GitHub.</div>
 
             <section id="identity">
                 <h2 data-i18n="mig.identity.title">1. Identity on your laptop</h2>
@@ -386,19 +386,19 @@ sudo redundanet3 backup list        # sets, runs and restore tests</code></pre>
 
             <section id="retire">
                 <h2 data-i18n="mig.retire.title">6. Retire the Docker stack</h2>
-                <div class="warn" data-i18n="mig.retire.warn"><strong>Not before the stop date is announced.</strong> A node's Tahoe shares hold other members' data too, and the old grid is 2-of-4. The wind-down is manual: no countdown and no automatic deletion exist.</div>
+                <div class="warn" data-i18n="mig.retire.warn"><strong>The old grid is off.</strong> Nothing reads your node's Tahoe shares any more. Nothing is deleted for you either: the shares stay on disk until you delete them.</div>
                 <p data-i18n="mig.retire.desc"><code>migrate-node</code> stops and removes the containers, whole, tinc first; files and shares stay on disk. It refuses while anything is missing from the native grid. Dry run first; <code>--rollback</code> brings every service back together.</p>
                 <pre><code>sudo redundanet3 migrate-node --dry-run    # the plan, and what is not yet on the native grid
 sudo redundanet3 migrate-node              # retire the stack
 sudo redundanet3 migrate-node --rollback   # every service again, tinc first
 sudo redundanet3 migrate-node --force      # past a refusal, on purpose</code></pre>
-                <p data-i18n="mig.retire.drill">The agent keeps running through all of it and the node stays on the status page. A drill is <code>migrate-node</code> followed by <code>--rollback</code> within a few minutes, inside the old grid's tolerance of two servers down.</p>
+                <p data-i18n="mig.retire.drill">The agent keeps running through all of it and the node stays on the status page.</p>
             </section>
 
             <section id="next">
                 <h2 data-i18n="mig.next.title">See also</h2>
                 <ul>
-                    <li><a href="legacy.html" data-i18n="mig.next.legacy">RedundaNet 2, the legacy product, and its documentation</a></li>
+                    <li><a href="legacy.html" data-i18n="mig.next.legacy">RedundaNet 2, the previous product</a></li>
                     <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/migration.md" data-i18n="mig.next.doc">docs/migration.md, the long form</a></li>
                     <li><a href="https://github.com/adefilippo83/redundanet/blob/main/docs/backups.md" data-i18n="mig.next.backups">docs/backups.md, the member guide to sets, restores and cleanup</a></li>
                 </ul>

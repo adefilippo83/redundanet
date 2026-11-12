@@ -24,22 +24,11 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  # Keep in sync with the mypy version pinned in pyproject.toml.
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.0
-    hooks:
-      - id: mypy
-        additional_dependencies:
-          - pydantic>=2.5
-          - types-PyYAML
-          - types-jsonschema
-        args: [--config-file=pyproject.toml]
-
   - repo: local
     hooks:
       - id: pytest-check
         name: pytest-check
-        entry: poetry run pytest tests/unit -x -q
+        entry: poetry run pytest -x -q
         language: system
         pass_filenames: false
         always_run: true

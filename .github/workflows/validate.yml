@@ -1,8 +1,9 @@
 name: Validate
 
 # Produces the "validate" status check required by the repo ruleset
-# ("Main protection"). Validates the network manifests against the schema so a
-# malformed manifest can't be merged.
+# ("Main protection"): the manifest must pass the agent's strict parser and
+# the members' attestations must verify, so a malformed manifest cannot be
+# merged.
 
 on:
   push:
@@ -28,28 +29,24 @@ jobs:
       - name: Install Poetry
         uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
         with:
-          version: 1.7.1
+          version: 2.2.1
           virtualenvs-create: true
           virtualenvs-in-project: true
 
-      - name: Install project
+      # The locked environment of the repository's scripts: poetry.lock
+      # names every package with its hash.
+      - name: Install the locked packages
         run: poetry install --no-interaction
 
-      # Two layers: the CLI validate surfaces schema errors and advisory
-      # warnings; validate_pr.py enforces the hard rules (valid identities,
-      # unique IPs inside the VPN range, ...) with a non-zero exit so a broken
-      # manifest actually fails this required check.
-      - name: Validate network manifests
+      # The GPG attestations of the members who came from RedundaNet 2.
+      - name: Check the members' attestations
         run: |
           for m in manifests/*.yaml; do
-            echo "== Validating $m =="
-            poetry run redundanet validate "$m"
-            poetry run python .github/scripts/validate_pr.py "$m"
+            echo "== Attestations in $m =="
             poetry run python .github/scripts/validate_v3_members.py "$m"
           done
 
-      # The RedundaNet 3 half: the agent's strict parser and the RFC's rules,
-      # then manifest.sig against the operator key. REDUNDANET_OPERATOR_KEY
+      # The agent's strict parser and the RFC's rules, then manifest.sig against the operator key. REDUNDANET_OPERATOR_KEY
       # pins that key; without the variable the check only proves the file
       # is signed by a key it lists itself.
       - name: Set up Go
@@ -58,14 +55,14 @@ jobs:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
 
-      - name: Validate and verify the RedundaNet 3 manifest
+      - name: Validate and verify the manifest
         env:
           OPERATOR_KEY: ${{ vars.REDUNDANET_OPERATOR_KEY }}
         run: |
           cd agent
           for m in ../manifests/*.yaml; do
             grep -q '^schema: 3' "$m" || continue
-            echo "== RedundaNet 3: $m =="
+            echo "== $m =="
             go run ./cmd/redundanet validate --manifest "$m"
             sig="$(dirname "$m")/manifest.sig"
             if [ -f "$sig" ]; then

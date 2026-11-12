@@ -1,8 +1,7 @@
 # The RedundaNet 3 hub on hub-hetzner
 
-The hub runs on the host beside the RedundaNet 2 containers, as the RFC's
-migration step 0 says: relay on UDP and TCP 8443, census collector, status
-page on loopback, served to the world as <https://hub.redundanet.com/> by
+The hub runs on the host by itself: relay on UDP and TCP 8443, census
+collector, status page on loopback, served to the world as <https://hub.redundanet.com/> by
 Caddy on the same host. One static binary, one system user, one systemd
 unit, no Docker.
 
@@ -81,7 +80,7 @@ Both layers of the host firewall need 8443, UDP and TCP:
   `tcp 8443`, source `0.0.0.0/0` and `::/0`
   (`hcloud firewall add-rule hub --direction in --protocol udp --port 8443 --source-ips 0.0.0.0/0 --source-ips ::/0`,
   and the same with `tcp`).
-- `/etc/nftables.conf`, in `chain input` next to the tinc rules:
+- `/etc/nftables.conf`, in `chain input`:
   `tcp dport 8443 accept` and `udp dport 8443 accept`, then
   `nft -f /etc/nftables.conf`.
 

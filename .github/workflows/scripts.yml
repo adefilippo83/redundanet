@@ -1,0 +1,50 @@
+# The repository's own Python scripts, the join pipeline in .github/scripts:
+# lint and unit tests, in the locked environment the join workflow installs.
+name: scripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/scripts.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/scripts/**"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - ".github/workflows/scripts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    name: join scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263 # v1.4.2
+        with:
+          version: 2.2.1
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Install the locked packages
+        run: poetry install --no-interaction
+      # A storage device request's certificate is verified by the checkout's
+      # own agent, which the tests call too.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+      - run: poetry run ruff check .github/scripts
+      - run: poetry run ruff format --check .github/scripts
+      - run: poetry run pytest

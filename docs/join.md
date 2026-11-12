@@ -1,6 +1,6 @@
 # Joining RedundaNet
 
-This page is for a new member. A RedundaNet 2 member who already has nodes on the old grid follows [migration.md](migration.md) instead. Install the agent first: [install.md](install.md).
+This page is for a new member. A former RedundaNet 2 member whose nodes the manifest still lists follows [migration.md](migration.md) instead. Install the agent first: [install.md](install.md).
 
 Joining takes an identity on your laptop, a form on the website, and a pull request the maintainer signs. Your member name and member key are public in the repository's history forever; see [../PRIVACY.md](../PRIVACY.md).
 
@@ -28,7 +28,7 @@ The issue title is `[Join Request] Member: <name>` and the body starts with the 
 | `Device key` | when Contribution GB is above 0 |
 | `Device name` | when Contribution GB is above 0 |
 | `UDP port` | optional: a port you forward on your router, so your node is reached directly more often |
-| `Legacy GPG fingerprint` | optional, RedundaNet 2 members only |
+| `Legacy GPG fingerprint` | optional, former RedundaNet 2 members only |
 | `Notes` | optional |
 
 Leave the optional cells empty. The form also has a terms checkbox: the member name and key are public in the repository's history forever.

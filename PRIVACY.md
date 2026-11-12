@@ -89,7 +89,7 @@ IP addresses are not published.
 The status page is served by the hub itself at hub.redundanet.com, a
 server rented from Hetzner in Germany. Its web server sees the IP address
 of whoever opens the page, as any web server does, and keeps no access
-log. The RedundaNet 2 page stays on fly.io until the old grid's stop date.
+log.
 
 ### What a storage server receives
 
@@ -127,7 +127,7 @@ end-to-end encrypted packets it cannot read, and counts the bytes.
 Membership is a signed file in the public git repository,
 `manifests/manifest.yaml`. Joining means publishing in it: your member name
 (a GitHub handle), your member key, your contribution and allocation, the day
-you joined, your status, and, for members migrated from RedundaNet 2, the PGP
+you joined, your status, and, for members who came from RedundaNet 2, the PGP
 fingerprint and the signature attesting the migration; your device names and
 keys; the hubs' names, keys and addresses. RedundaNet 2 node entries also
 carry host names, VPN addresses, public IP addresses, GPG fingerprints, ports
@@ -145,25 +145,12 @@ requests, and are public there under GitHub's terms.
 
 ## RedundaNet 2, the Docker stack
 
-Nodes of the RedundaNet 2 stack:
-
-- join a Tinc mesh VPN: every node learns the public IP addresses of the
-  nodes it connects to, which are also listed in the manifest;
-- store files with Tahoe-LAFS: storage servers hold ciphertext shares and see
-  share sizes and lease times; the hub runs the introducer that tells nodes
-  where the servers are;
-- serve two endpoints over the VPN that the hub reads for the status page: a
-  share census (the opaque storage indexes the node holds) and a usage report
-  (bytes the member occupies against the allocation);
-- pull the manifest from GitHub every few minutes, and container images from
-  ghcr.io when updating.
-
-The RedundaNet 2 status page shows per node: name, VPN address, manifest
-status, reachability, round-trip time, uptime over 24 hours, 7 days and 30
-days, roles and whether storage is listening, plus grid, replication and
-quota figures. The hub keeps minute samples for about three days and hourly
-rollups for 90 days. That hub runs on fly.io, whose logs and terms apply to
-the machine.
+RedundaNet 2 ended on 13 November 2026. Its two hubs, one on fly.io and one on the
+Hetzner server, were shut down and removed, and with them its status page
+and the samples it kept. Nodes that still run the old stack no longer reach
+a hub. What remains published is in the manifest: the RedundaNet 2 node
+entries described above, which the members' attestations are checked
+against.
 
 ## What stays on your device
 

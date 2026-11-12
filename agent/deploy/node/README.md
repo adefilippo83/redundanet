@@ -1,7 +1,7 @@
 # The RedundaNet 3 agent on a storage node
 
-One static binary under a system unit, no container: the agent runs beside
-the RedundaNet 2 stack on the host's network, reports the census, keeps its
+One static binary under a system unit, no container: the agent runs on the
+host's network, beside the RedundaNet 2 stack where a node still has one, reports the census, keeps its
 sessions, and updates itself from the signed release index with probation
 and rollback. A storage node also serves shares of the native grid from
 `STORAGE_PATH/redundanet3`.
@@ -102,13 +102,12 @@ names from the marker in the data directory, each checked.
 After the node is up, the member asks the operator to list it under
 `storage:` in the manifest, which is what makes its contribution count.
 
-## Leaving RedundaNet 2 (phase 3)
+## Retiring the RedundaNet 2 stack
 
-Once the native grid holds what this node pushed to the old one, the
-Docker stack can go. Not before the network's stop date is announced: a
-node's Tahoe shares hold other members' data too, and the old grid is
-2-of-4. The agent does the retirement and refuses while anything is
-missing:
+RedundaNet 2 ended on 13 November 2026 and its hubs are gone, so the old
+containers on a node serve nothing. Once the native grid holds what this
+node pushed to the old one, the Docker stack can go. The agent does the
+retirement and refuses while anything is missing:
 
 ```bash
 sudo redundanet3 migrate-node --dry-run   # the plan, and what is not yet on the native grid
@@ -121,5 +120,5 @@ status page. The Tahoe services sit behind compose profiles and share
 tinc's network namespace, so the stack is only ever stopped and started
 whole: the plan names every profile on the way down, fails and puts the
 stack back if any container survives, and the rollback recreates every
-recorded service in one `up`, never tinc alone. A drill is `migrate-node` followed by `--rollback` within a
-few minutes, inside the old grid's tolerance of two servers down.
+recorded service in one `up`, never tinc alone. The compose files, the
+`.env` and the Tahoe share directories stay on disk until you delete them.

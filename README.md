@@ -110,9 +110,9 @@ Project instructions for AI coding tools live in [CLAUDE.md](CLAUDE.md). AI-assi
 
 Releases are tagged `agent/vX.Y.Z` and built by the release workflow. Every release's sha256 and size go into `releases/index.yaml`, which the maintainer signs offline with the release key (`releases/index.sig`); the public half is embedded in every build. The agent installs only what the index names. There are two channels: `stable` (the default; 3.0.0 is on it) and `early` (the alpha builds that preceded it, and the next ones). The running agent checks the index hourly, downloads the asset, verifies hash and size, runs the new version in probation for up to two minutes, keeps the old binary as `redundanet.old`, and rolls back by itself if the new one does not reconnect. A release can be withdrawn from the index. Policy and the maintainer's steps: [releases/README.md](releases/README.md).
 
-## RedundaNet 2 (legacy)
+## RedundaNet 2 (ended)
 
-RedundaNet 2 is the earlier product: a Python command line tool, Docker Compose, a Tinc VPN and Tahoe-LAFS. The Python package `redundanet` on PyPI (version 2.7.x) is that legacy tool, not the RedundaNet 3 binary; on a RedundaNet 2 node both exist, the Python one on PATH as `redundanet` and the Go one as `redundanet3` (`/usr/local/bin/redundanet3`, a copy root owns; the service runs its own at `/var/lib/redundanet3/bin/redundanet`). The old grid stays live until a stop date the maintainer announces, because its Tahoe shares still hold members' data. Its documentation is under [docs/legacy/README.md](docs/legacy/README.md). Existing members move over with [docs/migration.md](docs/migration.md).
+RedundaNet 2 was the earlier product: a Python command line tool, Docker Compose, a Tinc VPN and Tahoe-LAFS. It ended on 13 November 2026, when its hubs were shut down; the old grid can no longer be read or written. The Python package `redundanet` on PyPI (2.7.40 was the last) is that old tool, not the RedundaNet 3 binary; on a node that ran RedundaNet 2 both exist, the Python one on PATH as `redundanet` and the Go one as `redundanet3` (`/usr/local/bin/redundanet3`, a copy root owns; the service runs its own at `/var/lib/redundanet3/bin/redundanet`). Its code, containers and documentation are no longer in this repository; they are in its history, at the tag `v2.7.40`. Former members move over, and retire what is left of the old stack on their nodes, with [docs/migration.md](docs/migration.md).
 
 ## Documentation
 
@@ -125,7 +125,7 @@ cd agent && go test -race ./...     # the agent's gate; CI runs it on Linux, mac
 cd agent && go build ./cmd/redundanet
 ```
 
-The legacy Python code keeps its own gate (`poetry run pytest tests/unit -q`, `ruff`, `mypy`). Contributions go through a pull request; the template lists the checks.
+The join pipeline's Python scripts in `.github/scripts` have their own small gate (`poetry run pytest`, `poetry run ruff check .github/scripts`). Contributions go through a pull request; the template lists the checks.
 
 ## License
 
