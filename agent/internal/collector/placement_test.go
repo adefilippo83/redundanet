@@ -49,7 +49,7 @@ func objectsBySI(t *testing.T, w *world) (map[byte]Object, *Grid) {
 }
 
 func TestPlacementRules(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	// 1: fully placed, two shares per server. 2: three of four numbers on
@@ -154,7 +154,7 @@ func TestPlacementRules(t *testing.T) {
 func TestPlacementSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	census, table := filepath.Join(dir, "census.json"), filepath.Join(dir, "placement.sqlite")
-	w := newWorldWith(t, demoManifest(), census, table, "")
+	w := newWorldWith(t, demoManifest(), census, table)
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	w.report(falcon, 1, share(1, 0, alice), share(1, 1, alice))
@@ -170,7 +170,7 @@ func TestPlacementSurvivesRestart(t *testing.T) {
 	// The hub restarts while spare is down: spare's shares still count,
 	// and the object's history says it was placed, so a removal on
 	// falcon is a repair at once, not a quiescence.
-	w2 := newWorldWith(t, demoManifest(), census, table, "")
+	w2 := newWorldWith(t, demoManifest(), census, table)
 	w2.advance(20 * time.Minute)
 	w2.heartbeat(falcon)
 	objs, grid := objectsBySI(t, w2)
@@ -193,7 +193,7 @@ func TestPlacementSurvivesRestart(t *testing.T) {
 
 func TestRetiredServerIsForgotten(t *testing.T) {
 	m := demoManifest()
-	w := newWorldWith(t, m, "", "", "")
+	w := newWorldWith(t, m, "", "")
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	w.report(falcon, 1, share(1, 0, alice), share(1, 1, alice))
@@ -212,7 +212,7 @@ func TestRetiredServerIsForgotten(t *testing.T) {
 }
 
 func TestDescriptorConflictFollowsTheMajority(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	odd := share(1, 3, alice)
@@ -233,7 +233,7 @@ func TestATombstoneNeedsMostOfTheServersConcerned(t *testing.T) {
 	third := bobPC
 	m := demoManifest()
 	m.Storage = append(m.Storage, manifest.StorageDevice{Member: "bob", Device: third, Name: "third"})
-	w := newWorldWith(t, m, "", "", "")
+	w := newWorldWith(t, m, "", "")
 	for _, dev := range []identity.Key{falcon, spare, third} {
 		w.heartbeat(dev)
 	}
@@ -277,7 +277,7 @@ func TestOneServerDoesNotOutvoteTheOthers(t *testing.T) {
 	third := bobPC
 	m := demoManifest()
 	m.Storage = append(m.Storage, manifest.StorageDevice{Member: "bob", Device: third, Name: "third"})
-	w := newWorldWith(t, m, "", "", "")
+	w := newWorldWith(t, m, "", "")
 	for _, dev := range []identity.Key{falcon, spare, third} {
 		w.heartbeat(dev)
 	}
@@ -305,7 +305,7 @@ func TestConversionProgress(t *testing.T) {
 	m := demoManifest()
 	m.Network.Encoding = manifest.Encoding{K: 2, N: 3}
 	m.Network.EncodingTransition = &manifest.Transition{From: manifest.Encoding{K: 2, N: 4}, To: manifest.Encoding{K: 2, N: 3}, Deadline: "2026-11-10"}
-	w := newWorldWith(t, m, "", "", "")
+	w := newWorldWith(t, m, "", "")
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	narrow := func(si byte, n uint8) wire.ShareEntry {
@@ -367,7 +367,7 @@ func TestConversionProgress(t *testing.T) {
 // clock, so an under-placed object's quiescence window ends although its
 // holders reconnect meanwhile.
 func TestAReconnectChangesOnlyWhatChanged(t *testing.T) {
-	w := newWorld(t, "", "")
+	w := newWorld(t, "")
 	w.heartbeat(falcon)
 	w.heartbeat(spare)
 	// 2: three of four numbers, never placed. 7: one share that will go.

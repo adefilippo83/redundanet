@@ -106,6 +106,7 @@ type pageData struct {
 	Logs     []logbuf.Line
 	Restore  *restoreData // the restore view only
 	Paired   []deviceView // the devices this one paired, with how each is reached now
+	Gone     string       // what the page says once it lost its session
 }
 
 // deviceView is a paired device and its connection at the moment.
@@ -118,8 +119,23 @@ type deviceView struct {
 // joinURL is where a member not listed yet sends the request.
 const joinURL = "https://redundanet.com/join.html"
 
+// nodeDataDir is the data directory of a storage node laid out by the node
+// installer (internal/node), where the command is the copy root owns.
+const nodeDataDir = "/var/lib/redundanet3"
+
+// goneText is the text shown when the page lost its session. Every
+// dictionary names the command as `redundanet open`; on a storage node,
+// which is reached over SSH, the command is `sudo redundanet3 open --print`.
+func goneText(l tr, dataDir string) string {
+	text := l.T("session.gone")
+	if dataDir == nodeDataDir {
+		text = strings.Replace(text, "redundanet open", "sudo redundanet3 open --print", 1)
+	}
+	return text
+}
+
 func buildPage(snap Snapshot, v view, l tr) pageData {
-	d := pageData{Snapshot: snap, tr: l, View: v.Name, Back: v.Path, Lang: string(l), Langs: Languages}
+	d := pageData{Snapshot: snap, tr: l, View: v.Name, Back: v.Path, Lang: string(l), Langs: Languages, Gone: l.T("session.gone")}
 	for _, x := range views {
 		if ((x.Name == "backups" || x.Name == "restore") && snap.Jobs == nil) || (x.Name == "settings" && snap.Jobs == nil && snap.Update == nil) {
 			continue

@@ -91,7 +91,7 @@ Releases are the maintainer's: tag `agent/vX.Y.Z`; the workflow builds it and op
 
 The live network has one hub, `hub-hetzner` (relay `hub.redundanet.com:8443`, UDP and TCP), listed under `hubs:` by its device key. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. Install, firewall, checks and the hub's self-update are in the hub runbook, [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md). The hub updates itself like a node, with probation on the same ports; a candidate that does not report healthy in time is tried again after 24 hours, twice; after a third failure, or when the candidate exits by itself, it waits for `redundanet3 update retry VERSION`, run as root on the hub.
 
-The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. It depends on nothing outside its host for that: the flags that once published a copy elsewhere and mirrored the RedundaNet 2 status page (`--publish` with `--publish-token-file`, and `--legacy-status`) are still in the binary and unused.
+The hub serves its status page and `status.json` itself at <https://hub.redundanet.com/>, through Caddy on the same host with a certificate it renews on its own; the hub runbook has the setup. It depends on nothing outside its host for that.
 
 The network descriptor (name, hubs, operator keys, where the signed manifest is served) is built into every binary, as `Network` in `agent/internal/version/version.go`, so members never see it: every `--network` flag defaults to its name and a device that never joined by hand is seeded from it. It is printed from the manifest:
 

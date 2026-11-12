@@ -406,3 +406,20 @@ func TestThePagesOwnLinksAreRelative(t *testing.T) {
 		t.Errorf("restore link %s is absolute", h)
 	}
 }
+
+// On a storage node the page names the command a node has: the copy root
+// owns, with the link printed, since the node is reached over SSH. Every
+// dictionary carries the laptop's command for the replacement to find.
+func TestTheLostSessionTextNamesTheNodesCommand(t *testing.T) {
+	for _, lang := range Languages {
+		l := tr(lang.Code)
+		laptop := goneText(l, "/home/alice/.config/redundanet")
+		if !strings.Contains(laptop, "redundanet open") || strings.Contains(laptop, "redundanet3") {
+			t.Fatalf("%s, on a laptop: %q", lang.Code, laptop)
+		}
+		node := goneText(l, nodeDataDir)
+		if !strings.Contains(node, "sudo redundanet3 open --print") {
+			t.Fatalf("%s, on a node: %q", lang.Code, node)
+		}
+	}
+}

@@ -172,11 +172,11 @@ redundanet network descriptor [--manifest manifests/manifest.yaml] --repository 
 Prints the network descriptor (name, hubs, operator keys, where the manifest is served) for invite links and for the one built into the binary, `Network` in `agent/internal/version`, which a test keeps equal to the manifest. `URL` is the base under which `manifests/manifest.yaml` and `manifest.sig` are served, for example `https://raw.githubusercontent.com/OWNER/REPO/main`.
 
 ```
-redundanet hub [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480] [--legacy-status URL]
-               [--publish URL --publish-token-file FILE] [--channel stable|early] [--no-update]
+redundanet hub [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480]
+               [--channel stable|early] [--no-update]
                [--manifest FILE --sig FILE] [--status-every 1m] [--probation] [--probation-peers KEYS] [-v]
 ```
-Runs hub mode: rendezvous and relay on `--udp` (QUIC) and `--tcp` (TLS carrier; empty disables), the status page and `status.json` on `--status` (empty disables), a RedundaNet 2 `status.json` mirrored beside the mesh census with `--legacy-status`, and with `--publish` the page and `status.json` PUT under that URL every minute with the bearer token in `--publish-token-file`. `--manifest` runs from a signed file instead of the joined network. `--probation` and `--probation-peers` are used by the updater. Runbook: [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md).
+Runs hub mode: rendezvous and relay on `--udp` (QUIC) and `--tcp` (TLS carrier; empty disables), and the status page and `status.json` on `--status` (empty disables). The flags `--legacy-status`, `--publish` and `--publish-token-file` existed until 3.0.19 and are gone: a hub started with one of them refuses to start, so take them out of the unit first. `--manifest` runs from a signed file instead of the joined network. `--probation` and `--probation-peers` are used by the updater. Runbook: [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md).
 
 ```
 redundanet storage has [--storage-path DIR] STORAGE_INDEX

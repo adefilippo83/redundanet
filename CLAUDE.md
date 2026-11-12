@@ -143,7 +143,6 @@ published it are gone from the tree and live in the history at the tag
   revision the maintainer signs.
 - **`redundanet migrate-node`** (`agent/internal/migrate`), for members
   whose nodes still run the old containers: the hard rule above stays.
-- **`--legacy-status` and `--publish`** in hub mode, unused by the live hub.
 - **The name `redundanet3`** on storage nodes, because a node that ran
   RedundaNet 2 has the Python `redundanet` on PATH.
 
