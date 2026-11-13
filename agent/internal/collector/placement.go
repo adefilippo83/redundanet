@@ -31,6 +31,15 @@ type placement struct {
 	db *sql.DB
 }
 
+// objectKey names an object: one owner's under a storage index. Members
+// derive the index from a secret of their own, so two owners under one
+// index is a member storing under an index it saw another announce; the
+// two are apart here as they are on the servers.
+type objectKey struct {
+	Owner        identity.Key
+	StorageIndex [16]byte
+}
+
 func openPlacement(path string) (*placement, error) {
 	dsn := ":memory:"
 	if path != "" {
@@ -41,14 +50,17 @@ func openPlacement(path string) (*placement, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	// stale marks the shares a node's full census has not named yet while
+	// that census is arriving; see apply.
 	for _, q := range []string{
 		`CREATE TABLE IF NOT EXISTS shares (device BLOB NOT NULL, si BLOB NOT NULL, n INTEGER NOT NULL, owner BLOB NOT NULL,
-			size INTEGER NOT NULL, k INTEGER NOT NULL, nn INTEGER NOT NULL, dhash BLOB NOT NULL, PRIMARY KEY (device, si, n))`,
-		`CREATE INDEX IF NOT EXISTS shares_si ON shares(si)`,
+			size INTEGER NOT NULL, k INTEGER NOT NULL, nn INTEGER NOT NULL, dhash BLOB NOT NULL, stale INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (device, owner, si, n))`,
 		`CREATE TABLE IF NOT EXISTS tombstones (device BLOB NOT NULL, si BLOB NOT NULL, owner BLOB NOT NULL, dhash BLOB NOT NULL,
-			purged INTEGER NOT NULL, PRIMARY KEY (device, si))`,
+			purged INTEGER NOT NULL, PRIMARY KEY (device, owner, si))`,
 		`CREATE TABLE IF NOT EXISTS devices (device BLOB PRIMARY KEY, generation INTEGER NOT NULL, updated INTEGER NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS objects (si BLOB PRIMARY KEY, first_seen INTEGER NOT NULL, last_change INTEGER NOT NULL, reached INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS objects_owned (owner BLOB NOT NULL, si BLOB NOT NULL, first_seen INTEGER NOT NULL, last_change INTEGER NOT NULL,
+			reached INTEGER NOT NULL, PRIMARY KEY (owner, si))`,
 		`CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, si BLOB NOT NULL, worker BLOB NOT NULL, issued INTEGER NOT NULL,
 			expires INTEGER NOT NULL, bytes INTEGER NOT NULL, task BLOB NOT NULL, state TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT '', ended INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state)`,
@@ -58,21 +70,98 @@ func openPlacement(path string) (*placement, error) {
 			return nil, fmt.Errorf("collector: placement table: %w", err)
 		}
 	}
-	// stale marks the shares a node's full census has not named yet while
-	// that census is arriving; see apply. Added to a table an earlier
-	// version made, whose statements name their columns and so still fit.
-	var hasStale int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('shares') WHERE name = 'stale'`).Scan(&hasStale); err != nil {
+	if err := widenPlacement(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("collector: placement table: the wider key: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS shares_si ON shares(si)`); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("collector: placement table: %w", err)
 	}
-	if hasStale == 0 {
-		if _, err := db.Exec(`ALTER TABLE shares ADD COLUMN stale INTEGER NOT NULL DEFAULT 0`); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("collector: placement table: %w", err)
+	return &placement{db: db}, nil
+}
+
+// widenPlacement brings a table file from before objects were keyed by
+// owner to the wider key, in one transaction: shares from (device,
+// storage index, share number) to (device, owner, storage index, share
+// number), tombstones from (device, storage index) to (device, owner,
+// storage index). Every row carries its owner already.
+//
+// The history per object moves to a table of its own, objects_owned, and
+// the table it was in, objects, is left as it is: the version before
+// keeps its history there by a statement that needs the storage index to
+// be that table's whole key, and that version is what a hub goes back to
+// when this one fails its probation. While objects is still in the file
+// its rows are merged in at every start, which costs nothing when there
+// is nothing new and catches up on what that version wrote in between.
+func widenPlacement(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	keyed := func(table string) (bool, error) {
+		var pk int
+		err := tx.QueryRow(`SELECT pk FROM pragma_table_info(?) WHERE name = 'owner'`, table).Scan(&pk)
+		return pk > 0, err
+	}
+	if ok, err := keyed("shares"); err != nil {
+		return err
+	} else if !ok {
+		// A file older still has no stale column.
+		var hasStale int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('shares') WHERE name = 'stale'`).Scan(&hasStale); err != nil {
+			return err
+		}
+		stale := "stale"
+		if hasStale == 0 {
+			stale = "0"
+		}
+		for _, q := range []string{
+			`CREATE TABLE shares_wide (device BLOB NOT NULL, si BLOB NOT NULL, n INTEGER NOT NULL, owner BLOB NOT NULL,
+				size INTEGER NOT NULL, k INTEGER NOT NULL, nn INTEGER NOT NULL, dhash BLOB NOT NULL, stale INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY (device, owner, si, n))`,
+			`INSERT INTO shares_wide (device, si, n, owner, size, k, nn, dhash, stale) SELECT device, si, n, owner, size, k, nn, dhash, ` + stale + ` FROM shares`,
+			`DROP TABLE shares`,
+			`ALTER TABLE shares_wide RENAME TO shares`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
 		}
 	}
-	return &placement{db: db}, nil
+	if ok, err := keyed("tombstones"); err != nil {
+		return err
+	} else if !ok {
+		for _, q := range []string{
+			`CREATE TABLE tombstones_wide (device BLOB NOT NULL, si BLOB NOT NULL, owner BLOB NOT NULL, dhash BLOB NOT NULL,
+				purged INTEGER NOT NULL, PRIMARY KEY (device, owner, si))`,
+			`INSERT INTO tombstones_wide (device, si, owner, dhash, purged) SELECT device, si, owner, dhash, purged FROM tombstones`,
+			`DROP TABLE tombstones`,
+			`ALTER TABLE tombstones_wide RENAME TO tombstones`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	var old int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'objects'`).Scan(&old); err != nil {
+		return err
+	}
+	if old > 0 {
+		// An object's history goes to each owner the rows name under its
+		// storage index; in a file from before the wider key that is one.
+		if _, err := tx.Exec(`INSERT INTO objects_owned (owner, si, first_seen, last_change, reached)
+			SELECT p.owner, o.si, o.first_seen, o.last_change, o.reached FROM objects o
+			JOIN (SELECT owner, si FROM shares UNION SELECT owner, si FROM tombstones) p ON p.si = o.si
+			WHERE true
+			ON CONFLICT (owner, si) DO UPDATE SET first_seen = MIN(first_seen, excluded.first_seen),
+				last_change = MAX(last_change, excluded.last_change), reached = MAX(reached, excluded.reached)`); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (p *placement) close() error { return p.db.Close() }
@@ -106,13 +195,33 @@ func (p *placement) apply(device identity.Key, sc *wire.ShareCensus, now time.Ti
 		gen.Int64 = 0
 	}
 	ts := now.Unix()
-	touch := func(si [16]byte) error {
-		_, err := tx.Exec(`INSERT INTO objects (si, first_seen, last_change, reached) VALUES (?, ?, ?, 0)
-			ON CONFLICT (si) DO UPDATE SET last_change = excluded.last_change`, si[:], ts, ts)
+	touch := func(owner identity.Key, si [16]byte) error {
+		_, err := tx.Exec(`INSERT INTO objects_owned (owner, si, first_seen, last_change, reached) VALUES (?, ?, ?, ?, 0)
+			ON CONFLICT (owner, si) DO UPDATE SET last_change = excluded.last_change`, owner[:], si[:], ts, ts)
 		return err
 	}
+	// owned runs a query that selects owner and si.
+	owned := func(query string, args ...any) ([]objectKey, error) {
+		rows, err := tx.Query(query, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []objectKey
+		for rows.Next() {
+			var owner, si []byte
+			if err := rows.Scan(&owner, &si); err != nil {
+				return nil, err
+			}
+			var k objectKey
+			copy(k.Owner[:], owner)
+			copy(k.StorageIndex[:], si)
+			out = append(out, k)
+		}
+		return out, rows.Err()
+	}
 	for _, e := range sc.Added {
-		res, err := tx.Exec(`UPDATE shares SET stale = 0 WHERE device = ? AND si = ? AND n = ? AND dhash = ?`, device[:], e.StorageIndex[:], e.Number, e.DescriptorHash[:])
+		res, err := tx.Exec(`UPDATE shares SET stale = 0 WHERE device = ? AND owner = ? AND si = ? AND n = ? AND dhash = ?`, device[:], e.Owner[:], e.StorageIndex[:], e.Number, e.DescriptorHash[:])
 		if err != nil {
 			return err
 		}
@@ -123,44 +232,43 @@ func (p *placement) apply(device identity.Key, sc *wire.ShareCensus, now time.Ti
 			device[:], e.StorageIndex[:], e.Number, e.Owner[:], e.Size, e.K, e.N, e.DescriptorHash[:]); err != nil {
 			return err
 		}
-		if err := touch(e.StorageIndex); err != nil {
+		if err := touch(e.Owner, e.StorageIndex); err != nil {
 			return err
 		}
 	}
 	for _, k := range sc.Removed {
-		res, err := tx.Exec(`DELETE FROM shares WHERE device = ? AND si = ? AND n = ?`, device[:], k.StorageIndex[:], k.Number)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			if err := touch(k.StorageIndex); err != nil {
+		// A removal names its owner. One that does not comes from a node
+		// before the wider key, which holds one owner per storage index:
+		// it is then the share the node reported under that index and
+		// number, whoever its owner.
+		gone := []objectKey{{Owner: k.Owner, StorageIndex: k.StorageIndex}}
+		if k.Owner.IsZero() {
+			var err error
+			if gone, err = owned(`SELECT owner, si FROM shares WHERE device = ? AND si = ? AND n = ?`, device[:], k.StorageIndex[:], k.Number); err != nil {
 				return err
+			}
+		}
+		for _, o := range gone {
+			res, err := tx.Exec(`DELETE FROM shares WHERE device = ? AND owner = ? AND si = ? AND n = ?`, device[:], o.Owner[:], o.StorageIndex[:], k.Number)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n > 0 {
+				if err := touch(o.Owner, o.StorageIndex); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	// The end of a whole list: what the table held and the list did not
 	// name is gone from the node.
 	if sc.Since == 0 && !sc.More {
-		rows, err := tx.Query(`SELECT DISTINCT si FROM shares WHERE device = ? AND stale = 1`, device[:])
+		gone, err := owned(`SELECT DISTINCT owner, si FROM shares WHERE device = ? AND stale = 1`, device[:])
 		if err != nil {
 			return err
 		}
-		var gone [][16]byte
-		for rows.Next() {
-			var b []byte
-			if err := rows.Scan(&b); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			var si [16]byte
-			copy(si[:], b)
-			gone = append(gone, si)
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		for _, si := range gone {
-			if err := touch(si); err != nil {
+		for _, o := range gone {
+			if err := touch(o.Owner, o.StorageIndex); err != nil {
 				return err
 			}
 		}
@@ -225,7 +333,8 @@ func (p *placement) devices() []identity.Key {
 	return out
 }
 
-// Object is one object's health as the placement table sees it: what the
+// Object is one object's health as the placement table sees it: an
+// owner's object under a storage index, what the
 // scheduler of M5's repair tasks works from. Shares on dead servers are
 // left out, as the RFC says; shares on servers that are merely down
 // count, because home servers reboot.
@@ -248,6 +357,10 @@ type Object struct {
 	Reached      bool                     // it was fully placed at some point: a loss since is a server's death or a failed check
 	LastChange   time.Time                // when a holder last gained or lost one of its shares
 	Need         string                   // "" (nothing to do), "quiescing" or "repair"
+}
+
+func (o Object) key() objectKey {
+	return objectKey{Owner: o.Owner, StorageIndex: o.StorageIndex}
 }
 
 // Grid is the public projection of the placement table: counts, never a
@@ -302,7 +415,7 @@ func encodingOf(k, n int) string { return fmt.Sprintf("%d-of-%d", k, n) }
 // a dead, retired or never-seen server's rows are skipped. enc is the
 // manifest's encoding and conv its transition, nil without one.
 func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers int, enc manifest.Encoding, conv *manifest.Transition) ([]Object, *Grid, error) {
-	rows, err := p.db.Query(`SELECT device, si, n, owner, size, k, nn, dhash FROM shares ORDER BY si, n, device`)
+	rows, err := p.db.Query(`SELECT device, si, n, owner, size, k, nn, dhash FROM shares ORDER BY si, owner, n, device`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -314,8 +427,8 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		dhash  [32]byte
 		owner  identity.Key
 	}
-	bySI := map[[16]byte][]row{}
-	var order [][16]byte
+	bySI := map[objectKey][]row{}
+	var order []objectKey
 	for rows.Next() {
 		var dev, si, owner, dhash []byte
 		var r row
@@ -331,8 +444,8 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		if !alive[r.device] {
 			continue
 		}
-		var key [16]byte
-		copy(key[:], si)
+		key := objectKey{Owner: r.owner}
+		copy(key.StorageIndex[:], si)
 		if _, ok := bySI[key]; !ok {
 			order = append(order, key)
 		}
@@ -350,7 +463,7 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		owner  identity.Key
 		dhash  [32]byte
 	}
-	tomb := map[[16]byte][]tombRow{}
+	tomb := map[objectKey][]tombRow{}
 	rows, err = p.db.Query(`SELECT device, si, owner, dhash FROM tombstones`)
 	if err != nil {
 		return nil, nil, err
@@ -368,31 +481,32 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		if !alive[t.device] {
 			continue
 		}
-		var key [16]byte
-		copy(key[:], si)
+		key := objectKey{Owner: t.owner}
+		copy(key.StorageIndex[:], si)
 		tomb[key] = append(tomb[key], t)
 	}
 	rows.Close()
-	history := map[[16]byte]struct {
+	history := map[objectKey]struct {
 		lastChange int64
 		reached    bool
 	}{}
-	rows, err = p.db.Query(`SELECT si, last_change, reached FROM objects`)
+	rows, err = p.db.Query(`SELECT owner, si, last_change, reached FROM objects_owned`)
 	if err != nil {
 		return nil, nil, err
 	}
 	for rows.Next() {
-		var si []byte
+		var owner, si []byte
 		var h struct {
 			lastChange int64
 			reached    bool
 		}
-		if err := rows.Scan(&si, &h.lastChange, &h.reached); err != nil {
+		if err := rows.Scan(&owner, &si, &h.lastChange, &h.reached); err != nil {
 			rows.Close()
 			return nil, nil, err
 		}
-		var key [16]byte
-		copy(key[:], si)
+		var key objectKey
+		copy(key.Owner[:], owner)
+		copy(key.StorageIndex[:], si)
 		history[key] = h
 	}
 	rows.Close()
@@ -405,9 +519,10 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		}
 	}
 	var objects []Object
-	var reachedNow [][16]byte
-	for _, si := range order {
-		rs := bySI[si]
+	var reachedNow []objectKey
+	for _, key := range order {
+		rs := bySI[key]
+		si := key.StorageIndex
 		// The descriptor the holders agree on: the one most servers
 		// report. A server has one vote however many rows it sends, so one
 		// server cannot outvote the others by reporting more shares.
@@ -462,7 +577,7 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 			concerned[dev] = true
 		}
 		reporting := map[identity.Key]bool{}
-		for _, t := range tomb[si] {
+		for _, t := range tomb[key] {
 			if t.owner == o.Owner && t.dhash == best {
 				concerned[t.device] = true
 				reporting[t.device] = true
@@ -476,12 +591,12 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		if total > o.N {
 			o.Surplus = total - o.N
 		}
-		h := history[si]
+		h := history[key]
 		o.Reached = h.reached
 		o.LastChange = time.Unix(h.lastChange, 0)
 		if o.Placed && !h.reached {
 			o.Reached = true
-			reachedNow = append(reachedNow, si)
+			reachedNow = append(reachedNow, key)
 		}
 		switch {
 		case o.Tombstoned, o.Placed:
@@ -540,8 +655,8 @@ func (p *placement) compute(now time.Time, alive map[identity.Key]bool, servers 
 		if err != nil {
 			return nil, nil, err
 		}
-		for _, si := range reachedNow {
-			if _, err := tx.Exec(`UPDATE objects SET reached = 1 WHERE si = ?`, si[:]); err != nil {
+		for _, key := range reachedNow {
+			if _, err := tx.Exec(`UPDATE objects_owned SET reached = 1 WHERE owner = ? AND si = ?`, key.Owner[:], key.StorageIndex[:]); err != nil {
 				_ = tx.Rollback()
 				return nil, nil, err
 			}

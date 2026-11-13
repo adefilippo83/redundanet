@@ -121,7 +121,7 @@ func TestPutResumeAndRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Abort()
-	pres, _ := s.Has(si)
+	pres, _ := s.Has(o.member, si)
 	if pres == nil || pres.Partial[1] != 1 || len(pres.Complete) != 0 {
 		t.Fatalf("after abort: %+v", pres)
 	}
@@ -141,14 +141,14 @@ func TestPutResumeAndRead(t *testing.T) {
 	if err := p.Complete(); err != nil {
 		t.Fatal(err)
 	}
-	pres, _ = s.Has(si)
+	pres, _ = s.Has(o.member, si)
 	if pres == nil || len(pres.Complete) != 1 || pres.Complete[0] != 1 || len(pres.Partial) != 0 || pres.Owner != o.member {
 		t.Fatalf("after complete: %+v", pres)
 	}
 	if _, err := s.BeginPut(ob.sd, 1); !errors.Is(err, ErrAlreadyComplete) {
 		t.Fatalf("second put: %v", err)
 	}
-	sh, err := s.OpenShare(si, 1)
+	sh, err := s.OpenShare(o.member, si, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestPutResumeAndRead(t *testing.T) {
 	if shares != 1 || bytesHeld != want {
 		t.Fatalf("totals: %d %d", shares, bytesHeld)
 	}
-	if _, err := s.OpenShare(si, 2); !errors.Is(err, ErrNotFound) {
+	if _, err := s.OpenShare(o.member, si, 2); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing share: %v", err)
 	}
 	d, _ := s.Census(0)
@@ -206,11 +206,11 @@ func TestRefusals(t *testing.T) {
 	if err := p.Complete(); !errors.Is(err, ErrRoot) {
 		t.Fatalf("bad block: %v", err)
 	}
-	pres, _ := s.Has(ob.sd.Descriptor.StorageIndex)
+	pres, _ := s.Has(o.member, ob.sd.Descriptor.StorageIndex)
 	if len(pres.Complete) != 1 || len(pres.Partial) != 0 {
 		t.Fatalf("the bad share stayed: %+v", pres)
 	}
-	if _, err := os.Stat(s.sharePath(ob.sd.Descriptor.StorageIndex, 2)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(s.sharePath(o.member, ob.sd.Descriptor.StorageIndex, 2, placeIndex)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the bad share's file stayed")
 	}
 	// The floor.
@@ -230,7 +230,7 @@ func TestTombstones(t *testing.T) {
 	if err := s.Tombstone(si, o.member, dh, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	pres, _ := s.Has(si)
+	pres, _ := s.Has(o.member, si)
 	if !pres.Tombstoned {
 		t.Fatal("not tombstoned")
 	}
@@ -240,16 +240,16 @@ func TestTombstones(t *testing.T) {
 	}
 	// An upload from a device of the owner clears it.
 	putAll(t, s, ob, 1)
-	if pres, _ = s.Has(si); pres.Tombstoned {
+	if pres, _ = s.Has(o.member, si); pres.Tombstoned {
 		t.Fatal("the owner's upload did not clear the tombstone")
 	}
-	// A tombstone recorded for another owner refuses the put.
-	stranger := newOwner(t, 2)
-	if err := s.Tombstone(si, stranger.member, dh, time.Now()); err != nil {
+	// A repair write never clears it: a deleted object does not come back
+	// through repair.
+	if err := s.Tombstone(si, o.member, dh, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.BeginPut(ob.sd, 2); !errors.Is(err, ErrTombstoned) {
-		t.Fatalf("tombstoned by another owner: %v", err)
+	if _, err := s.BeginRepair(ob.sd, 2); !errors.Is(err, ErrTombstoned) {
+		t.Fatalf("repair of a tombstoned object: %v", err)
 	}
 }
 
@@ -266,19 +266,19 @@ func TestExpirePartialsAndRemoval(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("expire: %d %v", n, err)
 	}
-	pres, _ := s.Has(ob.sd.Descriptor.StorageIndex)
+	pres, _ := s.Has(o.member, ob.sd.Descriptor.StorageIndex)
 	if len(pres.Partial) != 0 || len(pres.Complete) != 1 {
 		t.Fatalf("after expiry: %+v", pres)
 	}
 	g, _ := s.Generation()
-	if err := s.Remove(ob.sd.Descriptor.StorageIndex, 0, "test"); err != nil {
+	if err := s.Remove(o.member, ob.sd.Descriptor.StorageIndex, 0, "test"); err != nil {
 		t.Fatal(err)
 	}
 	d, _ := s.Census(g)
 	if len(d.Removed) != 1 || d.Removed[0].Number != 0 || len(d.Added) != 0 || d.Generation != g+1 {
 		t.Fatalf("census after removal: %+v", d)
 	}
-	if err := s.Remove(ob.sd.Descriptor.StorageIndex, 0, "again"); !errors.Is(err, ErrNotFound) {
+	if err := s.Remove(o.member, ob.sd.Descriptor.StorageIndex, 0, "again"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("removing twice: %v", err)
 	}
 }
@@ -290,7 +290,7 @@ func TestScrubFindsCorruption(t *testing.T) {
 	bad := encode(t, o, data(7000, 5))
 	putAll(t, s, good, 0)
 	putAll(t, s, bad, 0)
-	f, err := os.OpenFile(s.sharePath(bad.sd.Descriptor.StorageIndex, 0), os.O_RDWR, 0)
+	f, err := os.OpenFile(s.sharePath(o.member, bad.sd.Descriptor.StorageIndex, 0, placeIndex), os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestScrubFindsCorruption(t *testing.T) {
 	if since, err := s.VerifiedSince(); err != nil || !since.Equal(c.t) {
 		t.Fatalf("verified since after the pass: %v %v, want %v", since, err, c.t)
 	}
-	if pres, _ := s.Has(bad.sd.Descriptor.StorageIndex); pres != nil && len(pres.Complete) != 0 {
+	if pres, _ := s.Has(o.member, bad.sd.Descriptor.StorageIndex); pres != nil && len(pres.Complete) != 0 {
 		t.Fatal("the corrupt share stayed")
 	}
 	var verified int64
@@ -397,15 +397,20 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 	if p, err := s.ApplyDelete(other, o.member, dh, c.t); err != nil || p != nil {
 		t.Fatalf("delete of nothing: %+v %v", p, err)
 	}
-	// Within the immunity the token is refused; so is another member's,
-	// another descriptor's, and one issued before the last touch.
+	// Within the immunity the token is refused; so is another descriptor's,
+	// and one issued before the last touch. Another member's token is
+	// about that member's object under the index, of which nothing is
+	// held: it does nothing to this one.
 	if _, err := s.ApplyDelete(si, o.member, dh, c.t); !errors.Is(err, ErrRecent) {
 		t.Fatalf("within the immunity: %v", err)
 	}
 	c.t = c.t.Add(Immunity + time.Hour)
 	stranger := newOwner(t, 2)
-	if _, err := s.ApplyDelete(si, stranger.member, dh, c.t); !errors.Is(err, ErrNotOwner) {
-		t.Fatalf("another member's token: %v", err)
+	if p, err := s.ApplyDelete(si, stranger.member, dh, c.t); err != nil || p != nil {
+		t.Fatalf("another member's token: %+v %v", p, err)
+	}
+	if p, _ := s.Has(o.member, si); p == nil || p.Tombstoned {
+		t.Fatalf("another member's token touched the object: %+v", p)
 	}
 	var otherHash object.Hash
 	otherHash[0] = 1
@@ -416,7 +421,7 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 		t.Fatalf("a token older than the last touch: %v", err)
 	}
 	// A touch by the owner restarts the immunity.
-	if err := s.Touch(si); err != nil {
+	if err := s.Touch(o.member, si); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ApplyDelete(si, o.member, dh, c.t); !errors.Is(err, ErrRecent) {
@@ -431,13 +436,16 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 		t.Fatalf("delete twice: %+v %v", p, err)
 	}
 	// Undelete within the window brings it back; after the purge it cannot.
-	if err := s.Undelete(si, stranger.member); !errors.Is(err, ErrNotOwner) {
+	if err := s.Undelete(si, stranger.member); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("a stranger's undelete: %v", err)
+	}
+	if p, _ := s.Has(o.member, si); p == nil || !p.Tombstoned {
+		t.Fatalf("a stranger's undelete cleared the owner's tombstone: %+v", p)
 	}
 	if err := s.Undelete(si, o.member); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ := s.Has(si); p.Tombstoned {
+	if p, _ := s.Has(o.member, si); p.Tombstoned {
 		t.Fatal("undelete left the tombstone")
 	}
 	if _, err := s.ApplyDelete(si, o.member, dh, c.t); err != nil {
@@ -454,7 +462,7 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 	if n, err := s.PurgeTombstones(); err != nil || n != 1 {
 		t.Fatalf("purge after the window: %d %v", n, err)
 	}
-	p, _ = s.Has(si)
+	p, _ = s.Has(o.member, si)
 	if p == nil || !p.Tombstoned || !p.Purged || len(p.Complete) != 0 {
 		t.Fatalf("after the purge: %+v", p)
 	}
@@ -469,7 +477,7 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 		t.Fatalf("repair after the purge: %v", err)
 	}
 	putAll(t, s, ob, 0)
-	if p, _ := s.Has(si); p.Tombstoned || len(p.Complete) != 1 {
+	if p, _ := s.Has(o.member, si); p.Tombstoned || len(p.Complete) != 1 {
 		t.Fatalf("the owner's upload after the purge: %+v", p)
 	}
 	// A purged record is dropped long after.
@@ -483,7 +491,7 @@ func TestDeleteTokensAndTheWindow(t *testing.T) {
 	_, _ = s.PurgeTombstones()
 	c.t = c.t.Add(tombstoneKeep + time.Hour)
 	_, _ = s.PurgeTombstones()
-	if p, _ := s.Has(si); p != nil {
+	if p, _ := s.Has(o.member, si); p != nil {
 		t.Fatalf("the record outlived its keep: %+v", p)
 	}
 }
@@ -577,13 +585,13 @@ func TestMembershipGrace(t *testing.T) {
 	if err != nil || len(purged) != 1 || purged[0] != bob.member {
 		t.Fatalf("after the grace: %v %v", purged, err)
 	}
-	if p, _ := s.Has(b.sd.Descriptor.StorageIndex); p != nil {
+	if p, _ := s.Has(bob.member, b.sd.Descriptor.StorageIndex); p != nil {
 		t.Fatalf("bob's share stayed: %+v", p)
 	}
 	if roots, _ := s.Roots(bob.member); len(roots) != 0 {
 		t.Fatal("bob's root stayed")
 	}
-	if p, _ := s.Has(a.sd.Descriptor.StorageIndex); p == nil || len(p.Complete) != 1 {
+	if p, _ := s.Has(alice.member, a.sd.Descriptor.StorageIndex); p == nil || len(p.Complete) != 1 {
 		t.Fatal("alice's share went")
 	}
 	d, _ := s.Census(0)

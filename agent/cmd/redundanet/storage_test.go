@@ -65,10 +65,10 @@ func TestStorageDropIsSeenByTheCensus(t *testing.T) {
 
 	// The command opens the same store in its own process, as it would
 	// beside the running agent.
-	if err := storageDrop(disk, dataDir, 1, si, 2, "drill"); err != nil {
+	if err := storageDrop(disk, dataDir, 1, identity.Key{}, si, 2, "drill"); err != nil {
 		t.Fatal(err)
 	}
-	if err := storageDrop(disk, dataDir, 1, si, 2, "drill"); err == nil || !strings.Contains(err.Error(), "not held here") {
+	if err := storageDrop(disk, dataDir, 1, identity.Key{}, si, 2, "drill"); err == nil || !strings.Contains(err.Error(), "not held here") {
 		t.Fatalf("dropping twice: %v", err)
 	}
 	if err := storageHas(disk, dataDir, 1, si); err != nil {
@@ -79,12 +79,12 @@ func TestStorageDropIsSeenByTheCensus(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	p, err := st.Has(si)
+	p, err := st.Has(sd.Descriptor.Owner, si)
 	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 1 {
 		t.Fatalf("after the drop: %+v %v", p, err)
 	}
 	d, err := st.Census(gen)
-	if err != nil || len(d.Removed) != 1 || d.Removed[0].Number != 2 || d.Removed[0].StorageIndex != si || d.Generation <= gen {
+	if err != nil || len(d.Removed) != 1 || d.Removed[0].Number != 2 || d.Removed[0].StorageIndex != si || d.Removed[0].Owner != sd.Descriptor.Owner || d.Generation <= gen {
 		t.Fatalf("census after the drop: %+v %v", d, err)
 	}
 	if _, err := os.Stat(filepath.Join(disk, "redundanet3", "shares", si.String()[:2], si.String(), "2")); !os.IsNotExist(err) {

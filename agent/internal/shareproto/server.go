@@ -175,8 +175,6 @@ func statusOf(err error) (string, string) {
 		return StatusRecent, err.Error()
 	case errors.Is(err, store.ErrStale):
 		return StatusStale, err.Error()
-	case errors.Is(err, store.ErrNotOwner):
-		return StatusRefused, err.Error()
 	case errors.Is(err, store.ErrRoot), errors.Is(err, object.ErrCorrupt):
 		return StatusBad, err.Error()
 	}
@@ -357,19 +355,60 @@ func (s *Server) put(peer identity.Peer, st wire.Stream, req *Request) error {
 	return writeMsg(st, Response{Status: StatusOK, Complete: true, Resume: geom.Segments()})
 }
 
+// subject is the owner whose object a has or a get is about. A request
+// that names one is about that owner's object. One that does not comes
+// from a version before objects were keyed by owner, and is answered for
+// the asking member's own object when there is one, otherwise for the
+// only object under the storage index; with two owners under it and
+// neither the asker, there is no telling which is meant.
+func (s *Server) subject(peer identity.Peer, req *Request) (owner identity.Key, held, ambiguous bool, err error) {
+	if !req.Owner.IsZero() {
+		return req.Owner, true, false, nil
+	}
+	owners, err := s.st.Owners(req.StorageIndex)
+	if err != nil {
+		return owner, false, false, err
+	}
+	for _, o := range owners {
+		if o == peer.Member {
+			return o, true, false, nil
+		}
+	}
+	switch len(owners) {
+	case 0:
+		return owner, false, false, nil
+	case 1:
+		return owners[0], true, false, nil
+	}
+	return owner, false, true, nil
+}
+
+const whoseObject = "two members hold an object under this storage index and the request does not say whose"
+
 // get serves a complete share's hashes and a range of its blocks.
 func (s *Server) get(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
-	pres, err := s.st.Has(req.StorageIndex)
+	owner, held, ambiguous, err := s.subject(peer, req)
 	if err != nil {
 		return refuse(st, StatusFailed, err.Error())
 	}
-	if pres != nil && pres.Tombstoned && peer.Member != pres.Owner {
+	if ambiguous {
+		return refuse(st, StatusNotFound, whoseObject)
+	}
+	if !held {
+		code, msg := statusOf(store.ErrNotFound)
+		return refuse(st, code, msg)
+	}
+	pres, err := s.st.Has(owner, req.StorageIndex)
+	if err != nil {
+		return refuse(st, StatusFailed, err.Error())
+	}
+	if pres != nil && pres.Tombstoned && peer.Member != owner {
 		return refuse(st, StatusTombstoned, "deleted by its owner")
 	}
-	sh, err := s.st.OpenShare(req.StorageIndex, req.Number)
+	sh, err := s.st.OpenShare(owner, req.StorageIndex, req.Number)
 	if err != nil {
 		code, msg := statusOf(err)
 		return refuse(st, code, msg)
@@ -403,21 +442,31 @@ func (s *Server) get(peer identity.Peer, st wire.Stream, req *Request) error {
 	return nil
 }
 
-// has answers what the server holds; a hit by the owner's device touches
-// the object's clock.
+// has answers what the server holds of one owner's object; a hit by the
+// owner's device touches the object's clock.
 func (s *Server) has(peer identity.Peer, st wire.Stream, req *Request) error {
 	if err := s.st.Available(); err != nil {
 		return refuse(st, StatusUnavailable, err.Error())
 	}
-	pres, err := s.st.Has(req.StorageIndex)
+	owner, held, ambiguous, err := s.subject(peer, req)
+	if err != nil {
+		return refuse(st, StatusFailed, err.Error())
+	}
+	if ambiguous {
+		return refuse(st, StatusNotFound, whoseObject)
+	}
+	if !held {
+		return writeMsg(st, Response{Status: StatusOK})
+	}
+	pres, err := s.st.Has(owner, req.StorageIndex)
 	if err != nil {
 		return refuse(st, StatusFailed, err.Error())
 	}
 	if pres == nil {
 		return writeMsg(st, Response{Status: StatusOK})
 	}
-	if peer.Member == pres.Owner {
-		_ = s.st.Touch(req.StorageIndex)
+	if peer.Member == owner {
+		_ = s.st.Touch(owner, req.StorageIndex)
 	}
 	return writeMsg(st, Response{Status: StatusOK, Presence: presenceOf(pres)})
 }

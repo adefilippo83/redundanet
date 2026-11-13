@@ -180,9 +180,9 @@ Runs hub mode: rendezvous and relay on `--udp` (QUIC) and `--tcp` (TLS carrier; 
 
 ```
 redundanet storage has [--storage-path DIR] STORAGE_INDEX
-redundanet storage drop [--storage-path DIR] [--reason TEXT] STORAGE_INDEX SHARE_NUMBER
+redundanet storage drop [--storage-path DIR] [--reason TEXT] [--owner MEMBER_KEY] STORAGE_INDEX SHARE_NUMBER
 ```
-This node's own share store, beside the running agent; run as the service user. `has` reports the owner, descriptor and complete and partial shares held. `drop` removes one share on purpose, with the reason recorded in the log; the census tells the hub within seconds, which is how repair is drilled. `--storage-floor-gb N` (default 10) is accepted for symmetry with the agent.
+This node's own share store, beside the running agent; run as the service user. `has` reports the owner's member key, the descriptor and the complete and partial shares held, once for each member that holds an object under that storage index: that is one member, unless a second one stored under an index it saw announced. `drop` removes one share on purpose, with the reason recorded in the log; the census tells the hub within seconds, which is how repair is drilled. `--owner` is needed only when two members hold that share number under the index, and `drop` says so. `--storage-floor-gb N` (default 10) is accepted for symmetry with the agent.
 
 ```
 redundanet object put|get|has|check|repair|delete [--network NAME] [--out FILE] [--timeout 30s] FILE|CAP

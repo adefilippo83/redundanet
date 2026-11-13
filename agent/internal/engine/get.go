@@ -64,7 +64,7 @@ func (e *Native) locate(ctx context.Context, rc object.ReadCap) (*object.Descrip
 		if desc == nil {
 			for _, h := range hs {
 				cctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-				sd, _, err := e.cfg.Client.GetInfo(cctx, h.dev, si, s)
+				sd, _, err := e.cfg.Client.GetInfo(cctx, h.dev, e.cfg.Member, si, s)
 				cancel()
 				if err != nil || sd == nil {
 					continue
@@ -83,7 +83,7 @@ func (e *Native) locate(ctx context.Context, rc object.ReadCap) (*object.Descrip
 		if desc == nil {
 			continue
 		}
-		sources = append(sources, shareproto.Source{Share: int(s), Client: e.cfg.Client, Peer: dev, StorageIndex: si, Geometry: desc.Geometry()})
+		sources = append(sources, shareproto.Source{Share: int(s), Client: e.cfg.Client, Peer: dev, Owner: e.cfg.Member, StorageIndex: si, Geometry: desc.Geometry()})
 	}
 	if desc == nil {
 		return nil, hl, nil, errNoDescriptor

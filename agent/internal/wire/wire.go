@@ -171,10 +171,14 @@ type ShareEntry struct {
 	DescriptorHash [32]byte     `cbor:"dhash" json:"dhash"`
 }
 
-// ShareKey names a share that went away.
+// ShareKey names a share that went away. Owner is whose object it was
+// a share of; it is zero from a node that does not know the field, or for
+// a removal such a node recorded, and the share is then the one the node
+// reported under that storage index and number, whoever its owner.
 type ShareKey struct {
-	StorageIndex [16]byte `cbor:"si" json:"si"`
-	Number       uint8    `cbor:"n" json:"n"`
+	StorageIndex [16]byte     `cbor:"si" json:"si"`
+	Number       uint8        `cbor:"n" json:"n"`
+	Owner        identity.Key `cbor:"owner" json:"owner"`
 }
 
 // TombstoneEntry is a deleted object a node still records.

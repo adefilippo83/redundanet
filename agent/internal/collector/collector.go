@@ -113,7 +113,7 @@ func New(cfg Config) (*Collector, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[[16]byte]time.Time{}}}
+	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[objectKey]time.Time{}}}
 	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "pct": pct, "plural": plural}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {

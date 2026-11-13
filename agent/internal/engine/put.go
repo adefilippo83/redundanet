@@ -215,7 +215,7 @@ func (e *Native) described(ctx context.Context, rc object.ReadCap, p object.Para
 			continue
 		}
 		cctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-		sd, _, err := e.cfg.Client.GetInfo(cctx, dev, si, shares[0])
+		sd, _, err := e.cfg.Client.GetInfo(cctx, dev, e.cfg.Member, si, shares[0])
 		cancel()
 		if err != nil || sd == nil || sd.Verify(e.cfg.Network) != nil {
 			continue

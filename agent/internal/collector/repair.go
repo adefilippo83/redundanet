@@ -36,7 +36,7 @@ const (
 // repairState is what the scheduler keeps between ticks.
 type repairState struct {
 	scheduler string // the hub scheduling repair as this hub sees it; "" before the first election
-	hinted    map[[16]byte]time.Time
+	hinted    map[objectKey]time.Time
 }
 
 // RecordTaskReport closes a running task on its worker's word; the hub
@@ -105,12 +105,12 @@ func (c *Collector) Schedule(ctx context.Context) {
 		c.log.Warn("tasks not read", "err", err)
 		return
 	}
-	bySI := map[[16]byte]Object{}
+	byKey := map[objectKey]Object{}
 	for _, o := range objects {
-		bySI[o.StorageIndex] = o
+		byKey[o.key()] = o
 	}
 	for _, t := range running {
-		o, ok := bySI[t.StorageIndex]
+		o, ok := byKey[t.key()]
 		if !ok || o.Placed || o.Tombstoned {
 			_, _ = c.pl.db.Exec(`UPDATE tasks SET state = 'done', outcome = 'the census shows the object placed', ended = ? WHERE id = ?`, now.Unix(), t.ID)
 		}
@@ -260,10 +260,12 @@ func (c *Collector) hubName(m *manifest.Manifest) string {
 	return ""
 }
 
-// runningTask is a task in flight as the table records it.
+// runningTask is a task in flight as the table records it. The owner is
+// read from the signed task the row keeps.
 type runningTask struct {
 	ID           uint64
 	StorageIndex [16]byte
+	Owner        identity.Key
 	Worker       identity.Key
 	Issued       time.Time
 	Shares       []wire.RepairShare
@@ -289,11 +291,15 @@ func (c *Collector) runningTasks() ([]runningTask, error) {
 		copy(t.Worker[:], worker)
 		var task wire.RepairTask
 		if len(blob) > 0 && identity.UnmarshalLenient(blob, &task) == nil {
-			t.Shares = task.Shares
+			t.Shares, t.Owner = task.Shares, task.Owner
 		}
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+func (t runningTask) key() objectKey {
+	return objectKey{Owner: t.Owner, StorageIndex: t.StorageIndex}
 }
 
 // taskCounts is the page's view of the tasks table.
@@ -319,9 +325,9 @@ type planInput struct {
 	servers   int // storage servers not dead, the doubling rule's denominator
 	targets   map[identity.Key]*target
 	workers   []identity.Key // live, volunteering, in key order
-	running   map[[16]byte]bool
+	running   map[objectKey]bool
 	perWorker map[identity.Key]int
-	notBefore map[[16]byte]time.Time // objects whose last task failed recently
+	notBefore map[objectKey]time.Time // objects whose last task failed recently
 }
 
 type plannedTask struct {
@@ -340,7 +346,7 @@ type planOutput struct {
 // planInput gathers what the planner needs from the collector's state;
 // called with the lock.
 func (c *Collector) planInput(now time.Time, m *manifest.Manifest, objects []Object, servers int) planInput {
-	in := planInput{now: now, objects: objects, servers: servers, targets: map[identity.Key]*target{}, running: map[[16]byte]bool{}, perWorker: map[identity.Key]int{}, notBefore: map[[16]byte]time.Time{}}
+	in := planInput{now: now, objects: objects, servers: servers, targets: map[identity.Key]*target{}, running: map[objectKey]bool{}, perWorker: map[identity.Key]int{}, notBefore: map[objectKey]time.Time{}}
 	live := map[identity.Key]bool{}
 	if c.cfg.Live != nil {
 		for _, cl := range c.cfg.Live().Clients {
@@ -366,7 +372,7 @@ func (c *Collector) planInput(now time.Time, m *manifest.Manifest, objects []Obj
 	sort.Slice(in.workers, func(i, j int) bool { return in.workers[i].Less(in.workers[j]) })
 	running, _ := c.runningTasks()
 	for _, t := range running {
-		in.running[t.StorageIndex] = true
+		in.running[t.key()] = true
 		in.perWorker[t.Worker]++
 		for _, s := range t.Shares {
 			if tg := in.targets[s.Server]; tg != nil {
@@ -374,15 +380,24 @@ func (c *Collector) planInput(now time.Time, m *manifest.Manifest, objects []Obj
 			}
 		}
 	}
-	rows, err := c.pl.db.Query(`SELECT si, MAX(ended) FROM tasks WHERE state IN ('failed', 'expired') AND ended >= ? GROUP BY si`, now.Add(-retryAfterFailure).Unix())
+	// The few tasks that ended badly in the last minutes; whose object
+	// each was for is in the signed task the row keeps.
+	rows, err := c.pl.db.Query(`SELECT si, task, ended FROM tasks WHERE state IN ('failed', 'expired') AND ended >= ?`, now.Add(-retryAfterFailure).Unix())
 	if err == nil {
 		for rows.Next() {
-			var si []byte
+			var si, blob []byte
 			var ended int64
-			if rows.Scan(&si, &ended) == nil {
-				var key [16]byte
-				copy(key[:], si)
-				in.notBefore[key] = time.Unix(ended, 0).Add(retryAfterFailure)
+			if rows.Scan(&si, &blob, &ended) != nil {
+				continue
+			}
+			var key objectKey
+			copy(key.StorageIndex[:], si)
+			var task wire.RepairTask
+			if len(blob) > 0 && identity.UnmarshalLenient(blob, &task) == nil {
+				key.Owner = task.Owner
+			}
+			if nb := time.Unix(ended, 0).Add(retryAfterFailure); nb.After(in.notBefore[key]) {
+				in.notBefore[key] = nb
 			}
 		}
 		rows.Close()
@@ -402,10 +417,10 @@ func (c *Collector) planInput(now time.Time, m *manifest.Manifest, objects []Obj
 func plan(in planInput) planOutput {
 	var out planOutput
 	for _, o := range in.objects {
-		if o.Need != "repair" || o.Tombstoned || !o.Readable || in.running[o.StorageIndex] {
+		if o.Need != "repair" || o.Tombstoned || !o.Readable || in.running[o.key()] {
 			continue
 		}
-		if nb, ok := in.notBefore[o.StorageIndex]; ok && in.now.Before(nb) {
+		if nb, ok := in.notBefore[o.key()]; ok && in.now.Before(nb) {
 			continue
 		}
 		room := map[identity.Key]int64{}
@@ -569,10 +584,10 @@ func (c *Collector) hintSurplus(now time.Time, objects []Object, in planInput) {
 		return
 	}
 	for _, o := range objects {
-		if o.Surplus == 0 || !o.Placed || in.running[o.StorageIndex] {
+		if o.Surplus == 0 || !o.Placed || in.running[o.key()] {
 			continue
 		}
-		if t, ok := c.rep.hinted[o.StorageIndex]; ok && now.Sub(t) < hintEvery {
+		if t, ok := c.rep.hinted[o.key()]; ok && now.Sub(t) < hintEvery {
 			continue
 		}
 		holders := map[uint8][]identity.Key{}
@@ -604,7 +619,7 @@ func (c *Collector) hintSurplus(now time.Time, objects []Object, in planInput) {
 			if !found {
 				continue
 			}
-			h := &wire.ReleaseHint{StorageIndex: o.StorageIndex, Number: uint8(n), DescriptorHash: o.Hash}
+			h := &wire.ReleaseHint{StorageIndex: o.StorageIndex, Owner: o.Owner, Number: uint8(n), DescriptorHash: o.Hash}
 			for dev := range o.Holders {
 				if dev != pickDev {
 					h.Holders = append(h.Holders, dev)
@@ -616,7 +631,7 @@ func (c *Collector) hintSurplus(now time.Time, objects []Object, in planInput) {
 		if hint == nil {
 			continue
 		}
-		c.rep.hinted[o.StorageIndex] = now
+		c.rep.hinted[o.key()] = now
 		if err := c.send(to, wire.FrameRelease, hint); err == nil {
 			c.log.Info("surplus release hinted", "si", objectID(o.StorageIndex), "n", hint.Number, "holder", to.Short())
 		}

@@ -71,13 +71,19 @@ func (c *Client) exchange(ctx context.Context, peer identity.Key, req *Request) 
 	return st, &resp, nil
 }
 
-// Has asks what a server holds of an object; nil when nothing.
-func (c *Client) Has(ctx context.Context, peer identity.Key, si object.StorageIndex) (*Presence, error) {
-	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeHas, StorageIndex: si})
+// Has asks what a server holds of an owner's object; nil when nothing. A
+// server from before objects were keyed by owner does not read the owner
+// and answers for whoever holds the storage index there: what it holds
+// for another member is nothing of this object.
+func (c *Client) Has(ctx context.Context, peer identity.Key, owner identity.Key, si object.StorageIndex) (*Presence, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeHas, StorageIndex: si, Owner: owner})
 	if err != nil {
 		return nil, err
 	}
 	done(st)
+	if resp.Presence != nil && resp.Presence.Owner != owner {
+		return nil, nil
+	}
 	return resp.Presence, nil
 }
 
@@ -210,10 +216,13 @@ func (c *Client) beginPut(ctx context.Context, peer identity.Key, sd *object.Sig
 	return p, nil
 }
 
-// GetShare fetches a share's block hashes and the blocks of segments
-// [from, to); to of 0 means all. sink receives each block in order.
-func (c *Client) GetShare(ctx context.Context, peer identity.Key, si object.StorageIndex, n uint8, from, to int, geom object.Geometry, sink func(segment int, block []byte) error) ([]object.Hash, error) {
-	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeGet, StorageIndex: si, Number: n, From: from, To: to})
+// GetShare fetches the block hashes of a share of an owner's object and
+// the blocks of segments [from, to); to of 0 means all. sink receives each
+// block in order. Nothing here says the blocks are that owner's: the
+// reader checks every block against hashes it took from a descriptor it
+// verified.
+func (c *Client) GetShare(ctx context.Context, peer identity.Key, owner identity.Key, si object.StorageIndex, n uint8, from, to int, geom object.Geometry, sink func(segment int, block []byte) error) ([]object.Hash, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeGet, StorageIndex: si, Owner: owner, Number: n, From: from, To: to})
 	if err != nil {
 		return nil, err
 	}
@@ -235,10 +244,11 @@ func (c *Client) GetShare(ctx context.Context, peer identity.Key, si object.Stor
 	return resp.Hashes, nil
 }
 
-// GetInfo fetches a share's signed descriptor and block hash list without
-// its blocks: what a reader needs before it asks for blocks.
-func (c *Client) GetInfo(ctx context.Context, peer identity.Key, si object.StorageIndex, n uint8) (*object.SignedDescriptor, []object.Hash, error) {
-	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeGet, StorageIndex: si, Number: n, HashesOnly: true})
+// GetInfo fetches the signed descriptor and block hash list of a share of
+// an owner's object without its blocks: what a reader needs before it
+// asks for blocks. The caller verifies the descriptor, its owner included.
+func (c *Client) GetInfo(ctx context.Context, peer identity.Key, owner identity.Key, si object.StorageIndex, n uint8) (*object.SignedDescriptor, []object.Hash, error) {
+	st, resp, err := c.exchange(ctx, peer, &Request{Type: TypeGet, StorageIndex: si, Owner: owner, Number: n, HashesOnly: true})
 	if err != nil {
 		return nil, nil, err
 	}

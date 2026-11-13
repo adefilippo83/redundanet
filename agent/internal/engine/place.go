@@ -100,7 +100,9 @@ func plan(si object.StorageIndex, n int, shares []int, servers []server, held ma
 	return out
 }
 
-// presence is what every server holds of an object, asked all at once.
+// presence is what every server holds of this member's object under a
+// storage index, asked all at once. What another member holds under the
+// same index is not this object and is never part of the answer.
 type presence struct {
 	Pres     map[identity.Key]*shareproto.Presence
 	RTT      map[identity.Key]time.Duration
@@ -119,7 +121,7 @@ func (e *Native) presence(ctx context.Context, si object.StorageIndex, servers [
 			cctx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
 			defer cancel()
 			start := time.Now()
-			pr, err := e.cfg.Client.Has(cctx, s.Device, si)
+			pr, err := e.cfg.Client.Has(cctx, s.Device, e.cfg.Member, si)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {

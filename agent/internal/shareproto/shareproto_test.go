@@ -245,13 +245,13 @@ func TestPutHasGetAndResume(t *testing.T) {
 	o := encode(t, w.server, 3*8192+100, 1)
 	si := o.sd.Descriptor.StorageIndex
 
-	if p, err := c.Has(ctx, peer, si); err != nil || p != nil {
+	if p, err := c.Has(ctx, peer, w.server.key, si); err != nil || p != nil {
 		t.Fatalf("has before: %+v %v", p, err)
 	}
 	if err := c.PutShare(ctx, peer, o.sd, 1, func(s int) ([]byte, error) { return o.blocks[1][s], nil }); err != nil {
 		t.Fatal(err)
 	}
-	p, err := c.Has(ctx, peer, si)
+	p, err := c.Has(ctx, peer, w.server.key, si)
 	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 1 || p.Owner != w.server.key {
 		t.Fatalf("has after: %+v %v", p, err)
 	}
@@ -273,7 +273,7 @@ func TestPutHasGetAndResume(t *testing.T) {
 	}
 	var partial uint32
 	for i := 0; i < 50; i++ {
-		p, _ = c.Has(ctx, peer, si)
+		p, _ = c.Has(ctx, peer, w.server.key, si)
 		if p != nil && p.Partial[2] == 2 {
 			partial = 2
 			break
@@ -292,12 +292,12 @@ func TestPutHasGetAndResume(t *testing.T) {
 	}
 	// Get the whole share and a range, and decode from the two shares.
 	var got [][]byte
-	hashes, err := c.GetShare(ctx, peer, si, 1, 0, 0, o.sd.Descriptor.Geometry(), func(s int, b []byte) error { got = append(got, b); return nil })
+	hashes, err := c.GetShare(ctx, peer, w.server.key, si, 1, 0, 0, o.sd.Descriptor.Geometry(), func(s int, b []byte) error { got = append(got, b); return nil })
 	if err != nil || len(got) != 4 || !bytes.Equal(got[3], o.blocks[1][3]) || object.ShareRoot(hashes) != o.sd.Descriptor.ShareRoots[1] {
 		t.Fatalf("get: %v", err)
 	}
 	var rng [][]byte
-	if _, err := c.GetShare(ctx, peer, si, 2, 1, 3, o.sd.Descriptor.Geometry(), func(s int, b []byte) error { rng = append(rng, b); return nil }); err != nil || len(rng) != 2 || !bytes.Equal(rng[0], o.blocks[2][1]) {
+	if _, err := c.GetShare(ctx, peer, w.server.key, si, 2, 1, 3, o.sd.Descriptor.Geometry(), func(s int, b []byte) error { rng = append(rng, b); return nil }); err != nil || len(rng) != 2 || !bytes.Equal(rng[0], o.blocks[2][1]) {
 		t.Fatalf("get range: %v", err)
 	}
 	var out bytes.Buffer
@@ -311,7 +311,7 @@ func TestPutHasGetAndResume(t *testing.T) {
 	if err := object.Decode(ctx, &out, o.cap, &o.sd.Descriptor, &w.server.conv, srcs); err != nil || !bytes.Equal(out.Bytes(), o.data) {
 		t.Fatalf("decode over the protocol: %v", err)
 	}
-	if _, err := c.GetShare(ctx, peer, si, 3, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusNotFound) {
+	if _, err := c.GetShare(ctx, peer, w.server.key, si, 3, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusNotFound) {
 		t.Fatalf("get of a missing share: %v", err)
 	}
 }
@@ -352,10 +352,10 @@ func TestRefusals(t *testing.T) {
 	// A tombstoned object is served to the owner only.
 	dh, _ := o.sd.Descriptor.Hash()
 	_ = w.st.Tombstone(o.sd.Descriptor.StorageIndex, stranger.key, dh, time.Now())
-	if _, err := oc.GetShare(octx, peer, o.sd.Descriptor.StorageIndex, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusTombstoned) {
+	if _, err := oc.GetShare(octx, peer, stranger.key, o.sd.Descriptor.StorageIndex, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusTombstoned) {
 		t.Fatalf("tombstoned to another member: %v", err)
 	}
-	if _, err := sc.GetShare(ctx, peer, o.sd.Descriptor.StorageIndex, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); err != nil {
+	if _, err := sc.GetShare(ctx, peer, stranger.key, o.sd.Descriptor.StorageIndex, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); err != nil {
 		t.Fatalf("tombstoned to the owner: %v", err)
 	}
 	// A descriptor whose signature does not verify is a bad request.
@@ -419,7 +419,7 @@ func TestStreamsAreReleased(t *testing.T) {
 	o := encode(t, w.server, 100, 7)
 	for i := 0; i < 1500; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_, err := c.Has(ctx, peer, o.sd.Descriptor.StorageIndex)
+		_, err := c.Has(ctx, peer, w.server.key, o.sd.Descriptor.StorageIndex)
 		cancel()
 		if err != nil {
 			t.Fatalf("request %d: %v", i+1, err)
@@ -488,7 +488,7 @@ func TestRepairPutNeedsAValidTask(t *testing.T) {
 	if err := putWith(2, task(me, 2, peer, time.Hour, hubSigner)); err != nil {
 		t.Fatalf("a valid task: %v", err)
 	}
-	p, err := bc.Has(ctx, peer, si)
+	p, err := bc.Has(ctx, peer, alice.key, si)
 	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 2 || p.Owner != alice.key {
 		t.Fatalf("after the repair put: %+v %v", p, err)
 	}
@@ -555,14 +555,19 @@ func TestDeleteUndeleteAndList(t *testing.T) {
 	if _, err := c.Delete(ctx, peer, token(laptop, time.Now())); !isStatus(err, StatusRecent) {
 		t.Fatalf("delete within the immunity: %v", err)
 	}
-	// A stranger's token, and a token the stranger delivers, are refused.
+	// A stranger's token is about the stranger's object under that index,
+	// of which nothing is held: it does nothing. A token of the owner's
+	// that the stranger delivers is refused.
 	bob := newMember(t, 2, identity.RoleClient)
 	w.pol.mu.Lock()
 	w.pol.active[bob.key] = true
 	w.pol.mu.Unlock()
 	bc, bctx, bobDev := client(t, w, bob)
-	if _, err := bc.Delete(bctx, peer, token(bobDev, time.Now())); !isStatus(err, StatusRefused) && !isStatus(err, StatusRecent) {
-		t.Fatalf("a stranger's token: %v", err)
+	if p, err := bc.Delete(bctx, peer, token(bobDev, time.Now().Add(store.Immunity+2*time.Hour))); err != nil || p != nil {
+		t.Fatalf("a stranger's token: %+v %v", p, err)
+	}
+	if p, _ := c.Has(ctx, peer, alice.key, si); p == nil || p.Tombstoned || len(p.Complete) != 2 {
+		t.Fatalf("the object after a stranger's token: %+v", p)
 	}
 	if _, err := bc.Delete(bctx, peer, token(laptop, time.Now())); !isStatus(err, StatusRefused) {
 		t.Fatalf("a stranger delivering the owner's token: %v", err)
@@ -575,10 +580,10 @@ func TestDeleteUndeleteAndList(t *testing.T) {
 	if err != nil || p == nil || !p.Tombstoned {
 		t.Fatalf("delete past the immunity: %+v %v", p, err)
 	}
-	if _, err := bc.GetShare(bctx, peer, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusTombstoned) {
+	if _, err := bc.GetShare(bctx, peer, alice.key, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); !isStatus(err, StatusTombstoned) {
 		t.Fatalf("a stranger reads a tombstoned object: %v", err)
 	}
-	if _, err := c.GetShare(ctx, peer, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); err != nil {
+	if _, err := c.GetShare(ctx, peer, alice.key, si, 0, 0, 0, o.sd.Descriptor.Geometry(), func(int, []byte) error { return nil }); err != nil {
 		t.Fatalf("the owner reads a tombstoned object: %v", err)
 	}
 	list, err := c.List(ctx, peer)
@@ -588,13 +593,16 @@ func TestDeleteUndeleteAndList(t *testing.T) {
 	if blist, err := bc.List(bctx, peer); err != nil || len(blist) != 0 {
 		t.Fatalf("a stranger's list: %+v %v", blist, err)
 	}
-	if err := bc.Undelete(bctx, peer, si); !isStatus(err, StatusRefused) {
+	if err := bc.Undelete(bctx, peer, si); !isStatus(err, StatusNotFound) {
 		t.Fatalf("a stranger's undelete: %v", err)
+	}
+	if p, _ := c.Has(ctx, peer, alice.key, si); p == nil || !p.Tombstoned {
+		t.Fatalf("a stranger's undelete cleared the owner's tombstone: %+v", p)
 	}
 	if err := c.Undelete(ctx, peer, si); err != nil {
 		t.Fatal(err)
 	}
-	if p, _ := c.Has(ctx, peer, si); p == nil || p.Tombstoned {
+	if p, _ := c.Has(ctx, peer, alice.key, si); p == nil || p.Tombstoned {
 		t.Fatalf("after undelete: %+v", p)
 	}
 	// A token older than the owner's last touch is stale.
@@ -695,12 +703,12 @@ func TestLocalOpener(t *testing.T) {
 	if err := c.PutShare(ctx, peer, o.sd, 1, func(s int) ([]byte, error) { return o.blocks[1][s], nil }); err != nil {
 		t.Fatal(err)
 	}
-	p, err := c.Has(ctx, peer, si)
+	p, err := c.Has(ctx, peer, w.server.key, si)
 	if err != nil || p == nil || len(p.Complete) != 1 || p.Complete[0] != 1 {
 		t.Fatalf("has: %+v %v", p, err)
 	}
 	var got [][]byte
-	if _, err := c.GetShare(ctx, peer, si, 1, 0, 0, o.sd.Descriptor.Geometry(), func(_ int, b []byte) error { got = append(got, b); return nil }); err != nil {
+	if _, err := c.GetShare(ctx, peer, w.server.key, si, 1, 0, 0, o.sd.Descriptor.Geometry(), func(_ int, b []byte) error { got = append(got, b); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != len(o.blocks[1]) {
@@ -724,7 +732,7 @@ func TestLocalOpener(t *testing.T) {
 	// The handler keeps the partial once it has seen the end; the resume
 	// picks up from there.
 	for i := 0; i < 50; i++ {
-		if p, _ = c.Has(ctx, peer, si); p != nil && p.Partial[2] == 2 {
+		if p, _ = c.Has(ctx, peer, w.server.key, si); p != nil && p.Partial[2] == 2 {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -736,7 +744,7 @@ func TestLocalOpener(t *testing.T) {
 	if err := c.PutShare(ctx, peer, o.sd, 2, func(s int) ([]byte, error) { sent = append(sent, s); return o.blocks[2][s], nil }); err != nil || len(sent) != 2 || sent[0] != 2 {
 		t.Fatalf("resumed put: %v, sent %v", err, sent)
 	}
-	if p, err := c.Has(ctx, peer, si); err != nil || p == nil || len(p.Complete) != 2 {
+	if p, err := c.Has(ctx, peer, w.server.key, si); err != nil || p == nil || len(p.Complete) != 2 {
 		t.Fatalf("has after resume: %+v %v", p, err)
 	}
 	e1, err := SignRoot("testnet", w.server.dev, w.server.cert, 1, []byte("ciphertext v1"))
@@ -752,12 +760,12 @@ func TestLocalOpener(t *testing.T) {
 	}
 	// A refusal is a status, not a hang; a cancelled context opens nothing.
 	refused := NewClient(LocalOpener(self, RefuseAll))
-	if _, err := refused.Has(ctx, peer, si); err == nil {
+	if _, err := refused.Has(ctx, peer, w.server.key, si); err == nil {
 		t.Fatal("RefuseAll answered")
 	}
 	cctx, ccancel := context.WithCancel(ctx)
 	ccancel()
-	if _, err := c.Has(cctx, peer, si); err == nil {
+	if _, err := c.Has(cctx, peer, w.server.key, si); err == nil {
 		t.Fatal("a stream opened on a cancelled context")
 	}
 }

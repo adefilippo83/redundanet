@@ -208,7 +208,7 @@ func (w *Worker) run(ctx context.Context, t *wire.RepairTask) (done []uint8, err
 		if sd != nil && len(have) >= int(sd.Descriptor.K) {
 			break
 		}
-		pres, err := w.has(ctx, dev, si)
+		pres, err := w.has(ctx, dev, t.Owner, si)
 		if err != nil {
 			lastErr = err
 			continue
@@ -220,7 +220,7 @@ func (w *Worker) run(ctx context.Context, t *wire.RepairTask) (done []uint8, err
 			if have[n] {
 				continue
 			}
-			src, info, closer, err := w.source(ctx, dev, si, n)
+			src, info, closer, err := w.source(ctx, dev, t.Owner, si, n)
 			if err != nil {
 				lastErr = err
 				continue
@@ -332,10 +332,11 @@ func (w *Worker) checkDescriptor(sd *object.SignedDescriptor, network string, si
 	return nil
 }
 
-// has asks a server, or this node's own store, what it holds.
-func (w *Worker) has(ctx context.Context, dev identity.Key, si object.StorageIndex) (*shareproto.Presence, error) {
+// has asks a server, or this node's own store, what it holds of an
+// owner's object.
+func (w *Worker) has(ctx context.Context, dev identity.Key, owner identity.Key, si object.StorageIndex) (*shareproto.Presence, error) {
 	if dev == w.cfg.Device {
-		p, err := w.cfg.Store.Has(si)
+		p, err := w.cfg.Store.Has(owner, si)
 		if err != nil || p == nil {
 			return nil, err
 		}
@@ -343,14 +344,14 @@ func (w *Worker) has(ctx context.Context, dev identity.Key, si object.StorageInd
 	}
 	cctx, cancel := context.WithTimeout(ctx, w.cfg.Timeout)
 	defer cancel()
-	return w.cfg.Client.Has(cctx, dev, si)
+	return w.cfg.Client.Has(cctx, dev, owner, si)
 }
 
 // source is one share as a decode source, with its signed descriptor and
 // a closer for the local file.
-func (w *Worker) source(ctx context.Context, dev identity.Key, si object.StorageIndex, n uint8) (object.Source, *object.SignedDescriptor, func(), error) {
+func (w *Worker) source(ctx context.Context, dev identity.Key, owner identity.Key, si object.StorageIndex, n uint8) (object.Source, *object.SignedDescriptor, func(), error) {
 	if dev == w.cfg.Device {
-		sh, err := w.cfg.Store.OpenShare(si, n)
+		sh, err := w.cfg.Store.OpenShare(owner, si, n)
 		if err != nil {
 			return object.Source{}, nil, nil, err
 		}
@@ -359,7 +360,7 @@ func (w *Worker) source(ctx context.Context, dev identity.Key, si object.Storage
 	}
 	cctx, cancel := context.WithTimeout(ctx, w.cfg.Timeout)
 	defer cancel()
-	sd, hashes, err := w.cfg.Client.GetInfo(cctx, dev, si, n)
+	sd, hashes, err := w.cfg.Client.GetInfo(cctx, dev, owner, si, n)
 	if err != nil {
 		return object.Source{}, nil, nil, err
 	}
@@ -371,7 +372,7 @@ func (w *Worker) source(ctx context.Context, dev identity.Key, si object.Storage
 		rctx, cancel := context.WithTimeout(ctx, w.cfg.Timeout)
 		defer cancel()
 		var block []byte
-		_, err := w.cfg.Client.GetShare(rctx, dev, si, n, segment, segment+1, geom, func(_ int, b []byte) error { block = b; return nil })
+		_, err := w.cfg.Client.GetShare(rctx, dev, owner, si, n, segment, segment+1, geom, func(_ int, b []byte) error { block = b; return nil })
 		return block, err
 	}
 	return object.Source{Share: int(n), Hashes: hashes, Read: read}, sd, func() {}, nil
@@ -429,7 +430,11 @@ func (w *Worker) release(ctx context.Context, h *wire.ReleaseHint) error {
 		return errors.New("no manifest")
 	}
 	si := object.StorageIndex(h.StorageIndex)
-	sh, err := w.cfg.Store.OpenShare(si, h.Number)
+	owner, err := w.hinted(h)
+	if err != nil {
+		return err
+	}
+	sh, err := w.cfg.Store.OpenShare(owner, si, h.Number)
 	if err != nil {
 		return err
 	}
@@ -451,20 +456,40 @@ func (w *Worker) release(ctx context.Context, h *wire.ReleaseHint) error {
 		if dev == w.cfg.Device || !listed[dev] {
 			continue
 		}
-		pres, err := w.has(ctx, dev, si)
+		pres, err := w.has(ctx, dev, owner, si)
 		if err != nil || pres == nil || pres.DescriptorHash != dhash || pres.Tombstoned {
 			continue
 		}
 		others[dev] = pres.Complete
 	}
 	var mine []uint8
-	if p, err := w.cfg.Store.Has(si); err == nil && p != nil && p.DescriptorHash == dhash {
+	if p, err := w.cfg.Store.Has(owner, si); err == nil && p != nil && p.DescriptorHash == dhash {
 		mine = p.Complete
 	}
 	if err := releasable(h.Number, int(sd.Descriptor.N), len(m.Storage), mine, others); err != nil {
 		return err
 	}
-	return w.cfg.Store.Remove(si, h.Number, "surplus: every share number stays complete without it")
+	return w.cfg.Store.Remove(owner, si, h.Number, "surplus: every share number stays complete without it")
+}
+
+// hinted is the owner whose object a hint is about. A hub from before
+// objects were keyed by owner does not say: it is then the owner here
+// whose object under that storage index has the hint's descriptor.
+func (w *Worker) hinted(h *wire.ReleaseHint) (identity.Key, error) {
+	if !h.Owner.IsZero() {
+		return h.Owner, nil
+	}
+	si := object.StorageIndex(h.StorageIndex)
+	owners, err := w.cfg.Store.Owners(si)
+	if err != nil {
+		return identity.Key{}, err
+	}
+	for _, o := range owners {
+		if p, err := w.cfg.Store.Has(o, si); err == nil && p != nil && p.DescriptorHash == object.Hash(h.DescriptorHash) {
+			return o, nil
+		}
+	}
+	return identity.Key{}, store.ErrNotFound
 }
 
 // releasable decides whether this node may give up its copy of share

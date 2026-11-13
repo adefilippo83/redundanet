@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite" // the index, pure Go
@@ -41,7 +42,6 @@ var (
 	ErrLowerVersion    = errors.New("store: a root with this version or a higher one is already held")
 	ErrRecent          = errors.New("store: the object was touched by its owner in the last 7 days")
 	ErrStale           = errors.New("store: the delete token was issued before the object was last touched")
-	ErrNotOwner        = errors.New("store: the object belongs to another member")
 )
 
 // Windows of RFC 0001's "Deletion": an object touched by its owner within
@@ -79,6 +79,13 @@ type Store struct {
 	log *slog.Logger
 	db  *sql.DB
 	now func() time.Time
+	// begin serializes the start of a put: the choice of where a share's
+	// file goes, the index row and the file itself are one step.
+	begin sync.Mutex
+	// secondOwners is the index's own word on whether a second member may
+	// store under a storage index another member uses here: see
+	// AcceptSecondOwners.
+	secondOwners bool
 }
 
 // Open establishes or verifies the marker and opens the index.
@@ -177,6 +184,12 @@ func (s *Store) Free() (free, total uint64, err error) { return diskfree.Free(s.
 // Floor is the free-space floor.
 func (s *Store) Floor() int64 { return s.cfg.Floor }
 
+// The index. An object is the pair (owner, storage index): shares and
+// tombstones are keyed by it, and a removal is recorded with its owner.
+// place says where a share's file is: 0 under the storage index's
+// directory, 1 under owner/<owner key> inside it, which a second owner
+// under the same index uses (see sharePath). A store made before the
+// wider key is rebuilt by widen, once.
 func (s *Store) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS shares (
@@ -184,14 +197,12 @@ func (s *Store) migrate() error {
 			k INTEGER NOT NULL, nn INTEGER NOT NULL, size INTEGER NOT NULL, state TEXT NOT NULL,
 			segments INTEGER NOT NULL, received INTEGER NOT NULL,
 			created INTEGER NOT NULL, last_touched INTEGER NOT NULL, verified INTEGER, gen INTEGER NOT NULL,
-			PRIMARY KEY (si, n))`,
-		`CREATE INDEX IF NOT EXISTS shares_owner ON shares(owner)`,
-		`CREATE INDEX IF NOT EXISTS shares_gen ON shares(gen)`,
-		`CREATE INDEX IF NOT EXISTS shares_verified ON shares(state, verified)`,
-		`CREATE TABLE IF NOT EXISTS removed (si BLOB NOT NULL, n INTEGER NOT NULL, gen INTEGER NOT NULL)`,
+			place INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (owner, si, n))`,
+		`CREATE TABLE IF NOT EXISTS removed (si BLOB NOT NULL, n INTEGER NOT NULL, gen INTEGER NOT NULL, owner BLOB)`,
 		`CREATE INDEX IF NOT EXISTS removed_gen ON removed(gen)`,
-		`CREATE TABLE IF NOT EXISTS tombstones (si BLOB PRIMARY KEY, owner BLOB NOT NULL, dhash BLOB NOT NULL,
-			issued INTEGER NOT NULL, created INTEGER NOT NULL, purged INTEGER)`,
+		`CREATE TABLE IF NOT EXISTS tombstones (si BLOB NOT NULL, owner BLOB NOT NULL, dhash BLOB NOT NULL,
+			issued INTEGER NOT NULL, created INTEGER NOT NULL, purged INTEGER, PRIMARY KEY (owner, si))`,
 		`CREATE TABLE IF NOT EXISTS roots (member BLOB NOT NULL, device BLOB NOT NULL, version INTEGER NOT NULL,
 			envelope BLOB NOT NULL, received INTEGER NOT NULL, PRIMARY KEY (member, device, version))`,
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
@@ -203,8 +214,186 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("store: index: %w", err)
 		}
 	}
+	if err := s.widen(); err != nil {
+		return fmt.Errorf("store: index: the wider key: %w", err)
+	}
+	for _, q := range []string{
+		`CREATE INDEX IF NOT EXISTS shares_owner ON shares(owner)`,
+		`CREATE INDEX IF NOT EXISTS shares_gen ON shares(gen)`,
+		`CREATE INDEX IF NOT EXISTS shares_verified ON shares(state, verified)`,
+		`CREATE INDEX IF NOT EXISTS shares_si ON shares(si)`,
+		`CREATE INDEX IF NOT EXISTS tombstones_si ON tombstones(si)`,
+		// One file per share number in the index's own directory, whatever
+		// else goes wrong.
+		`CREATE UNIQUE INDEX IF NOT EXISTS shares_place0 ON shares(si, n) WHERE place = 0`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			return fmt.Errorf("store: index: %w", err)
+		}
+	}
+	return s.oldKeys()
+}
+
+// The names of the unique indexes on the key the tables had before the
+// owner joined it.
+const (
+	oldShareKey     = "shares_old_key"
+	oldTombstoneKey = "tombstones_old_key"
+)
+
+// widen rebuilds, in one transaction, the tables a version before the
+// wider key made: shares from (storage index, share number) to (owner,
+// storage index, share number), tombstones from the storage index to
+// (owner, storage index), and removed gains the owner. Every row already
+// carries its owner, so nothing is read from a share file and no file
+// moves. The statements of the version before name their columns, so they
+// still fit the rebuilt tables.
+func (s *Store) widen() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	keyed := func(table string) (bool, error) {
+		var pk int
+		err := tx.QueryRow(`SELECT pk FROM pragma_table_info(?) WHERE name = 'owner'`, table).Scan(&pk)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return pk > 0, err
+	}
+	rebuilt := false
+	if ok, err := keyed("shares"); err != nil {
+		return err
+	} else if !ok {
+		for _, q := range []string{
+			`CREATE TABLE shares_wide (
+				si BLOB NOT NULL, n INTEGER NOT NULL, owner BLOB NOT NULL, dhash BLOB NOT NULL,
+				k INTEGER NOT NULL, nn INTEGER NOT NULL, size INTEGER NOT NULL, state TEXT NOT NULL,
+				segments INTEGER NOT NULL, received INTEGER NOT NULL,
+				created INTEGER NOT NULL, last_touched INTEGER NOT NULL, verified INTEGER, gen INTEGER NOT NULL,
+				place INTEGER NOT NULL DEFAULT 0,
+				PRIMARY KEY (owner, si, n))`,
+			`INSERT INTO shares_wide (si, n, owner, dhash, k, nn, size, state, segments, received, created, last_touched, verified, gen)
+				SELECT si, n, owner, dhash, k, nn, size, state, segments, received, created, last_touched, verified, gen FROM shares`,
+			`DROP TABLE shares`,
+			`ALTER TABLE shares_wide RENAME TO shares`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		rebuilt = true
+	}
+	if ok, err := keyed("tombstones"); err != nil {
+		return err
+	} else if !ok {
+		for _, q := range []string{
+			`CREATE TABLE tombstones_wide (si BLOB NOT NULL, owner BLOB NOT NULL, dhash BLOB NOT NULL,
+				issued INTEGER NOT NULL, created INTEGER NOT NULL, purged INTEGER, PRIMARY KEY (owner, si))`,
+			`INSERT INTO tombstones_wide (si, owner, dhash, issued, created, purged) SELECT si, owner, dhash, issued, created, purged FROM tombstones`,
+			`DROP TABLE tombstones`,
+			`ALTER TABLE tombstones_wide RENAME TO tombstones`,
+		} {
+			if _, err := tx.Exec(q); err != nil {
+				return err
+			}
+		}
+		rebuilt = true
+	}
+	var has int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('removed') WHERE name = 'owner'`).Scan(&has); err != nil {
+		return err
+	}
+	if has == 0 {
+		if _, err := tx.Exec(`ALTER TABLE removed ADD COLUMN owner BLOB`); err != nil {
+			return err
+		}
+		rebuilt = true
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if rebuilt {
+		s.log.Info("index rebuilt: shares and tombstones are keyed by owner and storage index")
+	}
 	return nil
 }
+
+// metaSecondOwners is the meta row that says second owners are accepted.
+const metaSecondOwners = "second_owners"
+
+// oldKeys keeps the uniqueness of the old key while second owners are
+// refused: no two rows then share a storage index and share number, and
+// the unique indexes say so, because the version before the wider key,
+// back on this store after a rollback, replaces a tombstone by its
+// storage index and counts on one row per share. Whether they are
+// refused is a row of the index, not a setting of the process: the
+// operator's `storage` command opens the same index beside the agent, and
+// must find what the agent decided.
+func (s *Store) oldKeys() error {
+	var on int
+	err := s.db.QueryRow(`SELECT value FROM meta WHERE key = ?`, metaSecondOwners).Scan(&on)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("store: index: %w", err)
+	}
+	if on != 0 {
+		s.secondOwners = true
+		return nil
+	}
+	for _, ix := range []struct{ name, table, cols string }{
+		{oldShareKey, "shares", "si, n"},
+		{oldTombstoneKey, "tombstones", "si"},
+	} {
+		var twice int
+		err := s.db.QueryRow(`SELECT 1 FROM ` + ix.table + ` GROUP BY ` + ix.cols + ` HAVING COUNT(*) > 1 LIMIT 1`).Scan(&twice)
+		if err == nil {
+			continue // cannot hold: two rows under the old key are there
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("store: index: %w", err)
+		}
+		if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ` + ix.name + ` ON ` + ix.table + `(` + ix.cols + `)`); err != nil {
+			return fmt.Errorf("store: index: %w", err)
+		}
+	}
+	return nil
+}
+
+// AcceptSecondOwners lets a second member store an object under a storage
+// index another member already uses here, from now on and across
+// restarts. Until it is called such a put is refused with ErrDescriptor,
+// as every version before the wider key refused it. It drops the
+// uniqueness of the old key, so the version before the wider key can no
+// longer work on this store: call it only once that version is no longer
+// what a rollback returns to.
+func (s *Store) AcceptSecondOwners() error {
+	s.begin.Lock()
+	defer s.begin.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, q := range []string{
+		`DROP INDEX IF EXISTS ` + oldShareKey,
+		`DROP INDEX IF EXISTS ` + oldTombstoneKey,
+		`INSERT OR REPLACE INTO meta (key, value) VALUES ('` + metaSecondOwners + `', 1)`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.secondOwners = true
+	return nil
+}
+
+// SecondOwners reports whether AcceptSecondOwners was called on this
+// store.
+func (s *Store) SecondOwners() bool { return s.secondOwners }
 
 // bump advances the census generation inside tx and returns the new value.
 func bump(tx *sql.Tx) (uint64, error) {
@@ -224,14 +413,28 @@ func (s *Store) Generation() (uint64, error) {
 	return g, err
 }
 
-func (s *Store) sharePath(si object.StorageIndex, n uint8) string {
+// Where a share's file is. The first owner under a storage index has
+// shares/<si prefix>/<si>/<share number>, which is where every share was
+// before the owner joined the key; a later owner under the same index has
+// shares/<si prefix>/<si>/owner/<owner key>/<share number>.
+const (
+	placeIndex = 0
+	placeOwner = 1
+)
+
+func (s *Store) sharePath(owner identity.Key, si object.StorageIndex, n uint8, place int) string {
 	name := si.String()
-	return filepath.Join(s.cfg.Root, "shares", name[:2], name, fmt.Sprintf("%d", n))
+	dir := filepath.Join(s.cfg.Root, "shares", name[:2], name)
+	if place == placeOwner {
+		dir = filepath.Join(dir, "owner", owner.String())
+	}
+	return filepath.Join(dir, fmt.Sprintf("%d", n))
 }
 
 func roundUsage(n int64) int64 { return (n + usageUnit - 1) / usageUnit * usageUnit }
 
-// Presence is what a server knows about an object.
+// Presence is what a server knows about an object: one owner's shares
+// under a storage index, and that owner's tombstone.
 type Presence struct {
 	DescriptorHash object.Hash
 	Owner          identity.Key
@@ -239,31 +442,30 @@ type Presence struct {
 	Partial        map[uint8]uint32 // share number -> segments received
 	LastTouched    time.Time        // the newest touch of any share, on this server's clock
 	Tombstoned     bool
-	TombstoneOwner identity.Key // who issued the tombstone, when Tombstoned
-	Purged         bool         // the tombstone's window has run and the shares are gone
+	Purged         bool // the tombstone's window has run and the shares are gone
+	place          int  // where the share files are; -1 when no share is held
 }
 
-// Has reports the shares held for a storage index; nil when nothing is
-// held and no tombstone exists.
-func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
-	rows, err := s.db.Query(`SELECT n, owner, dhash, state, received, last_touched FROM shares WHERE si = ? ORDER BY n`, si[:])
+// Has reports what is held of an owner's object; nil when no share is
+// held and no tombstone exists for that owner under the storage index.
+func (s *Store) Has(owner identity.Key, si object.StorageIndex) (*Presence, error) {
+	rows, err := s.db.Query(`SELECT n, dhash, state, received, last_touched, place FROM shares WHERE owner = ? AND si = ? ORDER BY n`, owner[:], si[:])
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var p *Presence
 	for rows.Next() {
-		var n int
-		var owner, dhash []byte
+		var n, place int
+		var dhash []byte
 		var state string
 		var received, touched int64
-		if err := rows.Scan(&n, &owner, &dhash, &state, &received, &touched); err != nil {
+		if err := rows.Scan(&n, &dhash, &state, &received, &touched, &place); err != nil {
 			return nil, err
 		}
 		if p == nil {
-			p = &Presence{Partial: map[uint8]uint32{}}
+			p = &Presence{Owner: owner, Partial: map[uint8]uint32{}, place: place}
 			copy(p.DescriptorHash[:], dhash)
-			copy(p.Owner[:], owner)
 		}
 		if t := time.Unix(touched, 0); t.After(p.LastTouched) {
 			p.LastTouched = t
@@ -278,18 +480,16 @@ func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
 		return nil, err
 	}
 	var purged sql.NullInt64
-	var owner, dhash []byte
-	err = s.db.QueryRow(`SELECT owner, dhash, purged FROM tombstones WHERE si = ?`, si[:]).Scan(&owner, &dhash, &purged)
+	var dhash []byte
+	err = s.db.QueryRow(`SELECT dhash, purged FROM tombstones WHERE owner = ? AND si = ?`, owner[:], si[:]).Scan(&dhash, &purged)
 	switch {
 	case err == nil:
 		if p == nil {
-			p = &Presence{Partial: map[uint8]uint32{}}
+			p = &Presence{Owner: owner, Partial: map[uint8]uint32{}, place: -1}
 			copy(p.DescriptorHash[:], dhash)
-			copy(p.Owner[:], owner)
 		}
 		p.Tombstoned = true
 		p.Purged = purged.Valid
-		copy(p.TombstoneOwner[:], owner)
 	case errors.Is(err, sql.ErrNoRows):
 	default:
 		return nil, err
@@ -297,10 +497,33 @@ func (s *Store) Has(si object.StorageIndex) (*Presence, error) {
 	return p, nil
 }
 
+// Owners lists the members that have a share or a tombstone under a
+// storage index here, in key order. Members derive the index from a
+// secret of their own, so more than one is a member storing under an
+// index it saw another announce.
+func (s *Store) Owners(si object.StorageIndex) ([]identity.Key, error) {
+	rows, err := s.db.Query(`SELECT owner FROM shares WHERE si = ? UNION SELECT owner FROM tombstones WHERE si = ? ORDER BY 1`, si[:], si[:])
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []identity.Key
+	for rows.Next() {
+		var b []byte
+		if err := rows.Scan(&b); err != nil {
+			return nil, err
+		}
+		var k identity.Key
+		copy(k[:], b)
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
 // Touch records that a device of the owner referred to the object now; the
 // 7-day immunity from deletion runs from this clock.
-func (s *Store) Touch(si object.StorageIndex) error {
-	_, err := s.db.Exec(`UPDATE shares SET last_touched = ? WHERE si = ?`, s.now().Unix(), si[:])
+func (s *Store) Touch(owner identity.Key, si object.StorageIndex) error {
+	_, err := s.db.Exec(`UPDATE shares SET last_touched = ? WHERE owner = ? AND si = ?`, s.now().Unix(), owner[:], si[:])
 	return err
 }
 
@@ -347,61 +570,77 @@ func (s *Store) VerifiedSince() (time.Time, error) {
 }
 
 // Remove deletes a share and records the removal for the census.
-func (s *Store) Remove(si object.StorageIndex, n uint8, reason string) error {
+func (s *Store) Remove(owner identity.Key, si object.StorageIndex, n uint8, reason string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	res, err := tx.Exec(`DELETE FROM shares WHERE si = ? AND n = ?`, si[:], n)
+	var place int
+	err = tx.QueryRow(`SELECT place FROM shares WHERE owner = ? AND si = ? AND n = ?`, owner[:], si[:], n).Scan(&place)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if k, _ := res.RowsAffected(); k == 0 {
-		return ErrNotFound
+	if _, err := tx.Exec(`DELETE FROM shares WHERE owner = ? AND si = ? AND n = ?`, owner[:], si[:], n); err != nil {
+		return err
 	}
 	g, err := bump(tx)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO removed (si, n, gen) VALUES (?, ?, ?)`, si[:], n, g); err != nil {
+	if _, err := tx.Exec(`INSERT INTO removed (si, n, gen, owner) VALUES (?, ?, ?, ?)`, si[:], n, g, owner[:]); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	_ = os.Remove(s.sharePath(si, n))
-	s.log.Info("share removed", "si", si.String()[:8], "n", n, "reason", reason)
+	_ = os.Remove(s.sharePath(owner, si, n, place))
+	s.log.Info("share removed", "si", si.String()[:8], "n", n, "owner", owner.Short(), "reason", reason)
 	return nil
+}
+
+// shareKey names one share row.
+type shareKey struct {
+	owner identity.Key
+	si    object.StorageIndex
+	n     uint8
+}
+
+// shareKeys runs a query that selects owner, si and n.
+func (s *Store) shareKeys(query string, args ...any) ([]shareKey, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []shareKey
+	for rows.Next() {
+		var owner, si []byte
+		var n int
+		if err := rows.Scan(&owner, &si, &n); err != nil {
+			return nil, err
+		}
+		var k shareKey
+		copy(k.owner[:], owner)
+		copy(k.si[:], si)
+		k.n = uint8(n)
+		out = append(out, k)
+	}
+	return out, rows.Err()
 }
 
 // ExpirePartials deletes partial shares with no block for the given age.
 func (s *Store) ExpirePartials(age time.Duration) (int, error) {
 	cutoff := s.now().Add(-age).Unix()
-	rows, err := s.db.Query(`SELECT si, n FROM shares WHERE state = 'partial' AND last_touched < ?`, cutoff)
+	stale, err := s.shareKeys(`SELECT owner, si, n FROM shares WHERE state = 'partial' AND last_touched < ?`, cutoff)
 	if err != nil {
 		return 0, err
 	}
-	type key struct {
-		si object.StorageIndex
-		n  uint8
-	}
-	var stale []key
-	for rows.Next() {
-		var si []byte
-		var n int
-		if err := rows.Scan(&si, &n); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		var k key
-		copy(k.si[:], si)
-		k.n = uint8(n)
-		stale = append(stale, k)
-	}
-	rows.Close()
 	for _, k := range stale {
-		if err := s.Remove(k.si, k.n, "partial for too long"); err != nil && !errors.Is(err, ErrNotFound) {
+		if err := s.Remove(k.owner, k.si, k.n, "partial for too long"); err != nil && !errors.Is(err, ErrNotFound) {
 			return 0, err
 		}
 	}
@@ -418,25 +657,23 @@ func (s *Store) Tombstone(si object.StorageIndex, owner identity.Key, dhash obje
 
 // ClearTombstone is an upload from a device of the owner, or the owner's
 // change of mind within the window.
-func (s *Store) ClearTombstone(si object.StorageIndex) error {
-	_, err := s.db.Exec(`DELETE FROM tombstones WHERE si = ?`, si[:])
+func (s *Store) ClearTombstone(owner identity.Key, si object.StorageIndex) error {
+	_, err := s.db.Exec(`DELETE FROM tombstones WHERE owner = ? AND si = ?`, owner[:], si[:])
 	return err
 }
 
 // ApplyDelete is a delete token's effect, the first phase of deletion:
 // the object becomes tombstoned, served to the owner's devices only. The
-// token is refused when the object belongs to another member or sits
-// under another descriptor, when the owner touched it within the
-// immunity, and when it was issued before the last touch, so a captured
-// token cannot delete a copy uploaded again later. Nothing held is
-// nothing to do.
+// token acts on its member's object and on nothing else: what another
+// member holds under the same storage index is not this object. It is
+// refused when the object sits under another descriptor, when the owner
+// touched it within the immunity, and when it was issued before the last
+// touch, so a captured token cannot delete a copy uploaded again later.
+// Nothing held for the member is nothing to do.
 func (s *Store) ApplyDelete(si object.StorageIndex, owner identity.Key, dhash object.Hash, issued time.Time) (*Presence, error) {
-	p, err := s.Has(si)
+	p, err := s.Has(owner, si)
 	if err != nil || p == nil {
 		return nil, err
-	}
-	if p.Owner != owner {
-		return p, ErrNotOwner
 	}
 	if p.DescriptorHash != dhash {
 		return p, ErrDescriptor
@@ -455,7 +692,7 @@ func (s *Store) ApplyDelete(si object.StorageIndex, owner identity.Key, dhash ob
 		return p, err
 	}
 	s.log.Info("object tombstoned", "si", si.String()[:8], "owner", owner.Short())
-	p.Tombstoned, p.TombstoneOwner = true, owner
+	p.Tombstoned = true
 	return p, nil
 }
 
@@ -463,20 +700,17 @@ func (s *Store) ApplyDelete(si object.StorageIndex, owner identity.Key, dhash ob
 // goes and the shares serve again. After the purge there is nothing to
 // bring back; a new upload does that.
 func (s *Store) Undelete(si object.StorageIndex, owner identity.Key) error {
-	p, err := s.Has(si)
+	p, err := s.Has(owner, si)
 	if err != nil {
 		return err
 	}
 	if p == nil || !p.Tombstoned {
 		return ErrNotFound
 	}
-	if p.TombstoneOwner != owner {
-		return ErrNotOwner
-	}
 	if p.Purged {
 		return fmt.Errorf("%w: the tombstone window has run and the shares are gone", ErrNotFound)
 	}
-	return s.ClearTombstone(si)
+	return s.ClearTombstone(owner, si)
 }
 
 // PurgeTombstones is the second phase: once a tombstone is older than the
@@ -485,38 +719,38 @@ func (s *Store) Undelete(si object.StorageIndex, owner identity.Key) error {
 // bounds the table. The removals reach the census like any other.
 func (s *Store) PurgeTombstones() (purged int, err error) {
 	now := s.now()
-	rows, err := s.db.Query(`SELECT si FROM tombstones WHERE purged IS NULL AND created <= ?`, now.Add(-TombstoneWindow).Unix())
+	rows, err := s.db.Query(`SELECT owner, si FROM tombstones WHERE purged IS NULL AND created <= ?`, now.Add(-TombstoneWindow).Unix())
 	if err != nil {
 		return 0, err
 	}
-	var due []object.StorageIndex
+	type tombstoned struct {
+		owner identity.Key
+		si    object.StorageIndex
+	}
+	var due []tombstoned
 	for rows.Next() {
-		var b []byte
-		if err := rows.Scan(&b); err != nil {
+		var owner, si []byte
+		if err := rows.Scan(&owner, &si); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		var si object.StorageIndex
-		copy(si[:], b)
-		due = append(due, si)
+		var o tombstoned
+		copy(o.owner[:], owner)
+		copy(o.si[:], si)
+		due = append(due, o)
 	}
 	rows.Close()
-	for _, si := range due {
-		p, err := s.Has(si)
+	for _, o := range due {
+		held, err := s.shareKeys(`SELECT owner, si, n FROM shares WHERE owner = ? AND si = ?`, o.owner[:], o.si[:])
 		if err != nil {
 			return purged, err
 		}
-		for n := range p.Partial {
-			if err := s.Remove(si, n, "tombstone window elapsed"); err != nil && !errors.Is(err, ErrNotFound) {
+		for _, k := range held {
+			if err := s.Remove(k.owner, k.si, k.n, "tombstone window elapsed"); err != nil && !errors.Is(err, ErrNotFound) {
 				return purged, err
 			}
 		}
-		for _, n := range p.Complete {
-			if err := s.Remove(si, n, "tombstone window elapsed"); err != nil && !errors.Is(err, ErrNotFound) {
-				return purged, err
-			}
-		}
-		if _, err := s.db.Exec(`UPDATE tombstones SET purged = ? WHERE si = ?`, now.Unix(), si[:]); err != nil {
+		if _, err := s.db.Exec(`UPDATE tombstones SET purged = ? WHERE owner = ? AND si = ?`, now.Unix(), o.owner[:], o.si[:]); err != nil {
 			return purged, err
 		}
 		purged++
@@ -541,7 +775,7 @@ func (s *Store) ListOwner(owner identity.Key, after object.StorageIndex, limit i
 	if limit <= 0 {
 		limit = 1000
 	}
-	rows, err := s.db.Query(`SELECT s.si, s.dhash, MAX(s.last_touched), t.si IS NOT NULL FROM shares s LEFT JOIN tombstones t ON t.si = s.si
+	rows, err := s.db.Query(`SELECT s.si, s.dhash, MAX(s.last_touched), t.si IS NOT NULL FROM shares s LEFT JOIN tombstones t ON t.owner = s.owner AND t.si = s.si
 		WHERE s.owner = ? AND s.si > ? GROUP BY s.si ORDER BY s.si LIMIT ?`, owner[:], after[:], limit+1)
 	if err != nil {
 		return nil, false, err
@@ -622,30 +856,12 @@ func (s *Store) ApplyMembership(active func(member identity.Key) bool, grace tim
 
 // purgeMember removes everything a member has here.
 func (s *Store) purgeMember(m identity.Key) error {
-	rows, err := s.db.Query(`SELECT si, n FROM shares WHERE owner = ?`, m[:])
+	all, err := s.shareKeys(`SELECT owner, si, n FROM shares WHERE owner = ?`, m[:])
 	if err != nil {
 		return err
 	}
-	type key struct {
-		si object.StorageIndex
-		n  uint8
-	}
-	var all []key
-	for rows.Next() {
-		var si []byte
-		var n int
-		if err := rows.Scan(&si, &n); err != nil {
-			rows.Close()
-			return err
-		}
-		var k key
-		copy(k.si[:], si)
-		k.n = uint8(n)
-		all = append(all, k)
-	}
-	rows.Close()
 	for _, k := range all {
-		if err := s.Remove(k.si, k.n, "member gone after the grace period"); err != nil && !errors.Is(err, ErrNotFound) {
+		if err := s.Remove(k.owner, k.si, k.n, "member gone after the grace period"); err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
 	}
@@ -733,10 +949,12 @@ type CensusEntry struct {
 	DescriptorHash object.Hash         `cbor:"dhash" json:"dhash"`
 }
 
-// CensusKey names a share that went away.
+// CensusKey names a share that went away. The owner is zero for a removal
+// that a version before the wider key recorded.
 type CensusKey struct {
 	StorageIndex object.StorageIndex `cbor:"si" json:"si"`
 	Number       uint8               `cbor:"n" json:"n"`
+	Owner        identity.Key        `cbor:"owner" json:"owner"`
 }
 
 // TombstoneEntry is a tombstone the census reports.
@@ -785,19 +1003,20 @@ func (s *Store) Census(since uint64) (*CensusDelta, error) {
 	}
 	rows.Close()
 	if since > 0 {
-		rows, err = s.db.Query(`SELECT si, n FROM removed WHERE gen > ? ORDER BY gen`, since)
+		rows, err = s.db.Query(`SELECT si, n, owner FROM removed WHERE gen > ? ORDER BY gen`, since)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
 			var k CensusKey
-			var si []byte
+			var si, owner []byte
 			var n int
-			if err := rows.Scan(&si, &n); err != nil {
+			if err := rows.Scan(&si, &n, &owner); err != nil {
 				rows.Close()
 				return nil, err
 			}
 			copy(k.StorageIndex[:], si)
+			copy(k.Owner[:], owner)
 			k.Number = uint8(n)
 			d.Removed = append(d.Removed, k)
 		}
@@ -827,36 +1046,18 @@ func (s *Store) Census(since uint64) (*CensusDelta, error) {
 // fails and reports it. The caller paces it: a full pass per month under
 // 1% CPU is the RFC's budget.
 func (s *Store) Scrub(ctx context.Context, limit int) (checked, failed int, err error) {
-	rows, err := s.db.Query(`SELECT si, n FROM shares WHERE state = 'complete' ORDER BY verified ASC NULLS FIRST, created ASC LIMIT ?`, limit)
+	todo, err := s.shareKeys(`SELECT owner, si, n FROM shares WHERE state = 'complete' ORDER BY verified ASC NULLS FIRST, created ASC LIMIT ?`, limit)
 	if err != nil {
 		return 0, 0, err
 	}
-	type key struct {
-		si object.StorageIndex
-		n  uint8
-	}
-	var todo []key
-	for rows.Next() {
-		var si []byte
-		var n int
-		if err := rows.Scan(&si, &n); err != nil {
-			rows.Close()
-			return 0, 0, err
-		}
-		var k key
-		copy(k.si[:], si)
-		k.n = uint8(n)
-		todo = append(todo, k)
-	}
-	rows.Close()
 	for _, k := range todo {
 		if err := ctx.Err(); err != nil {
 			return checked, failed, err
 		}
-		sh, err := s.OpenShare(k.si, k.n)
+		sh, err := s.OpenShare(k.owner, k.si, k.n)
 		if err != nil {
 			failed++
-			_ = s.Remove(k.si, k.n, "unreadable: "+err.Error())
+			_ = s.Remove(k.owner, k.si, k.n, "unreadable: "+err.Error())
 			continue
 		}
 		verr := sh.Verify()
@@ -864,10 +1065,10 @@ func (s *Store) Scrub(ctx context.Context, limit int) (checked, failed int, err 
 		checked++
 		if verr != nil {
 			failed++
-			_ = s.Remove(k.si, k.n, "integrity: "+verr.Error())
+			_ = s.Remove(k.owner, k.si, k.n, "integrity: "+verr.Error())
 			continue
 		}
-		if _, err := s.db.Exec(`UPDATE shares SET verified = ? WHERE si = ? AND n = ?`, s.now().Unix(), k.si[:], k.n); err != nil {
+		if _, err := s.db.Exec(`UPDATE shares SET verified = ? WHERE owner = ? AND si = ? AND n = ?`, s.now().Unix(), k.owner[:], k.si[:], k.n); err != nil {
 			return checked, failed, err
 		}
 	}

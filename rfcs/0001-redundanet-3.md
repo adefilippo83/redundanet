@@ -954,10 +954,11 @@ uploads of the same object: no timestamp, no uploader. `descriptor_hash` is the
 BLAKE3 hash of that encoding without the signature and certificate, so two
 devices of a member that upload the same object produce the same descriptor
 hash with different signatures, and either is accepted. A server that already
-holds shares of a storage index refuses a share with a different descriptor
-hash, and `HasShares` returns the descriptor hash it holds. That rule is per
-storage index today, whoever the owner is; "Planned: shares keyed by owner and
-storage index" below says what that allows and how it changes. When a server first
+holds shares of an owner's object refuses a share of it with a different
+descriptor hash, and `HasShares` returns the descriptor hash it holds for the
+owner asked about. A server also still refuses a second owner under a storage
+index another member uses; "Planned: shares keyed by owner and storage index"
+below says what that allows and when it ends. When a server first
 saw an object is recorded in its index, not in the descriptor.
 
 The signature covers all n share roots at once. That one choice makes repair
@@ -1092,12 +1093,15 @@ removed member's devices are refused at the handshake.
 
 ### Planned: shares keyed by owner and storage index
 
-Not built. This section is the plan for one change to the store, the share
-protocol and the hub's tables; the sections around it describe what runs
-today.
+Half built. This section is the plan for one change to the store, the share
+protocol and the hub's tables, in the releases listed under "Order of
+release". The first of them is built: the store, the protocol, the census and
+the hub's tables are keyed by owner and storage index, and a server still
+refuses a second owner under an index, so the weakness below is as it was. It
+ends with the second release, which is not built.
 
-**What is wrong today.** A server keeps one descriptor per storage index, and
-the first one it sees wins: a put under another descriptor hash is refused
+**What is wrong today.** A server accepts one owner per storage index, and
+the first one it sees wins: a put by another member under that index is refused
 with `descriptor`. Nothing ties a storage index to an owner, and a client
 names the index to every server in a `has` before it encodes and uploads. A
 storage member that sees the index can sign a descriptor of its own for it and
@@ -1131,7 +1135,8 @@ stored object a new address.
   number) instead of (storage index, share number); `tombstones` by (owner,
   storage index) instead of the index alone; `removed` gains the owner. Every
   row already carries its owner, so the new tables are filled from the old ones
-  without reading a share file.
+  without reading a share file. A removal recorded before the change has no
+  owner, and the census reports it without one.
 - *Share files.* The shares of the first owner under an index stay where they
   are, `shares/<si prefix>/<si>/<share number>`. A later owner's go to
   `shares/<si prefix>/<si>/owner/<owner key>/<share number>`, and the row
@@ -1148,24 +1153,34 @@ stored object a new address.
   asking member only. A version that does not know `owner` ignores it, as it
   ignores every unknown field of a request.
 - *The census.* A removed share is reported with its owner. Added shares and
-  tombstones carry it already.
-- *The hub.* The collector's placement, tombstone and object tables and its
-  repair tasks are keyed by (owner, storage index) the same way, filled from
-  the rows it holds. A repair task is issued per owner's object, as it is in
-  effect today.
+  tombstones carry it already. A removal without an owner, from a node that
+  does not send one, is the share that node reported under that index and
+  number.
+- *The hub.* The collector's placement and tombstone tables and its repair
+  tasks are keyed by (owner, storage index) the same way, filled from the rows
+  it holds. The history per object moves to a table of its own,
+  `objects_owned`; the table it was in is left in the file, because the
+  version before writes it by a statement that needs the storage index to be
+  its whole key, and its rows are merged in at every start while it is there.
+  A repair task is issued per owner's object, as it is in effect today, and a
+  surplus hint names the owner.
+- *The switch.* Whether a server accepts a second owner is a row of its own
+  index, set once by the release that turns it on, not a setting of the
+  process: the operator's `storage` command opens the same index beside the
+  agent and must find what the agent decided.
 
 **Order of release.** The change reaches every machine by self-update, with
 the previous binary kept for a rollback, so no version may leave behind a
 store its predecessor cannot read.
 
-1. *A release that understands owners and changes nothing.* It carries all of
-   the code above. It rebuilds the tables under the wider key in one
+1. *A release that understands owners and changes nothing.* Built. It carries
+   all of the code above. It rebuilds the tables under the wider key in one
    transaction and keeps a unique index on the old key, so the previous
    binary's statements still hold if this one fails probation. Servers still
    refuse a second owner under an index, so no row and no file exists that the
    previous binary would misread. Clients and repair workers start sending
    `owner`; the hub starts keying by it. Nothing a member can observe changes.
-2. *A release that accepts a second owner.* Published once the status page
+2. *A release that accepts a second owner.* Not built. Published once the status page
    shows every storage server, the hub and every repair worker on the first
    release or later. A server begins to accept a second owner only after its
    own update has passed probation, and drops the unique index on the old key
@@ -1182,7 +1197,11 @@ Between the first and the second release the weakness is as it is today.
 
 - The table rebuild on a copy of the largest live index: how long it takes and
   that census generation, usage per owner and tombstones are the same before
-  and after.
+  and after. `go test ./internal/store -run TestIndexCopy -v` with
+  `RN3_STORE_INDEX_COPY` set to a copy of a node's `index.sqlite` does that,
+  and `go test ./internal/collector -run TestPlacementCopy -v` with
+  `RN3_PLACEMENT_COPY` set to a copy of the hub's `placement.sqlite` does it
+  for the hub. Neither changes the file it is given.
 - A rollback drill on one live node for each of the two releases: install,
   force the rollback, compare the census.
 - Old client against new server and new client against old server, for

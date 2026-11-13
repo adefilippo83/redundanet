@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 	"github.com/adefilippo83/redundanet/agent/internal/store"
 )
@@ -26,6 +27,7 @@ func runStorage(args []string) error {
 	storagePath := fs.String("storage-path", "", "the disk the store lives on, as given to the agent (default: the data directory)")
 	floor := fs.Int64("storage-floor-gb", 10, "the agent's floor; a drop needs none")
 	reason := fs.String("reason", "dropped by the operator", "drop: the reason recorded in the log")
+	ownerFlag := fs.String("owner", "", "drop: the member key of the object's owner, needed only when two members hold that share number under the storage index")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -49,7 +51,7 @@ func runStorage(args []string) error {
 		return storageHas(disk, d, *floor, si)
 	case "drop":
 		if fs.NArg() != 2 {
-			return errors.New("usage: storage drop [--storage-path DIR] STORAGE_INDEX SHARE_NUMBER")
+			return errors.New("usage: storage drop [--storage-path DIR] [--owner MEMBER_KEY] STORAGE_INDEX SHARE_NUMBER")
 		}
 		si, err := object.ParseStorageIndex(fs.Arg(0))
 		if err != nil {
@@ -59,7 +61,13 @@ func runStorage(args []string) error {
 		if err != nil {
 			return fmt.Errorf("share number: %w", err)
 		}
-		return storageDrop(disk, d, *floor, si, uint8(n), *reason)
+		var owner identity.Key
+		if *ownerFlag != "" {
+			if owner, err = identity.ParseKey(*ownerFlag); err != nil {
+				return fmt.Errorf("--owner: %w", err)
+			}
+		}
+		return storageDrop(disk, d, *floor, owner, si, uint8(n), *reason)
 	}
 	return fmt.Errorf("storage: unknown subcommand %q", args[0])
 }
@@ -70,32 +78,78 @@ func storageHas(disk, dataDir string, floorGB int64, si object.StorageIndex) err
 		return err
 	}
 	defer st.Close()
-	p, err := st.Has(si)
+	// An object is one owner's under the storage index; more than one
+	// owner is a member storing under an index it saw another announce.
+	owners, err := st.Owners(si)
 	if err != nil {
 		return err
 	}
-	if p == nil {
+	if len(owners) == 0 {
 		fmt.Println("nothing held")
 		return nil
 	}
-	fmt.Printf("owner %s, descriptor %s\n", p.Owner.Short(), p.DescriptorHash.String()[:8])
-	fmt.Printf("complete shares %v\n", p.Complete)
-	for n, got := range p.Partial {
-		fmt.Printf("partial share %d: %d segments\n", n, got)
-	}
-	if p.Tombstoned {
-		fmt.Println("tombstoned")
+	for _, owner := range owners {
+		p, err := st.Has(owner, si)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			continue
+		}
+		fmt.Printf("owner %s, descriptor %s\n", p.Owner, p.DescriptorHash.String()[:8])
+		fmt.Printf("complete shares %v\n", p.Complete)
+		for n, got := range p.Partial {
+			fmt.Printf("partial share %d: %d segments\n", n, got)
+		}
+		if p.Tombstoned {
+			fmt.Println("tombstoned")
+		}
 	}
 	return nil
 }
 
-func storageDrop(disk, dataDir string, floorGB int64, si object.StorageIndex, n uint8, reason string) error {
+// storageDrop removes one share. Without an owner it is the share of
+// whichever member holds that number under the storage index, which is
+// one member unless two store under the same index.
+func storageDrop(disk, dataDir string, floorGB int64, owner identity.Key, si object.StorageIndex, n uint8, reason string) error {
 	st, err := openStore(disk, dataDir, floorGB, nil)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	if err := st.Remove(si, n, reason); err != nil {
+	if owner.IsZero() {
+		owners, err := st.Owners(si)
+		if err != nil {
+			return err
+		}
+		var holding []identity.Key
+		for _, o := range owners {
+			p, err := st.Has(o, si)
+			if err != nil {
+				return err
+			}
+			if p == nil {
+				continue
+			}
+			_, partial := p.Partial[n]
+			complete := false
+			for _, c := range p.Complete {
+				complete = complete || c == n
+			}
+			if partial || complete {
+				holding = append(holding, o)
+			}
+		}
+		switch len(holding) {
+		case 0:
+			return fmt.Errorf("share %d of %s is not held here", n, si)
+		case 1:
+			owner = holding[0]
+		default:
+			return fmt.Errorf("%d members hold share %d under %s; say whose with --owner (storage has lists them)", len(holding), n, si)
+		}
+	}
+	if err := st.Remove(owner, si, n, reason); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("share %d of %s is not held here", n, si)
 		}

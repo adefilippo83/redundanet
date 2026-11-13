@@ -120,12 +120,12 @@ func TestAServerVouchesForItsPlacementOnly(t *testing.T) {
 	}
 	si := rc.Key.StorageIndex()
 	honest := g.servers[alice.dev.ID()].store
-	before, err := honest.Has(si)
+	before, err := honest.Has(alice.key, si)
 	if err != nil || before == nil || len(before.Complete) != 2 {
 		t.Fatalf("placement before: %+v %v", before, err)
 	}
 	for _, n := range before.Complete {
-		if err := honest.Remove(si, n, "test"); err != nil {
+		if err := honest.Remove(alice.key, si, n, "test"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -136,7 +136,7 @@ func TestAServerVouchesForItsPlacementOnly(t *testing.T) {
 	if again, err := other.Put(ctx, bytes.NewReader(data), int64(len(data))); err != nil || again != rc {
 		t.Fatalf("put on a second device: %v", err)
 	}
-	after, err := honest.Has(si)
+	after, err := honest.Has(alice.key, si)
 	if err != nil || after == nil || len(after.Complete) != 2 {
 		t.Fatalf("the shares the honest server lost were not sent again: %+v %v", after, err)
 	}
