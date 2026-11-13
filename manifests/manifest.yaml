@@ -3,7 +3,7 @@
 # revision whose manifest.sig an operator key signed, and only a higher one.
 # Edit, raise revision by one, then sign: scripts/sign.sh manifest.
 schema: 3
-revision: 10
+revision: 11
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
@@ -33,6 +33,11 @@ members:
     contribution_gb: 1000
     joined: 2026-11-10
     status: active
+  - name: alessandrocoppi-ui
+    key: zopzzywo2tgag5p7darbde6izplxibkqbjyqpudc5hvildk2enrq
+    contribution_gb: 50
+    joined: 2026-11-13
+    status: active
 storage:
   - member: adefilippo83
     device: ne6ftzx2ygt53rmixrdknd7abvtu2774ejyrntv3kf3hnyy445fa
@@ -46,3 +51,6 @@ storage:
   - member: emiliano-giusti
     device: ftdvrjwkkq3fqujhewhb62pirccd5in3c2uehbkjor5k272ha5ka
     name: pc-redundanet
+  - member: alessandrocoppi-ui
+    device: t24sab3romscypv5ti6nrvaqur5zfbqkybfzsjnzuzq5bs4lgbda
+    name: raspberry-red
