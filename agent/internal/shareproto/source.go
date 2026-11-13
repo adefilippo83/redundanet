@@ -8,11 +8,13 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 )
 
-// Source names a share on a server, for a reader built on object.Decode.
+// Source names a share of an owner's object on a server, for a reader
+// built on object.Decode.
 type Source struct {
 	Share        int
 	Client       *Client
 	Peer         identity.Key
+	Owner        identity.Key
 	StorageIndex object.StorageIndex
 	Geometry     object.Geometry
 }
@@ -25,14 +27,14 @@ func Sources(ctx context.Context, shares []Source) ([]object.Source, error) {
 	var lastErr error
 	for _, s := range shares {
 		s := s
-		_, hashes, err := s.Client.GetInfo(ctx, s.Peer, s.StorageIndex, uint8(s.Share))
+		_, hashes, err := s.Client.GetInfo(ctx, s.Peer, s.Owner, s.StorageIndex, uint8(s.Share))
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		out = append(out, object.Source{Share: s.Share, Hashes: hashes, Read: func(ctx context.Context, segment int) ([]byte, error) {
 			var block []byte
-			_, err := s.Client.GetShare(ctx, s.Peer, s.StorageIndex, uint8(s.Share), segment, segment+1, s.Geometry, func(_ int, b []byte) error { block = b; return nil })
+			_, err := s.Client.GetShare(ctx, s.Peer, s.Owner, s.StorageIndex, uint8(s.Share), segment, segment+1, s.Geometry, func(_ int, b []byte) error { block = b; return nil })
 			return block, err
 		}})
 	}

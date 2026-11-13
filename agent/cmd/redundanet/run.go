@@ -1088,7 +1088,7 @@ func shareCensus(st *store.Store) func(since uint64) (*wire.ShareCensus, error) 
 			out.Added = append(out.Added, wire.ShareEntry{StorageIndex: e.StorageIndex, Number: e.Number, Owner: e.Owner, Size: e.Size, K: e.K, N: e.N, DescriptorHash: e.DescriptorHash})
 		}
 		for _, k := range d.Removed {
-			out.Removed = append(out.Removed, wire.ShareKey{StorageIndex: k.StorageIndex, Number: k.Number})
+			out.Removed = append(out.Removed, wire.ShareKey{StorageIndex: k.StorageIndex, Number: k.Number, Owner: k.Owner})
 		}
 		for _, t := range d.Tombstones {
 			out.Tombstones = append(out.Tombstones, wire.TombstoneEntry{StorageIndex: t.StorageIndex, Owner: t.Owner, DescriptorHash: t.DescriptorHash, Purged: t.Purged})

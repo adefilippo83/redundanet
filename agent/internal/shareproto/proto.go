@@ -39,7 +39,7 @@ const (
 	StatusQuota        = "quota"         // the owner is at the per-server cap
 	StatusNoSpace      = "no-space"      // the server is below its free-space floor
 	StatusTombstoned   = "tombstoned"    // deleted by its owner
-	StatusDescriptor   = "descriptor"    // another descriptor is held for the storage index
+	StatusDescriptor   = "descriptor"    // another descriptor is held for the object, or another member uses the storage index
 	StatusNotFound     = "not-found"     //
 	StatusPartial      = "partial"       // the share is not complete
 	StatusLowerVersion = "lower-version" // a root at or above this version is held
@@ -69,6 +69,14 @@ type Request struct {
 	Token        *DeleteToken               `cbor:"token,omitempty"`      // delete
 	Revocation   *identity.SignedRevocation `cbor:"revocation,omitempty"` // revoke
 	After        object.StorageIndex        `cbor:"after"`                // list: the page starts after this index
+	// Owner says whose object a has or a get is about: an object is the
+	// pair (owner, storage index). A member's device sends its member key,
+	// a repair worker the owner its task names. Zero is a version that
+	// does not know the field; the server then answers as Server.subject
+	// describes. The other requests name their owner already: a put by its
+	// descriptor, a delete by its token, the rest act for the asking
+	// member.
+	Owner identity.Key `cbor:"owner"`
 }
 
 // Response answers a request; for put it precedes the blocks and a second

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/object"
 )
 
@@ -17,6 +19,7 @@ type Put struct {
 	s        *Store
 	sd       *object.SignedDescriptor
 	si       object.StorageIndex
+	owner    identity.Key
 	n        uint8
 	geom     object.Geometry
 	hdrLen   int
@@ -46,6 +49,11 @@ func (s *Store) BeginRepair(sd *object.SignedDescriptor, n uint8) (*Put, error) 
 	return s.beginPut(sd, n, true)
 }
 
+// The object is the owner's under the storage index: what another member
+// holds under the same index is another object, which this put neither
+// reads nor touches. Until AcceptSecondOwners, a put under an index another
+// member already uses is refused with ErrDescriptor, as it was when a
+// server kept one descriptor per index.
 func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Put, error) {
 	if err := s.Available(); err != nil {
 		return nil, err
@@ -58,8 +66,10 @@ func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Pu
 	if err != nil {
 		return nil, err
 	}
-	si := d.StorageIndex
-	pres, err := s.Has(si)
+	si, owner := d.StorageIndex, d.Owner
+	s.begin.Lock()
+	defer s.begin.Unlock()
+	pres, err := s.Has(owner, si)
 	if err != nil {
 		return nil, err
 	}
@@ -68,19 +78,44 @@ func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Pu
 			return nil, ErrDescriptor
 		}
 		if pres.Tombstoned {
-			if repair || pres.TombstoneOwner != d.Owner {
+			if repair {
 				return nil, ErrTombstoned
 			}
 			// An upload from a device of the owner clears the tombstone.
-			if err := s.ClearTombstone(si); err != nil {
+			if err := s.ClearTombstone(owner, si); err != nil {
 				return nil, err
 			}
 		}
 		for _, c := range pres.Complete {
 			if c == n {
-				_ = s.Touch(si)
+				_ = s.Touch(owner, si)
 				return nil, ErrAlreadyComplete
 			}
+		}
+	}
+	place := -1
+	if pres != nil {
+		place = pres.place
+	}
+	if place < 0 {
+		// The owner's first share under this index: its files go to the
+		// index's own directory unless another member's are there.
+		others, err := s.Owners(si)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range others {
+			if o != owner && !s.secondOwners {
+				return nil, ErrDescriptor
+			}
+		}
+		var taken int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM shares WHERE si = ? AND owner <> ? AND place = ?`, si[:], owner[:], placeIndex).Scan(&taken); err != nil {
+			return nil, err
+		}
+		place = placeIndex
+		if taken > 0 {
+			place = placeOwner
 		}
 	}
 	free, _, err := s.Free()
@@ -88,8 +123,8 @@ func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Pu
 		return nil, ErrNoSpace
 	}
 	geom := d.Geometry()
-	path := s.sharePath(si, n)
-	p := &Put{s: s, sd: sd, si: si, n: n, geom: geom}
+	path := s.sharePath(owner, si, n, place)
+	p := &Put{s: s, sd: sd, si: si, owner: owner, n: n, geom: geom}
 	if received, ok := pres.partial(n); ok {
 		// Resume: the header is on disk; trust the index's count.
 		f, err := os.OpenFile(path, os.O_RDWR, 0o644)
@@ -104,28 +139,39 @@ func (s *Store) beginPut(sd *object.SignedDescriptor, n uint8, repair bool) (*Pu
 		p.f, p.hdrLen, p.received = f, hdr.Len, int(received)
 		return p, nil
 	}
+	// The row first, the file after: a row that the index refuses never
+	// costs a file, its own or another share's.
+	var hdr bytes.Buffer
+	hdrLen, err := object.WriteShareHeader(&hdr, sd, n)
+	if err != nil {
+		return nil, err
+	}
+	size := roundUsage(object.ShareSize(geom, hdrLen))
+	now := s.now().Unix()
+	if _, err := s.db.Exec(`INSERT INTO shares (si, n, owner, dhash, k, nn, size, state, segments, received, created, last_touched, verified, gen, place)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'partial', ?, 0, ?, ?, NULL, 0, ?)`,
+		si[:], n, owner[:], dhash[:], d.K, d.N, size, geom.Segments(), now, now, place); err != nil {
+		return nil, err
+	}
+	undo := func() {
+		_, _ = s.db.Exec(`DELETE FROM shares WHERE owner = ? AND si = ? AND n = ? AND state = 'partial'`, owner[:], si[:], n)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		undo()
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
+		undo()
 		return nil, err
 	}
-	hdrLen, err := object.WriteShareHeader(f, sd, n)
-	if err != nil {
+	if _, err := f.Write(hdr.Bytes()); err != nil {
 		_ = f.Close()
+		_ = os.Remove(path)
+		undo()
 		return nil, err
 	}
 	p.f, p.hdrLen = f, hdrLen
-	size := roundUsage(object.ShareSize(geom, hdrLen))
-	now := s.now().Unix()
-	if _, err := s.db.Exec(`INSERT INTO shares (si, n, owner, dhash, k, nn, size, state, segments, received, created, last_touched, verified, gen)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'partial', ?, 0, ?, ?, NULL, 0)`,
-		si[:], n, d.Owner[:], dhash[:], d.K, d.N, size, geom.Segments(), now, now); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return nil, err
-	}
 	return p, nil
 }
 
@@ -149,7 +195,7 @@ func (p *Put) WriteBlock(segment int, b []byte) error {
 		return err
 	}
 	p.received++
-	_, err := p.s.db.Exec(`UPDATE shares SET received = ?, last_touched = ? WHERE si = ? AND n = ?`, p.received, p.s.now().Unix(), p.si[:], p.n)
+	_, err := p.s.db.Exec(`UPDATE shares SET received = ?, last_touched = ? WHERE owner = ? AND si = ? AND n = ?`, p.received, p.s.now().Unix(), p.owner[:], p.si[:], p.n)
 	return err
 }
 
@@ -173,7 +219,7 @@ func (p *Put) Complete() error {
 	}
 	if object.ShareRoot(hashes) != p.sd.Descriptor.ShareRoots[p.n] {
 		_ = p.f.Close()
-		_ = p.s.Remove(p.si, p.n, "blocks do not match the signed root")
+		_ = p.s.Remove(p.owner, p.si, p.n, "blocks do not match the signed root")
 		return ErrRoot
 	}
 	if _, err := p.f.Seek(object.BlockOffset(p.geom, p.hdrLen, segments), io.SeekStart); err != nil {
@@ -194,8 +240,8 @@ func (p *Put) Complete() error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`UPDATE shares SET state = 'complete', received = ?, last_touched = ?, gen = ? WHERE si = ? AND n = ?`,
-		segments, p.s.now().Unix(), g, p.si[:], p.n); err != nil {
+	if _, err := tx.Exec(`UPDATE shares SET state = 'complete', received = ?, last_touched = ?, gen = ? WHERE owner = ? AND si = ? AND n = ?`,
+		segments, p.s.now().Unix(), g, p.owner[:], p.si[:], p.n); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -212,10 +258,11 @@ type Share struct {
 	f      *os.File
 }
 
-// OpenShare opens a complete share.
-func (s *Store) OpenShare(si object.StorageIndex, n uint8) (*Share, error) {
+// OpenShare opens a complete share of an owner's object.
+func (s *Store) OpenShare(owner identity.Key, si object.StorageIndex, n uint8) (*Share, error) {
 	var state string
-	err := s.db.QueryRow(`SELECT state FROM shares WHERE si = ? AND n = ?`, si[:], n).Scan(&state)
+	var place int
+	err := s.db.QueryRow(`SELECT state, place FROM shares WHERE owner = ? AND si = ? AND n = ?`, owner[:], si[:], n).Scan(&state, &place)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -225,7 +272,7 @@ func (s *Store) OpenShare(si object.StorageIndex, n uint8) (*Share, error) {
 	if state != "complete" {
 		return nil, ErrPartial
 	}
-	f, err := os.Open(s.sharePath(si, n))
+	f, err := os.Open(s.sharePath(owner, si, n, place))
 	if err != nil {
 		return nil, err
 	}

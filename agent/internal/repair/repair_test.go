@@ -465,11 +465,11 @@ func TestWorkerStoresOnItself(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("no report")
 	}
-	pres, err := self.store.Has(si)
+	pres, err := self.store.Has(members[0].key, si)
 	if err != nil || pres == nil || len(pres.Complete) != 2 {
 		t.Fatalf("the node's store after the task: %+v %v (own share %d)", pres, err, mine)
 	}
-	sh, err := self.store.OpenShare(si, want)
+	sh, err := self.store.OpenShare(members[0].key, si, want)
 	if err != nil {
 		t.Fatal(err)
 	}

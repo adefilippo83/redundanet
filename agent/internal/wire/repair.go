@@ -106,4 +106,8 @@ type ReleaseHint struct {
 	Number         uint8          `cbor:"n" json:"n"`
 	DescriptorHash [32]byte       `cbor:"dhash" json:"dhash"`
 	Holders        []identity.Key `cbor:"holders" json:"holders"` // the other servers that hold complete shares
+	// Owner is whose object it is: an object is the pair (owner, storage
+	// index). Zero from a hub that does not know the field; the holder
+	// then finds the owner by the descriptor.
+	Owner identity.Key `cbor:"owner" json:"owner"`
 }
