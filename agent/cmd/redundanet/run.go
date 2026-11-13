@@ -566,6 +566,7 @@ func runAgent(args []string) error {
 			rc.log.Error("storage unavailable: this device will not serve shares until the disk is back", "disk", disk, "err", err)
 		} else {
 			defer st.Close()
+			acceptSecondOwners(st, *probation, rc.log)
 			pol := &manifestPolicy{rc: rc}
 			go storeMaintenance(ctx, st, pol.memberActive, pol.grace, rc.log)
 		}
@@ -1006,6 +1007,24 @@ func candidateArgs(args []string, peers []string) []string {
 		out = append(out, "--probation-peers", strings.Join(peers, ","))
 	}
 	return out
+}
+
+// acceptSecondOwners turns on, once and for good, the store's acceptance
+// of a second member under a storage index another member uses here. An
+// update candidate on probation leaves the store as it found it: the
+// version that started it is still the one in place, and takes the store
+// back if the candidate fails. The first run after that, as the installed
+// version, makes the change. A store that cannot record it keeps refusing
+// and the next start tries again.
+func acceptSecondOwners(st *store.Store, probation bool, lg *slog.Logger) {
+	if probation || st.SecondOwners() {
+		return
+	}
+	if err := st.AcceptSecondOwners(); err != nil {
+		lg.Error("the store still refuses a second owner under a storage index: the change could not be recorded", "err", err)
+		return
+	}
+	lg.Info("the store accepts a second owner under a storage index from now on")
 }
 
 // openStore opens the share store under the storage disk. The disk itself
