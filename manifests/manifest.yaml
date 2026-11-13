@@ -1,25 +1,13 @@
-# RedundaNet 3 (RFC 0001) keys live beside the RedundaNet 2 ones during the
-# migration: schema, revision, network.encoding, operators, hubs, members and
-# storage. The 2.x readers ignore them; the agent ignores the 2.x keys and
-# follows only a manifest whose manifest.sig an operator key signed. Edit,
-# then re-sign: redundanet manifest sign --key <operator.key>.
+# The membership of the RedundaNet network (RFC 0001): schema, revision,
+# network, operators, hubs, members and storage. An agent follows only a
+# revision whose manifest.sig an operator key signed, and only a higher one.
+# Edit, raise revision by one, then sign: scripts/sign.sh manifest.
 schema: 3
-revision: 9
+revision: 10
 network:
   name: redundanet
   encoding: {k: 2, n: 3}
   encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2026-12-03}
-  version: 2.0.0
-  domain: redundanet.local
-  vpn_network: 10.100.0.0/16
-  tahoe:
-    shares_needed: 2
-    shares_happy: 4
-    shares_total: 4
-    reserved_space: 1G
-  quota:
-    reserve: 0.15
-    enforce: true
 operators:
   - name: adefilippo83
     key: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q
@@ -29,57 +17,17 @@ hubs:
     tcp: hub.redundanet.com:8443
     status: https://hub.redundanet.com/
     key: bm4ld4ezgwnvup4654wd6su7h3id2p4nvhfq6a7krn3qfgfsfkna
-# Phase 1 (RFC 0001, G1): the agent beside the stack stores nothing yet.
-# Contributions name the disks the native grid will use from phase 2.
 members:
   - name: adefilippo83
     key: wekrreaqlio4j3m4vzxo6hn5be2sa2gxxv7gx3mq54m4xffztv2a
     contribution_gb: 1800
     joined: 2026-11-02
     status: active
-    legacy_pgp:
-      fingerprint: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
-      signature: |
-        -----BEGIN PGP SIGNATURE-----
-        
-        iQIzBAABCgAdFiEEiY2fFtSERod98h8sGPjLfLrhuc0FAmronM0ACgkQGPjLfLrh
-        uc3U2Q//RiUyr7QM9xln/YlIGJ5D0wbsf6hpKYfaDHc4ya67c9Yx4uCGX4VsqKUl
-        v2w88jVmoP4YGMwqvtJ3mhNnWR5Xq3Q217va5IiftrG20Wqbj96hS5hTvozv14C2
-        fD+5M06KA/KdvLCCOyHZ/7hPcdddCXXa7EJ79clkgmWmX2zm9z5YUAx6lC3IIdA0
-        +iYgFz9bhtJ/t19nDI5J/fHlAfSrwIA9wfksBnF6pIngRbP2EXrHCGYVSFlLQk2F
-        bKno3osOi9z2RxMu86ot02HVdXQXP9Vc0xRFCNQjRwnEFN0W/CFhVUz+eV93ARvM
-        p7s4kx2vQZ0pd5nPfNeLDgkOkmzBXlF8tevbaErIBtULsiv9CbBlxReDN2Zz1xTN
-        utqp/Gudh8D1A3bdmd9o3A5dBD/MnTXHoJlMA9GHhfxFRR/m1bgFY7BbPkYS65uR
-        Jgm/Y36RCE3b864DsRlOTxwtdUWAiZcFMbG6cJMhIct6/sW/+8ML7ewGamTbgcaO
-        0wJdysSegwSav9Ri/Z85ngPembjVaHYaJTuSj9ly5ag4g7tGfsddr7THvuWNVYfk
-        KavQoVk2bnSH/smv5zgmkWvOVXuLPiKOYxGw4ubwLiguLBR2L6ohuDQElp5dXVc5
-        LQSlRyr0YkLOhVj5VoUswZBj2x16KGTGy0caX8DEBAPDmYtLNGo=
-        =ai+a
-        -----END PGP SIGNATURE-----
   - name: ptlug
     key: wsxr2cvmwz2ttqfceecdjvceetpmmky7llniqu7ngge4tqzt7r7a
     contribution_gb: 500
     joined: 2026-11-07
     status: active
-    legacy_pgp:
-      fingerprint: A4E8A270C554BE59EF4008DA61DFA68239276AF8
-      signature: |
-        -----BEGIN PGP SIGNATURE-----
-
-        iQIzBAABCgAdFiEEpOiicMVUvlnvQAjaYd+mgjknavgFAmrvPbQACgkQYd+mgjkn
-        avipBBAAgitA/jLH15tCceQC7S+VzIcIyxIO0pWisWvPTGzRq+rJlkJrHsRP4amG
-        Es7kkzcAIK9R25j//vutPkmqgY2bnruJkbVYvqCXIh1OVziF7A2YURSo6CR7vnd8
-        EHCPA34xGEv3YgJ9Apwe48RIa6JjXCoeygm7uoN0juOUoCYIGWdltmtMMkDlkFDu
-        iV5qDXsz+woLxHUcBg/0oOrUXrTs3S9qXuUb5cxcMCRa/wmoKM1BABW66O8B0tjf
-        DGL2vuCaX91Q+P2goCnPCz3wYqHyyhJlPJfKUK87R1BkZV8uM7PxIUpz5dwGO6ep
-        XVc09tDzFJCnO7QB8BXJLV8ZDL2YCUIOIPwtUY2LdNolpkIqeBf7I85783qH5flC
-        v8aaIeAsfUgH26ih+DOLKwlCbSy0nEW1VHBl6vuB7g5UrYtH9EGogJyYhOvzgH0E
-        JImPwJcjcSW3l1L3RWXCIQCoaswi3s+9jIg2XQjMZKnEmR2XnzUx5TXn/pXX1SDw
-        +quzCUriZSCibbroXv9oQ/03lNlYVynLVSX/4rEjvyXPVXoYmDx1Jvfo0UMPRpRF
-        qdaa8ijkLh2ZQairav2G/rcVRf2d4wjBKHgHwOhuU0D9BqAKs6STxAriD3ZQ8/Ka
-        Z/5jKPM/8x986aMPvTw8clUujtuzWqs/Qa0FPm0YPIVD7ZdP59c=
-        =Aqeo
-        -----END PGP SIGNATURE-----
   - name: emiliano-giusti
     key: j2doiuzc3esow6a2r3ga3qnzngwfjhsq4nccfg637267aob46pia
     contribution_gb: 1000
@@ -98,183 +46,3 @@ storage:
   - member: emiliano-giusti
     device: ftdvrjwkkq3fqujhewhb62pirccd5in3c2uehbkjor5k272ha5ka
     name: pc-redundanet
-introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
-nodes:
-- name: hub-fly
-  member: adefilippo83
-  internal_ip: 10.100.0.1
-  vpn_ip: 10.100.0.1
-  public_ip: 149.248.198.15
-  gpg_key_id: F9151151771C34F4E23BB64BF16283B50D5AD27F
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_introducer
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  is_publicly_accessible: false
-  introducer_furl: pb://iufhp7il422sofdh5hkpc36l3famhg7x@tcp:10.100.0.1:3458/fjogqdpcjjbuug7gs6tp7aylmi6lq627
-- name: hub-hetzner
-  member: adefilippo83
-  internal_ip: 10.100.0.2
-  vpn_ip: 10.100.0.2
-  public_ip: 2.29.46.249
-  gpg_key_id: 60AB30C4475F7EF985CA63826EECE67BFEEB1AC2
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_introducer
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  is_publicly_accessible: true
-  introducer_furl: pb://7qqaoghy6n473f2ougzmahpbbfyh3gzn@tcp:10.100.0.2:3458/wthlrox6zzeqci2gas656woqjkefka2p
-- name: node-2680cd08
-  member: adefilippo83
-  internal_ip: 10.100.0.10
-  vpn_ip: 10.100.0.10
-  gpg_key_id: DB36ED4F7D2D2EC7726387466F11FA662680CD08
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 900GB
-  is_publicly_accessible: false
-- name: node-bae1b9cd
-  member: adefilippo83
-  internal_ip: 10.100.0.11
-  vpn_ip: 10.100.0.11
-  gpg_key_id: 898D9F16D48446877DF21F2C18F8CB7CBAE1B9CD
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 900GB
-  is_publicly_accessible: false
-- name: node-303c084b
-  member: emiliano-giusti
-  internal_ip: 10.100.0.12
-  vpn_ip: 10.100.0.12
-  gpg_key_id: 1331C835A2B446B61A34959CD5294DA9303C084B
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 1TB
-  is_publicly_accessible: false
-- name: node-e418302c
-  member: noroutine
-  internal_ip: 10.100.0.13
-  vpn_ip: 10.100.0.13
-  gpg_key_id: D41D09F293F89FA18948933682385B9CE418302C
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 1TB
-  is_publicly_accessible: false
-- name: node-bd1fa4cf
-  member: noroutine
-  internal_ip: 10.100.0.14
-  vpn_ip: 10.100.0.14
-  gpg_key_id: F7B0B2A1FEFAC6C8F57959FFB734D29ABD1FA4CF
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 1TB
-  is_publicly_accessible: false
-- name: node-bc1232bc
-  member: daniva6
-  internal_ip: 10.100.0.15
-  vpn_ip: 10.100.0.15
-  gpg_key_id: A6321A7FF174B46D8C4559082D4AB378BC1232BC
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  - tahoe_client
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 500GB
-  is_publicly_accessible: false
-- name: node-39276af8
-  member: ptlug
-  internal_ip: 10.100.0.16
-  vpn_ip: 10.100.0.16
-  gpg_key_id: A4E8A270C554BE59EF4008DA61DFA68239276AF8
-  region: europe
-  status: active
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 500GB
-  is_publicly_accessible: false
-- name: node-c14ded64
-  internal_ip: 10.100.0.17
-  vpn_ip: 10.100.0.17
-  gpg_key_id: 7664298803B2711BA33B17CBCE29808CC14DED64
-  region: europe
-  status: pending
-  roles:
-  - tinc_vpn
-  - tahoe_storage
-  ports:
-    tinc: 655
-    tahoe_storage: 3457
-    tahoe_client: 3456
-    tahoe_introducer: 3458
-  storage_contribution: 250GB
-  is_publicly_accessible: false
-  member: AlessioCappe

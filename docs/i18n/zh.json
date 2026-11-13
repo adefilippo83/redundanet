@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "你的笔记本电脑用你的短语通过配对码为节点签发证书并把网络交给它。节点自行启动，笔记本电脑会记住它，因此 <code>redundanet setup</code> 或 <code>redundanet join-request</code> 会把它的密钥和名称填入<a href=\"join.html\">加入表单</a>；节点也会打印自己的 <code>storage:</code> 行。维护者用这些内容签署清单后，它才开始计入。",
   "ig.node.alt": "手边完全没有自己的笔记本电脑？操作手册中的脚本用通过 SSH 复制的证书文件建立同样的布局。",
   "leg.former.title": "如果你曾是成员",
-  "leg.former.join": "原成员与其他人一样加入 RedundaNet 3：<a href=\"installation.html\">安装代理</a>，然后用你的旧节点所登记的 GitHub 账号发送<a href=\"join.html\">加入请求</a>。",
+  "leg.former.join": "原成员与其他人一样加入 RedundaNet 3：<a href=\"installation.html\">安装代理</a>，然后发送<a href=\"join.html\">加入请求</a>。",
   "leg.retire.title": "退役 Docker 栈",
   "leg.retire.warn": "<strong>旧网格已关闭。</strong>不再有任何程序读取你节点上的 Tahoe 分片。也不会替你删除任何内容：分片会留在磁盘上，直到你自行删除。",
   "leg.retire.desc": "<code>migrate-node</code> 整体停止并移除容器，tinc 最先；文件和分片留在磁盘上。只要原生网格上还缺任何东西，它就会拒绝执行。先做试运行；<code>--rollback</code> 把所有服务一起恢复。",

@@ -134,13 +134,10 @@ its two hubs. The hubs are shut down and removed; `src/`, `tests/`,
 published it are gone from the tree and live in the history at the tag
 `v2.7.40`. Do not bring any of it back. What is left, on purpose:
 
-- **The v2 half of the manifest** (`nodes`, `introducer_furl` and the v2
-  keys under `network`) and the `legacy_pgp` records of two members. The
-  agent's parser sets exactly those v2 keys aside and still accepts
-  `legacy_pgp`; nothing checks the records any more. The join script reads
-  `nodes` for one rule: the name of a former member is given only to a
-  request from that GitHub account. Removing the v2 half is a manifest
-  revision the maintainer signs.
+- **The parser's tolerance for the v2 keys** (`nodes`, `introducer_furl`,
+  the v2 keys under `network`, and `legacy_pgp` on a member). Revision 10
+  removed them from the manifest; the parser still sets them aside so
+  that an older revision reads. Do not put them back in the file.
 - **`redundanet migrate-node`** (`agent/internal/migrate`), for members
   whose nodes still run the old containers: the hard rule above stays.
 - **The name `redundanet3`** on storage nodes, because a node that ran

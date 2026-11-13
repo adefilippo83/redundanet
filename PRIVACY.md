@@ -127,13 +127,13 @@ end-to-end encrypted packets it cannot read, and counts the bytes.
 Membership is a signed file in the public git repository,
 `manifests/manifest.yaml`. Joining means publishing in it: your member name
 (a GitHub handle), your member key, your contribution and allocation, the day
-you joined, your status, and, for members who came over while RedundaNet 2
-still ran, the PGP fingerprint and signature they attested with; your device names and
-keys; the hubs' names, keys and addresses. RedundaNet 2 node entries also
-carry host names, VPN addresses, public IP addresses, GPG fingerprints, ports
-and regions. The repository is public and git keeps every revision: a member
-can be removed from the current manifest, but earlier revisions remain in the
-history.
+you joined and your status; your device names and keys; the hubs' names,
+keys and addresses. The repository is public and git keeps every revision: a
+member can be removed from the current manifest, but earlier revisions
+remain in the history. Revisions up to 9 also carried the RedundaNet 2 node
+entries (host names, VPN addresses, public IP addresses, GPG fingerprints,
+ports and regions) and, for two members, a PGP fingerprint and signature;
+revision 10 removed them from the current file, not from the history.
 
 Devices fetch the manifest and its signature from the repository every five
 minutes, check the release index and its signature on GitHub every hour, and
@@ -148,8 +148,8 @@ requests, and are public there under GitHub's terms.
 RedundaNet 2 ended on 13 November 2026. Its two hubs, one on fly.io and one on the
 Hetzner server, were shut down and removed, and with them its status page
 and the samples it kept. Nodes that still run the old stack no longer reach
-a hub. What remains published is in the manifest: the RedundaNet 2 node
-entries described above.
+a hub. Nothing of RedundaNet 2 is in the current manifest; what earlier
+revisions published is described above.
 
 ## What stays on your device
 

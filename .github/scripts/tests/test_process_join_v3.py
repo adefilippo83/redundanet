@@ -305,7 +305,7 @@ class TestCheckManifest:
     manifest = yaml.safe_load(MANIFEST)
 
     def check(self, body: str, author: str | None = "Alice") -> None:
-        v3.check_manifest(v3.parse_request(body, author), self.manifest, author)
+        v3.check_manifest(v3.parse_request(body, author), self.manifest)
 
     def test_duplicate_member_name(self):
         with pytest.raises(v3.JoinError, match="already exists"):
@@ -326,19 +326,6 @@ class TestCheckManifest:
         for taken in ("falcon", "hub-hetzner"):
             with pytest.raises(v3.JoinError, match="already exists; pick another device name"):
                 self.check(issue_body(device_name=taken))
-
-    def test_v2_member_name_needs_the_account(self):
-        with pytest.raises(v3.JoinError, match="member name of RedundaNet 2 nodes"):
-            self.check(issue_body(name="alessiocappe"), author="mallory")
-        self.check(issue_body(name="alessiocappe"), author="AlessioCappe")  # same login
-        self.check(issue_body(name="emiliano-giusti"), author="emiliano-giusti")
-        # A GPG fingerprint and signature, as the earlier form sent them, no
-        # longer stand in for the account.
-        with pytest.raises(v3.JoinError, match="member name of RedundaNet 2 nodes"):
-            self.check(
-                issue_body(name="alessiocappe", fingerprint=ALESSIO_FPR, signature=FAKE_SIGNATURE),
-                author="mallory",
-            )
 
     def test_not_a_v3_manifest(self):
         with pytest.raises(v3.JoinError, match="schema: 3"):
@@ -454,9 +441,8 @@ class TestProcess:
         assert after["revision"] == before["revision"] + 1
         assert len(after["members"]) == len(before["members"]) + 1
         assert len(after["storage"]) == len(before["storage"]) + 1
-        assert after["nodes"] == before["nodes"]
         assert after["members"][:-1] == before["members"]
-        assert path.read_text().startswith("# RedundaNet 3 (RFC 0001) keys live beside")
+        assert path.read_text().startswith("# The membership of the RedundaNet network (RFC 0001)")
 
 
 class TestOutputs:

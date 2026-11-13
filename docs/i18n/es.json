@@ -284,7 +284,7 @@
   "ig.node.s2.desc": "Con tu frase, tu portátil certifica el nodo mediante el código y le entrega la red. El nodo arranca solo, y tu portátil lo recuerda, así que <code>redundanet setup</code> o <code>redundanet join-request</code> pone su clave y su nombre en el <a href=\"join.html\">formulario de ingreso</a>; el nodo también imprime sus líneas <code>storage:</code>. Cuenta cuando el mantenedor ha firmado el manifiesto con ellas.",
   "ig.node.alt": "¿Ningún portátil tuyo a mano? El script del runbook crea la misma estructura con un archivo de certificado copiado por SSH.",
   "leg.former.title": "Si eras miembro",
-  "leg.former.join": "Los antiguos miembros se unen a RedundaNet 3 como cualquiera: <a href=\"installation.html\">instala el agente</a> y envía la <a href=\"join.html\">solicitud de ingreso</a> desde la cuenta de GitHub con la que figuraban tus nodos antiguos.",
+  "leg.former.join": "Los antiguos miembros se unen a RedundaNet 3 como cualquiera: <a href=\"installation.html\">instala el agente</a> y envía la <a href=\"join.html\">solicitud de ingreso</a>.",
   "leg.retire.title": "Retirar la pila de Docker",
   "leg.retire.warn": "<strong>La red antigua está apagada.</strong> Ya nadie lee los fragmentos Tahoe de tu nodo. Tampoco se borra nada por ti: los fragmentos siguen en el disco hasta que los borres.",
   "leg.retire.desc": "<code>migrate-node</code> para y elimina los contenedores, todos juntos, tinc primero; los archivos y los fragmentos se quedan en el disco. Se niega mientras falte algo en la red nativa. Primero una simulación; <code>--rollback</code> devuelve todos los servicios a la vez.",

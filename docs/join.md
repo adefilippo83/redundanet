@@ -1,6 +1,6 @@
 # Joining RedundaNet
 
-This page is for a new member. A former RedundaNet 2 member whose nodes the manifest still lists files the same request from the GitHub account those nodes were listed under, and follows [migration.md](migration.md) for the rest. Install the agent first: [install.md](install.md).
+This page is for a new member. A former RedundaNet 2 member files the same request, and follows [migration.md](migration.md) to retire the old stack on their nodes. Install the agent first: [install.md](install.md).
 
 Joining takes an identity on your laptop, a form on the website, and a pull request the maintainer signs. Your member name and member key are public in the repository's history forever; see [../PRIVACY.md](../PRIVACY.md).
 
