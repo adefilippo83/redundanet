@@ -956,9 +956,9 @@ devices of a member that upload the same object produce the same descriptor
 hash with different signatures, and either is accepted. A server that already
 holds shares of an owner's object refuses a share of it with a different
 descriptor hash, and `HasShares` returns the descriptor hash it holds for the
-owner asked about. A server also still refuses a second owner under a storage
-index another member uses; "Planned: shares keyed by owner and storage index"
-below says what that allows and when it ends. When a server first
+owner asked about. A server on a version before the one that accepts a second owner
+refuses one under a storage index another member uses; "Planned: shares keyed by owner
+and storage index" below says what that allowed and how it ended. When a server first
 saw an object is recorded in its index, not in the descriptor.
 
 The signature covers all n share roots at once. That one choice makes repair
@@ -1093,15 +1093,16 @@ removed member's devices are refused at the handshake.
 
 ### Planned: shares keyed by owner and storage index
 
-Half built. This section is the plan for one change to the store, the share
-protocol and the hub's tables, in the releases listed under "Order of
-release". The first of them is built: the store, the protocol, the census and
-the hub's tables are keyed by owner and storage index, and a server still
-refuses a second owner under an index, so the weakness below is as it was. It
-ends with the second release, which is not built.
+Built, in the two releases listed under "Order of release"; the third step
+there is not. The store, the protocol, the census and the hub's tables are
+keyed by owner and storage index. A server on the second release accepts a
+second owner under an index from its first run as the installed version; a
+server on an earlier version still refuses one, and the weakness below lasts
+on that server until it updates. The heading keeps its name because other
+sections refer to it.
 
-**What is wrong today.** A server accepts one owner per storage index, and
-the first one it sees wins: a put by another member under that index is refused
+**What was wrong.** A server on a version before the second release accepts
+one owner per storage index, and the first one it sees wins: a put by another member under that index is refused
 with `descriptor`. Nothing ties a storage index to an owner, and a client
 names the index to every server in a `has` before it encodes and uploads. A
 storage member that sees the index can sign a descriptor of its own for it and
@@ -1180,18 +1181,25 @@ store its predecessor cannot read.
    refuse a second owner under an index, so no row and no file exists that the
    previous binary would misread. Clients and repair workers start sending
    `owner`; the hub starts keying by it. Nothing a member can observe changes.
-2. *A release that accepts a second owner.* Not built. Published once the status page
+2. *A release that accepts a second owner.* Built. Published once the status page
    shows every storage server, the hub and every repair worker on the first
    release or later. A server begins to accept a second owner only after its
    own update has passed probation, and drops the unique index on the old key
-   at that moment, not at install: a rollback during probation therefore
-   returns to a store laid out as before. From then on the first release is
+   at that moment, not at install: the candidate on probation leaves the
+   store alone, and the agent's first run as the installed version makes the
+   change and logs it. A candidate that fails probation therefore
+   returns a store laid out as before. From then on the first release is
    the oldest binary such a server can go back to, and it reads everything
-   the second one writes.
+   the second one writes. A server that was offline and updates straight
+   from an older version keeps that version as `redundanet.old`; putting it
+   back by hand is not supported once the store holds two owners under one
+   index. Nothing in this release changes the hub, a client or a repair
+   worker: the first release already keys by owner.
 3. *Later, and not urgent:* requests without an owner are refused and the
    fallback is removed.
 
-Between the first and the second release the weakness is as it is today.
+Between the first and the second release the weakness is as it was. After
+the second, an upload is held up only on a server that has not updated yet.
 
 **What must be shown before each release.**
 
@@ -1756,7 +1764,7 @@ learns who talks to whom and how much.
 | Adversary | Can | Cannot | Why |
 | --- | --- | --- | --- |
 | A storage host, curious or malicious | See ciphertext, sizes, owners and timing; delete or corrupt the shares it holds | Read a byte of content, alter a share undetected, forge a share's owner, inflate another member's usage | Per-object keys never leave the owner's devices; hash trees are verified on read; the descriptor is signed by a device certified for the owner |
-| A malicious member | Fill their own quota with garbage, hammer servers with requests, as a storage member hold up the upload of an object whose storage index it saw announced, for as long as it stays a member and with its name on the rows (see "Planned: shares keyed by owner and storage index"), invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the receiving server catches before it marks the share complete | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
+| A malicious member | Fill their own quota with garbage, hammer servers with requests, as a storage member register a descriptor of its own under a storage index it saw announced, which costs it budget and holds up the owner's upload only on a server that has not yet updated to the release that accepts a second owner (see "Planned: shares keyed by owner and storage index"), invite people the community would not have chosen, which the pull request shows with their name on it, volunteer as a repair worker and do repair badly, which the receiving server catches before it marks the share complete | Read, delete or overwrite anyone else's objects; store shares of another member's objects without a signed repair task; store past `quota_headroom` times their budget; exceed their budget without the status page showing it; store under another name | Capabilities are the only access; delete tokens and roots are signed by a device certified for the owner; the per-device rate limit and the social process handle abuse |
 | A compromised hub | See the metadata the collector sees, drop or delay relayed traffic, publish a false status page, hand out wrong address candidates, after which connections fail rather than being misdirected, serve a stale manifest within its maximum age to agents that reach only the hub, issue repair tasks that place surplus copies of real objects, at most one share per server and charged to their owners, which the census shows and the surplus rule removes | Admit a member or forge a manifest, revocation or release; read a share; impersonate a device; delete anything, including through a surplus release, which each holder confirms itself; withhold a revocation from an agent that talks to any peer | Manifests, revocations and releases carry signatures by keys the hub does not hold; revision numbers stop rollback; devices authenticate each other end to end; agents fetch revocations from peers too. The hub's GitHub token is the exception to "no key but its own"; it can only open issues, which become pull requests through the repository's workflow and take effect when an operator signs |
 | An anonymous poster | Send requests to the join endpoint until the per-address limit stops them | Open an issue, spend the hub's token or reach a human without a valid, unused invite from an active member | The hub verifies the invite against the signed manifest before it does anything else |
 | A compromised repository account | Change the files on main; stop signed manifests from being published, which only delays changes; hand a first install through the one-line installer a binary of its choosing, since the script checks the archive against the index as served and not the index's signature | Change what any node runs: admit a member, change k-of-n, mark a member leaving; install a binary; read data; impersonate a device | Agents apply only manifests signed by an operator key pinned at join; release keys rotate only through their own chain; branch protection, review and 2FA stay as the first line |
