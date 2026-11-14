@@ -69,9 +69,9 @@ redundanet status [--json]
 What the running agent sees: version, uptime, member and device, whether the member is listed in the manifest yet (`admission` in the JSON: `listed` or `waiting`), manifest revision, hubs and their carrier, peers and their paths, updates, service state.
 
 ```
-redundanet open [--print]
+redundanet open [--print] [DEVICE]
 ```
-Opens the local page in the browser through a one-time link that works for two minutes; `--print` only prints the link, for an SSH tunnel.
+Opens the local page in the browser through a one-time link that works for two minutes; `--print` only prints the link, for an SSH tunnel. With `DEVICE`, the page opens on the view of another device of yours: its name as the page's "Devices and network" view shows it, the start of its device key, or the whole key. That view is drawn by this device from what the other one answers over the network: its version, how long it has run, its hub connection, its backup sets with their last runs, its repair figures on a storage node and its last 60 log lines, with three buttons, back up now, run a restore test, check for updates. Restore, settings, pairing and everything else are done on the device itself. Both devices need a version that has this; an older one is named as such. See [security.md](security.md), "Your other devices".
 
 ```
 redundanet logs [-n 100]
@@ -205,10 +205,10 @@ Signs the release index; writes `index.sig` beside it. Flow: [../releases/README
 
 ```
 redundanet agent [--network NAME] [--data-dir DIR] [--api 127.0.0.1:4470] [--storage-path DIR] [--storage-floor-gb 10]
-                 [--channel stable|early] [--no-update] [--portmap] [--tcp-only] [--connect KEY,...] [--listen :0]
+                 [--channel stable|early] [--no-update] [--no-remote] [--portmap] [--tcp-only] [--connect KEY,...] [--listen :0]
                  [--manifest FILE --sig FILE] [--status-every 1m] [--loopback-candidates] [--probation] [--probation-peers KEYS] [-v]
 ```
-Runs the agent; the service and the node unit run this. Started before the device has an identity, it serves the local page alone with the setup wizard (a new member's phrase shown once and three words asked back, an existing member's phrase typed in, or a pairing code for another device of the member) and continues into normal operation in the same process once the identity exists, whether the page or the CLI made it; the page's session carries over. Until then `status` says "no identity yet" and where the wizard stands. `--api` is the local API and page, loopback only. `--storage-path` is the disk a storage device stores on (the store lives in its `redundanet3` directory) and `--storage-floor-gb` the free gigabytes below which the store refuses writes. `--portmap` asks the router for a port mapping; `--tcp-only` reaches hubs over TCP only; `--connect` keeps sessions with the named devices; `--listen` is the UDP address to bind. `--manifest` runs from a signed file instead of the joined network, for tests. `--probation`, `--probation-peers` and `--loopback-candidates` are for the updater and tests.
+Runs the agent; the service and the node unit run this. Started before the device has an identity, it serves the local page alone with the setup wizard (a new member's phrase shown once and three words asked back, an existing member's phrase typed in, or a pairing code for another device of the member) and continues into normal operation in the same process once the identity exists, whether the page or the CLI made it; the page's session carries over. Until then `status` says "no identity yet" and where the wizard stands. `--api` is the local API and page, loopback only. `--storage-path` is the disk a storage device stores on (the store lives in its `redundanet3` directory) and `--storage-floor-gb` the free gigabytes below which the store refuses writes. `--portmap` asks the router for a port mapping; `--tcp-only` reaches hubs over TCP only; `--connect` keeps sessions with the named devices; `--listen` is the UDP address to bind. `--manifest` runs from a signed file instead of the joined network, for tests. `--probation`, `--probation-peers` and `--loopback-candidates` are for the updater and tests. `--no-remote` makes the device answer none of the member's other devices: no status and no action from `redundanet open DEVICE` on another of them.
 
 ```
 sudo redundanet3 migrate-node [--dry-run] [--force] [--rollback] [--compose-dir DIR] [--env-file FILE]

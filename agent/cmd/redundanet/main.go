@@ -33,7 +33,7 @@ var commands = []command{
 	{"restore", "restore from the running agent: list, browse, start, status", runRestore},
 	{"status", "what the running agent sees", runStatus},
 	{"join-request", "open the join form filled in from this device and the nodes it paired", runJoinRequest},
-	{"open", "open the local page in the browser, with a one-time link", runOpen},
+	{"open", "open the local page in the browser, with a one-time link; with a DEVICE, on the view of that device of yours", runOpen},
 	{"logs", "the running agent's recent log lines", runLogs},
 	{"diagnostics", "write the bundle to send when something is wrong; works with the agent down", runDiagnostics},
 	{"migrate-node", "retire the RedundaNet 2 stack on this node, as root: --dry-run, --force, --rollback", runMigrateNode},

@@ -73,6 +73,7 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		for _, d := range devices {
 			s.Devices = append(s.Devices, api.Device{Key: d.Device, Name: d.Name, Roles: d.Roles, PairedAt: d.PairedAt})
 		}
+		s.Devices = withListedNodes(s.Devices, m, rc.state.Member, rc.device)
 		// The join form, filled in from here: a member not listed yet asks
 		// to join; a listed one has a storage node the manifest lacks.
 		if memberListed(m, rc.state.Member) {
@@ -509,6 +510,7 @@ func runAgent(args []string) error {
 	storageFloor := fs.Int64("storage-floor-gb", 10, "free gigabytes below which the store refuses writes")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
 	noUpdate := fs.Bool("no-update", false, "do not check for releases")
+	noRemote := fs.Bool("no-remote", false, "do not answer the member's other devices: no status and no action from afar")
 	probation := fs.Bool("probation", false, "run as an update candidate: report on stdout when healthy, for the supervising agent")
 	probationPeers := fs.String("probation-peers", "", "device keys the previous agent had sessions with; the candidate passes when it reaches them: all, or after 30 s at least half of all and at least half of the storage devices among them")
 	verbose := fs.Bool("v", false, "debug logging")
@@ -571,10 +573,18 @@ func runAgent(args []string) error {
 			go storeMaintenance(ctx, st, pol.memberActive, pol.grace, rc.log)
 		}
 	}
-	onStream := shareproto.RefuseAll
-	if st != nil {
-		onStream = shareproto.NewServer(st, &manifestPolicy{rc: rc}, rc.log).Handle
+	// A device answers its member's other devices with its status and the
+	// three actions of remoteAct, unless --no-remote.
+	answers := &remoteAnswers{}
+	var remote *shareproto.Remote
+	if !*noRemote {
+		remote = answers.handler(rc.state.Member)
 	}
+	var storageServer *shareproto.Server
+	if st != nil {
+		storageServer = shareproto.NewServer(st, &manifestPolicy{rc: rc}, rc.log)
+	}
+	onStream := shareproto.Serve(storageServer, remote, rc.log)
 
 	// The engine and the jobs: over whatever endpoint is current, so a
 	// self-update's handover does not strand them.
@@ -809,6 +819,13 @@ func runAgent(args []string) error {
 	}
 
 	go runner.Run(ctx)
+	answers.set(func() ([]byte, error) {
+		s := rc.snapshot(current(), getU(), worker)
+		js := runner.Status()
+		s.Jobs = &js
+		return remoteView(s, rc.logs)
+	}, func(action string) error { return remoteAct(action, runner, getU(), rc.log) })
+	viewRemote, actRemote := askRemote(client, rc.device)
 	rt := api.Runtime{
 		Logs: rc.logs, Jobs: runner,
 		Snapshot: func() api.Snapshot {
@@ -818,6 +835,7 @@ func runAgent(args []string) error {
 			return s
 		},
 		Actions: api.Actions{
+			RemoteView: viewRemote, RemoteAct: actRemote,
 			Revoke: revokeAction,
 			PairDevice: func(ctx context.Context, code, phrase string, storage bool) (api.Device, error) {
 				return pairFromPage(ctx, rc, code, phrase, storage)

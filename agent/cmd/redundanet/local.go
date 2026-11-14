@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -159,7 +160,22 @@ func runOpen(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	link, err := c.LoginLink(ctx)
+	// With a device named, the page opens on that device of the member:
+	// by the name this device knows it under, or by the start of its key.
+	target := ""
+	if fs.NArg() > 1 {
+		return errors.New("usage: redundanet open [--print] [DEVICE]")
+	}
+	if fs.NArg() == 1 {
+		snap, err := c.Status(ctx)
+		if err != nil {
+			return fmt.Errorf("the agent did not answer: %w", err)
+		}
+		if target, err = ownDevice(snap.Devices, snap.Device, fs.Arg(0)); err != nil {
+			return err
+		}
+	}
+	link, err := c.LoginLinkTo(ctx, target)
 	if err != nil {
 		return fmt.Errorf("the agent did not answer: %w", err)
 	}

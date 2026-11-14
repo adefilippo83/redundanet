@@ -19,7 +19,7 @@
   function refresh() {
     if (busy || document.hidden) { return; }
     busy = true;
-    fetch(location.pathname, { headers: { 'X-RedundaNet-Live': '1' }, credentials: 'same-origin', cache: 'no-store' })
+    fetch(location.pathname + location.search, { headers: { 'X-RedundaNet-Live': '1' }, credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) {
         if (r.status === 401) { if (gone) { gone.hidden = false; } return null; }
         return r.ok ? r.text() : null;

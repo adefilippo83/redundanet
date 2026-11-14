@@ -34,7 +34,7 @@
 <main>
 <p id="gone" class="flash flash-bad" role="alert" hidden>{{.Gone}}</p>
 {{with .Flash}}<p class="flash {{if .Bad}}flash-bad{{else}}flash-ok{{end}}" role="status">{{.Text}}</p>{{end}}
-{{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "restore"}}{{template "restore" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else}}{{template "advanced" .}}{{end}}
+{{if eq .View "overview"}}{{template "overview" .}}{{else if eq .View "backups"}}{{template "backups" .}}{{else if eq .View "restore"}}{{template "restore" .}}{{else if eq .View "network"}}{{template "network" .}}{{else if eq .View "settings"}}{{template "settings" .}}{{else if eq .View "remote"}}{{template "remote" .}}{{else}}{{template "advanced" .}}{{end}}
 </main>
 </div>
 </body>
@@ -155,9 +155,10 @@
 <section id="devices" data-live class="card">
   <div><h2>{{.T "devices.title"}}</h2><p class="muted">{{.T "devices.intro"}}</p></div>
   {{if .Paired}}<div class="scroll"><table>
-    <thead><tr><th>{{.T "devices.name"}}</th><th>{{.T "device.roles"}}</th><th>{{.T "devices.paired"}}</th><th>{{.T "devices.link"}}</th></tr></thead>
-    <tbody>{{range .Paired}}<tr><td><strong>{{if .Name}}{{.Name}}{{else}}{{.Short}}{{end}}</strong><br><code>{{.Short}}</code></td><td>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</td><td>{{$.Since .PairedAt}}</td>
-      <td>{{if eq .Link "direct"}}<span class="ok">{{$.T "link.direct"}}</span>{{else if eq .Link "relay"}}<span class="ok">{{$.T "link.relay"}}</span>{{else}}<span class="muted">{{$.T "link.none"}}</span>{{end}}</td></tr>{{end}}</tbody>
+    <thead><tr><th>{{.T "devices.name"}}</th><th>{{.T "device.roles"}}</th><th>{{.T "devices.paired"}}</th><th>{{.T "devices.link"}}</th><th></th></tr></thead>
+    <tbody>{{range .Paired}}<tr><td><strong>{{if .Name}}{{.Name}}{{else}}{{.Short}}{{end}}</strong><br><code>{{.Short}}</code></td><td>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</td><td>{{if .PairedAt.IsZero}}–{{else}}{{$.Since .PairedAt}}{{end}}</td>
+      <td>{{if eq .Link "direct"}}<span class="ok">{{$.T "link.direct"}}</span>{{else if eq .Link "relay"}}<span class="ok">{{$.T "link.relay"}}</span>{{else}}<span class="muted">{{$.T "link.none"}}</span>{{end}}</td>
+      <td><a class="btn" href="device?d={{.Key}}">{{$.T "devices.open"}}</a></td></tr>{{end}}</tbody>
   </table></div>{{else}}<p class="muted">{{.T "devices.none"}}</p>{{end}}
   {{if and .JoinURL .JoinDevice}}<p><a href="{{.JoinURL}}">{{.T "issue.node.title" .JoinDevice}}</a> {{.T "issue.node.text"}}</p>{{end}}
 </section>
@@ -361,4 +362,62 @@
 </section>{{end}}
 {{end}}
 {{end}}
+{{end}}
+
+{{define "remote-act"}}<form method="post" action="action/remote-act">{{template "csrf" .Root}}<input type="hidden" name="device" value="{{.Root.Remote.Key}}"><input type="hidden" name="act" value="{{.Act}}"><button class="btn{{if .Primary}} primary{{end}}">{{.Label}}</button></form>{{end}}
+
+{{define "remote"}}
+{{with .Remote}}
+<div class="head"><h1>{{.Name}}</h1><p class="muted">{{$.T "remote.intro"}}</p><p><a href="network">{{$.T "remote.back"}}</a></p></div>
+{{if .Err}}<p id="remote-error" data-live class="flash flash-bad" role="alert">{{$.T "remote.unreachable" .Err}}</p>{{else}}{{with .Page}}
+<section id="remote-hero" data-live class="hero hero-{{.Overview.State}}">
+  <span class="hero-icon" aria-hidden="true">{{if eq .Overview.State "protected"}}{{template "icon-check"}}{{else if eq .Overview.State "attention"}}{{template "icon-alert"}}{{else if eq .Overview.State "running"}}{{template "icon-sync"}}{{else}}{{template "icon-dot"}}{{end}}</span>
+  <div class="grow">
+    <h2>{{.Overview.Title}}</h2>
+    <p class="muted">{{.Overview.Sub}}</p>
+    {{if eq .Overview.State "running"}}<progress aria-label="{{$.T "hero.running.title"}}"></progress>{{end}}
+  </div>
+</section>
+
+<section class="card">
+  <div class="row">
+    {{if .Jobs}}{{if .Jobs.Sets}}{{template "remote-act" (remoteAct $ "backup-run" ($.T "action.backup") true)}}{{end}}{{template "remote-act" (remoteAct $ "backup-verify" ($.T "verify.button") false)}}{{end}}
+    {{if .Update}}{{template "remote-act" (remoteAct $ "update-check" ($.T "updates.check") false)}}{{end}}
+  </div>
+  <dl id="remote-facts" data-live class="facts">
+    <div><dt>{{$.T "remote.version"}}</dt><dd>{{.Version}}{{with .Update}}{{if .Available}} <span class="warn">{{$.T "updates.available"}}: {{.Available}}</span>{{end}}{{end}}</dd></div>
+    <div><dt>{{$.T "internals.uptime"}}</dt><dd>{{.Uptime}}</dd></div>
+    <div><dt>{{$.T "device.roles"}}</dt><dd>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</dd></div>
+    <div><dt>{{$.T "hubs.title"}}</dt><dd>{{if eq .Online "up"}}<span class="ok">{{$.T "state.up"}}</span>{{else if eq .Online "down"}}<span class="bad">{{$.T "state.down"}}</span>{{else}}–{{end}}</dd></div>
+    {{with .Update}}{{range .Failed}}<div><dt>{{$.T "updates.failed"}}</dt><dd class="warn">{{.}}</dd></div>{{end}}{{end}}
+    {{with .Repair}}<div><dt>{{$.T "internals.repair"}}</dt><dd>{{if .Running}}<span class="ok">{{$.T "repair.running" .Running}}</span>{{else}}{{$.T "repair.idle"}}{{end}}{{if .Queued}}, {{$.T "repair.queued" .Queued}}{{end}}</dd></div>
+    <div><dt>{{$.T "internals.repaired"}}</dt><dd>{{$.T "repair.totals" .Done .Failed .Released}}</dd></div>{{end}}
+    <div class="full"><dt>{{$.T "device.key"}}</dt><dd><code>{{.Device}}</code></dd></div>
+  </dl>
+</section>
+
+{{range $i, $s := .Sets}}<section class="card">
+  <div><h2>{{.Name}}</h2>{{range .Folders}}<code class="path">{{.}}</code>{{end}}</div>
+  <div id="remote-run-{{$i}}" data-live class="stack">
+    {{with .Run}}
+    {{if .Running}}<progress aria-label="{{$.T "hero.running.title"}}"></progress><p class="muted">{{with .Progress}}{{$.T "run.progress" .Files ($.Bytes .Uploaded)}}{{else}}{{$.T "run.starting"}}{{end}}</p>{{end}}
+    {{range .Needs}}<p class="bad">{{.}}</p>{{end}}
+    {{if .LastErr}}<p class="bad">{{.LastErr}}</p>{{end}}
+    <dl class="facts">
+      <div><dt>{{$.T "fact.last"}}</dt><dd>{{$.Since .LastAt}}</dd></div>
+      {{with .Last}}<div><dt>{{$.T "fact.files"}}</dt><dd>{{.Snapshot.Files}}</dd></div>
+      <div><dt>{{$.T "fact.size"}}</dt><dd>{{$.Bytes .Snapshot.Bytes}}</dd></div>
+      <div><dt>{{$.T "fact.skipped"}}</dt><dd>{{.Snapshot.Skipped}}{{with .SkipReasons}} ({{.}}){{end}}</dd></div>
+      {{if .Snapshot.Partial}}<div><dt>{{$.T "fact.state"}}</dt><dd class="warn">{{$.T "fact.partial"}}</dd></div>{{end}}{{end}}
+    </dl>
+    {{else}}<p class="muted">{{$.T "run.never"}}</p>{{end}}
+  </div>
+</section>{{end}}
+{{end}}
+<section class="card">
+  <h2>{{$.T "log.title"}}</h2>
+  <pre id="log" data-live tabindex="0">{{range .Logs}}{{.Time.Format "15:04:05"}} {{.Level}} {{.Msg}} {{.Attrs}}
+{{end}}</pre>
+</section>
+{{end}}{{end}}
 {{end}}

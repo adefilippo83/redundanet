@@ -29,6 +29,10 @@ const (
 	TypeList     = "list"     // the objects this server holds for the asking member
 	TypeRevoke   = "revoke"   // a member's signed device revocation, applied and kept by the server
 	TypeUsage    = "usage"    // the share bytes this server holds for the asking member
+	// A member looking at another device of theirs, which every device
+	// answers, storage node or not: see Remote.
+	TypeView = "view" // this device's status and its last log lines
+	TypeAct  = "act"  // one of the few things a member may start from afar
 )
 
 // Statuses a response carries; everything but StatusOK is a refusal the
@@ -77,6 +81,9 @@ type Request struct {
 	// descriptor, a delete by its token, the rest act for the asking
 	// member.
 	Owner identity.Key `cbor:"owner"`
+	// Action names what an act asks for; the device decides which names
+	// it knows.
+	Action string `cbor:"action,omitempty"`
 }
 
 // Response answers a request; for put it precedes the blocks and a second
@@ -94,6 +101,7 @@ type Response struct {
 	Roots      []*RootEnvelope          `cbor:"roots,omitempty"`      // get-roots
 	Objects    []ListedObject           `cbor:"objects,omitempty"`    // list
 	More       bool                     `cbor:"more"`                 // list: another page follows
+	Body       []byte                   `cbor:"body,omitempty"`       // view: the device's answer, as the two agents agreed to encode it
 }
 
 // ListedObject is one object of the asking member as a server lists it.
