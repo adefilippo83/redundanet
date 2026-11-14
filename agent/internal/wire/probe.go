@@ -1,0 +1,164 @@
+package wire
+
+import (
+	"encoding/binary"
+	"net/netip"
+
+	"github.com/adefilippo83/redundanet/agent/internal/identity"
+)
+
+// The NAT probe. A hub that listens on a second UDP port lets a device
+// learn how its router maps and filters, with no setting on the router:
+//
+//   - the hub knocks: a packet from the second port to the address the
+//     device's channel comes from, before the device ever wrote to that
+//     port. A device that receives it sits behind a router that lets a
+//     port it did not write to in;
+//   - the device asks: a packet from its mesh socket to the second port,
+//     and the hub tells it the address that packet came from. Compared
+//     with the address the channel comes from, that says whether the
+//     router gives one public port to every destination.
+//
+// The packets are not QUIC and not authenticated. Each carries the token
+// the hub gave the device in its Welcome, over the authenticated channel:
+// the hub answers only a device that has a channel and knows its token,
+// with a packet no longer than the one it got, so the port reflects and
+// amplifies nothing for a stranger. A forged answer costs a device a
+// wrong label on its own status, nothing else.
+
+// ProbeMagic opens every probe packet; the zero byte keeps it apart from
+// QUIC, like a punch.
+const ProbeMagic = "\x00RN3PRBE"
+
+// Probe kinds.
+const (
+	ProbeKnock byte = 0 // hub to device, unasked
+	ProbeAsk   byte = 1 // device to hub
+	ProbeTell  byte = 2 // hub to device: the address the ask came from
+)
+
+// ProbeLen is the length of every probe packet: magic, kind, device key,
+// token, a 16-byte address and a port.
+const ProbeLen = len(ProbeMagic) + 1 + 32 + 8 + 16 + 2
+
+// Probe is one probe packet.
+type Probe struct {
+	Kind   byte
+	Device identity.Key
+	Token  uint64
+	Addr   netip.AddrPort // ProbeTell only
+}
+
+// Encode is the packet's bytes.
+func (p Probe) Encode() []byte {
+	b := make([]byte, ProbeLen)
+	n := copy(b, ProbeMagic)
+	b[n] = p.Kind
+	n++
+	n += copy(b[n:], p.Device[:])
+	binary.BigEndian.PutUint64(b[n:], p.Token)
+	n += 8
+	if p.Addr.IsValid() {
+		a := p.Addr.Addr().As16()
+		copy(b[n:], a[:])
+		binary.BigEndian.PutUint16(b[n+16:], p.Addr.Port())
+	}
+	return b
+}
+
+// ParseProbe reads a probe packet; ok is false for anything else.
+func ParseProbe(b []byte) (p Probe, ok bool) {
+	if len(b) != ProbeLen || string(b[:len(ProbeMagic)]) != ProbeMagic {
+		return p, false
+	}
+	n := len(ProbeMagic)
+	p.Kind = b[n]
+	n++
+	n += copy(p.Device[:], b[n:n+32])
+	p.Token = binary.BigEndian.Uint64(b[n:])
+	n += 8
+	var a [16]byte
+	copy(a[:], b[n:])
+	if port := binary.BigEndian.Uint16(b[n+16:]); port != 0 {
+		p.Addr = netip.AddrPortFrom(netip.AddrFrom16(a).Unmap(), port)
+	}
+	return p, p.Kind <= ProbeTell
+}
+
+// How a router maps a device's socket to public ports, as the probe saw it.
+const (
+	MapNone        = "none"        // the public address is the device's own: no translation
+	MapIndependent = "independent" // one public port for both hub ports
+	MapSequential  = "sequential"  // a nearby port per destination
+	MapRandom      = "random"      // an unrelated port per destination
+)
+
+// How a router filters what comes back.
+const (
+	FilterOpen   = "open"   // a hub port the device never wrote to got in
+	FilterStrict = "strict" // it did not
+)
+
+// sequentialWithin is how far apart two public ports may be and still
+// count as handed out one after the other: other traffic of the same
+// household takes ports in between.
+const sequentialWithin = 16
+
+// Mapping classifies two public ports of one socket, seen by two
+// destinations, with the device's own addresses to tell "no NAT".
+func Mapping(channel, probe netip.AddrPort, own func(netip.Addr) bool) string {
+	if !channel.IsValid() || !probe.IsValid() {
+		return ""
+	}
+	switch d := int(probe.Port()) - int(channel.Port()); {
+	case channel.Addr().Unmap() != probe.Addr().Unmap():
+		return MapRandom // another public address per destination
+	case d == 0 && own != nil && own(channel.Addr().Unmap()):
+		return MapNone
+	case d == 0:
+		return MapIndependent
+	case d >= -sequentialWithin && d <= sequentialWithin:
+		return MapSequential
+	}
+	return MapRandom
+}
+
+// CensusNAT is what a device learned about its own router: labels only,
+// never an address.
+type CensusNAT struct {
+	Mapping   string `cbor:"mapping,omitempty" json:"mapping,omitempty"`
+	Filtering string `cbor:"filtering,omitempty" json:"filtering,omitempty"`
+	IPv6      bool   `cbor:"ipv6,omitempty" json:"ipv6,omitempty"`       // has a global IPv6 address
+	PortMap   bool   `cbor:"portmap,omitempty" json:"portmap,omitempty"` // the router granted a port mapping
+}
+
+// How reachable a device is for a direct connection, from what it
+// learned: the one word the status page and the device's own page show.
+const (
+	ReachOpen        = "open"        // no NAT, a granted port, or a router that lets anyone reach the mapped port
+	ReachEasy        = "easy"        // one public port for every destination: a punch finds it
+	ReachPredictable = "predictable" // a nearby port per destination
+	ReachHard        = "hard"        // an unrelated port per destination: relay unless the other side is open
+	ReachUnknown     = "unknown"
+)
+
+// Reach is the word for a device's labels. Labels come from the device,
+// so anything that is not one of the known ones counts as unknown.
+func (n *CensusNAT) Reach() string {
+	if n == nil {
+		return ReachUnknown
+	}
+	switch {
+	case n.PortMap, n.Mapping == MapNone:
+		return ReachOpen
+	case n.Mapping == MapIndependent && n.Filtering == FilterOpen:
+		return ReachOpen
+	case n.Mapping == MapIndependent:
+		return ReachEasy
+	case n.Mapping == MapSequential:
+		return ReachPredictable
+	case n.Mapping == MapRandom:
+		return ReachHard
+	}
+	return ReachUnknown
+}

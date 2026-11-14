@@ -16,7 +16,12 @@ ExecStart=/var/lib/redundanet3/bin/redundanet hub \
   --data-dir /var/lib/redundanet3 \
   --channel early \
   --udp :8443 --tcp :8443 \
+  --probe-udp :655 \
   --status 127.0.0.1:4480
+# The NAT probe's port is below 1024, which the service user may bind
+# with this and nothing else.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

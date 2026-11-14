@@ -799,6 +799,22 @@ seconds at segment granularity, so a reconnect is always a valid fallback,
 and the agent uses one after two migrations on a connection, where quic-go
 runs out of connection IDs today.
 
+**Measuring the router.** Built; the first step of making direct paths the
+rule without a member touching a router. A hub may listen on a second UDP
+port. To each device that connects over UDP it sends, from that port, three
+packets to the address the channel comes from, before the device ever wrote
+to the port; the device then asks the port from its mesh socket and is told
+the address the question came from. From the two the device knows whether
+its router lets an unexpected port in, and whether it gives one public port
+to every destination, a nearby one or an unrelated one. One hub address
+cannot tell a router that maps by destination address alone, which is rare.
+The device shows the outcome on its page, and sends the hub labels and no
+address: the status page lists each device as `open`, `easy`, `predictable`
+or `hard`, with whether it has public IPv6. The probe packets carry a token
+the hub gave over the authenticated channel, the hub answers nothing else
+and never with more bytes than it got. Nothing in how devices connect
+changes with this step.
+
 **When UDP is blocked.** Hotel, campus and office networks often allow only TCP,
 and tinc falls back to TCP today. The relay therefore also listens on TCP 443,
 carrying the same end-to-end QUIC packets inside TLS, as Tailscale's DERP

@@ -91,6 +91,8 @@ type Endpoint struct {
 	hubs     []*hubClient
 	sessions map[identity.Key]*session
 	mapped   []string
+
+	nat natState // what the hub's probe said about this device's router
 }
 
 // peerQUICConfig: notice a dead peer in 20 s and keep NAT mappings warm.
@@ -285,6 +287,7 @@ type Status struct {
 	Hubs     []HubStatus     `json:"hubs"`
 	Sessions []SessionStatus `json:"sessions"`
 	Mapped   []string        `json:"mapped,omitempty"`
+	NAT      *NATStatus      `json:"nat,omitempty"` // what the device knows about its router
 }
 
 // Status snapshots the endpoint.
@@ -297,7 +300,8 @@ func (e *Endpoint) Status() Status {
 	}
 	mapped := append([]string(nil), e.mapped...)
 	e.mu.Unlock()
-	st := Status{Device: e.cfg.Device.String(), UDP: e.udp.LocalAddr().String(), Mapped: mapped}
+	nat := e.NAT()
+	st := Status{Device: e.cfg.Device.String(), UDP: e.udp.LocalAddr().String(), Mapped: mapped, NAT: &nat}
 	for _, h := range hubs {
 		st.Hubs = append(st.Hubs, h.status())
 	}
@@ -355,11 +359,15 @@ func (e *Endpoint) punchLoop(ctx context.Context) {
 		if err != nil {
 			return
 		}
-		if n != punchLen || string(buf[:len(punchMagic)]) != punchMagic {
-			continue
-		}
 		udp, ok := addr.(*net.UDPAddr)
 		if !ok {
+			continue
+		}
+		if p, ok := wire.ParseProbe(buf[:n]); ok {
+			e.onProbe(p, udp)
+			continue
+		}
+		if n != punchLen || string(buf[:len(punchMagic)]) != punchMagic {
 			continue
 		}
 		kind := buf[len(punchMagic)]

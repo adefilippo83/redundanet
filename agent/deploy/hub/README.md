@@ -84,6 +84,19 @@ Both layers of the host firewall need 8443, UDP and TCP:
   `tcp dport 8443 accept` and `udp dport 8443 accept`, then
   `nft -f /etc/nftables.conf`.
 
+The NAT probe needs a second UDP port, 655 on the live hub
+(`--probe-udp :655` in the unit): one more inbound rule `udp 655` in the
+Hetzner Cloud Firewall and `udp dport 655 accept` in `chain input`. From
+that port the hub sends each device that connects three packets to the
+address its channel comes from, and on it the hub tells a device the
+address its question came from; it answers only a device that has a
+channel and sends that channel's token, with a packet no longer than the
+one it received. The port is below 1024, so the unit gives the service
+user `CAP_NET_BIND_SERVICE`. `--probe-udp` exists from 3.0.24: put the
+flag in the unit only once the hub runs that version, since an older
+binary does not start with a flag it does not know. A hub that cannot
+open the port logs "no NAT probe" and runs without it.
+
 The hub serves the status page on loopback (`127.0.0.1:4480`) and Caddy
 publishes it as <https://hub.redundanet.com/> with `/status.json` beside
 it. Over SSH it is `ssh -L 4480:127.0.0.1:4480 root@hub-hetzner` as well.

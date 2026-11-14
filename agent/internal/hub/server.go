@@ -27,6 +27,9 @@ type Config struct {
 	Allow    identity.Allow
 	UDP      string // QUIC listener, for example ":4433"
 	TCP      string // TLS listener for UDP-blocked devices, "" for none
+	// Probe is a second UDP port for the NAT probe (wire/probe.go), ""
+	// for none. A hub that cannot open it runs without the probe.
+	Probe string
 	// OnCensus receives each device's heartbeat; the collector keeps them.
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
 	// OnShares receives a storage node's share census chunks.
@@ -80,6 +83,10 @@ type Server struct {
 	ln    *quic.Listener
 	tcpLn net.Listener
 	start time.Time
+	// probe is the NAT probe's socket, nil without one; set before the
+	// listeners accept and not changed after.
+	probe     net.PacketConn
+	probePort uint16
 
 	mu      sync.Mutex
 	clients map[identity.Key]*client
@@ -113,6 +120,9 @@ type client struct {
 	bytesIn  uint64
 	bytesOut uint64
 	drops    uint64
+	probed   int // NAT probe asks answered on this channel
+
+	probeToken uint64 // what this device's probe packets carry; 0 for none
 }
 
 // Start listens and serves until ctx ends or Close is called.
@@ -136,6 +146,9 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	if err != nil {
 		_ = udp.Close()
 		return nil, err
+	}
+	if cfg.Probe != "" {
+		s.listenProbe(cfg.Probe)
 	}
 	go s.acceptQUIC(ctx)
 	if cfg.TCP != "" {
@@ -168,6 +181,9 @@ func (s *Server) Close() error {
 		_ = s.tcpLn.Close()
 	}
 	_ = s.ln.Close()
+	if s.probe != nil {
+		_ = s.probe.Close()
+	}
 	err := s.tr.Close()
 	// quic-go closes only sockets it opened itself; this one is ours, and a
 	// self-update's candidate binds the same port right after.
@@ -280,7 +296,12 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	c.mu.Lock()
 	c.locals = wire.Addrs(hello.Locals, wire.MaxCandidates)
 	c.mu.Unlock()
-	if err := c.writeMessage(wire.FrameWelcome, wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}); err != nil {
+	welcome := wire.Welcome{Observed: c.remote(), Carrier: c.carrier, Time: time.Now()}
+	if s.probe != nil && c.carrier == "udp" {
+		c.probeToken = probeToken()
+		welcome.Probe, welcome.ProbeToken = s.probePort, c.probeToken
+	}
+	if err := c.writeMessage(wire.FrameWelcome, welcome); err != nil {
 		return
 	}
 
@@ -292,6 +313,9 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	s.clients[id] = c
 	s.mu.Unlock()
 	s.log.Info("device up", "device", id.Short(), "carrier", c.carrier, "from", c.remote())
+	if c.probeToken != 0 {
+		go s.knock(c)
+	}
 	if s.cfg.Revocations != nil {
 		// Written here and not queued: the list can be longer than the
 		// queue, and this goroutine waits on no socket but its own device's.

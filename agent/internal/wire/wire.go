@@ -91,6 +91,11 @@ type Welcome struct {
 	Observed string    `cbor:"observed"` // the channel's source address as the hub sees it
 	Carrier  string    `cbor:"carrier"`  // "udp" or "tcp"
 	Time     time.Time `cbor:"time"`
+	// Probe is the hub's second UDP port, for the NAT probe (probe.go),
+	// and ProbeToken what the device's probe packets must carry. Zero
+	// from a hub without one, or to a device on the TCP carrier.
+	Probe      uint16 `cbor:"probe,omitempty"`
+	ProbeToken uint64 `cbor:"probe_token,omitempty"`
 }
 
 // Connect asks for a rendezvous with a peer.
@@ -120,6 +125,7 @@ type Census struct {
 	Update   string         `cbor:"update,omitempty" json:"update,omitempty"` // the self-updater's last word
 	Backup   *CensusBackup  `cbor:"backup,omitempty" json:"backup,omitempty"`
 	Worker   bool           `cbor:"worker,omitempty" json:"worker,omitempty"` // volunteers as a repair worker
+	NAT      *CensusNAT     `cbor:"nat,omitempty" json:"nat,omitempty"`       // what the device learned about its router
 }
 
 // CensusBackup is what a device says about its backups: dates only, the
