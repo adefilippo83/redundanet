@@ -1641,6 +1641,18 @@ headless node is managed with the CLI over SSH, or with the page through an SSH
 tunnel, which is how the live network's nodes are run today and keeps every
 byte encrypted.
 
+**Another device of the member.** Built. A member looks at one of their
+devices from another: `redundanet open DEVICE`, or the link beside the device
+on the page. The device looked at serves no page. The share protocol has two
+requests for it, `view` and `act`, which every device answers for a device
+certified for the same member and for no one else: `view` returns the status
+the device's own page shows and its last log lines, `act` starts one of three
+named things, a backup, a restore test or an update check. The asking device
+draws the view inside its own page and session, so the loopback rule and the
+browser guards below are untouched. Restore, settings, pairing and everything
+that takes the phrase have no request and stay on the device itself.
+`--no-remote` turns the answers off on a device.
+
 **Browser safety.** A page on loopback is still reachable by any website the
 member visits, through forms that post to `127.0.0.1`. So `redundanet open`
 prints a one-time link that sets an HttpOnly, SameSite=Strict session cookie;

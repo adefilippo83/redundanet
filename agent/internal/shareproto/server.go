@@ -71,26 +71,31 @@ func (s *Server) Handle(peer identity.Peer, _ string, st wire.Stream) {
 		st.CancelRead(1)
 		return
 	}
+	s.serve(peer, st, &req)
+}
+
+// serve answers a request already read from its stream.
+func (s *Server) serve(peer identity.Peer, st wire.Stream, req *Request) {
 	var err error
 	switch req.Type {
 	case TypePut:
-		err = s.put(peer, st, &req)
+		err = s.put(peer, st, req)
 	case TypeGet:
-		err = s.get(peer, st, &req)
+		err = s.get(peer, st, req)
 	case TypeHas:
-		err = s.has(peer, st, &req)
+		err = s.has(peer, st, req)
 	case TypePutRoot:
-		err = s.putRoot(peer, st, &req)
+		err = s.putRoot(peer, st, req)
 	case TypeGetRoots:
-		err = s.getRoots(peer, st, &req)
+		err = s.getRoots(peer, st, req)
 	case TypeDelete:
-		err = s.delete(peer, st, &req)
+		err = s.delete(peer, st, req)
 	case TypeUndelete:
-		err = s.undelete(peer, st, &req)
+		err = s.undelete(peer, st, req)
 	case TypeList:
-		err = s.list(peer, st, &req)
+		err = s.list(peer, st, req)
 	case TypeRevoke:
-		err = s.revoke(st, &req)
+		err = s.revoke(st, req)
 	case TypeUsage:
 		err = s.usage(peer, st)
 	default:

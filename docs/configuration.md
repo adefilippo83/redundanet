@@ -129,7 +129,7 @@ The agent serves its API and page on `127.0.0.1:4470` (`redundanet agent --api 1
 
 ## Agent flags
 
-The service passes `agent --network NAME --data-dir DIR [--channel early]`. The other flags of `redundanet agent` (`--storage-path`, `--storage-floor-gb`, `--portmap`, `--tcp-only`, `--no-update`, `--api`) are listed in [cli.md](cli.md); the node unit sets the storage ones from `agent.env`.
+The service passes `agent --network NAME --data-dir DIR [--channel early]`. The other flags of `redundanet agent` (`--storage-path`, `--storage-floor-gb`, `--portmap`, `--tcp-only`, `--no-update`, `--no-remote`, `--api`) are listed in [cli.md](cli.md); the node unit sets the storage ones from `agent.env`.
 
 ## Settings that the page and the commands change
 

@@ -54,7 +54,7 @@ type Snapshot struct {
 	Repair     *repair.Status     `json:"repair,omitempty"` // a storage node's repair worker
 	Service    *service.Status    `json:"service,omitempty"`
 	Placement  *Placement         `json:"placement,omitempty"` // how the network spreads an object, from the manifest
-	Devices    []Device           `json:"devices,omitempty"`   // the devices this one paired, from its record
+	Devices    []Device           `json:"devices,omitempty"`   // the member's other devices this one knows: those it paired, and the member's storage nodes the manifest lists
 	// JoinURL is the join form filled in from this device, when there is
 	// something to ask for: membership, or a paired storage node the
 	// manifest does not list (JoinDevice names it). For the page only.
@@ -93,6 +93,11 @@ type Actions struct {
 	// phrase and the code that device shows, and hands it its identity.
 	// The phrase is used for this and kept nowhere.
 	PairDevice func(ctx context.Context, code, phrase string, storage bool) (Device, error)
+	// RemoteView asks another device of the member for its status, and
+	// RemoteAct asks it to start one of the Remote actions. The device is
+	// its key.
+	RemoteView func(ctx context.Context, device string) (*RemoteView, error)
+	RemoteAct  func(ctx context.Context, device, action string) error
 }
 
 // RevokeReport is how far a revocation got right away; the signed
@@ -174,6 +179,8 @@ type Server struct {
 	mu        sync.Mutex
 	lastFlash *flash   // the outcome of the last action, shown once on the page
 	lastWords []string // a new member's phrase, shown once on the page after Begin
+
+	remote remoteCache // other devices' views, kept for a few seconds
 }
 
 //go:embed templates/page.html templates/setup.html
@@ -279,6 +286,7 @@ func Start(ctx context.Context, cfg Config) (*Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
+	mux.HandleFunc("GET "+remotePath, s.remotePage)
 	mux.HandleFunc("GET /static/{file}", s.static)
 	mux.HandleFunc("GET /diagnostics.zip", s.diagnostics)
 	mux.HandleFunc("GET /login", s.login)
@@ -408,7 +416,12 @@ func (s *Server) apiLoginLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many unused login links", http.StatusTooManyRequests)
 		return
 	}
-	writeJSON(w, map[string]string{"url": "http://" + s.Addr() + "/login?t=" + t})
+	link := "http://" + s.Addr() + "/login?t=" + t
+	// `redundanet open DEVICE` lands on the view of that device.
+	if k, err := identity.ParseKey(r.URL.Query().Get("d")); err == nil {
+		link += "&d=" + k.String()
+	}
+	writeJSON(w, map[string]string{"url": link})
 }
 
 func (s *Server) apiRevoke(w http.ResponseWriter, r *http.Request) {
@@ -811,6 +824,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	// program on this machine knows.
 	home := keyedPrefix + key + "/"
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: home, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds())})
+	// A link made for another device of the member lands on its view; the
+	// key must parse, so the link can lead nowhere else.
+	if back, ok := remoteBack(remotePath + "?d=" + r.URL.Query().Get("d")); ok {
+		home += strings.TrimPrefix(back, "/")
+	}
 	http.Redirect(w, r, home, http.StatusSeeOther)
 }
 
@@ -825,7 +843,11 @@ func parseTemplates() (*template.Template, error) {
 			}
 			return p
 		},
-		"inc":       func(i int) int { return i + 1 },
+		"inc": func(i int) int { return i + 1 },
+		// remoteAct is what one button of the remote view posts.
+		"remoteAct": func(root pageData, act, label string, primary bool) map[string]any {
+			return map[string]any{"Root": root, "Act": act, "Label": label, "Primary": primary}
+		},
 		"lastIndex": func(v []transport.Event) int { return len(v) - 1 },
 	}).ParseFS(templates, "templates/page.html", "templates/setup.html")
 }
@@ -1035,6 +1057,8 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 	back := "/"
 	if v, ok := viewAt(r.FormValue("back")); ok {
 		back = v.Path
+	} else if b, ok := remoteBack(r.FormValue("back")); ok {
+		back = b
 	}
 	l := tr(langOf(r))
 	name := r.PathValue("name")
@@ -1060,6 +1084,8 @@ func (s *Server) pageAction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runPageAction(r *http.Request, name string, l tr) (msg string, bad bool) {
 	fail := func(key string, err error) (string, bool) { return l.T(key, err.Error()), true }
 	switch name {
+	case "remote-act":
+		return s.remoteAct(r, l)
 	case "device-pair":
 		if s.actions().PairDevice == nil {
 			return l.T("msg.pair.off"), true

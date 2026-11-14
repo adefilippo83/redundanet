@@ -212,11 +212,19 @@ func (c *Client) LogLines(ctx context.Context, n int) ([]logbuf.Line, error) {
 }
 
 // LoginLink mints the one-time link for the browser.
-func (c *Client) LoginLink(ctx context.Context) (string, error) {
+func (c *Client) LoginLink(ctx context.Context) (string, error) { return c.LoginLinkTo(ctx, "") }
+
+// LoginLinkTo is a login link that lands on the view of another device of
+// the member, named by its key; "" is this device's own page.
+func (c *Client) LoginLinkTo(ctx context.Context, device string) (string, error) {
 	var out struct {
 		URL string `json:"url"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/api/login-link", &out); err != nil {
+	path := "/api/login-link"
+	if device != "" {
+		path += "?d=" + url.QueryEscape(device)
+	}
+	if err := c.do(ctx, http.MethodPost, path, &out); err != nil {
 		return "", err
 	}
 	return out.URL, nil

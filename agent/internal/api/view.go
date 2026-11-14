@@ -107,6 +107,7 @@ type pageData struct {
 	Restore  *restoreData // the restore view only
 	Paired   []deviceView // the devices this one paired, with how each is reached now
 	Gone     string       // what the page says once it lost its session
+	Remote   *remoteData  // the remote view only: another device of the member
 }
 
 // deviceView is a paired device and its connection at the moment.
