@@ -354,9 +354,14 @@ type Device struct {
 	Verified   string     `json:"verified,omitempty"` // day the oldest integrity check of a share dates from: every share was read back since
 	Direct     int        `json:"peers_direct"`
 	Relayed    int        `json:"peers_relayed"`
-	RelayIn    uint64     `json:"relay_bytes_in"`
-	RelayOut   uint64     `json:"relay_bytes_out"`
-	Update     string     `json:"update,omitempty"`
+	// Reach is how reachable the device found itself for a direct
+	// connection (wire.Reach*), and IPv6 whether it has a public IPv6
+	// address: labels the device worked out, never an address.
+	Reach    string `json:"reach,omitempty"`
+	IPv6     bool   `json:"ipv6,omitempty"`
+	RelayIn  uint64 `json:"relay_bytes_in"`
+	RelayOut uint64 `json:"relay_bytes_out"`
+	Update   string `json:"update,omitempty"`
 }
 
 // Member is one member with the count of its devices and the usage the
@@ -477,6 +482,12 @@ func (c *Collector) Status() Status {
 				if !s.Verified.IsZero() {
 					d.Verified = s.Verified.UTC().Format("2006-01-02")
 				}
+			}
+			if n := e.Census.NAT; n != nil {
+				if r := n.Reach(); r != wire.ReachUnknown {
+					d.Reach = r
+				}
+				d.IPv6 = n.IPv6
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {

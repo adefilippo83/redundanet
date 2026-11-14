@@ -75,7 +75,11 @@ func device(t *testing.T, s identity.Seed, roles ...string) (*identity.DeviceKey
 	return d, id
 }
 
-func newTestNet(t *testing.T, tcp bool) *testNet {
+func newTestNet(t *testing.T, tcp bool) *testNet { return newTestNetProbe(t, tcp, "") }
+
+// newTestNetProbe is a test network whose hub has the NAT probe's second
+// port when probe is an address.
+func newTestNetProbe(t *testing.T, tcp bool, probe string) *testNet {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	n := &testNet{t: t, ctx: ctx, cancel: cancel, allowed: map[identity.Key]bool{}, census: map[identity.Key][]wire.Census{}, shares: map[identity.Key][]*wire.ShareCensus{}}
@@ -116,7 +120,7 @@ func newTestNet(t *testing.T, tcp bool) *testNet {
 		defer n.mu.RUnlock()
 		return append([]*identity.SignedRevocation(nil), n.revoked...)
 	}
-	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, OnCensus: onCensus, OnShares: onShares, OnRevocation: onRevocation, Revocations: revocations, Log: n.log})
+	h, err := hub.Start(ctx, hub.Config{Identity: hid, Device: hd.ID(), Allow: n.allow, UDP: "127.0.0.1:0", TCP: tcpAddr, Probe: probe, OnCensus: onCensus, OnShares: onShares, OnRevocation: onRevocation, Revocations: revocations, Log: n.log})
 	if err != nil {
 		t.Fatal(err)
 	}

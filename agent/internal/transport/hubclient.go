@@ -204,6 +204,9 @@ func (c *hubClient) session(ctx context.Context) error {
 	c.w, c.conn, c.out, c.stop = w, car.conn, out, car.stop
 	c.up, c.carrier, c.observed, c.since = true, car.name, welcome.Observed, time.Now()
 	c.mu.Unlock()
+	if car.conn != nil && welcome.Probe != 0 {
+		c.ep.startProbe(ctx, car.conn.RemoteAddr(), welcome)
+	}
 	defer func() {
 		c.mu.Lock()
 		c.w, c.conn, c.out, c.stop = nil, nil, nil, nil

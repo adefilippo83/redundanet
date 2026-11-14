@@ -194,6 +194,7 @@ func runHub(args []string) error {
 	sigPath := fs.String("sig", "", "signature file (default: manifest.sig beside the manifest)")
 	udp := fs.String("udp", ":4433", "QUIC listener")
 	tcp := fs.String("tcp", ":4443", "TLS listener for UDP-blocked devices; empty disables")
+	probeUDP := fs.String("probe-udp", "", "a second UDP port, such as :655, from which devices learn how their routers behave; empty for none")
 	status := fs.String("status", "127.0.0.1:4480", "status page and status.json; empty disables")
 	every := fs.Duration("status-every", time.Minute, "log a status line this often")
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
@@ -253,7 +254,7 @@ func runHub(args []string) error {
 			cancel()
 			return nil, err
 		}
-		hcfg := hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log}
+		hcfg := hub.Config{Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, UDP: *udp, TCP: *tcp, Probe: *probeUDP, OnCensus: col.Record, OnShares: col.RecordShares, OnTaskReport: col.RecordTaskReport, Log: rc.log}
 		if rc.member != nil {
 			// The hub keeps a revocation of a listed member, once per
 			// certificate, passes on what was new, and sends the list to

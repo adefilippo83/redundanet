@@ -172,11 +172,11 @@ redundanet network descriptor [--manifest manifests/manifest.yaml] --repository 
 Prints the network descriptor (name, hubs, operator keys, where the manifest is served) for invite links and for the one built into the binary, `Network` in `agent/internal/version`, which a test keeps equal to the manifest. `URL` is the base under which `manifests/manifest.yaml` and `manifest.sig` are served, for example `https://raw.githubusercontent.com/OWNER/REPO/main`.
 
 ```
-redundanet hub [--network NAME] [--udp :4433] [--tcp :4443] [--status 127.0.0.1:4480]
+redundanet hub [--network NAME] [--udp :4433] [--tcp :4443] [--probe-udp :655] [--status 127.0.0.1:4480]
                [--channel stable|early] [--no-update]
                [--manifest FILE --sig FILE] [--status-every 1m] [--probation] [--probation-peers KEYS] [-v]
 ```
-Runs hub mode: rendezvous and relay on `--udp` (QUIC) and `--tcp` (TLS carrier; empty disables), and the status page and `status.json` on `--status` (empty disables). The flags `--legacy-status`, `--publish` and `--publish-token-file` existed until 3.0.19 and are gone: a hub started with one of them refuses to start, so take them out of the unit first. `--manifest` runs from a signed file instead of the joined network. `--probation` and `--probation-peers` are used by the updater. Runbook: [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md).
+Runs hub mode: rendezvous and relay on `--udp` (QUIC) and `--tcp` (TLS carrier; empty disables), and the status page and `status.json` on `--status` (empty disables). `--probe-udp` is a second UDP port from which devices learn how their routers behave (empty, the default, for none): the hub knocks from it on each device that connects and tells a device the address its question came from, and each device shows the outcome as "Direct connections" on its page and as `reach` on the status page. The flags `--legacy-status`, `--publish` and `--publish-token-file` existed until 3.0.19 and are gone: a hub started with one of them refuses to start, so take them out of the unit first. `--manifest` runs from a signed file instead of the joined network. `--probation` and `--probation-peers` are used by the updater. Runbook: [../agent/deploy/hub/README.md](../agent/deploy/hub/README.md).
 
 ```
 redundanet storage has [--storage-path DIR] STORAGE_INDEX

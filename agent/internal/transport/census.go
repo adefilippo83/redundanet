@@ -52,6 +52,9 @@ func (e *Endpoint) census() (wire.Census, bool) {
 		}
 	}
 	sort.Slice(c.Peers, func(i, j int) bool { return c.Peers[i].Device.Less(c.Peers[j].Device) })
+	if nat := e.NAT(); nat.Mapping != "" || nat.Filtering != "" || nat.IPv6 || nat.PortMap {
+		c.NAT = &nat.CensusNAT
+	}
 	return c, true
 }
 

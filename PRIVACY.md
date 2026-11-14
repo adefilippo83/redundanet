@@ -80,7 +80,9 @@ device they show: the device name from the manifest, the device key, the
 member name, online state, how it connects and since when, when it was last
 seen, software version, operating system and architecture, uptime, manifest
 revision, free and total bytes, storage state, number of shares and bytes
-stored, how many peers it reaches directly or through a relay, and relayed
+stored, how many peers it reaches directly or through a relay, how reachable
+its router leaves it for a direct connection (one word, with whether it has
+public IPv6), and relayed
 byte counts. Per member: name, status, contribution and allocation, devices
 and how many are online, bytes stored, object counts, the day of the last
 backup and the restore-test streak. Plus grid totals and repair counters.

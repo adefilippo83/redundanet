@@ -181,6 +181,7 @@
     <div><dt>{{.T "device.roles"}}</dt><dd>{{range $i, $r := .Roles}}{{if $i}}, {{end}}{{$r}}{{end}}</dd></div>
     <div class="full"><dt>{{.T "device.member"}}</dt><dd><code>{{.Member}}</code><br><span class="muted">{{.MemberCode}}</span></dd></div>
     <div class="full"><dt>{{.T "device.key"}}</dt><dd><code>{{.Device}}</code></dd></div>
+    {{with .Transport}}{{with .NAT}}<div id="nat" data-live class="full"><dt>{{$.T "nat.label"}}</dt><dd>{{if eq .Reach "open"}}<span class="ok">{{$.T "nat.open"}}</span>{{else if eq .Reach "easy"}}<span class="ok">{{$.T "nat.easy"}}</span>{{else if eq .Reach "predictable"}}<span class="warn">{{$.T "nat.predictable"}}</span>{{else if eq .Reach "hard"}}<span class="warn">{{$.T "nat.hard"}}</span>{{else}}<span class="muted">{{$.T "nat.unknown"}}</span>{{end}}</dd></div>{{end}}{{end}}
   </dl>
 </section>
 
