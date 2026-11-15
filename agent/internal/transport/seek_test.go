@@ -373,12 +373,19 @@ func TestTheHubNamesTheAddressOfASearch(t *testing.T) {
 	a, aKey := n.endpoint(seed(1), true, nil)
 	b, bKey := n.endpoint(seed(2), true, nil)
 	a.Connect(bKey)
-	eventually(t, 15*time.Second, "a connection and both probes", func() bool {
-		return a.Connect(bKey).Best() != "" && !a.NAT().Checked.IsZero() && !b.NAT().Checked.IsZero()
+	// On one machine the two connect directly, and a device with a direct
+	// connection answers no search: wait until the side that is asked has
+	// it, so that it cannot arrive later, and take it away.
+	var sb *session
+	eventually(t, 20*time.Second, "the direct connection and both probes", func() bool {
+		if sb = b.session(aKey, false); sb == nil {
+			return false
+		}
+		sb.mu.Lock()
+		direct := sb.directConn != nil
+		sb.mu.Unlock()
+		return direct && a.Connect(bKey).Best() == PathDirect && !a.NAT().Checked.IsZero() && !b.NAT().Checked.IsZero()
 	})
-	// The two are connected directly here, and a device with a direct
-	// connection answers no search: take it away from the side that is asked.
-	sb := b.session(aKey, false)
 	sb.mu.Lock()
 	direct := sb.directConn
 	sb.directConn = nil
