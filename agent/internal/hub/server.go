@@ -31,6 +31,9 @@ type Config struct {
 	// Probe is a second UDP port for the NAT probe (wire/probe.go), ""
 	// for none. A hub that cannot open it runs without the probe.
 	Probe string
+	// ProbeAnswers is how many asks the probe port answers one device at
+	// once; zero is probeAnswers. One more is answered every probeRefill.
+	ProbeAnswers int
 	// OnCensus receives each device's heartbeat; the collector keeps them.
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
 	// OnShares receives a storage node's share census chunks.
@@ -280,7 +283,7 @@ func (s *Server) acceptTCP(ctx context.Context) {
 func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	c.out = make(chan []byte, relayQueue)
 	c.ctl = make(chan controlFrame, controlQueue)
-	c.probed = wire.Allowance{Burst: probeAnswers, Every: probeRefill}
+	c.probed = wire.Allowance{Burst: s.probeAnswers(), Every: probeRefill}
 	c.seeks = wire.Allowance{Burst: seekBurst, Every: seekRefill}
 	done := make(chan struct{})
 	defer close(done)

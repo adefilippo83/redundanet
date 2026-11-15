@@ -31,6 +31,13 @@ const (
 	seekRefill = 2 * time.Second
 )
 
+func (s *Server) probeAnswers() int {
+	if s.cfg.ProbeAnswers > 0 {
+		return s.cfg.ProbeAnswers
+	}
+	return probeAnswers
+}
+
 // listenProbe opens the probe port. A hub that cannot have it runs
 // without the probe: devices then learn nothing about their routers and
 // everything else works as before.

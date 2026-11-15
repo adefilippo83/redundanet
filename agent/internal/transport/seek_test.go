@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
@@ -26,7 +27,8 @@ import (
 type simRouter struct {
 	fixed bool
 	base  int
-	band  int // how many ports from base on, for a router that picks
+	band  int   // how many ports from base on, for a router that picks
+	first []int // what a router that picks gives out first, from base on
 
 	mu      sync.Mutex
 	next    int // the last public port handed out
@@ -48,8 +50,15 @@ func newSimRouter(fixed bool, base int) *simRouter {
 	return &simRouter{fixed: fixed, next: base + rand.IntN(1500), ports: map[int]*simPort{}}
 }
 
+// The first ports of a router that picks are set, far from each other and
+// in no order: what the probe makes of ports that happen to be the same,
+// or to follow each other, is not what these tests are about.
 func newSimBandRouter(base, band int) *simRouter {
-	return &simRouter{base: base, band: band, ports: map[int]*simPort{}}
+	first := []int{3, 31, 12, 38, 7, 25, 0, 19, 37, 15}
+	for i := range first {
+		first[i] = first[i] * band / 40
+	}
+	return &simRouter{base: base, band: band, first: first, ports: map[int]*simPort{}}
 }
 
 // open hands a socket a public port for one destination: the next one
@@ -61,6 +70,9 @@ func (r *simRouter) open(s *simSocket, key string) *simPort {
 		r.next++
 		if r.band > 0 {
 			r.next = r.base + rand.IntN(r.band)
+			if len(r.first) > 0 {
+				r.next, r.first = r.base+r.first[0], r.first[1:]
+			}
 		}
 		if p := r.ports[r.next]; p != nil {
 			p.mu.Lock()
@@ -395,7 +407,9 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 			name = "the side with the band dials"
 		}
 		t.Run(name, func(t *testing.T) {
-			n := newTestNetProbe(t, false, "127.0.0.1:0")
+			// The searches here follow each other within seconds and not
+			// minutes, so the hub answers as many asks as they need.
+			n := newTestNetProbe(t, false, "127.0.0.1:0", func(c *hub.Config) { c.ProbeAnswers = 1 << 16 })
 			ra, rb := newSimRouter(false, 21000), newSimBandRouter(27000, 40)
 			a, aKey := n.endpoint(seed(1), true, ra.behind)
 			b, bKey := n.endpoint(seed(2), true, rb.behind)
