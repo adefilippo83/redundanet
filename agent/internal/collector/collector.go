@@ -114,7 +114,7 @@ func New(cfg Config) (*Collector, error) {
 		return nil, err
 	}
 	c := &Collector{cfg: cfg, log: cfg.Log.With("component", "collector"), entries: map[identity.Key]*entry{}, pl: pl, rep: repairState{hinted: map[objectKey]time.Time{}}}
-	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "pct": pct, "plural": plural}
+	funcs := template.FuncMap{"short": short, "since": c.since, "gb": gb, "size": size, "dur": dur, "pct": pct, "plural": plural, "gaps": gaps}
 	tmpl, err := template.New("status.html").Funcs(funcs).ParseFS(templates, "templates/status.html")
 	if err != nil {
 		_ = pl.close()
@@ -357,11 +357,20 @@ type Device struct {
 	// Reach is how reachable the device found itself for a direct
 	// connection (wire.Reach*), and IPv6 whether it has a public IPv6
 	// address: labels the device worked out, never an address.
-	Reach    string `json:"reach,omitempty"`
-	IPv6     bool   `json:"ipv6,omitempty"`
-	RelayIn  uint64 `json:"relay_bytes_in"`
-	RelayOut uint64 `json:"relay_bytes_out"`
-	Update   string `json:"update,omitempty"`
+	Reach string `json:"reach,omitempty"`
+	IPv6  bool   `json:"ipv6,omitempty"`
+	// The numbers behind Reach, differences between public ports and
+	// never a port: PortAcross from one socket toward the hub's two
+	// ports, PortGaps between sockets opened one after the other,
+	// PortKept when those had their own port number outside. Router is
+	// who holds the public address (wire.Router*).
+	PortAcross int32   `json:"port_across,omitempty"`
+	PortGaps   []int32 `json:"port_gaps,omitempty"`
+	PortKept   bool    `json:"port_kept,omitempty"`
+	Router     string  `json:"router,omitempty"`
+	RelayIn    uint64  `json:"relay_bytes_in"`
+	RelayOut   uint64  `json:"relay_bytes_out"`
+	Update     string  `json:"update,omitempty"`
 }
 
 // Member is one member with the count of its devices and the usage the
@@ -488,6 +497,7 @@ func (c *Collector) Status() Status {
 					d.Reach = r
 				}
 				d.IPv6 = n.IPv6
+				d.PortAcross, d.PortGaps, d.PortKept, d.Router = n.Numbers()
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {
@@ -876,4 +886,16 @@ func dur(secs uint64) string {
 		return fmt.Sprintf("%d min", int(d.Minutes()))
 	}
 	return strings.TrimSuffix(d.String(), "0s")
+}
+
+// gaps writes port differences the way the page shows them: "+1 +1 -3".
+func gaps(g []int32) string {
+	var b strings.Builder
+	for i, d := range g {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%+d", d)
+	}
+	return b.String()
 }

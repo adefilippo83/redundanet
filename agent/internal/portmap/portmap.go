@@ -187,7 +187,31 @@ type igd interface {
 	DeletePortMappingCtx(ctx context.Context, remoteHost string, extPort uint16, proto string) error
 }
 
-func mapUPnP(ctx context.Context, port int, lifetime time.Duration) (*Mapping, error) {
+// External asks the router for the address it holds outside, with NAT-PMP
+// and then UPnP, and opens nothing on it. PCP has no such question, so a
+// router that speaks only PCP does not answer. ok is false when no router
+// said.
+func External(ctx context.Context) (addr netip.Addr, ok bool) {
+	if gw, err := gateway.DiscoverGateway(); err == nil {
+		if ext, err := natpmp.NewClientWithTimeout(gw, 2*time.Second).GetExternalAddress(); err == nil {
+			return netip.AddrFrom4(ext.ExternalIPAddress), true
+		}
+	}
+	if ctx.Err() != nil {
+		return netip.Addr{}, false
+	}
+	for _, c := range upnpClients(ctx) {
+		if s, err := c.GetExternalIPAddressCtx(ctx); err == nil {
+			if a, err := netip.ParseAddr(s); err == nil {
+				return a, true
+			}
+		}
+	}
+	return netip.Addr{}, false
+}
+
+// upnpClients is every internet gateway that answers the discovery.
+func upnpClients(ctx context.Context) []igd {
 	dctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	var clients []igd
@@ -206,6 +230,11 @@ func mapUPnP(ctx context.Context, port int, lifetime time.Duration) (*Mapping, e
 			clients = append(clients, c)
 		}
 	}
+	return clients
+}
+
+func mapUPnP(ctx context.Context, port int, lifetime time.Duration) (*Mapping, error) {
+	clients := upnpClients(ctx)
 	if len(clients) == 0 {
 		return nil, errors.New("no UPnP internet gateway answered")
 	}

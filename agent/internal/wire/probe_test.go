@@ -71,3 +71,29 @@ func TestMappingAndReach(t *testing.T) {
 		}
 	}
 }
+
+// Gaps are differences between ports, and a hub keeps of a device's
+// numbers only what a measurement can be.
+func TestPortGapsAndNumbers(t *testing.T) {
+	if g := PortGaps([]uint16{40000, 40001, 40003, 39000}); len(g) != 3 || g[0] != 1 || g[1] != 2 || g[2] != -1003 {
+		t.Fatalf("gaps: %v", g)
+	}
+	if g := PortGaps([]uint16{40000}); g != nil {
+		t.Fatalf("one port has no gap: %v", g)
+	}
+	if g := PortGaps(make([]uint16, 40)); len(g) != MaxPortGaps {
+		t.Fatalf("gaps are capped: %d", len(g))
+	}
+	n := &CensusNAT{Across: 1 << 30, Gaps: append(make([]int32, 20), 0), Kept: true, Router: "203.0.113.7"}
+	n.Gaps[0] = -1 << 30
+	across, gaps, kept, router := n.Numbers()
+	if across != 65535 || len(gaps) != MaxPortGaps || gaps[0] != -65535 || !kept || router != "" {
+		t.Fatalf("numbers: %d %v %v %q", across, gaps, kept, router)
+	}
+	if _, _, kept, router := (&CensusNAT{Kept: true, Router: RouterCarrier}).Numbers(); kept || router != RouterCarrier {
+		t.Fatalf("kept without gaps, or a known router label lost: %v %q", kept, router)
+	}
+	if a, g, k, r := (*CensusNAT)(nil).Numbers(); a != 0 || g != nil || k || r != "" {
+		t.Fatal("nothing measured")
+	}
+}
