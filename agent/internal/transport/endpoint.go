@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
@@ -52,6 +53,11 @@ type Config struct {
 	UDPPort int
 	// PortMap asks the router for a mapping with PCP, NAT-PMP or UPnP.
 	PortMap bool
+	// RouterAddress asks the home router which address it holds outside
+	// and opens nothing on it; false when the router does not say. The
+	// NAT probe uses it to tell a home router's address from a
+	// carrier's. nil: the router is not asked.
+	RouterAddress func(context.Context) (netip.Addr, bool)
 	// TCPOnly never tries UDP to a hub (a network that blocks it).
 	TCPOnly bool
 	// LoopbackCandidates advertises 127.0.0.1 too, for tests on one machine.

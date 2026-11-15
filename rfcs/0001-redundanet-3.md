@@ -810,7 +810,18 @@ to every destination, a nearby one or an unrelated one. One hub address
 cannot tell a router that maps by destination address alone, which is rare.
 The device shows the outcome on its page, and sends the hub labels and no
 address: the status page lists each device as `open`, `easy`, `predictable`
-or `hard`, with whether it has public IPv6. The probe packets carry a token
+or `hard`, with whether it has public IPv6. A device behind a router
+measures two more things for the steps that follow. It opens four sockets
+one after the other and asks the port from each: the differences between
+the public ports they got say whether the router hands ports out in order,
+which is what predicting a port needs, and whether a socket keeps its own
+port number outside. And it asks its router, with NAT-PMP and UPnP and
+without opening a port, for the address it holds outside: when that is the
+address the hub sees, the router can be asked for a port (`public`); when
+it is not, something beyond the router translates again and a port on the
+router leads nowhere (`carrier`); a router that answers neither protocol is
+`silent`. The device sends the differences and the word, never a port or
+an address. The probe packets carry a token
 the hub gave over the authenticated channel, the hub answers nothing else
 and never with more bytes than it got. Nothing in how devices connect
 changes with this step.

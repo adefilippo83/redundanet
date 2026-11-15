@@ -130,6 +130,61 @@ type CensusNAT struct {
 	Filtering string `cbor:"filtering,omitempty" json:"filtering,omitempty"`
 	IPv6      bool   `cbor:"ipv6,omitempty" json:"ipv6,omitempty"`       // has a global IPv6 address
 	PortMap   bool   `cbor:"portmap,omitempty" json:"portmap,omitempty"` // the router granted a port mapping
+	// The numbers behind the labels: differences between public ports,
+	// never a port. Across is the mesh socket's public port toward the
+	// probe port minus the one toward the channel. Gaps are the
+	// differences between the public ports the router gave to sockets
+	// the device opened one after the other, and Kept says each of those
+	// had the socket's own port number outside.
+	Across int32   `cbor:"across,omitempty" json:"across,omitempty"`
+	Gaps   []int32 `cbor:"gaps,omitempty" json:"gaps,omitempty"`
+	Kept   bool    `cbor:"kept,omitempty" json:"kept,omitempty"`
+	// Router is who holds the device's public address, from asking the
+	// router for its outside address (wire.Router*); empty when not asked.
+	Router string `cbor:"router,omitempty" json:"router,omitempty"`
+}
+
+// Who holds the public address the hub sees a device at.
+const (
+	RouterPublic  = "public"  // the home router: it can be asked for a port
+	RouterCarrier = "carrier" // something beyond the home router: a port on the router leads nowhere
+	RouterSilent  = "silent"  // the router answered no protocol that tells
+)
+
+// MaxPortGaps is how many gaps a device reports and a hub keeps.
+const MaxPortGaps = 8
+
+// PortGaps is the difference between each public port and the one before.
+func PortGaps(ports []uint16) []int32 {
+	if len(ports) < 2 {
+		return nil
+	}
+	gaps := make([]int32, 0, len(ports)-1)
+	for i := 1; i < len(ports) && len(gaps) < MaxPortGaps; i++ {
+		gaps = append(gaps, int32(ports[i])-int32(ports[i-1]))
+	}
+	return gaps
+}
+
+// Numbers is the measurement as a hub shows it: what a device sent, cut
+// to what a measurement can be. The labels and numbers come from the
+// device, so a hub takes nothing else from them.
+func (n *CensusNAT) Numbers() (across int32, gaps []int32, kept bool, router string) {
+	if n == nil {
+		return 0, nil, false, ""
+	}
+	port := func(d int32) int32 { return max(-65535, min(65535, d)) }
+	for i, g := range n.Gaps {
+		if i == MaxPortGaps {
+			break
+		}
+		gaps = append(gaps, port(g))
+	}
+	switch n.Router {
+	case RouterPublic, RouterCarrier, RouterSilent:
+		router = n.Router
+	}
+	return port(n.Across), gaps, n.Kept && len(gaps) > 0, router
 }
 
 // How reachable a device is for a direct connection, from what it

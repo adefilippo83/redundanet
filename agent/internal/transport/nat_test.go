@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"net"
 	"net/netip"
 	"testing"
@@ -108,5 +109,64 @@ func TestTheProbePortAnswersNoStranger(t *testing.T) {
 	buf := make([]byte, 256)
 	if got, _, err := pc.ReadFrom(buf); err == nil {
 		t.Fatalf("the probe port answered a stranger with %d bytes", got)
+	}
+}
+
+// Sockets opened one after the other each learn their public port from
+// the probe port. On one machine that port is the socket's own, so every
+// one is kept and the gaps are the differences between the local ports.
+func TestFreshSocketsLearnTheirPublicPorts(t *testing.T) {
+	n := newTestNetProbe(t, false, "127.0.0.1:0")
+	ep, _ := n.endpoint(seed(1), true, nil)
+	eventually(t, 10*time.Second, "the probe to finish", func() bool { return !ep.NAT().Checked.IsZero() })
+	ep.nat.mu.Lock()
+	hub, token := ep.nat.hub, ep.nat.run
+	ep.nat.mu.Unlock()
+	ask := wire.Probe{Kind: wire.ProbeAsk, Device: ep.cfg.Device, Token: token}.Encode()
+	ports, kept := freshPorts(context.Background(), hub, ask)
+	if len(ports) != natFresh || !kept {
+		t.Fatalf("fresh sockets: ports %v, kept %v", ports, kept)
+	}
+	if gaps := wire.PortGaps(ports); len(gaps) != natFresh-1 {
+		t.Fatalf("gaps: %v", gaps)
+	}
+	// With a token the hub did not give, no socket learns anything.
+	wrong := wire.Probe{Kind: wire.ProbeAsk, Device: ep.cfg.Device, Token: token + 2}.Encode()
+	if ports, _ := freshPorts(context.Background(), hub, wrong); len(ports) != 0 {
+		t.Fatalf("a wrong token was answered: %v", ports)
+	}
+	// With no router in between, the device measured none of this.
+	if nat := ep.NAT(); len(nat.Gaps) != 0 || nat.Kept || nat.Router != "" || nat.Across != 0 {
+		t.Fatalf("on loopback: %+v", nat)
+	}
+}
+
+// Who holds the public address: the home router when the address it
+// gives as its own outside is the one the hub sees, something beyond it
+// otherwise, and the router is asked once an hour at most.
+func TestTheRouterIsAskedWhoHoldsTheAddress(t *testing.T) {
+	n := newTestNet(t, false)
+	asked := 0
+	answer, ok := netip.MustParseAddr("203.0.113.7"), true
+	ep, _ := n.endpoint(seed(1), true, func(c *Config) {
+		c.RouterAddress = func(context.Context) (netip.Addr, bool) { asked++; return answer, ok }
+	})
+	ctx := context.Background()
+	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterPublic {
+		t.Fatalf("the router's own address: %q", got)
+	}
+	if got := ep.routerHolds(ctx, netip.MustParseAddr("198.51.100.1")); got != wire.RouterCarrier || asked != 1 {
+		t.Fatalf("another address: %q after %d questions", got, asked)
+	}
+	ep.nat.mu.Lock()
+	ep.nat.routerAsked = time.Now().Add(-2 * natRouterEvery)
+	ep.nat.mu.Unlock()
+	answer, ok = netip.Addr{}, false
+	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterSilent || asked != 2 {
+		t.Fatalf("a router that does not say: %q after %d questions", got, asked)
+	}
+	ep.cfg.RouterAddress = nil
+	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != "" {
+		t.Fatalf("not asked: %q", got)
 	}
 }

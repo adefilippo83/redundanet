@@ -109,7 +109,7 @@ td:first-child code { font-weight: 400 }
 </dl></section>{{end}}
 
 <section class="card"><h2>Devices</h2><div class="wrap"><table>
-<thead><tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>checked since</th><th>peers</th><th title="how reachable the device found itself for a direct connection">reach</th><th>relayed</th><th>update</th></tr></thead>
+<thead><tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>checked since</th><th>peers</th><th title="how reachable the device found itself for a direct connection, who holds its public address, and how its router hands out ports">reach</th><th>relayed</th><th>update</th></tr></thead>
 <tbody>{{range .Devices}}<tr>
   <td>{{if .Name}}{{.Name}} <code class="muted">{{short .Device}}</code>{{else}}<code>{{short .Device}}</code>{{end}}</td>
   <td>{{.Member}}</td>
@@ -124,7 +124,7 @@ td:first-child code { font-weight: 400 }
   <td>{{if .Shares}}{{.Shares}}, {{size .Stored}}{{end}}</td>
   <td>{{if .Verified}}{{.Verified}}{{else if .Shares}}<span class="muted">not all yet</span>{{end}}</td>
   <td>{{if or .Direct .Relayed}}{{.Direct}} direct, {{.Relayed}} relayed{{end}}</td>
-  <td>{{if eq .Reach "open"}}<span class="ok">open</span>{{else if eq .Reach "easy"}}<span class="ok">easy</span>{{else if eq .Reach "predictable"}}<span class="warn">predictable</span>{{else if eq .Reach "hard"}}<span class="bad">hard</span>{{end}}{{if .IPv6}} <span class="muted">IPv6</span>{{end}}</td>
+  <td>{{if eq .Reach "open"}}<span class="ok">open</span>{{else if eq .Reach "easy"}}<span class="ok">easy</span>{{else if eq .Reach "predictable"}}<span class="warn">predictable</span>{{else if eq .Reach "hard"}}<span class="bad">hard</span>{{end}}{{if .IPv6}} <span class="muted">IPv6</span>{{end}}{{if .Router}} <span class="muted" title="who holds the device's public address: its own router (public), something beyond it (carrier), or the router did not say (silent)">{{.Router}}</span>{{end}}{{if .PortGaps}} <span class="muted" title="differences between the public ports the router gave to sockets opened one after the other{{if .PortKept}}; each kept its own port number{{end}}">{{gaps .PortGaps}}</span>{{end}}</td>
   <td>{{if or .RelayIn .RelayOut}}{{size .RelayIn}} in, {{size .RelayOut}} out{{end}}</td>
   <td>{{.Update}}</td>
 </tr>{{end}}</tbody>
