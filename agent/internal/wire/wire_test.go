@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
+	"time"
 )
 
 // An address list comes from another device. Only literal addresses with
@@ -45,5 +46,31 @@ func TestAddrsKeepsLiteralAddressesOnly(t *testing.T) {
 	}
 	if got := Addrs(nil, MaxCandidates); len(got) != 0 {
 		t.Fatalf("an empty list gave %q", got)
+	}
+}
+
+// An allowance gives its burst at once and one more for every interval
+// that passed, never more than the burst.
+func TestAllowance(t *testing.T) {
+	a := Allowance{Burst: 3, Every: time.Second}
+	now := time.Unix(1000, 0)
+	for i := 0; i < 3; i++ {
+		if !a.Take(now) {
+			t.Fatalf("take %d of the burst was refused", i+1)
+		}
+	}
+	if a.Take(now) || a.Take(now.Add(900*time.Millisecond)) {
+		t.Fatal("more than the burst was allowed")
+	}
+	if !a.Take(now.Add(2 * time.Second)) {
+		t.Fatal("nothing came back with time")
+	}
+	later := now.Add(time.Hour)
+	n := 0
+	for a.Take(later) {
+		n++
+	}
+	if n != 3 {
+		t.Fatalf("after an hour: %d allowed, want the burst", n)
 	}
 }

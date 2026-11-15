@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -120,7 +121,8 @@ type client struct {
 	bytesIn  uint64
 	bytesOut uint64
 	drops    uint64
-	probed   int // NAT probe asks answered on this channel
+	probed   wire.Allowance // NAT probe asks answered on this channel
+	seeks    wire.Allowance // port searches passed on for this device
 
 	probeToken uint64 // what this device's probe packets carry; 0 for none
 }
@@ -278,6 +280,8 @@ func (s *Server) acceptTCP(ctx context.Context) {
 func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 	c.out = make(chan []byte, relayQueue)
 	c.ctl = make(chan controlFrame, controlQueue)
+	c.probed = wire.Allowance{Burst: probeAnswers, Every: probeRefill}
+	c.seeks = wire.Allowance{Burst: seekBurst, Every: seekRefill}
 	done := make(chan struct{})
 	defer close(done)
 	go c.writeLoop(done)
@@ -361,6 +365,12 @@ func (s *Server) serve(ctx context.Context, c *client, r io.Reader) {
 				return
 			}
 			s.rendezvous(c, req.Peer)
+		case wire.FrameSeek:
+			var sk wire.Seek
+			if err := identity.UnmarshalLenient(payload, &sk); err != nil {
+				return
+			}
+			s.seek(c, sk)
 		case wire.FrameRelay:
 			if dst, pkt, err := wire.SplitRelay(payload); err == nil {
 				s.relay(c, dst, pkt)
@@ -547,6 +557,29 @@ func (s *Server) rendezvous(c *client, peerID identity.Key) {
 	}
 	_ = c.enqueueMessage(wire.FrameCandidates, wire.Candidates{Peer: peerID, Addrs: peer.candidates(), Dialer: cDials, Online: true})
 	_ = peer.enqueueMessage(wire.FrameCandidates, wire.Candidates{Peer: c.peer.Device, Addrs: c.candidates(), Dialer: !cDials, Online: true})
+}
+
+// seek passes one side's half of a port search (wire/seek.go) on to the
+// peer it names. The address in it is the one this hub sees the sender's
+// channel at, whatever the sender wrote: a device can point a peer's
+// search at its own public address and at no other. Only a device on the
+// UDP carrier has an address a search can reach.
+func (s *Server) seek(c *client, sk wire.Seek) {
+	from, err := netip.ParseAddrPort(c.remote())
+	if err != nil || c.carrier != "udp" || sk.Peer == c.peer.Device {
+		return
+	}
+	c.mu.Lock()
+	ok := c.seeks.Take(time.Now())
+	c.mu.Unlock()
+	s.mu.Lock()
+	peer := s.clients[sk.Peer]
+	s.mu.Unlock()
+	if !ok || peer == nil {
+		return
+	}
+	sk.Peer, sk.Addr, sk.Spans = c.peer.Device, from.Addr().Unmap().String(), wire.Spans(sk.Spans)
+	_ = peer.enqueueMessage(wire.FrameSeek, sk)
 }
 
 func (s *Server) relay(src *client, dst identity.Key, pkt []byte) {

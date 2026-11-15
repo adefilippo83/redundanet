@@ -85,13 +85,22 @@ type Config struct {
 	// OnRelease receives a hub's hint that this node holds a surplus share.
 	OnRelease func(h *wire.ReleaseHint)
 	Log       *slog.Logger
+
+	// socket and fresh stand in for the mesh socket and for the sockets
+	// the NAT probe opens, in tests that put a router of their own in
+	// between.
+	socket net.PacketConn
+	fresh  func() (net.PacketConn, error)
+	// seekAfter replaces how long ordinary punching gets before a port
+	// search (seek.go), in tests.
+	seekAfter time.Duration
 }
 
 // Endpoint is one device's presence on the mesh.
 type Endpoint struct {
 	cfg Config
 	log *slog.Logger
-	udp *net.UDPConn
+	udp net.PacketConn // a *net.UDPConn outside tests
 	tr  *quic.Transport
 	ln  *quic.Listener
 
@@ -104,6 +113,9 @@ type Endpoint struct {
 	mapped   []string
 
 	nat natState // what the hub's probe said about this device's router
+	// seeking is held by the one port search under way: two at once would
+	// move the router's port counter under each other.
+	seeking sync.Mutex
 }
 
 // peerQUICConfig: notice a dead peer in 20 s and keep NAT mappings warm.
@@ -136,13 +148,15 @@ func Start(ctx context.Context, cfg Config) (*Endpoint, error) {
 	if cfg.Listen == "" {
 		cfg.Listen = ":0"
 	}
-	addr, err := net.ResolveUDPAddr("udp", cfg.Listen)
-	if err != nil {
-		return nil, err
-	}
-	udp, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		return nil, err
+	udp := cfg.socket
+	if udp == nil {
+		addr, err := net.ResolveUDPAddr("udp", cfg.Listen)
+		if err != nil {
+			return nil, err
+		}
+		if udp, err = net.ListenUDP("udp", addr); err != nil {
+			return nil, err
+		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	ep := &Endpoint{cfg: cfg, log: cfg.Log.With("component", "transport"), udp: udp, ctx: ctx, cancel: cancel, sessions: map[identity.Key]*session{}}
@@ -546,6 +560,14 @@ func (e *Endpoint) onHubUp(c *hubClient) {
 		if s.wantsRendezvous() {
 			_ = c.sendMessage(wire.FrameConnect, wire.Connect{Peer: s.peer})
 		}
+	}
+}
+
+func (e *Endpoint) onSeek(c *hubClient, sk wire.Seek) {
+	// Only a peer this device already has a session with is answered:
+	// the session is where the search is bounded.
+	if s := e.session(sk.Peer, false); s != nil {
+		s.onSeek(c, sk)
 	}
 }
 

@@ -51,6 +51,11 @@ type natState struct {
 	routerAddr  netip.Addr
 	routerPCP   bool
 	routerAsked time.Time
+	// The last reading of the router's port counter (counter), kept for
+	// a moment so that sessions that start together share one.
+	readMu   sync.Mutex // one reading at a time
+	readAt   time.Time
+	readPort uint16
 }
 
 // measurement is what one finished probe run found.
@@ -128,7 +133,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 				m.across = int32(seen.Port()) - int32(channel.Port())
 			}
 			if m.mapping != wire.MapNone {
-				fresh, m.kept = freshPorts(ctx, hub, ask)
+				fresh, m.kept = freshPorts(ctx, hub, ask, e.freshSocket)
 			}
 		}
 		if knocked {
@@ -209,15 +214,11 @@ func (b *portBand) add(addr netip.Addr, seen ...netip.AddrPort) (width int32, sa
 // each and returns the public address each one got, in order, and whether
 // every one of them had the socket's own port number. It stops at the
 // first socket that gets no answer: a gap needs two neighbours.
-func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte) (seen []netip.AddrPort, kept bool) {
-	network := "udp4"
-	if hub.Addr().Is6() {
-		network = "udp6"
-	}
+func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte, open func(netip.AddrPort) (net.PacketConn, error)) (seen []netip.AddrPort, kept bool) {
 	kept = true
 	buf := make([]byte, 2048)
 	for i := 0; i < natFresh && ctx.Err() == nil; i++ {
-		conn, err := net.ListenUDP(network, nil)
+		conn, err := open(hub)
 		if err != nil {
 			break
 		}
@@ -236,21 +237,27 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte) (seen []net
 // askFrom asks the probe port from one socket, twice at most, and returns
 // the address the hub saw. Only the probe port's own answer to this ask
 // counts.
-func askFrom(conn *net.UDPConn, hub netip.AddrPort, ask, buf []byte) (netip.AddrPort, bool) {
+func askFrom(conn net.PacketConn, hub netip.AddrPort, ask, buf []byte) (netip.AddrPort, bool) {
 	want, ok := wire.ParseProbe(ask)
 	if !ok {
 		return netip.AddrPort{}, false
 	}
+	to := net.UDPAddrFromAddrPort(hub)
 	for try := 0; try < 2; try++ {
-		if _, err := conn.WriteToUDPAddrPort(ask, hub); err != nil {
+		if _, err := conn.WriteTo(ask, to); err != nil {
 			return netip.AddrPort{}, false
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(natFreshWait))
 		for {
-			n, from, err := conn.ReadFromUDPAddrPort(buf)
+			n, addr, err := conn.ReadFrom(buf)
 			if err != nil {
 				break
 			}
+			udp, isUDP := addr.(*net.UDPAddr)
+			if !isUDP {
+				continue
+			}
+			from := udp.AddrPort()
 			p, ok := wire.ParseProbe(buf[:n])
 			if ok && p.Kind == wire.ProbeTell && p.Token == want.Token && p.Addr.IsValid() &&
 				netip.AddrPortFrom(from.Addr().Unmap(), from.Port()) == hub {
@@ -259,6 +266,77 @@ func askFrom(conn *net.UDPConn, hub netip.AddrPort, ask, buf []byte) (netip.Addr
 		}
 	}
 	return netip.AddrPort{}, false
+}
+
+// freshSocket opens a socket of its own toward the probe port.
+func (e *Endpoint) freshSocket(hub netip.AddrPort) (net.PacketConn, error) {
+	if e.cfg.fresh != nil {
+		return e.cfg.fresh()
+	}
+	network := "udp4"
+	if hub.Addr().Is6() {
+		network = "udp6"
+	}
+	return net.ListenUDP(network, nil)
+}
+
+// counter reads where the router's port counter stands: the public port
+// it gives a socket opened now. A reading no older than fresh is used
+// again. It says nothing without a probe port, or when the socket came
+// out at another public address than the channel.
+func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bool) {
+	n := &e.nat
+	n.readMu.Lock()
+	defer n.readMu.Unlock()
+	n.mu.Lock()
+	hub, token, channel := n.hub, n.run, n.channel
+	port, recent := n.readPort, fresh > 0 && !n.readAt.IsZero() && time.Since(n.readAt) < fresh
+	n.mu.Unlock()
+	if recent {
+		return port, true
+	}
+	if !hub.IsValid() || token == 0 || ctx.Err() != nil {
+		return 0, false
+	}
+	conn, err := e.freshSocket(hub)
+	if err != nil {
+		return 0, false
+	}
+	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
+	a, ok := askFrom(conn, hub, ask, make([]byte, 2048))
+	_ = conn.Close()
+	if !ok || a.Addr().Unmap() != channel.Addr().Unmap() {
+		return 0, false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.run != token {
+		return 0, false
+	}
+	n.readAt, n.readPort = time.Now(), a.Port()
+	n.ports.add(channel.Addr().Unmap(), a)
+	return a.Port(), true
+}
+
+// probing reports that the first probe run on a channel has not finished:
+// the label for the router is still to come.
+func (e *Endpoint) probing() bool {
+	n := &e.nat
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.run != 0 && n.checked.IsZero()
+}
+
+// router is the label for this device's router, the address the hub sees
+// the device at and the band of public ports it was seen at there.
+func (e *Endpoint) router() (mapping string, public netip.Addr, lo, hi uint16) {
+	n := &e.nat
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ports.n > 0 && n.ports.addr == n.channel.Addr().Unmap() {
+		lo, hi = n.ports.lo, n.ports.hi
+	}
+	return n.mapping, n.channel.Addr().Unmap(), lo, hi
 }
 
 // routerHolds says who holds the public address the hub sees this device

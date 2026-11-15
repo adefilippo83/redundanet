@@ -2,9 +2,10 @@ package transport
 
 import (
 	"context"
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"net/netip"
 	"sync"
@@ -95,6 +96,17 @@ type session struct {
 	created    time.Time
 	lastConn   time.Time
 	down       time.Time // since when no connection is up; zero while one is
+
+	// The port search (seek.go).
+	marks     []uint16       // where the router's port counter stood each time this session began writing to the peer, newest last
+	markedFor string         // the peer's first candidate at the last mark
+	punched   time.Time      // the last punch run
+	seekNext  time.Time      // no search before; zero for none due
+	seekTries int            // searches that failed since the last one that did not
+	seekBusy  bool           // a search this session started is under way
+	seekRound uint64         // the search waiting for its answer
+	seekReply chan wire.Seek // where that answer goes
+	soughtAt  time.Time      // the last search the peer started
 }
 
 // punchNonce is the random number one punch run puts in its packets. Only
@@ -227,6 +239,7 @@ func (s *session) serve(conn *quic.Conn, path string) {
 		s.directConn, mine = nil, true
 		s.direct = nil
 		s.seen = map[string]bool{}
+		s.seekNext = time.Now().Add(s.ep.seekAfter())
 	}
 	if path == PathRelay && s.relayConn == conn {
 		s.relayConn, mine = nil, true
@@ -243,6 +256,7 @@ func (s *session) serve(conn *quic.Conn, path string) {
 // loop keeps the rendezvous going while something is missing and drops a
 // session nobody asked for once it has been idle.
 func (s *session) loop() {
+	next := time.Now() // when the next rendezvous is due
 	for {
 		s.mu.Lock()
 		wanted, hasAny := s.wanted, s.relayConn != nil || s.directConn != nil
@@ -253,19 +267,29 @@ func (s *session) loop() {
 			s.stop()
 			return
 		}
-		wait := rendezvousEvery
-		if s.wantsRendezvous() {
-			s.mu.Lock()
-			online := s.online
-			s.mu.Unlock()
-			if err := s.ep.rendezvous(s.peer); err != nil || !online {
-				wait = 2 * time.Second
+		if !time.Now().Before(next) {
+			wait := rendezvousEvery
+			if s.wantsRendezvous() {
+				s.mu.Lock()
+				online := s.online
+				s.mu.Unlock()
+				if err := s.ep.rendezvous(s.peer); err != nil || !online {
+					wait = 2 * time.Second
+				}
 			}
+			next = time.Now().Add(wait)
+		}
+		// A port search has its own clock, and wakes the loop for it.
+		sleep := time.Until(next)
+		if due, in := s.seekDue(); due {
+			go s.seek()
+		} else if in > 0 && in < sleep {
+			sleep = in
 		}
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-time.After(wait):
+		case <-time.After(max(sleep, 50*time.Millisecond)):
 		}
 	}
 }
@@ -286,6 +310,24 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 	s.mu.Unlock()
 	if !cand.Online {
 		return
+	}
+	// The first packet to an address the peer was not at before, or after
+	// a silence long enough for a router to forget, opens a new mapping:
+	// where the router's port counter stands now is where that mapping is.
+	first := ""
+	if len(cand.Addrs) > 0 {
+		first = cand.Addrs[0]
+	}
+	s.mu.Lock()
+	opens := first != s.markedFor || time.Since(s.punched) > mappingLife
+	s.markedFor, s.punched = first, time.Now()
+	if s.seekNext.IsZero() && s.directConn == nil {
+		after := s.ep.seekAfter()
+		s.seekNext = time.Now().Add(after + rand.N(after/2+1))
+	}
+	s.mu.Unlock()
+	if opens {
+		go s.mark()
 	}
 	if changed {
 		role := "listener"
@@ -317,15 +359,10 @@ func (s *session) punch(addrs []string) {
 	if len(targets) == 0 {
 		return
 	}
-	var raw [8]byte
-	if _, err := rand.Read(raw[:]); err != nil {
+	nonce, ok := s.newNonce()
+	if !ok {
 		return
 	}
-	nonce := binary.BigEndian.Uint64(raw[:])
-	s.mu.Lock()
-	s.nonces[1] = s.nonces[0]
-	s.nonces[0] = punchNonce{value: nonce, at: time.Now()}
-	s.mu.Unlock()
 	for i := 0; i < punchRounds; i++ {
 		for _, t := range targets {
 			s.ep.sendPunch(t, punchOpen, nonce)
@@ -336,6 +373,21 @@ func (s *session) punch(addrs []string) {
 		case <-time.After(punchInterval):
 		}
 	}
+}
+
+// newNonce starts a punch run: a new random number, and the run before
+// it still counts.
+func (s *session) newNonce() (uint64, bool) {
+	var raw [8]byte
+	if _, err := crand.Read(raw[:]); err != nil {
+		return 0, false
+	}
+	nonce := binary.BigEndian.Uint64(raw[:])
+	s.mu.Lock()
+	s.nonces[1] = s.nonces[0]
+	s.nonces[0] = punchNonce{value: nonce, at: time.Now()}
+	s.mu.Unlock()
+	return nonce, true
 }
 
 // opened is a punch that arrived from addr under the peer's name. The
@@ -363,7 +415,7 @@ func (s *session) opened(addr *net.UDPAddr) {
 	n := s.nonces[0]
 	if n.at.IsZero() || time.Since(n.at) >= punchNonceLife/2 {
 		var raw [8]byte
-		if _, err := rand.Read(raw[:]); err != nil {
+		if _, err := crand.Read(raw[:]); err != nil {
 			s.mu.Unlock()
 			return
 		}
