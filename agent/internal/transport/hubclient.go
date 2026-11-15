@@ -268,6 +268,13 @@ func (c *hubClient) handleFrame(w *wire.Writer, typ byte, payload []byte) {
 			return
 		}
 		c.ep.onCandidates(c, cand)
+	case wire.FrameSeek:
+		var sk wire.Seek
+		if err := identity.UnmarshalLenient(payload, &sk); err != nil {
+			c.ep.log.Warn("hub sent a bad port search", "err", err)
+			return
+		}
+		c.ep.onSeek(c, sk)
 	case wire.FrameRelay:
 		if from, pkt, err := wire.SplitRelay(payload); err == nil {
 			c.relay.deliver(from, pkt)

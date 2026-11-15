@@ -16,9 +16,18 @@ import (
 // a channel and sends that channel's token.
 
 const (
-	knocks       = 3
-	knockEvery   = 200 * time.Millisecond
-	probeAnswers = 32 // asks answered per channel: a device sends a handful
+	knocks     = 3
+	knockEvery = 200 * time.Millisecond
+	// A device sends a handful of asks when its channel comes up and one
+	// or two for each port search later: probeAnswers at once, one more
+	// every probeRefill. An answer is as long as its ask, so the bound is
+	// on the hub's work and not on what it could be made to send.
+	probeAnswers = 32
+	probeRefill  = 2 * time.Second
+	// seekBurst and seekRefill bound the port searches a hub passes on
+	// for one device.
+	seekBurst  = 16
+	seekRefill = 2 * time.Second
 )
 
 // listenProbe opens the probe port. A hub that cannot have it runs
@@ -84,10 +93,9 @@ func (s *Server) probeLoop(pc net.PacketConn) {
 			continue
 		}
 		c.mu.Lock()
-		c.probed++
-		over := c.probed > probeAnswers
+		ok = c.probed.Take(time.Now())
 		c.mu.Unlock()
-		if over {
+		if !ok {
 			continue
 		}
 		seen := udp.AddrPort()

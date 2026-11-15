@@ -46,6 +46,10 @@ const (
 	// (identity.SignedRevocation): device to hub, which keeps it and sends
 	// it on to every device, on arrival and to each device that connects.
 	FrameRevocation byte = 14
+	// FrameSeek carries one side's half of a port search (seek.go): device
+	// to hub, which sets the sender's address and passes it to the peer.
+	// A hub or a device that does not know the frame skips it.
+	FrameSeek byte = 15
 )
 
 // MaxFrame bounds a frame payload.

@@ -856,6 +856,55 @@ the hub gave over the authenticated channel, the hub answers nothing else
 and never with more bytes than it got. Nothing in how devices connect
 changes with this step.
 
+**Searching for the port.** Built; it uses what the step before measured.
+Two routers that both let in only a port they wrote to, one of which gives
+another public port for every destination, never meet by punching at the
+address the hub saw: the port that matters is the one the router gave
+toward the peer, and nobody was told it. A session that has had no direct
+connection for twenty seconds, on the side that dials, sends the peer a
+message through the hub with its router's label, and the peer answers with
+its own; the hub puts into each the public address it sees the sender at,
+so a device can point a peer's packets at its own address only. What
+follows depends on the two labels.
+
+- One router keeps one public port (`easy`, or no translation at all) and
+  the other hands ports out in order or out of a narrow band. The second
+  device names the ports where its mapping toward the first may be, and the
+  first sends a punch to each of them. Behind a router that counts, a
+  device reads the counter (the public port of a socket opened that moment,
+  told by the hub's second port) every time it begins writing to a peer's
+  address, and the mapping is looked for from 32 ports under that reading
+  to 16 over it, for the last three such readings; behind a router with a
+  band it is the band, with a quarter of its width on either side. Each
+  search that fails doubles the width, up to eight times, and one search
+  never covers more than 1,024 ports.
+- Both routers hand ports out in order. Each device reads its counter and
+  tells the other, and then each sends punches to the ports the other
+  router is about to hand out: 96 of them, 15 ms apart, the side that
+  started 16 more. Every such punch opens a new mapping on the sender's own
+  router, so both routers open a run of mappings, and a punch gets through
+  when it lands on a mapping that points back at the one it left from. With
+  nothing else going on that is the first punch. Every port either router
+  gave to something else in between moves the pairing by one, so the side
+  that answers skips one port after every two punches: the skips add up
+  faster than a household opens connections, the two meet, and stay met for
+  two punches. On paper this holds with three other new connections a
+  second on each router, and most of the time with ten. Each device then
+  reads its counter once more and writes
+  into its log how many ports the router gave out meanwhile, which is how a
+  router that does not behave as assumed will show.
+
+A punch that gets through is answered like any other and the session goes
+on as after an ordinary punch. A search that finds nothing is tried again
+after 1, 2, 5 and 15 minutes and then every hour; a device runs one search
+at a time, and answers a peer's search at most once in five seconds. A
+router that picks any port for every destination (`hard`), and a pair of
+which one side has a band and the other counts, are not searched: they
+stay on the relay. Nothing is set on any router, and no port is opened on
+one. The search is tested between two simulated routers on one machine,
+with other connections taking ports meanwhile; what real routers do with
+it is what the live network will say.
+
 **When UDP is blocked.** Hotel, campus and office networks often allow only TCP,
 and tinc falls back to TCP today. The relay therefore also listens on TCP
 (`--tcp`; the live hub uses 8443, the number of its UDP port), carrying the same end-to-end QUIC packets inside TLS, as Tailscale's DERP

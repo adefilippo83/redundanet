@@ -123,7 +123,7 @@ func TestFreshSocketsLearnTheirPublicPorts(t *testing.T) {
 	hub, token := ep.nat.hub, ep.nat.run
 	ep.nat.mu.Unlock()
 	ask := wire.Probe{Kind: wire.ProbeAsk, Device: ep.cfg.Device, Token: token}.Encode()
-	ports, kept := freshPorts(context.Background(), hub, ask)
+	ports, kept := freshPorts(context.Background(), hub, ask, ep.freshSocket)
 	if len(ports) != natFresh || !kept {
 		t.Fatalf("fresh sockets: ports %v, kept %v", ports, kept)
 	}
@@ -134,7 +134,7 @@ func TestFreshSocketsLearnTheirPublicPorts(t *testing.T) {
 	}
 	// With a token the hub did not give, no socket learns anything.
 	wrong := wire.Probe{Kind: wire.ProbeAsk, Device: ep.cfg.Device, Token: token + 2}.Encode()
-	if ports, _ := freshPorts(context.Background(), hub, wrong); len(ports) != 0 {
+	if ports, _ := freshPorts(context.Background(), hub, wrong, ep.freshSocket); len(ports) != 0 {
 		t.Fatalf("a wrong token was answered: %v", ports)
 	}
 	// With no router in between, the device measured none of this.
