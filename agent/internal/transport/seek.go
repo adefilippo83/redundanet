@@ -19,6 +19,11 @@ import (
 // through is answered like any other, and from there the session goes on
 // as after an ordinary punch: the address is confirmed and dialled.
 //
+// Two devices of this version do not guess where the other router's
+// counter will stand: one opens and measures, the other reads its own
+// counter and aims (open, fire, try). What each did is told to the other,
+// so one device's log shows both halves of a search.
+//
 // Nothing is set on a router. Each search is a bounded number of packets
 // as long as a punch, to the one public address the hub sees the peer at.
 
@@ -45,6 +50,25 @@ const (
 	// sprayEvery paces the packets of a device whose own port does not
 	// move: they open nothing new on its router.
 	sprayEvery = 4 * time.Millisecond
+	// A measured search. The side that opens writes openPorts packets
+	// toward a router that counts, in runs of openRun with a reading of
+	// its own router's counter between two runs and a breath of openGap;
+	// openKnown is how many ports of a run the router may already have
+	// had a mapping to.
+	// The side that aims reads its counter up to fireRounds times and
+	// writes firePackets after each reading; after every fireRun of them
+	// it aims one port further, for what its router gave to something
+	// else since the reading. seekStep is how long each waits for the
+	// other's next step.
+	openPorts   = 160
+	openRun     = 16
+	openGap     = 5 * time.Millisecond
+	openKnown   = 2
+	fireRounds  = 6
+	firePackets = 12
+	fireRun     = 3
+	fireWait    = 250 * time.Millisecond
+	seekStep    = 8 * time.Second
 	// seekSoon is the wait when a search could not start: another one
 	// under way here or at the peer, or the probe not finished.
 	seekSoon = 10 * time.Second
@@ -95,7 +119,10 @@ func (s *session) mark() {
 func (s *session) seekDue() (due bool, in time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.seekBusy || !s.roleKnown || !s.dialer || !s.online || s.directConn != nil || s.seekNext.IsZero() {
+	if s.seekBusy {
+		return false, time.Second // it says when the next one is due as it ends
+	}
+	if !s.roleKnown || !s.dialer || !s.online || s.directConn != nil || s.seekNext.IsZero() {
 		return false, 0
 	}
 	if in = time.Until(s.seekNext); in > 0 {
@@ -145,29 +172,29 @@ func (s *session) seek() {
 		return
 	}
 	mine := s.offer(me, wire.Seek{Peer: s.peer, Round: binary.BigEndian.Uint64(raw[:]), Try: uint8(min(try, 255))}, "")
-	answer := make(chan wire.Seek, 1)
-	s.mu.Lock()
-	s.seekRound, s.seekReply = mine.Round, answer
-	s.mu.Unlock()
-	defer func() { s.mu.Lock(); s.seekReply = nil; s.mu.Unlock() }()
-	if err := hub.sendMessage(wire.FrameSeek, mine); err != nil {
+	answer := s.listen(mine.Round)
+	defer s.unlisten(answer)
+	send := func(sk wire.Seek) error { return hub.sendMessage(wire.FrameSeek, sk) }
+	if err := send(mine); err != nil {
 		s.seekIn(seekSoon, false)
 		return
 	}
 	var theirs wire.Seek
-	select {
-	case theirs = <-answer:
-	case <-time.After(seekAnswer):
-		s.seekIn(0, true) // a peer or a hub of an older version, or gone
-		return
-	case <-s.ctx.Done():
-		return
+	for timeout := time.After(seekAnswer); !theirs.Reply; {
+		select {
+		case theirs = <-answer:
+		case <-timeout:
+			s.seekIn(0, true) // a peer or a hub of an older version, or gone
+			return
+		case <-s.ctx.Done():
+			return
+		}
 	}
 	if theirs.Busy {
 		s.seekIn(seekSoon, false)
 		return
 	}
-	if !s.search(me, mine, theirs, false) {
+	if !s.search(me, mine, theirs, false, answer, send) {
 		s.seekIn(0, true)
 		return
 	}
@@ -176,12 +203,31 @@ func (s *session) seek() {
 	s.mu.Unlock()
 }
 
-// onSeek takes a search message the hub passed on from the peer: the
-// answer to a search of this session, or the peer's own search.
-func (s *session) onSeek(c *hubClient, sk wire.Seek) {
-	sk.Spans = wire.Spans(sk.Spans)
+// listen has the peer's messages of one search come to the channel it
+// returns, until unlisten.
+func (s *session) listen(round uint64) chan wire.Seek {
+	in := make(chan wire.Seek, 4)
 	s.mu.Lock()
-	if sk.Reply {
+	s.seekRound, s.seekReply = round, in
+	s.mu.Unlock()
+	return in
+}
+
+func (s *session) unlisten(in chan wire.Seek) {
+	s.mu.Lock()
+	if s.seekReply == in {
+		s.seekReply = nil
+	}
+	s.mu.Unlock()
+}
+
+// onSeek takes a search message the hub passed on from the peer: the
+// answer to a search of this session or a later step of one under way,
+// or the peer's own search.
+func (s *session) onSeek(c *hubClient, sk wire.Seek) {
+	sk.Spans, sk.Opened = wire.Spans(sk.Spans), wire.Openings(sk.Opened)
+	s.mu.Lock()
+	if sk.Reply || sk.Step != 0 {
 		answer := s.seekReply
 		if s.seekRound != sk.Round {
 			answer = nil
@@ -215,11 +261,14 @@ func (s *session) sought(c *hubClient, theirs wire.Seek) {
 		return
 	}
 	defer e.seeking.Unlock()
+	in := s.listen(theirs.Round)
+	defer s.unlisten(in)
+	send := func(sk wire.Seek) error { return c.sendMessage(wire.FrameSeek, sk) }
 	mine := s.offer(me, answer, theirs.Mapping)
-	if c.sendMessage(wire.FrameSeek, mine) != nil {
+	if send(mine) != nil {
 		return
 	}
-	s.search(me, mine, theirs, true)
+	s.search(me, mine, theirs, true, in, send)
 }
 
 // offer fills in this device's half of a search: its router's label, the
@@ -227,6 +276,9 @@ func (s *session) sought(c *hubClient, theirs wire.Seek) {
 // counter stands when the peer's may hand ports out in order too.
 func (s *session) offer(me string, sk wire.Seek, theirs string) wire.Seek {
 	sk.Mapping = me
+	if !s.ep.cfg.seekOld {
+		sk.Ways = wire.SeekMeasured
+	}
 	sk.Spans = s.spans(me, int(sk.Try))
 	if me == wire.MapSequential && (theirs == "" || theirs == wire.MapSequential) {
 		if p, ok := s.ep.counter(s.ctx, 0); ok {
@@ -319,15 +371,168 @@ func spanPorts(spans []wire.PortSpan) []uint16 {
 	return out
 }
 
+// after is the n ports after next, the ones a router that counts hands
+// out from there on.
+func after(next uint16, n int) []uint16 {
+	out := make([]uint16, 0, n)
+	for p := int(next) + 1; p <= 65535 && len(out) < n; p++ {
+		out = append(out, uint16(p))
+	}
+	return out
+}
+
+// open writes one packet to each of the peer's ports, and says which of
+// this device's public ports each came out of. Every packet goes to a
+// port this device has not written to, so the router gives each the next
+// port of its counter; a reading before a run of them and one after tell
+// where the run began and whether anything else took a port in between.
+// A run the readings cannot place is named without a port, and so is one
+// that took fewer ports than it has packets, because the router still
+// had mappings to there. One or two fewer are let pass as an estimate:
+// the device has written to a port or two of the peer's before, when it
+// punched.
+func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct func() bool) []wire.Opening {
+	e := s.ep
+	var runs []wire.Opening
+	readings := []func() (uint16, bool){e.reading(s.ctx)}
+	for i := 0; i < len(ports) && s.ctx.Err() == nil && !direct(); {
+		j := i + 1
+		for j < len(ports) && j-i < openRun && ports[j] == ports[j-1]+1 {
+			j++
+		}
+		for _, p := range ports[i:j] {
+			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(p)}, punchOpen, nonce)
+		}
+		runs = append(runs, wire.Opening{To: ports[i], Count: uint16(j - i)})
+		readings = append(readings, e.reading(s.ctx))
+		i = j
+		select {
+		case <-s.ctx.Done():
+		case <-time.After(openGap):
+		}
+	}
+	for i := range runs {
+		before, okBefore := readings[i]()
+		behind, okBehind := readings[i+1]()
+		n := int(runs[i].Count)
+		used := int(behind) - int(before) - 1
+		if !okBefore || !okBehind || used < n-openKnown || used < 1 || int(before)+n > 65535 {
+			continue
+		}
+		runs[i].From, runs[i].Exact = before+1, used == n
+	}
+	return runs
+}
+
+// openedSum sums up what a device opened: packets, runs, and the runs whose
+// ports are measured and not estimated.
+func openedSum(opened []wire.Opening) (packets, runs, exact int) {
+	for _, o := range opened {
+		packets += int(o.Count)
+		runs++
+		if o.Exact {
+			exact++
+		}
+	}
+	return packets, runs, exact
+}
+
+// fire aims at what the peer opened, from behind a router that counts.
+// The peer wrote to this router's ports from To on and named the port of
+// its own each of those packets came out of. A reading of this router's
+// counter says which port the next packet to a new destination takes:
+// that packet goes to the peer's port that was opened toward exactly it.
+// The reading is some milliseconds old by then, so after every fireRun
+// packets the aim moves one port further; then the counter is read
+// again. A port the peer could not name is used up on a packet that
+// opens nothing, so that the count stays true.
+func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool) (sent, reads, moved int) {
+	e := s.ep
+	last := 0
+	for _, o := range opened {
+		last = max(last, int(o.To)+int(o.Count))
+	}
+	toward := func(q int) int {
+		for _, o := range opened {
+			if q >= int(o.To) && q < int(o.To)+int(o.Count) && o.From != 0 {
+				return int(o.From) + q - int(o.To)
+			}
+		}
+		return q // opens nothing, takes a port
+	}
+	first := 0
+	for round := 0; round < fireRounds && !direct(); round++ {
+		c, ok := e.counter(s.ctx, 0)
+		if !ok {
+			break
+		}
+		reads++
+		if first == 0 {
+			first = int(c)
+		}
+		moved = max(0, int(c)-first)
+		for n := 0; n < firePackets; n++ {
+			q := int(c) + 1 + n + n/fireRun
+			if q >= last {
+				return sent, reads, moved
+			}
+			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: toward(q)}, punchOpen, nonce)
+			sent++
+		}
+		select {
+		case <-s.ctx.Done():
+			return sent, reads, moved
+		case <-time.After(fireWait):
+		}
+	}
+	return sent, reads, moved
+}
+
+// try writes once to every port the peer opened, from behind a router
+// that picks each port out of a narrow band. The peer wrote to every port
+// of that band, each from a port of its own that it names: a packet to
+// one of those opens the way when this router happens to give it the
+// port that one was opened toward, one chance in the band's width for
+// each packet and about two in three for all of them together.
+func (s *session) try(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool) (sent int) {
+	for _, o := range opened {
+		if o.From == 0 {
+			continue
+		}
+		for j := 0; j < int(o.Count); j++ {
+			if direct() {
+				return sent
+			}
+			select {
+			case <-s.ctx.Done():
+				return sent
+			case <-time.After(sprayEvery):
+			}
+			s.ep.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(o.From) + j}, punchOpen, nonce)
+			sent++
+		}
+	}
+	return sent
+}
+
 // search does this device's half of a search once both halves are known,
 // and reports whether a direct connection came of it.
-func (s *session) search(me string, mine, theirs wire.Seek, answering bool) bool {
+func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <-chan wire.Seek, send func(wire.Seek) error) bool {
 	e := s.ep
 	fixed := func(m string) bool { return m == wire.MapIndependent || m == wire.MapNone }
 	moving := func(m string) bool { return m == wire.MapSequential || m == wire.MapConfined }
+	counts := func(m string) bool { return m == wire.MapSequential }
+	measured := mine.Ways >= wire.SeekMeasured && theirs.Ways >= wire.SeekMeasured
 	_, public, _, _ := e.router()
 	addr, err := netip.ParseAddr(theirs.Addr)
 	addr = addr.Unmap()
+	const (
+		writes = iota // write to ports, or wait for the peer's packets
+		opens         // open ports and say which
+		aims          // aim at what the peer opened
+		tries         // write to everything the peer opened
+	)
+	part := writes
 	var ports []uint16
 	var pace time.Duration
 	var how string
@@ -338,7 +543,15 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool) bool
 	case addr == public && !e.cfg.LoopbackCandidates:
 		// Behind the same router: the path between the two is the LAN's.
 		return false
-	case me == wire.MapSequential && theirs.Mapping == wire.MapSequential && mine.Next != 0 && theirs.Next != 0:
+	case measured && counts(me) && counts(theirs.Mapping) && !answering && theirs.Next != 0:
+		part, ports, how = opens, after(theirs.Next, openPorts), "opening the peer's next ports"
+	case measured && counts(me) && counts(theirs.Mapping) && answering && mine.Next != 0:
+		part, how = aims, "aiming at the ports the peer opened"
+	case measured && counts(me) && theirs.Mapping == wire.MapConfined && len(theirs.Spans) > 0:
+		part, ports, how = opens, spanPorts(theirs.Spans), "opening the peer's band of ports"
+	case measured && me == wire.MapConfined && counts(theirs.Mapping) && len(mine.Spans) > 0:
+		part, how = tries, "trying every port the peer opened"
+	case !measured && counts(me) && counts(theirs.Mapping) && mine.Next != 0 && theirs.Next != 0:
 		ports, pace, how, counted = inOrder(theirs.Next, answering), seekEvery, "both routers' next ports", true
 	case fixed(me) && moving(theirs.Mapping) && len(theirs.Spans) > 0:
 		ports, pace, how = spanPorts(theirs.Spans), sprayEvery, "the peer's ports"
@@ -357,17 +570,69 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool) bool
 			return true
 		}
 	}
+	// step waits for the peer's next message of this search. It counts
+	// only from the address the search began with.
+	step := func(want uint8) (wire.Seek, bool) {
+		for timeout := time.After(seekStep); ; {
+			select {
+			case m := <-in:
+				if m.Step == want && m.Addr == theirs.Addr {
+					return m, true
+				}
+			case <-timeout:
+				return wire.Seek{}, false
+			case <-s.ctx.Done():
+				return wire.Seek{}, false
+			}
+		}
+	}
+	next := wire.Seek{Peer: s.peer, Round: mine.Round, Ways: wire.SeekMeasured}
 	nonce, ok := s.newNonce()
 	if !ok {
 		return false
 	}
 	sent := 0
-	for _, p := range ports {
-		if direct() || !wait(pace) {
+	note := ""
+	switch part {
+	case opens:
+		next.Step, next.Opened = wire.SeekOpened, s.open(addr, ports, nonce, direct)
+		var runs, exact int
+		sent, runs, exact = openedSum(next.Opened)
+		note = fmt.Sprintf(" in %d runs, %d of them measured exactly", runs, exact)
+		if send(next) != nil {
+			note += "; the peer could not be told"
+		} else if fired, ok := step(wire.SeekFired); ok {
+			note += fmt.Sprintf("; the peer wrote %d packets and read its counter %d times, which moved by %d", fired.Sent, fired.Reads, fired.Moved)
+		} else {
+			note += "; the peer did not say what it wrote"
+		}
+	case aims, tries:
+		opened, ok := step(wire.SeekOpened)
+		if !ok {
+			note = "; the peer did not say what it opened"
 			break
 		}
-		e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(p)}, punchOpen, nonce)
-		sent++
+		next.Step = wire.SeekFired
+		if part == aims {
+			var reads, moved int
+			sent, reads, moved = s.fire(addr, opened.Opened, nonce, direct)
+			next.Reads, next.Moved = uint8(min(reads, 255)), uint16(min(moved, 65535))
+			note = fmt.Sprintf(", the counter read %d times and moved by %d", reads, moved)
+		} else {
+			sent = s.try(addr, opened.Opened, nonce, direct)
+		}
+		next.Sent = uint16(min(sent, 65535))
+		_ = send(next)
+		packets, runs, exact := openedSum(opened.Opened)
+		note += fmt.Sprintf("; the peer opened %d ports in %d runs, %d of them measured exactly", packets, runs, exact)
+	default:
+		for _, p := range ports {
+			if direct() || !wait(pace) {
+				break
+			}
+			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(p)}, punchOpen, nonce)
+			sent++
+		}
 	}
 	for until := time.Now().Add(seekSettle); !direct() && time.Now().Before(until); {
 		if !wait(100 * time.Millisecond) {
@@ -381,12 +646,11 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool) bool
 	}
 	// How many ports the router handed out while this device wrote says
 	// whether the search's picture of it holds: one for each packet.
-	used := ""
 	if counted {
-		if after, ok := e.counter(s.ctx, 0); ok && after > mine.Next {
-			used = fmt.Sprintf(", the router gave out %d ports meanwhile", int(after)-int(mine.Next)-1)
+		if behind, ok := e.counter(s.ctx, 0); ok && behind > mine.Next {
+			note = fmt.Sprintf(", the router gave out %d ports meanwhile", int(behind)-int(mine.Next)-1)
 		}
 	}
-	s.event("port search by %s: %s, %d packets sent%s", how, result, sent, used)
+	s.event("port search by %s: %s, %d packets sent%s", how, result, sent, note)
 	return found
 }

@@ -104,8 +104,8 @@ type session struct {
 	seekNext  time.Time      // no search before; zero for none due
 	seekTries int            // searches that failed since the last one that did not
 	seekBusy  bool           // a search this session started is under way
-	seekRound uint64         // the search waiting for its answer
-	seekReply chan wire.Seek // where that answer goes
+	seekRound uint64         // the search under way, started here or by the peer
+	seekReply chan wire.Seek // where the peer's messages of that search go
 	soughtAt  time.Time      // the last search the peer started
 }
 
@@ -283,6 +283,7 @@ func (s *session) loop() {
 		sleep := time.Until(next)
 		if due, in := s.seekDue(); due {
 			go s.seek()
+			sleep = min(sleep, time.Second)
 		} else if in > 0 && in < sleep {
 			sleep = in
 		}

@@ -94,6 +94,9 @@ type Config struct {
 	// seekAfter replaces how long ordinary punching gets before a port
 	// search (seek.go), in tests.
 	seekAfter time.Duration
+	// seekOld makes the device search like the first version that
+	// searched, which guessed and did not measure (tests).
+	seekOld bool
 }
 
 // Endpoint is one device's presence on the mesh.

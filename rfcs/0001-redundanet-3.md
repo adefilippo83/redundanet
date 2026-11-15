@@ -878,31 +878,52 @@ follows depends on the two labels.
   band it is the band, with a quarter of its width on either side. Each
   search that fails doubles the width, up to eight times, and one search
   never covers more than 1,024 ports.
-- Both routers hand ports out in order. Each device reads its counter and
-  tells the other, and then each sends punches to the ports the other
-  router is about to hand out: 96 of them, 15 ms apart, the side that
-  started 16 more. Every such punch opens a new mapping on the sender's own
-  router, so both routers open a run of mappings, and a punch gets through
-  when it lands on a mapping that points back at the one it left from. With
-  nothing else going on that is the first punch. Every port either router
-  gave to something else in between moves the pairing by one, so the side
-  that answers skips one port after every two punches: the skips add up
-  faster than a household opens connections, the two meet, and stay met for
-  two punches. On paper this holds with three other new connections a
-  second on each router, and most of the time with ten. Each device then
-  reads its counter once more and writes
-  into its log how many ports the router gave out meanwhile, which is how a
-  router that does not behave as assumed will show.
+- Both routers hand ports out in order. One device opens and measures,
+  the other aims. The side that dials sends 160 punches to the ports the
+  other router is about to hand out, in runs of 16. Every such punch goes
+  to a port the device has not written to, so its own router gives it the
+  next port of its counter; the device reads that counter before the first
+  run and after each one, with an ask from a new socket that leaves
+  between the punches, so it knows which of its own public ports each
+  punch came out of, and for each run whether something else took a port
+  in between. It tells the other device, through the hub, the runs and
+  their ports. The other device reads its own counter, which says the port
+  its next punch to a new destination will come out of, and sends that
+  punch to the port the first device opened toward exactly that one:
+  twelve punches after a reading, aiming one port further after every
+  three for whatever its router gave away since the reading, then the next
+  reading, six readings at most. A punch gets through when it leaves from
+  the port its target was opened toward. Neither side guesses how many
+  connections the household behind either router opened meanwhile: one
+  measured it and the other reads it again every twelve punches.
+- One router hands ports out in order and the other picks each out of a
+  narrow band. The first device opens as above, toward every port of the
+  band the second names (the band with a quarter of its width on either
+  side), and says which of its ports each punch came out of. The second
+  cannot aim, since its router picks. It sends one punch to each port the
+  first opened, and each has one chance in the band's width of leaving
+  from the port its target was opened toward: about two searches in three
+  find a way, and the next search is another draw once the routers have
+  forgotten the mappings nobody answered.
+
+Each device writes into its log what it did and what the other said it did
+(packets, runs, runs measured exactly, readings, and how far the counter
+moved), so the log of one device shows both halves of a search. The first
+version that searched (3.0.27) had both sides write to the other router's
+next ports at once and guess the rest; on the live network that found no
+way between two homes in five searches out of five, while one router gave
+between 12 and 45 ports to other connections during each. A device of that
+version is still searched that way, since it knows no other.
 
 A punch that gets through is answered like any other and the session goes
 on as after an ordinary punch. A search that finds nothing is tried again
 after 1, 2, 5 and 15 minutes and then every hour; a device runs one search
 at a time, and answers a peer's search at most once in five seconds. A
-router that picks any port for every destination (`hard`), and a pair of
-which one side has a band and the other counts, are not searched: they
-stay on the relay. Nothing is set on any router, and no port is opened on
+router that picks any port for every destination (`hard`), and two routers
+that both pick out of a band, are not searched: they stay on the relay. Nothing is set on any router, and no port is opened on
 one. The search is tested between two simulated routers on one machine,
-with other connections taking ports meanwhile; what real routers do with
+with other connections taking dozens of ports a second on each router
+meanwhile; what real routers do with
 it is what the live network will say.
 
 **When UDP is blocked.** Hotel, campus and office networks often allow only TCP,

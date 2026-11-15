@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/wire"
 )
@@ -19,27 +20,129 @@ import (
 // hands out is a real socket there. It lets a packet in only from an
 // address the socket behind it wrote to. One that counts gives a socket
 // the next port for every destination; a fixed one gives a socket one
-// port for all of them.
+// port for all of them; one with a band gives a socket any port of the
+// band for every destination, the same port to several destinations when
+// it comes to that. A mapping nobody ever answered is gone when the
+// router forgets.
 type simRouter struct {
 	fixed bool
+	base  int
+	band  int   // how many ports from base on, for a router that picks
+	first []int // what a router that picks gives out first, from base on
+
+	mu      sync.Mutex
+	next    int // the last public port handed out
+	inside  int // sockets opened behind it
+	sockets []*simSocket
+	ports   map[int]*simPort
+}
+
+// simPort is one public port: the socket on the loopback, and whose
+// packets from where it lets in.
+type simPort struct {
+	conn *net.UDPConn
 
 	mu     sync.Mutex
-	next   int // the last public port handed out
-	inside int // sockets opened behind it
+	routes map[string]*simSocket // by destination; by "" behind a fixed router
 }
 
 func newSimRouter(fixed bool, base int) *simRouter {
-	return &simRouter{fixed: fixed, next: base + rand.IntN(1500)}
+	return &simRouter{fixed: fixed, next: base + rand.IntN(1500), ports: map[int]*simPort{}}
 }
 
-// open hands out the next public port that is free.
-func (r *simRouter) open() *net.UDPConn {
+// The first ports of a router that picks are set, far from each other and
+// in no order: what the probe makes of ports that happen to be the same,
+// or to follow each other, is not what these tests are about.
+func newSimBandRouter(base, band int) *simRouter {
+	first := []int{3, 31, 12, 38, 7, 25, 0, 19, 37, 15}
+	for i := range first {
+		first[i] = first[i] * band / 40
+	}
+	return &simRouter{base: base, band: band, first: first, ports: map[int]*simPort{}}
+}
+
+// open hands a socket a public port for one destination: the next one
+// that is free, or any of the band that has no mapping to there yet.
+func (r *simRouter) open(s *simSocket, key string) *simPort {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for {
 		r.next++
-		if c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: r.next}); err == nil {
-			return c
+		if r.band > 0 {
+			r.next = r.base + rand.IntN(r.band)
+			if len(r.first) > 0 {
+				r.next, r.first = r.base+r.first[0], r.first[1:]
+			}
+		}
+		if p := r.ports[r.next]; p != nil {
+			p.mu.Lock()
+			_, taken := p.routes[key]
+			if share := r.band > 0 && !taken; share {
+				p.routes[key] = s
+				p.mu.Unlock()
+				return p
+			}
+			p.mu.Unlock()
+			continue
+		}
+		c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: r.next})
+		if err != nil {
+			continue
+		}
+		p := &simPort{conn: c, routes: map[string]*simSocket{key: s}}
+		r.ports[r.next] = p
+		go p.read()
+		return p
+	}
+}
+
+// release ends one mapping, and the port with its last one.
+func (r *simRouter) release(p *simPort, key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p.mu.Lock()
+	delete(p.routes, key)
+	empty := len(p.routes) == 0
+	p.mu.Unlock()
+	if empty {
+		delete(r.ports, p.conn.LocalAddr().(*net.UDPAddr).Port)
+		_ = p.conn.Close()
+	}
+}
+
+func (p *simPort) read() {
+	buf := make([]byte, 4096)
+	for failed := 0; failed < 1000; {
+		n, from, err := p.conn.ReadFromUDP(buf)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			failed++ // Windows reports a port nobody listens on here
+			continue
+		}
+		key := from.String()
+		p.mu.Lock()
+		s := p.routes[key]
+		if s == nil {
+			s, key = p.routes[""], ""
+		}
+		p.mu.Unlock()
+		if s == nil {
+			continue
+		}
+		s.mu.Lock()
+		ok := s.sent[from.String()]
+		if ok {
+			s.answered[key] = true
+		}
+		s.mu.Unlock()
+		if !ok {
+			continue
+		}
+		select {
+		case s.inbox <- packet{b: append([]byte(nil), buf[:n]...), addr: from}:
+		default:
 		}
 	}
 }
@@ -51,14 +154,35 @@ func (r *simRouter) burn(n int) {
 	r.mu.Unlock()
 }
 
+// forget drops every mapping that got no answer in the time a router
+// keeps one.
+func (r *simRouter) forget(kept time.Duration) {
+	r.mu.Lock()
+	sockets := append([]*simSocket(nil), r.sockets...)
+	r.mu.Unlock()
+	for _, s := range sockets {
+		s.mu.Lock()
+		for key, pub := range s.public {
+			if key != "" && !s.answered[key] && time.Since(s.born[key]) > kept {
+				r.release(pub, key)
+				delete(s.public, key)
+				delete(s.sent, key)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
 // socket is a socket of a device behind the router.
 func (r *simRouter) socket() (net.PacketConn, error) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.inside++
-	local := &net.UDPAddr{IP: net.IPv4(10, 99, 0, 2), Port: 4000 + r.inside}
-	r.mu.Unlock()
-	return &simSocket{r: r, local: local, inbox: make(chan packet, 1024), closed: make(chan struct{}),
-		public: map[string]*net.UDPConn{}, sent: map[string]bool{}, moved: make(chan struct{})}, nil
+	s := &simSocket{r: r, local: &net.UDPAddr{IP: net.IPv4(10, 99, 0, 2), Port: 4000 + r.inside},
+		inbox: make(chan packet, 1024), closed: make(chan struct{}),
+		public: map[string]*simPort{}, sent: map[string]bool{}, answered: map[string]bool{}, born: map[string]time.Time{}, moved: make(chan struct{})}
+	r.sockets = append(r.sockets, s)
+	return s, nil
 }
 
 type simSocket struct {
@@ -69,8 +193,10 @@ type simSocket struct {
 	once   sync.Once
 
 	mu       sync.Mutex
-	public   map[string]*net.UDPConn // the public port by destination; by "" behind a fixed router
-	sent     map[string]bool         // the destinations written to
+	public   map[string]*simPort // the public port by destination; by "" behind a fixed router
+	sent     map[string]bool     // the destinations written to
+	answered map[string]bool     // the mappings something came back on
+	born     map[string]time.Time
 	deadline time.Time
 	moved    chan struct{} // closed when the deadline changes
 }
@@ -93,42 +219,17 @@ func (s *simSocket) WriteTo(b []byte, addr net.Addr) (int, error) {
 	}
 	pub := s.public[key]
 	if pub == nil {
-		pub = s.r.open()
-		s.public[key] = pub
-		go s.read(pub, key)
+		pub = s.r.open(s, key)
+		s.public[key], s.born[key] = pub, time.Now()
 	}
 	s.sent[to.String()] = true
 	s.mu.Unlock()
 	// The world of these tests is the loopback: a packet for anywhere
 	// else takes a port on the router and goes nowhere.
 	if to.IP.IsLoopback() {
-		_, _ = pub.WriteToUDP(b, to)
+		_, _ = pub.conn.WriteToUDP(b, to)
 	}
 	return len(b), nil
-}
-
-func (s *simSocket) read(pub *net.UDPConn, key string) {
-	buf := make([]byte, 4096)
-	for failed := 0; failed < 1000; {
-		n, from, err := pub.ReadFromUDP(buf)
-		if err != nil {
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
-			failed++ // Windows reports a port nobody listens on here
-			continue
-		}
-		s.mu.Lock()
-		ok := s.sent[from.String()] && (key == "" || key == from.String())
-		s.mu.Unlock()
-		if !ok {
-			continue
-		}
-		select {
-		case s.inbox <- packet{b: append([]byte(nil), buf[:n]...), addr: from}:
-		default:
-		}
-	}
 }
 
 func (s *simSocket) ReadFrom(b []byte) (int, net.Addr, error) {
@@ -158,8 +259,8 @@ func (s *simSocket) Close() error {
 	s.once.Do(func() {
 		s.mu.Lock()
 		close(s.closed)
-		for _, pub := range s.public {
-			_ = pub.Close()
+		for key, pub := range s.public {
+			s.r.release(pub, key)
 		}
 		s.mu.Unlock()
 	})
@@ -235,9 +336,9 @@ func TestTwoRoutersThatCountAreSearched(t *testing.T) {
 						select {
 						case <-stop:
 							return
-						case <-time.After(200 * time.Millisecond):
-							ra.burn(1)
-							rb.burn(1 + rand.IntN(2))
+						case <-time.After(40 * time.Millisecond):
+							ra.burn(1 + rand.IntN(2))
+							rb.burn(1 + rand.IntN(3))
 						}
 					}
 				}()
@@ -250,12 +351,121 @@ func TestTwoRoutersThatCountAreSearched(t *testing.T) {
 			eventually(t, 10*time.Second, "both sides' word", func() bool {
 				return len(searched(a, bKey)) > 0 && len(searched(b, aKey)) > 0
 			})
-			for _, got := range [][]string{searched(a, bKey), searched(b, aKey)} {
-				if !strings.Contains(got[len(got)-1], "both routers' next ports: direct") {
-					t.Fatalf("the search: %q", got)
-				}
+			// The side that dials opens, the other aims, and each side's
+			// word has what the other did.
+			dials, answers := searched(a, bKey), searched(b, aKey)
+			if len(eventsWith(a, bKey, "I am the dialer")) == 0 {
+				dials, answers = answers, dials
+			}
+			if got := dials[len(dials)-1]; !strings.Contains(got, "opening the peer's next ports: direct, 160 packets") || !strings.Contains(got, "the peer wrote") {
+				t.Fatalf("the side that opened: %q", dials)
+			}
+			if got := answers[len(answers)-1]; !strings.Contains(got, "aiming at the ports the peer opened: direct") || !strings.Contains(got, "the peer opened 160 ports in 10 runs") {
+				t.Fatalf("the side that aimed: %q", answers)
 			}
 		})
+	}
+}
+
+// A device of the version that guessed, and one of this version: the two
+// search the way both know.
+func TestAnOlderPeerIsSearchedTheOldWay(t *testing.T) {
+	n := newTestNetProbe(t, false, "127.0.0.1:0")
+	ra, rb := newSimRouter(false, 21000), newSimRouter(false, 25000)
+	a, aKey := n.endpoint(seed(1), true, func(c *Config) { ra.behind(c); c.seekOld = true })
+	b, bKey := n.endpoint(seed(2), true, rb.behind)
+	eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
+		return mapped(a, wire.MapSequential)() && mapped(b, wire.MapSequential)()
+	})
+	a.Connect(bKey)
+	eventually(t, 30*time.Second, "a direct connection", func() bool { return a.Connect(bKey).Best() == PathDirect })
+	eventually(t, 10*time.Second, "both sides' word", func() bool {
+		return len(searched(a, bKey)) > 0 && len(searched(b, aKey)) > 0
+	})
+	for _, got := range [][]string{searched(a, bKey), searched(b, aKey)} {
+		if !strings.Contains(got[len(got)-1], "both routers' next ports: direct") {
+			t.Fatalf("the search: %q", got)
+		}
+	}
+}
+
+// One router counts, the other gives each destination any port out of a
+// narrow band. The first device opens a port of its own toward every port
+// of the band; the second writes once to each of those, and the way is
+// open when its router happens to give one packet the port its target was
+// opened toward. That is about two searches in three, so the routers
+// forget what nobody answered and the devices search again until it is.
+func TestARouterWithABandIsSearched(t *testing.T) {
+	old := seekBackoff
+	for i := range seekBackoff {
+		seekBackoff[i] = 1500 * time.Millisecond
+	}
+	t.Cleanup(func() { seekBackoff = old })
+	for _, bandDials := range []bool{false, true} {
+		name := "the counting side dials"
+		if bandDials {
+			name = "the side with the band dials"
+		}
+		t.Run(name, func(t *testing.T) {
+			// The searches here follow each other within seconds and not
+			// minutes, so the hub answers as many asks as they need.
+			n := newTestNetProbe(t, false, "127.0.0.1:0", func(c *hub.Config) { c.ProbeAnswers = 1 << 16 })
+			ra, rb := newSimRouter(false, 21000), newSimBandRouter(27000, 40)
+			a, aKey := n.endpoint(seed(1), true, ra.behind)
+			b, bKey := n.endpoint(seed(2), true, rb.behind)
+			eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
+				return mapped(a, wire.MapSequential)() && mapped(b, wire.MapConfined)()
+			})
+			stop := make(chan struct{})
+			t.Cleanup(func() { close(stop) })
+			go func() {
+				for {
+					select {
+					case <-stop:
+						return
+					case <-time.After(500 * time.Millisecond):
+						ra.forget(3 * time.Second)
+						rb.forget(3 * time.Second)
+					}
+				}
+			}()
+			from, toKey := a, bKey
+			if bandDials {
+				from, toKey = b, aKey
+			}
+			from.Connect(toKey)
+			eventually(t, 90*time.Second, "a direct connection", func() bool { return from.Connect(toKey).Best() == PathDirect })
+			if path := roundTrip(t, from, toKey, "through two routers"); path != PathDirect {
+				t.Fatalf("the stream went over %s", path)
+			}
+			eventually(t, 10*time.Second, "both sides' word", func() bool {
+				return len(eventsWith(a, bKey, "band of ports: direct")) > 0 && len(eventsWith(b, aKey, "every port the peer opened: direct")) > 0
+			})
+		})
+	}
+}
+
+// What a device says it opened is cut like the spans: a bounded number of
+// runs and of ports, none past the last port on either side, and a run
+// without a port of its own is not exact.
+func TestOpeningsAreBounded(t *testing.T) {
+	got := wire.Openings([]wire.Opening{{To: 0, Count: 5, From: 9}, {To: 65530, Count: 100, From: 100}, {To: 100, Count: 50, From: 65530, Exact: true},
+		{To: 200, Count: 16, Exact: true}, {To: 1000, Count: 2000, From: 2000}, {To: 5000, Count: 1, From: 1}})
+	want := []wire.Opening{{To: 65530, Count: 6, From: 100}, {To: 100, Count: 6, From: 65530, Exact: true}, {To: 200, Count: 16}, {To: 1000, Count: 996, From: 2000}}
+	if len(got) != len(want) {
+		t.Fatalf("openings: %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("openings: %+v", got)
+		}
+	}
+	var many []wire.Opening
+	for i := 0; i < 2*wire.MaxSeekOpenings; i++ {
+		many = append(many, wire.Opening{To: uint16(1000 + i), Count: 1, From: 7})
+	}
+	if n := len(wire.Openings(many)); n != wire.MaxSeekOpenings {
+		t.Fatalf("%d runs", n)
 	}
 }
 

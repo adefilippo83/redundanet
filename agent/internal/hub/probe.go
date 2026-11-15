@@ -18,17 +18,25 @@ import (
 const (
 	knocks     = 3
 	knockEvery = 200 * time.Millisecond
-	// A device sends a handful of asks when its channel comes up and one
-	// or two for each port search later: probeAnswers at once, one more
-	// every probeRefill. An answer is as long as its ask, so the bound is
+	// A device sends a handful of asks when its channel comes up and up
+	// to a dozen for each port search later, to read its router's counter
+	// around the packets it writes: probeAnswers at once, one more every
+	// probeRefill. An answer is as long as its ask, so the bound is
 	// on the hub's work and not on what it could be made to send.
-	probeAnswers = 32
-	probeRefill  = 2 * time.Second
+	probeAnswers = 64
+	probeRefill  = time.Second
 	// seekBurst and seekRefill bound the port searches a hub passes on
 	// for one device.
 	seekBurst  = 16
 	seekRefill = 2 * time.Second
 )
+
+func (s *Server) probeAnswers() int {
+	if s.cfg.ProbeAnswers > 0 {
+		return s.cfg.ProbeAnswers
+	}
+	return probeAnswers
+}
 
 // listenProbe opens the probe port. A hub that cannot have it runs
 // without the probe: devices then learn nothing about their routers and
