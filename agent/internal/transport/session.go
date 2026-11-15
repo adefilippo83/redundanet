@@ -24,9 +24,12 @@ const (
 	punchNonceLife  = 30 * time.Second
 	maxConfirmed    = 32
 	rendezvousEvery = 15 * time.Second
-	dialTimeout     = 10 * time.Second
-	idleSession     = 60 * time.Second // a session nobody here asked for is dropped after this long without a connection
-	maxEvents       = 50
+	// punchBacks is how many addresses a session punches back at between
+	// two rendezvous: the peer has a handful, a stranger gets no more.
+	punchBacks  = 8
+	dialTimeout = 10 * time.Second
+	idleSession = 60 * time.Second // a session nobody here asked for is dropped after this long without a connection
+	maxEvents   = 50
 
 	// A peer that has had no connection for noPathAfter, three rounds of
 	// rendezvous, is taken to have no path for now: a request to it waits
@@ -82,7 +85,9 @@ type session struct {
 	cands      []string
 	seen       map[string]bool
 	nonces     [2]punchNonce // the last two punch runs' nonces, newest first
-	direct     *net.UDPAddr  // best confirmed direct address
+	backs      int           // addresses punched back at since backsFrom
+	backsFrom  time.Time
+	direct     *net.UDPAddr // best confirmed direct address
 	relayConn  *quic.Conn
 	directConn *quic.Conn
 	dialing    map[string]bool
@@ -333,9 +338,42 @@ func (s *session) punch(addrs []string) {
 	}
 }
 
-// confirmed records a direct address a punch or its answer came from. The
-// dialer dials the best confirmed address whenever it has no direct
-// connection, so a dial that failed is retried at the next punch round.
+// opened is a punch that arrived from addr under the peer's name. The
+// endpoint has answered it; when the address is one this session has not
+// confirmed, the session also punches back at it. A router that gives the
+// peer another port for every destination makes its punch arrive from a
+// port the hub never saw: the peer's own answer tells the peer about this
+// device's address, and only a punch of this device, answered from there,
+// tells this device about the peer's. Without it the side that dials
+// would never learn the one address that works.
+//
+// The punch names a device and proves nothing, so this is bounded: a
+// session with a direct connection sends none, and one without sends
+// punchBacks in one rendezvousEvery, each as long as the packet it got.
+func (s *session) opened(addr *net.UDPAddr) {
+	s.mu.Lock()
+	if time.Since(s.backsFrom) >= rendezvousEvery {
+		s.backs, s.backsFrom = 0, time.Now()
+	}
+	if s.directConn != nil || s.seen[addr.String()] || s.backs >= punchBacks {
+		s.mu.Unlock()
+		return
+	}
+	s.backs++
+	n := s.nonces[0]
+	if n.at.IsZero() || time.Since(n.at) >= punchNonceLife/2 {
+		var raw [8]byte
+		if _, err := rand.Read(raw[:]); err != nil {
+			s.mu.Unlock()
+			return
+		}
+		n = punchNonce{value: binary.BigEndian.Uint64(raw[:]), at: time.Now()}
+		s.nonces[1], s.nonces[0] = s.nonces[0], n
+	}
+	s.mu.Unlock()
+	s.ep.sendPunch(addr, punchOpen, n.value)
+}
+
 // acked is the peer's answer to a punch from addr. It confirms the address
 // only when it echoes the nonce of a recent punch run of this session.
 func (s *session) acked(addr *net.UDPAddr, nonce uint64) {
@@ -352,6 +390,9 @@ func (s *session) acked(addr *net.UDPAddr, nonce uint64) {
 	}
 }
 
+// confirmed records a direct address the answer to a punch came from. The
+// dialer dials the best confirmed address whenever it has no direct
+// connection, so a dial that failed is retried at the next punch round.
 func (s *session) confirmed(addr *net.UDPAddr) {
 	s.mu.Lock()
 	key := addr.String()

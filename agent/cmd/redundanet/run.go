@@ -795,7 +795,7 @@ func runAgent(args []string) error {
 		}
 		e, err := transport.Start(ctx, transport.Config{
 			Identity: rc.tlsID, Device: rc.device, Allow: rc.allow, Hubs: hubs, Listen: *listen,
-			UDPPort: udpPort, PortMap: *portMap, RouterAddress: portmap.External, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
+			UDPPort: udpPort, PortMap: *portMap, RouterAddress: portmap.External, CarrierPCP: portmap.Upstream, TCPOnly: *tcpOnly, LoopbackCandidates: *loopback,
 			OnStream: pacedOnStream, Census: census, ShareCensus: shareCensus(st), OnTask: onTask, OnRelease: onRelease, OnRevocation: onRevocation, Log: rc.log,
 		})
 		if err != nil {

@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,10 @@ type Config struct {
 	// NAT probe uses it to tell a home router's address from a
 	// carrier's. nil: the router is not asked.
 	RouterAddress func(context.Context) (netip.Addr, bool)
+	// CarrierPCP asks whether anything upstream answers the port control
+	// protocol at its well-known address, and opens nothing. It is asked
+	// together with RouterAddress.
+	CarrierPCP func(context.Context) bool
 	// TCPOnly never tries UDP to a hub (a network that blocks it).
 	TCPOnly bool
 	// LoopbackCandidates advertises 127.0.0.1 too, for tests on one machine.
@@ -383,6 +388,9 @@ func (e *Endpoint) punchLoop(ctx context.Context) {
 		switch kind {
 		case punchOpen:
 			e.sendPunch(udp, punchAck, nonce)
+			if s := e.session(from, false); s != nil {
+				s.opened(udp)
+			}
 		case punchAck:
 			if s := e.session(from, false); s != nil {
 				s.acked(udp, nonce)
@@ -405,7 +413,7 @@ func (e *Endpoint) localCandidates() []string {
 		return out
 	}
 	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 {
+		if ifc.Flags&net.FlagUp == 0 || insideOnly(ifc.Name) {
 			continue
 		}
 		addrs, err := ifc.Addrs()
@@ -438,6 +446,30 @@ var overlayNets = func() []*net.IPNet {
 	}
 	return out
 }()
+
+// insideOnly reports an interface that leads to containers or virtual
+// machines on this host and nowhere a peer is: a container runtime's
+// bridge and its ends, a hypervisor's host-only network. Its address is
+// the same on every host that runs the same software, so a peer that was
+// told of it would punch at its own bridge. A bridge an administrator
+// made (br0, br-lan, vmbr0) carries the LAN and is kept.
+func insideOnly(name string) bool {
+	for _, p := range []string{"docker", "veth", "virbr", "cni", "flannel", "cali", "podman", "lxcbr", "lxdbr", "vboxnet", "vmnet"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	// Docker names a user-defined network's bridge br- and twelve hex digits.
+	if rest, ok := strings.CutPrefix(name, "br-"); ok && len(rest) == 12 {
+		for _, c := range rest {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
 
 func isOverlay(ip net.IP) bool {
 	for _, n := range overlayNets {

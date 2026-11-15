@@ -43,15 +43,24 @@ type natState struct {
 	seen    netip.AddrPort // the ask's source address as the hub sees it
 	// The last finished run's labels; they stay while a new run is under
 	// way, so a reconnect does not blank the page.
+	measurement
+	ports  portBand
+	router string
+	pcp    bool
+	// What the router last said its outside address is, and when.
+	routerAddr  netip.Addr
+	routerPCP   bool
+	routerAsked time.Time
+}
+
+// measurement is what one finished probe run found.
+type measurement struct {
 	mapping, filtering string
 	checked            time.Time
 	across             int32
 	gaps               []int32
-	kept               bool
-	router             string
-	// What the router last said its outside address is, and when.
-	routerAddr  netip.Addr
-	routerAsked time.Time
+	kept, pooled       bool
+	band               int32
 }
 
 // NATStatus is what the device knows about its router.
@@ -106,41 +115,101 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 			n.mu.Unlock()
 			return
 		}
-		n.mapping, n.filtering, n.checked = "", "", time.Now()
-		n.across, n.gaps, n.kept, n.router = 0, nil, false, ""
-		if n.seen.IsValid() {
-			n.mapping = wire.Mapping(n.channel, n.seen, ownAddr)
-			n.filtering = wire.FilterStrict
-			if n.seen.Addr().Unmap() == n.channel.Addr().Unmap() {
-				n.across = int32(n.seen.Port()) - int32(n.channel.Port())
+		hub, channel, seen, knocked := n.hub, n.channel, n.seen, n.knocked
+		n.mu.Unlock()
+		// Sockets opened now, within milliseconds of each other, say how
+		// the router hands ports out; with no answer on the mesh socket,
+		// or no router in between, there is nothing to open them for.
+		m := measurement{checked: time.Now()}
+		var fresh []netip.AddrPort
+		if seen.IsValid() {
+			m.mapping, m.filtering = wire.Mapping(channel, seen, ownAddr), wire.FilterStrict
+			if seen.Addr().Unmap() == channel.Addr().Unmap() {
+				m.across = int32(seen.Port()) - int32(channel.Port())
+			}
+			if m.mapping != wire.MapNone {
+				fresh, m.kept = freshPorts(ctx, hub, ask)
 			}
 		}
-		if n.knocked {
-			n.filtering = wire.FilterOpen
+		if knocked {
+			m.filtering = wire.FilterOpen
 		}
-		mapping, hub, channel := n.mapping, n.hub, n.channel
-		e.log.Info("router probed", "mapping", orUnknown(n.mapping), "filtering", orUnknown(n.filtering))
+		ports := make([]uint16, 0, len(fresh))
+		for _, a := range fresh {
+			ports = append(ports, a.Port())
+			m.pooled = m.pooled || a.Addr().Unmap() != channel.Addr().Unmap()
+		}
+		m.pooled = m.pooled || (seen.IsValid() && seen.Addr().Unmap() != channel.Addr().Unmap())
+		m.gaps, m.kept = wire.PortGaps(ports), m.kept && len(ports) > 1
+		n.mu.Lock()
+		if n.run != token {
+			n.mu.Unlock()
+			return
+		}
+		band, samples := n.ports.add(channel.Addr().Unmap(), append(append(fresh, channel), seen)...)
+		if m.mapping != "" && m.mapping != wire.MapNone && m.mapping != wire.MapIndependent {
+			m.band = band
+		}
+		m.mapping = wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
+		n.measurement = m
 		n.mu.Unlock()
-		if mapping == "" || mapping == wire.MapNone {
-			return // no answer, or no router in between: nothing more to measure
+		e.log.Info("router probed", "mapping", orUnknown(m.mapping), "filtering", orUnknown(m.filtering),
+			"across", m.across, "gaps", m.gaps, "kept", m.kept, "band", m.band, "pooled", m.pooled)
+		if m.mapping == "" || m.mapping == wire.MapNone {
+			return
 		}
-		ports, kept := freshPorts(ctx, hub, ask)
-		router := e.routerHolds(ctx, channel.Addr().Unmap())
+		router, pcp := e.routerHolds(ctx, channel.Addr().Unmap())
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		if n.run != token {
 			return
 		}
-		n.gaps, n.kept, n.router = wire.PortGaps(ports), kept && len(ports) > 1, router
-		e.log.Info("router measured", "across", n.across, "gaps", n.gaps, "kept", n.kept, "router", orUnknown(router))
+		n.router, n.pcp = router, pcp
+		e.log.Info("router asked", "router", orUnknown(router), "pcp", pcp)
 	}()
 }
 
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
+// portBand is the lowest and highest public port a device was seen at on
+// one public address. A carrier that shares an address between customers
+// gives each a band of its ports, so the width says how far a search for
+// this device's next port has to go. Another address starts it again.
+type portBand struct {
+	addr   netip.Addr
+	lo, hi uint16
+	n      int
+}
+
+func (b *portBand) add(addr netip.Addr, seen ...netip.AddrPort) (width int32, samples int) {
+	if addr != b.addr {
+		*b = portBand{addr: addr}
+	}
+	for _, a := range seen {
+		if !a.IsValid() || a.Addr().Unmap() != addr {
+			continue
+		}
+		if b.n == 0 || a.Port() < b.lo {
+			b.lo = a.Port()
+		}
+		if b.n == 0 || a.Port() > b.hi {
+			b.hi = a.Port()
+		}
+		b.n++
+	}
+	return int32(b.hi) - int32(b.lo), b.n
+}
+
 // freshPorts opens sockets one after the other, asks the probe port from
-// each and returns the public port each one got, in order, and whether
-// every one of them was the socket's own port number. It stops at the
+// each and returns the public address each one got, in order, and whether
+// every one of them had the socket's own port number. It stops at the
 // first socket that gets no answer: a gap needs two neighbours.
-func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte) (ports []uint16, kept bool) {
+func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte) (seen []netip.AddrPort, kept bool) {
 	network := "udp4"
 	if hub.Addr().Is6() {
 		network = "udp6"
@@ -152,16 +221,16 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte) (ports []ui
 		if err != nil {
 			break
 		}
-		seen, ok := askFrom(conn, hub, ask, buf)
+		a, ok := askFrom(conn, hub, ask, buf)
 		local := conn.LocalAddr().(*net.UDPAddr).Port
 		_ = conn.Close()
 		if !ok {
 			break
 		}
-		ports = append(ports, seen.Port())
-		kept = kept && int(seen.Port()) == local
+		seen = append(seen, netip.AddrPortFrom(a.Addr().Unmap(), a.Port()))
+		kept = kept && int(a.Port()) == local
 	}
-	return ports, kept
+	return seen, kept
 }
 
 // askFrom asks the probe port from one socket, twice at most, and returns
@@ -194,41 +263,36 @@ func askFrom(conn *net.UDPConn, hub netip.AddrPort, ask, buf []byte) (netip.Addr
 
 // routerHolds says who holds the public address the hub sees this device
 // at: the home router, when the address it reports as its own outside is
-// that one, or something beyond it. The router is asked, nothing is
-// opened on it, and the answer is kept for an hour.
-func (e *Endpoint) routerHolds(ctx context.Context, public netip.Addr) string {
+// that one, or something beyond it; and whether anything upstream answers
+// the port control protocol. The router is asked, nothing is opened on
+// it, and the answers are kept for an hour.
+func (e *Endpoint) routerHolds(ctx context.Context, public netip.Addr) (router string, pcp bool) {
 	if e.cfg.RouterAddress == nil {
-		return ""
+		return "", false
 	}
 	n := &e.nat
 	n.mu.Lock()
-	addr, fresh := n.routerAddr, !n.routerAsked.IsZero() && time.Since(n.routerAsked) < natRouterEvery
+	addr, pcp, fresh := n.routerAddr, n.routerPCP, !n.routerAsked.IsZero() && time.Since(n.routerAsked) < natRouterEvery
 	n.mu.Unlock()
 	if !fresh {
-		actx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		actx, cancel := context.WithTimeout(ctx, 12*time.Second)
 		addr, _ = e.cfg.RouterAddress(actx)
+		pcp = e.cfg.CarrierPCP != nil && e.cfg.CarrierPCP(actx)
 		cancel()
 		if ctx.Err() != nil {
-			return ""
+			return "", false
 		}
 		n.mu.Lock()
-		n.routerAddr, n.routerAsked = addr, time.Now()
+		n.routerAddr, n.routerPCP, n.routerAsked = addr, pcp, time.Now()
 		n.mu.Unlock()
 	}
 	switch {
 	case !addr.IsValid() || addr.IsUnspecified():
-		return wire.RouterSilent
+		return wire.RouterSilent, pcp
 	case addr.Unmap() == public:
-		return wire.RouterPublic
+		return wire.RouterPublic, pcp
 	}
-	return wire.RouterCarrier
-}
-
-func orUnknown(s string) string {
-	if s == "" {
-		return "unknown"
-	}
-	return s
+	return wire.RouterCarrier, pcp
 }
 
 // onProbe takes a probe packet off the mesh socket. Only the hub's probe
@@ -260,6 +324,7 @@ func (e *Endpoint) NAT() NATStatus {
 	st := NATStatus{CensusNAT: wire.CensusNAT{
 		Mapping: n.mapping, Filtering: n.filtering,
 		Across: n.across, Gaps: append([]int32(nil), n.gaps...), Kept: n.kept, Router: n.router,
+		Band: n.band, Pooled: n.pooled, PCP: n.pcp,
 	}, Checked: n.checked}
 	n.mu.Unlock()
 	e.mu.Lock()

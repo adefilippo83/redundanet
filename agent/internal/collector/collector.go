@@ -368,9 +368,16 @@ type Device struct {
 	PortGaps   []int32 `json:"port_gaps,omitempty"`
 	PortKept   bool    `json:"port_kept,omitempty"`
 	Router     string  `json:"router,omitempty"`
-	RelayIn    uint64  `json:"relay_bytes_in"`
-	RelayOut   uint64  `json:"relay_bytes_out"`
-	Update     string  `json:"update,omitempty"`
+	// PortBand is how wide the band of public ports the device was seen
+	// at is, PortPooled whether it got more than one public address at
+	// once, and PCP whether something upstream answers the port control
+	// protocol.
+	PortBand   int32  `json:"port_band,omitempty"`
+	PortPooled bool   `json:"port_pooled,omitempty"`
+	PCP        bool   `json:"pcp,omitempty"`
+	RelayIn    uint64 `json:"relay_bytes_in"`
+	RelayOut   uint64 `json:"relay_bytes_out"`
+	Update     string `json:"update,omitempty"`
 }
 
 // Member is one member with the count of its devices and the usage the
@@ -497,7 +504,9 @@ func (c *Collector) Status() Status {
 					d.Reach = r
 				}
 				d.IPv6 = n.IPv6
-				d.PortAcross, d.PortGaps, d.PortKept, d.Router = n.Numbers()
+				m := n.Measured()
+				d.PortAcross, d.PortGaps, d.PortKept, d.Router = m.Across, m.Gaps, m.Kept, m.Router
+				d.PortBand, d.PortPooled, d.PCP = m.Band, m.Pooled, m.PCP
 			}
 			for _, p := range e.Census.Peers {
 				if p.Direct {

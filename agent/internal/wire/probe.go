@@ -89,7 +89,8 @@ func ParseProbe(b []byte) (p Probe, ok bool) {
 const (
 	MapNone        = "none"        // the public address is the device's own: no translation
 	MapIndependent = "independent" // one public port for both hub ports
-	MapSequential  = "sequential"  // a nearby port per destination
+	MapSequential  = "sequential"  // the next port, or one close after it, per destination
+	MapConfined    = "confined"    // an unrelated port per destination, out of a narrow band
 	MapRandom      = "random"      // an unrelated port per destination
 )
 
@@ -123,6 +124,45 @@ func Mapping(channel, probe netip.AddrPort, own func(netip.Addr) bool) string {
 	return MapRandom
 }
 
+// confinedWithin is how wide the band of public ports a device was seen
+// at may be, over at least confinedSamples of them, and still count as
+// narrow: a search of it ends in minutes, one of all the ports never.
+const (
+	confinedWithin  = 2048
+	confinedSamples = 8
+)
+
+// Refine corrects the label Mapping gave with what sockets opened one
+// after the other showed. Mapping compares the channel's port with the
+// probe's, and a channel that has been up for hours got its port long
+// ago: a router that hands ports out in order then looks as if it picked
+// an unrelated one. The gaps between sockets opened within milliseconds
+// do not have that flaw. pooled says those sockets got more than one
+// public address; band and samples are the width of the ports seen at
+// one address and how many they were.
+func Refine(mapping string, gaps []int32, pooled bool, band int32, samples int) string {
+	if mapping != MapSequential && mapping != MapRandom {
+		return mapping
+	}
+	if pooled {
+		return MapRandom
+	}
+	if len(gaps) >= 2 {
+		inOrder := true
+		for _, g := range gaps {
+			inOrder = inOrder && g >= 1 && g <= sequentialWithin
+		}
+		if inOrder {
+			return MapSequential
+		}
+		mapping = MapRandom
+	}
+	if mapping == MapRandom && samples >= confinedSamples && band > 0 && band <= confinedWithin {
+		return MapConfined
+	}
+	return mapping
+}
+
 // CensusNAT is what a device learned about its own router: labels only,
 // never an address.
 type CensusNAT struct {
@@ -142,6 +182,14 @@ type CensusNAT struct {
 	// Router is who holds the device's public address, from asking the
 	// router for its outside address (wire.Router*); empty when not asked.
 	Router string `cbor:"router,omitempty" json:"router,omitempty"`
+	// Band is the width of the public ports the device has been seen at
+	// on its present address, a number of ports and not a port. Pooled
+	// says sockets opened one after the other got more than one public
+	// address. PCP says something upstream answered at the port control
+	// protocol's well-known address, which a carrier's translator may.
+	Band   int32 `cbor:"band,omitempty" json:"band,omitempty"`
+	Pooled bool  `cbor:"pooled,omitempty" json:"pooled,omitempty"`
+	PCP    bool  `cbor:"pcp,omitempty" json:"pcp,omitempty"`
 }
 
 // Who holds the public address the hub sees a device at.
@@ -166,25 +214,27 @@ func PortGaps(ports []uint16) []int32 {
 	return gaps
 }
 
-// Numbers is the measurement as a hub shows it: what a device sent, cut
-// to what a measurement can be. The labels and numbers come from the
-// device, so a hub takes nothing else from them.
-func (n *CensusNAT) Numbers() (across int32, gaps []int32, kept bool, router string) {
+// Measured is the measurement as a hub shows it: the numbers and words a
+// device sent, cut to what a measurement can be, and no label. They come
+// from the device, so a hub takes nothing else from them.
+func (n *CensusNAT) Measured() CensusNAT {
 	if n == nil {
-		return 0, nil, false, ""
+		return CensusNAT{}
 	}
 	port := func(d int32) int32 { return max(-65535, min(65535, d)) }
+	m := CensusNAT{Across: port(n.Across), Band: max(0, port(n.Band)), Pooled: n.Pooled, PCP: n.PCP}
 	for i, g := range n.Gaps {
 		if i == MaxPortGaps {
 			break
 		}
-		gaps = append(gaps, port(g))
+		m.Gaps = append(m.Gaps, port(g))
 	}
+	m.Kept = n.Kept && len(m.Gaps) > 0
 	switch n.Router {
 	case RouterPublic, RouterCarrier, RouterSilent:
-		router = n.Router
+		m.Router = n.Router
 	}
-	return port(n.Across), gaps, n.Kept && len(gaps) > 0, router
+	return m
 }
 
 // How reachable a device is for a direct connection, from what it
@@ -192,7 +242,7 @@ func (n *CensusNAT) Numbers() (across int32, gaps []int32, kept bool, router str
 const (
 	ReachOpen        = "open"        // no NAT, a granted port, or a router that lets anyone reach the mapped port
 	ReachEasy        = "easy"        // one public port for every destination: a punch finds it
-	ReachPredictable = "predictable" // a nearby port per destination
+	ReachPredictable = "predictable" // the next port per destination, or one out of a narrow band: it can be searched for
 	ReachHard        = "hard"        // an unrelated port per destination: relay unless the other side is open
 	ReachUnknown     = "unknown"
 )
@@ -210,7 +260,7 @@ func (n *CensusNAT) Reach() string {
 		return ReachOpen
 	case n.Mapping == MapIndependent:
 		return ReachEasy
-	case n.Mapping == MapSequential:
+	case n.Mapping == MapSequential, n.Mapping == MapConfined:
 		return ReachPredictable
 	case n.Mapping == MapRandom:
 		return ReachHard

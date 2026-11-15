@@ -84,7 +84,9 @@ stored, how many peers it reaches directly or through a relay, how reachable
 its router leaves it for a direct connection (one word, with whether it has
 public IPv6), who holds its public address (its own router, something beyond
 it such as the provider, or unknown), how its router hands out ports (the
-differences between a few public ports, never a port), and relayed
+differences between a few public ports and the width of the band they fall
+in, never a port; whether it got more than one public address at once; and
+whether something upstream answers the port control protocol), and relayed
 byte counts. Per member: name, status, contribution and allocation, devices
 and how many are online, bytes stored, object counts, the day of the last
 backup and the restore-test streak. Plus grid totals and repair counters.
@@ -93,7 +95,10 @@ IP addresses are not published.
 To learn who holds its public address, a device behind a router asks that
 router for the address it has outside, with NAT-PMP and UPnP, at most once
 an hour. It opens no port on the router with this question, and the
-address stays on the device: only the one-word answer is sent.
+address stays on the device: only the one-word answer is sent. With it goes
+one packet to 192.0.0.9, the address at which a provider's equipment may
+answer the port control protocol; the packet asks only whether anything is
+there.
 
 The status page is served by the hub itself at hub.redundanet.com, a
 server rented from Hetzner in Germany. Its web server sees the IP address

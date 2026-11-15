@@ -210,6 +210,36 @@ func External(ctx context.Context) (addr netip.Addr, ok bool) {
 	return netip.Addr{}, false
 }
 
+// pcpAnycast is the address a host asks when it does not know which box
+// upstream speaks PCP (RFC 7723): the nearest translator that does
+// answers, the home router or a carrier's beyond it.
+var pcpAnycast = &net.UDPAddr{IP: net.IPv4(192, 0, 0, 9), Port: 5351}
+
+// Upstream reports whether anything answers PCP at its well-known address.
+// The question is an ANNOUNCE, which opens nothing; any PCP answer counts,
+// a refusal too, since it is a PCP server that refuses.
+func Upstream(ctx context.Context) bool {
+	conn, err := net.DialUDP("udp4", nil, pcpAnycast)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	req := make([]byte, 24)
+	req[0] = 2 // version; opcode 0 is ANNOUNCE, lifetime 0
+	copy(req[8:24], conn.LocalAddr().(*net.UDPAddr).IP.To16())
+	buf := make([]byte, 1100)
+	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+		if _, err := conn.Write(req); err != nil {
+			return false
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		if n, err := conn.Read(buf); err == nil && n >= 24 && buf[0] == 2 && buf[1]&0x80 != 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // upnpClients is every internet gateway that answers the discovery.
 func upnpClients(ctx context.Context) []igd {
 	dctx, cancel := context.WithTimeout(ctx, 4*time.Second)
