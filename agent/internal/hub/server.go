@@ -579,6 +579,7 @@ func (s *Server) seek(c *client, sk wire.Seek) {
 		return
 	}
 	sk.Peer, sk.Addr, sk.Spans = c.peer.Device, from.Addr().Unmap().String(), wire.Spans(sk.Spans)
+	sk.Opened = wire.Openings(sk.Opened)
 	_ = peer.enqueueMessage(wire.FrameSeek, sk)
 }
 

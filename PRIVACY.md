@@ -69,8 +69,9 @@ address and port the connection comes from. It uses them to introduce the
 device to its peers and writes them in its own log. To find a direct path
 between two devices behind routers that give another port for every
 destination, each tells the other, through the hub, how its router hands
-out ports and a few ranges of its own public ports; the hub passes that on
-with the sender's address and keeps none of it. When two devices of a
+out ports, a few ranges of its own public ports, which of them the packets
+it just sent to the other came out of, and how many packets it sent; the
+hub passes that on with the sender's address and keeps none of it. When two devices of a
 member pair through the hub, the hub relays their sealed frames for a few
 minutes and sees only the two addresses and that a pairing happened, not
 the keys or the identity inside. Hub logs and the hub's

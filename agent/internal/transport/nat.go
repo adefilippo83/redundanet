@@ -152,10 +152,24 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 			return
 		}
 		band, samples := n.ports.add(channel.Addr().Unmap(), append(append(fresh, channel), seen)...)
+		label := wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
+		if label == wire.MapRandom && !m.pooled && len(fresh) > 0 {
+			// Unrelated ports so far, and too few of them to say whether
+			// the router keeps to a narrow band: a few more sockets tell.
+			n.mu.Unlock()
+			more, _ := freshPorts(ctx, hub, ask, e.freshSocket)
+			n.mu.Lock()
+			if n.run != token {
+				n.mu.Unlock()
+				return
+			}
+			band, samples = n.ports.add(channel.Addr().Unmap(), more...)
+			label = wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
+		}
 		if m.mapping != "" && m.mapping != wire.MapNone && m.mapping != wire.MapIndependent {
 			m.band = band
 		}
-		m.mapping = wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
+		m.mapping = label
 		n.measurement = m
 		n.mu.Unlock()
 		e.log.Info("router probed", "mapping", orUnknown(m.mapping), "filtering", orUnknown(m.filtering),
@@ -222,7 +236,7 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte, open func(n
 		if err != nil {
 			break
 		}
-		a, ok := askFrom(conn, hub, ask, buf)
+		a, ok := askFrom(conn, hub, ask, buf, false)
 		local := conn.LocalAddr().(*net.UDPAddr).Port
 		_ = conn.Close()
 		if !ok {
@@ -236,16 +250,18 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte, open func(n
 
 // askFrom asks the probe port from one socket, twice at most, and returns
 // the address the hub saw. Only the probe port's own answer to this ask
-// counts.
-func askFrom(conn net.PacketConn, hub netip.AddrPort, ask, buf []byte) (netip.AddrPort, bool) {
+// counts. With sent, the first ask has left already.
+func askFrom(conn net.PacketConn, hub netip.AddrPort, ask, buf []byte, sent bool) (netip.AddrPort, bool) {
 	want, ok := wire.ParseProbe(ask)
 	if !ok {
 		return netip.AddrPort{}, false
 	}
 	to := net.UDPAddrFromAddrPort(hub)
 	for try := 0; try < 2; try++ {
-		if _, err := conn.WriteTo(ask, to); err != nil {
-			return netip.AddrPort{}, false
+		if try > 0 || !sent {
+			if _, err := conn.WriteTo(ask, to); err != nil {
+				return netip.AddrPort{}, false
+			}
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(natFreshWait))
 		for {
@@ -303,7 +319,7 @@ func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bo
 		return 0, false
 	}
 	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
-	a, ok := askFrom(conn, hub, ask, make([]byte, 2048))
+	a, ok := askFrom(conn, hub, ask, make([]byte, 2048), false)
 	_ = conn.Close()
 	if !ok || a.Addr().Unmap() != channel.Addr().Unmap() {
 		return 0, false
@@ -316,6 +332,53 @@ func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bo
 	n.readAt, n.readPort = time.Now(), a.Port()
 	n.ports.add(channel.Addr().Unmap(), a)
 	return a.Port(), true
+}
+
+// reading takes a reading of the router's port counter whose place among
+// the packets this device writes is known: the ask leaves from a socket
+// of its own before reading returns, so the router gives that socket its
+// port after everything written before and ahead of everything written
+// after. The answer is waited for by the function it returns, which says
+// nothing when there was none.
+func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
+	none := func() (uint16, bool) { return 0, false }
+	n := &e.nat
+	n.mu.Lock()
+	hub, token, channel := n.hub, n.run, n.channel
+	n.mu.Unlock()
+	if !hub.IsValid() || token == 0 || ctx.Err() != nil {
+		return none
+	}
+	conn, err := e.freshSocket(hub)
+	if err != nil {
+		return none
+	}
+	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
+	if _, err := conn.WriteTo(ask, net.UDPAddrFromAddrPort(hub)); err != nil {
+		_ = conn.Close()
+		return none
+	}
+	got := make(chan uint16, 1)
+	go func() {
+		a, ok := askFrom(conn, hub, ask, make([]byte, 2048), true)
+		_ = conn.Close()
+		if !ok || a.Addr().Unmap() != channel.Addr().Unmap() {
+			got <- 0
+			return
+		}
+		n.mu.Lock()
+		if n.run == token {
+			n.ports.add(channel.Addr().Unmap(), a)
+		}
+		n.mu.Unlock()
+		got <- a.Port()
+	}()
+	var port uint16
+	var once sync.Once
+	return func() (uint16, bool) {
+		once.Do(func() { port = <-got })
+		return port, port != 0
+	}
 }
 
 // probing reports that the first probe run on a channel has not finished:
