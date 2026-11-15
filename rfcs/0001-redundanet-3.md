@@ -789,15 +789,32 @@ peer's candidates, starts sending through the relay immediately, and attempts
 a direct path at the same time (simultaneous open through both NATs). When
 the direct path answers, traffic moves to it; when it dies, traffic falls
 back to the relay. This is the model iroh and Tailscale implement. The spike
-built it on quic-go and pion with quic-go's path API, so the move is a QUIC
-path migration and the streams survive it: a live connection moved onto a
+built it on quic-go and pion with quic-go's path API, so the move was a QUIC
+path migration and the streams survived it: a live connection moved onto a
 direct path in 25 to 140 ms and off a dead one 6 s after the last keepalive,
 once a 30-line fix let quic-go send the probe for the new path while the old
-one was congestion limited; the fix is carried as a patch until it is
-upstream. The requirement stays that a path change resumes a transfer within
-seconds at segment granularity, so a reconnect is always a valid fallback,
-and the agent uses one after two migrations on a connection, where quic-go
-runs out of connection IDs today.
+one was congestion limited. The agent does not migrate. A session with a
+peer holds up to two QUIC connections, one through the relay and one
+direct, each with its own handshake between the two devices; a new stream
+takes the direct one while it is alive and the relayed one otherwise, and a
+request whose connection dies is made again by its caller, which resumes a
+share from where the server has it. That needs no patch to quic-go and has
+no limit on how often a path changes; what it costs is that a stream does
+not survive the change, which the requirement allows: a path change resumes
+a transfer within seconds at segment granularity.
+
+**Punching.** When the hub hands two devices each other's candidates, both
+send a few small packets to every one of them from their mesh socket, and
+answer each such packet at the address it came from. An answer that echoes
+the number of a punch this device sent confirms that address, and the side
+the hub named the dialer then dials it. A router that gives a device
+another public port for every destination makes its punch arrive from a
+port the hub never saw: the device that receives it answers, and also sends
+a punch of its own to that address, at most eight addresses in fifteen
+seconds for one peer, because only the answer to its own punch tells it the
+address. The addresses of a container runtime's bridges and a hypervisor's
+host-only networks are not candidates: they are the same on every host that
+runs the same software and lead to no peer.
 
 **Measuring the router.** Built; the first step of making direct paths the
 rule without a member touching a router. A hub may listen on a second UDP
@@ -821,14 +838,27 @@ address the hub sees, the router can be asked for a port (`public`); when
 it is not, something beyond the router translates again and a port on the
 router leads nowhere (`carrier`); a router that answers neither protocol is
 `silent`. The device sends the differences and the word, never a port or
-an address. The probe packets carry a token
+an address. The first label compared the channel's port with the probe's,
+and a channel that has been up for hours got its port long ago, so a router
+that hands ports out in order looked as if it picked unrelated ones: on the
+live network three such routers showed as `hard`. The gaps between the four
+sockets, opened within milliseconds, now decide: all between 1 and 16 is
+`sequential`. A device also keeps the lowest and highest public port it was
+seen at on its present address and sends the width, since a carrier that
+shares an address gives each customer a band of its ports: unrelated ports
+out of a band no wider than 2048, over eight or more of them, are
+`confined`, and both count as `predictable`. It says when the four sockets
+got more than one public address (`pooled`), which no search survives, and
+whether anything answers the port control protocol at its well-known
+address (192.0.0.9, RFC 7723), where a carrier's translator may grant what
+the home router cannot. The probe packets carry a token
 the hub gave over the authenticated channel, the hub answers nothing else
 and never with more bytes than it got. Nothing in how devices connect
 changes with this step.
 
 **When UDP is blocked.** Hotel, campus and office networks often allow only TCP,
-and tinc falls back to TCP today. The relay therefore also listens on TCP 443,
-carrying the same end-to-end QUIC packets inside TLS, as Tailscale's DERP
+and tinc falls back to TCP today. The relay therefore also listens on TCP
+(`--tcp`; the live hub uses 8443, the number of its UDP port), carrying the same end-to-end QUIC packets inside TLS, as Tailscale's DERP
 does; a device that gets no UDP answer from any hub uses it, slower but
 connected, and the local page says why. Hubs are named by hostname with A and
 AAAA records, and IPv6 candidates are gathered and tried like IPv4 ones.
@@ -881,7 +911,7 @@ member's restore is never paced below a quarter of the tightest holder's cap.
 QUIC datagrams on the device's hub connection, with a bounded queue at each
 end that drops rather than buffers, so a congested leg shows up as loss the
 end-to-end connection reacts to instead of seconds of hidden queue; the
-TCP 443 carrier frames the same packets on a stream. The relay's own UDP
+TCP carrier frames the same packets on a stream. The relay's own UDP
 socket is sized for the hub's uplink, which is a sysctl on the hub.
 
 **What the transport does not do.** It does not route IP packets, so a member

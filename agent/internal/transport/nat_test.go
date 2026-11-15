@@ -127,8 +127,10 @@ func TestFreshSocketsLearnTheirPublicPorts(t *testing.T) {
 	if len(ports) != natFresh || !kept {
 		t.Fatalf("fresh sockets: ports %v, kept %v", ports, kept)
 	}
-	if gaps := wire.PortGaps(ports); len(gaps) != natFresh-1 {
-		t.Fatalf("gaps: %v", gaps)
+	for _, a := range ports {
+		if a.Addr() != hub.Addr() {
+			t.Fatalf("on one machine every socket is seen at the machine's address: %v", ports)
+		}
 	}
 	// With a token the hub did not give, no socket learns anything.
 	wrong := wire.Probe{Kind: wire.ProbeAsk, Device: ep.cfg.Device, Token: token + 2}.Encode()
@@ -146,27 +148,45 @@ func TestFreshSocketsLearnTheirPublicPorts(t *testing.T) {
 // otherwise, and the router is asked once an hour at most.
 func TestTheRouterIsAskedWhoHoldsTheAddress(t *testing.T) {
 	n := newTestNet(t, false)
-	asked := 0
+	asked, pcpAsked := 0, 0
 	answer, ok := netip.MustParseAddr("203.0.113.7"), true
 	ep, _ := n.endpoint(seed(1), true, func(c *Config) {
 		c.RouterAddress = func(context.Context) (netip.Addr, bool) { asked++; return answer, ok }
+		c.CarrierPCP = func(context.Context) bool { pcpAsked++; return pcpAsked == 1 }
 	})
 	ctx := context.Background()
-	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterPublic {
-		t.Fatalf("the router's own address: %q", got)
+	if got, pcp := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterPublic || !pcp {
+		t.Fatalf("the router's own address: %q, pcp %v", got, pcp)
 	}
-	if got := ep.routerHolds(ctx, netip.MustParseAddr("198.51.100.1")); got != wire.RouterCarrier || asked != 1 {
+	if got, pcp := ep.routerHolds(ctx, netip.MustParseAddr("198.51.100.1")); got != wire.RouterCarrier || !pcp || asked != 1 || pcpAsked != 1 {
 		t.Fatalf("another address: %q after %d questions", got, asked)
 	}
 	ep.nat.mu.Lock()
 	ep.nat.routerAsked = time.Now().Add(-2 * natRouterEvery)
 	ep.nat.mu.Unlock()
 	answer, ok = netip.Addr{}, false
-	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterSilent || asked != 2 {
+	if got, pcp := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != wire.RouterSilent || pcp || asked != 2 {
 		t.Fatalf("a router that does not say: %q after %d questions", got, asked)
 	}
 	ep.cfg.RouterAddress = nil
-	if got := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != "" {
+	if got, _ := ep.routerHolds(ctx, netip.MustParseAddr("203.0.113.7")); got != "" {
 		t.Fatalf("not asked: %q", got)
+	}
+}
+
+// The band is the width of the ports seen at one address; another address
+// starts it again, and a port seen at some other address is not counted.
+func TestThePortBandIsPerAddress(t *testing.T) {
+	a, b := netip.MustParseAddr("203.0.113.7"), netip.MustParseAddr("203.0.113.8")
+	at := func(ip netip.Addr, port uint16) netip.AddrPort { return netip.AddrPortFrom(ip, port) }
+	var band portBand
+	if w, n := band.add(a, at(a, 40100), at(a, 40020), at(b, 9), netip.AddrPort{}); w != 80 || n != 2 {
+		t.Fatalf("two ports at one address: width %d over %d", w, n)
+	}
+	if w, n := band.add(a, at(a, 40500)); w != 480 || n != 3 {
+		t.Fatalf("a third: width %d over %d", w, n)
+	}
+	if w, n := band.add(b, at(b, 1200)); w != 0 || n != 1 {
+		t.Fatalf("another address: width %d over %d", w, n)
 	}
 }

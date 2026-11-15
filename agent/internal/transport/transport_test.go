@@ -652,3 +652,110 @@ func TestAFailedDirectDialForgetsTheAddress(t *testing.T) {
 		t.Fatalf("after a failed dial the address is still remembered: direct %v, seen %v", s.direct, s.seen)
 	}
 }
+
+// A punch that arrives from an address the hub never named, as a router
+// that gives another port per destination makes it, is punched back at:
+// the answer to that punch is what tells this device the address. A
+// device with no session for the name sends the plain answer and nothing
+// more, and a session punches back at a bounded number of addresses in
+// one rendezvous period.
+func TestAPunchFromAnUnexpectedAddressIsPunchedBack(t *testing.T) {
+	n := newTestNet(t, false)
+	a, _ := n.endpoint(seed(1), true, nil)
+	absent, _ := device(t, seed(2), identity.RoleClient, identity.RoleStorage)
+	peer := absent.ID()
+	n.permit(peer)
+	stranger, _ := device(t, seed(3), identity.RoleClient)
+	packet := func(from identity.Key, kind byte, nonce uint64) []byte {
+		b := make([]byte, punchLen)
+		copy(b, punchMagic)
+		b[len(punchMagic)] = kind
+		copy(b[len(punchMagic)+1:], from[:])
+		binary.BigEndian.PutUint64(b[len(punchMagic)+33:], nonce)
+		return b
+	}
+	// What a socket gets back for one open: the kinds, and the number in
+	// the punch back, if any.
+	exchange := func(from identity.Key) (kinds []byte, nonce uint64, sock *net.UDPConn) {
+		t.Helper()
+		sock, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sock.Close() })
+		if _, err := sock.WriteToUDP(packet(from, punchOpen, 7), a.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 2048)
+		for {
+			_ = sock.SetReadDeadline(time.Now().Add(250 * time.Millisecond))
+			got, _, err := sock.ReadFromUDP(buf)
+			if err != nil {
+				return kinds, nonce, sock
+			}
+			if got != punchLen {
+				t.Fatalf("a packet of %d bytes for one of %d", got, punchLen)
+			}
+			kind := buf[len(punchMagic)]
+			kinds = append(kinds, kind)
+			if kind == punchOpen {
+				nonce = binary.BigEndian.Uint64(buf[len(punchMagic)+33:])
+			}
+		}
+	}
+
+	if kinds, _, _ := exchange(stranger.ID()); len(kinds) != 1 || kinds[0] != punchAck {
+		t.Fatalf("with no session for the name: %v", kinds)
+	}
+	s := a.Connect(peer).session
+	kinds, nonce, sock := exchange(peer)
+	if len(kinds) != 2 || kinds[0] != punchAck || kinds[1] != punchOpen {
+		t.Fatalf("with a session: %v", kinds)
+	}
+	// The answer to the punch back confirms the address it came from.
+	if _, err := sock.WriteToUDP(packet(peer, punchAck, nonce), a.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 5*time.Second, "the punched-back address to be confirmed", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.seen[sock.LocalAddr().String()]
+	})
+	// A confirmed address is not punched back at again.
+	if _, err := sock.WriteToUDP(packet(peer, punchOpen, 8), a.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	s.mu.Lock()
+	backs := s.backs
+	s.mu.Unlock()
+	if backs != 1 {
+		t.Fatalf("%d punches back after one new address", backs)
+	}
+	// And the number of addresses is bounded for the period.
+	opens := 0
+	for i := 0; i < punchBacks+4; i++ {
+		kinds, _, _ := exchange(peer)
+		for _, k := range kinds {
+			if k == punchOpen {
+				opens++
+			}
+		}
+	}
+	if opens != punchBacks-1 {
+		t.Fatalf("%d more punches back, the bound leaves %d", opens, punchBacks-1)
+	}
+}
+
+// A container runtime's bridge is no address a peer can use; a bridge an
+// administrator made carries the LAN.
+func TestInsideOnlyInterfaces(t *testing.T) {
+	for name, want := range map[string]bool{
+		"docker0": true, "br-0a1b2c3d4e5f": true, "veth1a2b3c4": true, "virbr0": true, "cni0": true, "podman1": true,
+		"eth0": false, "en0": false, "br0": false, "br-lan": false, "vmbr0": false, "br-0a1b2c3d4e5g": false, "wlan0": false, "bridge0": false,
+	} {
+		if got := insideOnly(name); got != want {
+			t.Errorf("insideOnly(%q) = %v", name, got)
+		}
+	}
+}
