@@ -68,7 +68,16 @@ const (
 	firePackets = 12
 	fireRun     = 3
 	fireWait    = 250 * time.Millisecond
-	seekStep    = 8 * time.Second
+	seekStep    = 12 * time.Second
+	// A device whose packets do not get their ports in the order written
+	// when they leave together (Endpoint.paced) writes them paceGap
+	// apart, the asks that read the counter too. It opens pacedPorts in
+	// runs of pacedRun: fewer ports, because each takes that long, and
+	// short runs, because one port the router gave to something else
+	// leaves the rest of a run estimated.
+	paceGap    = 30 * time.Millisecond
+	pacedPorts = 96
+	pacedRun   = 4
 	// seekSoon is the wait when a search could not start: another one
 	// under way here or at the peer, or the probe not finished.
 	seekSoon = 10 * time.Second
@@ -391,25 +400,56 @@ func after(next uint16, n int) []uint16 {
 // had mappings to there. One or two fewer are let pass as an estimate:
 // the device has written to a port or two of the peer's before, when it
 // punched.
-func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct func() bool) []wire.Opening {
+func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct func() bool, paced, band bool) (runs []wire.Opening, written int) {
 	e := s.ep
-	var runs []wire.Opening
+	pause := func(d time.Duration) {
+		select {
+		case <-s.ctx.Done():
+		case <-time.After(d):
+		}
+	}
+	size, gap := openRun, openGap
+	if paced {
+		size, gap = pacedRun, paceGap
+	}
 	readings := []func() (uint16, bool){e.reading(s.ctx)}
+	if paced {
+		pause(gap)
+	}
 	for i := 0; i < len(ports) && s.ctx.Err() == nil && !direct(); {
 		j := i + 1
-		for j < len(ports) && j-i < openRun && ports[j] == ports[j-1]+1 {
+		for j < len(ports) && j-i < size && ports[j] == ports[j-1]+1 {
 			j++
 		}
 		for _, p := range ports[i:j] {
 			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(p)}, punchOpen, nonce)
+			written++
+			if paced {
+				pause(gap)
+			}
 		}
 		runs = append(runs, wire.Opening{To: ports[i], Count: uint16(j - i)})
 		readings = append(readings, e.reading(s.ctx))
 		i = j
-		select {
-		case <-s.ctx.Done():
-		case <-time.After(openGap):
+		pause(gap)
+	}
+	if band {
+		// Toward a router that picks, which packet got which port does
+		// not matter: every port between the first reading and the last
+		// is as good as another.
+		first, last := 0, 0
+		for _, r := range readings {
+			if p, ok := r(); ok {
+				if first == 0 {
+					first = int(p)
+				}
+				last = int(p)
+			}
 		}
+		if n := last - first - 1; n > 0 && len(runs) > 0 {
+			return []wire.Opening{{To: runs[0].To, Count: uint16(min(n, wire.MaxSeekPorts)), From: uint16(first + 1)}}, written
+		}
+		return nil, written
 	}
 	for i := range runs {
 		before, okBefore := readings[i]()
@@ -421,7 +461,7 @@ func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct fun
 		}
 		runs[i].From, runs[i].Exact = before+1, used == n
 	}
-	return runs
+	return runs, written
 }
 
 // openedSum sums up what a device opened: packets, runs, and the runs whose
@@ -446,7 +486,7 @@ func openedSum(opened []wire.Opening) (packets, runs, exact int) {
 // packets the aim moves one port further; then the counter is read
 // again. A port the peer could not name is used up on a packet that
 // opens nothing, so that the count stays true.
-func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool) (sent, reads, moved int) {
+func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool, paced bool) (sent, reads, moved int) {
 	e := s.ep
 	last := 0
 	for _, o := range opened {
@@ -475,6 +515,13 @@ func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, dir
 			q := int(c) + 1 + n + n/fireRun
 			if q >= last {
 				return sent, reads, moved
+			}
+			if paced {
+				select {
+				case <-s.ctx.Done():
+					return sent, reads, moved
+				case <-time.After(paceGap):
+				}
 			}
 			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: toward(q)}, punchOpen, nonce)
 			sent++
@@ -536,7 +583,7 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 	var ports []uint16
 	var pace time.Duration
 	var how string
-	counted := false
+	counted, band, paced := false, false, e.paced()
 	switch {
 	case err != nil || !addr.Is4() || addr.IsUnspecified() || addr.IsMulticast():
 		return false
@@ -545,10 +592,16 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 		return false
 	case measured && counts(me) && counts(theirs.Mapping) && !answering && theirs.Next != 0:
 		part, ports, how = opens, after(theirs.Next, openPorts), "opening the peer's next ports"
+		if paced {
+			ports, how = ports[:min(len(ports), pacedPorts)], "opening the peer's next ports one by one"
+		}
 	case measured && counts(me) && counts(theirs.Mapping) && answering && mine.Next != 0:
 		part, how = aims, "aiming at the ports the peer opened"
+		if paced {
+			how = "aiming one by one at the ports the peer opened"
+		}
 	case measured && counts(me) && theirs.Mapping == wire.MapConfined && len(theirs.Spans) > 0:
-		part, ports, how = opens, spanPorts(theirs.Spans), "opening the peer's band of ports"
+		part, ports, how, band = opens, spanPorts(theirs.Spans), "opening the peer's band of ports", true
 	case measured && me == wire.MapConfined && counts(theirs.Mapping) && len(mine.Spans) > 0:
 		part, how = tries, "trying every port the peer opened"
 	case !measured && counts(me) && counts(theirs.Mapping) && mine.Next != 0 && theirs.Next != 0:
@@ -595,10 +648,13 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 	note := ""
 	switch part {
 	case opens:
-		next.Step, next.Opened = wire.SeekOpened, s.open(addr, ports, nonce, direct)
-		var runs, exact int
-		sent, runs, exact = openedSum(next.Opened)
+		next.Step = wire.SeekOpened
+		next.Opened, sent = s.open(addr, ports, nonce, direct, paced && !band, band)
+		named, runs, exact := openedSum(next.Opened)
 		note = fmt.Sprintf(" in %d runs, %d of them measured exactly", runs, exact)
+		if band {
+			note = fmt.Sprintf(", which took %d of this router's ports", named)
+		}
 		if send(next) != nil {
 			note += "; the peer could not be told"
 		} else if fired, ok := step(wire.SeekFired); ok {
@@ -615,7 +671,7 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 		next.Step = wire.SeekFired
 		if part == aims {
 			var reads, moved int
-			sent, reads, moved = s.fire(addr, opened.Opened, nonce, direct)
+			sent, reads, moved = s.fire(addr, opened.Opened, nonce, direct, paced)
 			next.Reads, next.Moved = uint8(min(reads, 255)), uint16(min(moved, 65535))
 			note = fmt.Sprintf(", the counter read %d times and moved by %d", reads, moved)
 		} else {

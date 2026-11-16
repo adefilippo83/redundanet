@@ -28,6 +28,11 @@ const (
 	// sockets show whether the next one can be told in advance.
 	natFresh     = 4
 	natFreshWait = 500 * time.Millisecond
+	// Behind a router that hands ports out in order, natBurst sockets ask
+	// at the same moment, natBursts times: the ports they get say whether
+	// packets written together reach the router in the order written.
+	natBurst  = 4
+	natBursts = 2
 	// natRouterEvery is how often the router is asked for its outside
 	// address: channels come and go more often than routers change.
 	natRouterEvery = time.Hour
@@ -66,6 +71,9 @@ type measurement struct {
 	gaps               []int32
 	kept, pooled       bool
 	band               int32
+	// unordered says packets this device writes within milliseconds of
+	// each other do not get their ports in the order written.
+	unordered bool
 }
 
 // NATStatus is what the device knows about its router.
@@ -166,6 +174,17 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 			band, samples = n.ports.add(channel.Addr().Unmap(), more...)
 			label = wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
 		}
+		if label == wire.MapSequential {
+			// A search counts on which port each of its packets gets.
+			n.mu.Unlock()
+			ordered, told := burstInOrder(ctx, hub, ask, e.freshSocket)
+			n.mu.Lock()
+			if n.run != token {
+				n.mu.Unlock()
+				return
+			}
+			m.unordered = told && !ordered
+		}
 		if m.mapping != "" && m.mapping != wire.MapNone && m.mapping != wire.MapIndependent {
 			m.band = band
 		}
@@ -173,7 +192,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 		n.measurement = m
 		n.mu.Unlock()
 		e.log.Info("router probed", "mapping", orUnknown(m.mapping), "filtering", orUnknown(m.filtering),
-			"across", m.across, "gaps", m.gaps, "kept", m.kept, "band", m.band, "pooled", m.pooled)
+			"across", m.across, "gaps", m.gaps, "kept", m.kept, "band", m.band, "pooled", m.pooled, "ordered", !m.unordered)
 		if m.mapping == "" || m.mapping == wire.MapNone {
 			return
 		}
@@ -246,6 +265,49 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte, open func(n
 		kept = kept && int(a.Port()) == local
 	}
 	return seen, kept
+}
+
+// burstInOrder opens natBurst sockets, asks the probe port from all of
+// them without waiting and reports whether the router gave them their
+// ports in the order the asks were written, natBursts times over. A
+// wireless link, or a router with more than one processor, may pass
+// packets of different connections on in another order than they were
+// written when they are milliseconds apart: a search then has to space
+// its packets (paceGap). told is false when an answer was missing.
+func burstInOrder(ctx context.Context, hub netip.AddrPort, ask []byte, open func(netip.AddrPort) (net.PacketConn, error)) (ordered, told bool) {
+	to := net.UDPAddrFromAddrPort(hub)
+	buf := make([]byte, 2048)
+	ordered = true
+	for round := 0; round < natBursts && ctx.Err() == nil; round++ {
+		var conns []net.PacketConn
+		for i := 0; i < natBurst; i++ {
+			conn, err := open(hub)
+			if err != nil {
+				break
+			}
+			conns = append(conns, conn)
+		}
+		sent := len(conns) == natBurst
+		for _, conn := range conns {
+			if _, err := conn.WriteTo(ask, to); err != nil {
+				sent = false
+			}
+		}
+		last, all := 0, sent
+		for _, conn := range conns {
+			if all {
+				a, ok := askFrom(conn, hub, ask, buf, true)
+				all = ok
+				ordered = ordered && int(a.Port()) > last
+				last = int(a.Port())
+			}
+			_ = conn.Close()
+		}
+		if !all {
+			return true, false
+		}
+	}
+	return ordered, ctx.Err() == nil
 }
 
 // askFrom asks the probe port from one socket, twice at most, and returns
@@ -379,6 +441,15 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 		once.Do(func() { port = <-got })
 		return port, port != 0
 	}
+}
+
+// paced reports that this device has to space the packets of a search:
+// written together, they do not get their ports in the order written.
+func (e *Endpoint) paced() bool {
+	n := &e.nat
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.unordered
 }
 
 // probing reports that the first probe run on a channel has not finished:
