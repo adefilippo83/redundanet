@@ -1494,9 +1494,14 @@ or have reported one it did not hold, and below k shares only the owner's
 device can store the object again. So each run also asks the servers for the
 objects of the unchanged files they have not answered for in 13 days, oldest
 first, one part in 14 of the known paths and at most 20,000 in a run. When
-every server answered and fewer than k shares are left, the device forgets
-what it remembered of the object, hashes the file and uploads it. When a
-server did not answer, nothing is concluded and the file keeps its turn.
+fewer than k shares are left, the device forgets what it remembered of the
+object, hashes the file and uploads it. That is concluded only when enough
+servers answered: an object placed in full survives the loss of n - k shares
+and one server holds ceil(n / S) of them, so that many servers may be silent,
+one on a 2-of-3 network. Waiting for every server would wait for ever where
+one is switched off. With more silent, nothing is concluded and the file keeps
+its turn. A wrong conclusion costs an upload of shares that turn out to be
+surplus, which the hub releases.
 
 **Per-file failures.** A file that cannot be read, because it is locked, its
 permission is denied or it vanished mid-read, is skipped, counted, listed with

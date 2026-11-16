@@ -381,10 +381,11 @@ func TestAnUnchangedFileIsConfirmedInItsTurn(t *testing.T) {
 	if w.fake.Checks != 0 || !w.fake.Tombstoned(rc) {
 		t.Fatalf("a day after the upload: %d checks, stored again %v", w.fake.Checks, !w.fake.Tombstoned(rc))
 	}
-	// Two weeks on it is the file's turn, and a server does not answer:
-	// the file is not stored again and keeps its turn.
+	// Two weeks on it is the file's turn, and more servers are silent than
+	// the encoding spares shares (2-of-4 on four servers spares two): the
+	// file is not stored again and keeps its turn.
 	w.now = w.now.Add(14 * 24 * time.Hour)
-	w.fake.Silent = 1
+	w.fake.Silent = 3
 	run()
 	if w.fake.Checks == 0 || !w.fake.Tombstoned(rc) {
 		t.Fatalf("with a server away: %d checks, stored again %v", w.fake.Checks, !w.fake.Tombstoned(rc))
@@ -392,8 +393,9 @@ func TestAnUnchangedFileIsConfirmedInItsTurn(t *testing.T) {
 	if row, _ := w.db.LookupScan(report); row == nil || !row.LastConfirmed.Before(w.now) {
 		t.Fatalf("the file counts as confirmed by servers that did not all answer: %+v", row)
 	}
-	// Every server answers: the object is gone, the file is stored again.
-	w.fake.Silent = 0
+	// One server stays away, as one that is switched off for good would:
+	// the others' answer is enough, and the file is stored again.
+	w.fake.Silent = 1
 	w.now = w.now.Add(24 * time.Hour)
 	run()
 	if w.fake.Tombstoned(rc) {
