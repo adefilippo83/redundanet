@@ -935,7 +935,19 @@ follows depends on the two labels.
   those, and each has one chance in the band's width of leaving
   from the port its target was opened toward: about two searches in three
   find a way, and the next search is another draw once the routers have
-  forgotten the mappings nobody answered.
+  forgotten the mappings nobody answered. Measured on the live network
+  (16 November 2026): one member's provider gives the household a block
+  of 128 ports, each mapping a port of its own picked from the block, and
+  the next block somewhere else when none is free. A search that wrote
+  hundreds of punches used the block up, the rest came out of a block
+  nothing was opened toward, and the next search named ports the router
+  had left. So the second device asks from five new sockets where its
+  router picks at that moment and names that first, with half its width
+  on either side; it sends no more punches than the ports it named there,
+  in an order that spreads any beginning of them over the whole. The first
+  device reads its counter after every 64 punches and names what lies
+  between two readings, so one lost answer, or a counter that came round
+  between two of them, costs one stretch and not the search.
 
 Each device writes into its log what it did and what the other said it did
 (packets, runs, runs measured exactly, readings, and how far the counter

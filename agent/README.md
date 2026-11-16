@@ -374,7 +374,14 @@ moves its aim up by the likely number, one more and one fewer in turn
 (`strays`). The public ports a device was seen at are kept as up to four
 ranges more than 1,024 ports apart (`portBand`): a router that picks out
 of a few narrow ranges far from each other counts as one with a band as
-wide as the ranges together, and each range is searched. Toward a peer
+wide as the ranges together, and each range is searched. Some routers
+hand a household a block of ports (128 on the live network) and another
+one when that is used up, so a device behind a router that picks asks
+from five new sockets where it picks at that moment (`Endpoint.seenNow`),
+names that first, and writes to no more of the peer's ports than it named
+there, in an order spread over all of them (`spread`). The side that
+opens toward a band reads its counter every 64 packets, and again when
+the last reading got no answer. Toward a peer
 with one public port, a device behind a router that counts names the
 ports around its last marks and then every port from the lowest it was
 seen at up to where the counter stands, and the ports it was seen at

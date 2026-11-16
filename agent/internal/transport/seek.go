@@ -78,6 +78,17 @@ const (
 	paceGap    = 30 * time.Millisecond
 	pacedPorts = 96
 	pacedRun   = 4
+	// A device behind a router that picks asks from bandAsks new sockets
+	// where it picks now, and names that with bandMargin ports on either
+	// side at least. Toward a router that picks, the side that opens reads
+	// its counter after every bandRun packets, and up to bandLast times
+	// more, bandWait apart, when the reading after the last one got no
+	// answer.
+	bandAsks   = 5
+	bandMargin = 32
+	bandRun    = 64
+	bandLast   = 3
+	bandWait   = 150 * time.Millisecond
 	// seekSoon is the wait when a search could not start: another one
 	// under way here or at the peer, or the probe not finished.
 	seekSoon = 10 * time.Second
@@ -305,8 +316,9 @@ func (s *session) offer(me string, sk wire.Seek, theirs string) wire.Seek {
 // is never under the lowest port this device was seen at, unless the
 // counter has come round: then the ports this device was seen at above
 // the counter are the ones just before it. Behind a router that picks
-// ports out of narrow ranges: every range the device has been seen in,
-// with a margin that each failed search doubles, up to eight times.
+// ports out of narrow ranges: the ranges new sockets get their ports in
+// at this moment, with a margin that a failed search doubles, and then
+// every range the device has been seen in before.
 func (s *session) spans(me string, try int) []wire.PortSpan {
 	var out []wire.PortSpan
 	left := wire.MaxSeekPorts
@@ -352,12 +364,31 @@ func (s *session) spans(me string, try int) []wire.PortSpan {
 			add(int(seen.hi)+1-left, left)
 		}
 	case wire.MapConfined:
-		widen := 1 << min(try, 3)
-		_, _, ranges := s.ep.router()
-		for _, r := range ranges {
-			margin := max(16, (int(r.hi)-int(r.lo))/4) * widen
+		// Where the router picks right now comes first, with a margin of
+		// half its width since a handful of ports do not show all of it;
+		// then the ranges the device was seen in before, where a mapping
+		// made earlier may still be.
+		widen := 1 << min(try, 1)
+		now := s.ep.seenNow(s.ctx, bandAsks)
+		for _, r := range now {
+			margin := max(bandMargin, (int(r.hi)-int(r.lo))/2) * widen
 			add(int(r.lo)-margin, int(r.hi)-int(r.lo)+1+2*margin)
 		}
+		current := wire.MaxSeekPorts - left
+		_, _, ranges := s.ep.router()
+	earlier:
+		for _, r := range ranges {
+			for _, n := range now {
+				if n.lo >= r.lo && n.hi <= r.hi {
+					continue earlier
+				}
+			}
+			margin := max(16, (int(r.hi)-int(r.lo))/4)
+			add(int(r.lo)-margin, int(r.hi)-int(r.lo)+1+2*margin)
+		}
+		s.mu.Lock()
+		s.bandNow = current
+		s.mu.Unlock()
 	}
 	return wire.Spans(out)
 }
@@ -440,6 +471,7 @@ func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct fun
 		size, gap = pacedRun, paceGap
 	}
 	readings := []func() (uint16, bool){e.reading(s.ctx)}
+	at := []int{0} // toward a band: how many packets were written before each reading
 	if paced {
 		pause(gap)
 	}
@@ -458,29 +490,42 @@ func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct fun
 		runs = append(runs, wire.Opening{To: ports[i], Count: uint16(j - i)})
 		if !band {
 			readings = append(readings, e.reading(s.ctx))
+		} else if written/bandRun > at[len(at)-1]/bandRun {
+			readings, at = append(readings, e.reading(s.ctx)), append(at, written)
 		}
 		i = j
 		pause(gap)
 	}
 	if band {
 		// Toward a router that picks, which packet got which port does
-		// not matter: every port between a reading before the first
-		// packet and one after the last is as good as another, and two
-		// readings are all the search asks the hub for.
-		readings = append(readings, e.reading(s.ctx))
-		first, last := 0, 0
-		for _, r := range readings {
-			if p, ok := r(); ok {
-				if first == 0 {
-					first = int(p)
-				}
-				last = int(p)
+		// not matter: every port between two readings is as good as
+		// another. A reading every bandRun packets keeps what one lost
+		// answer costs small, and so does a counter that comes round to
+		// the start of the router's ports between two of them: what lies
+		// between those two is left out.
+		if at[len(at)-1] != written {
+			readings, at = append(readings, e.reading(s.ctx)), append(at, written)
+		}
+		for more := 0; more < bandLast && s.ctx.Err() == nil; more++ {
+			if _, ok := readings[len(readings)-1](); ok {
+				break
 			}
+			pause(bandWait)
+			readings, at = append(readings, e.reading(s.ctx)), append(at, written)
 		}
-		if n := last - first - 1; n > 0 && len(runs) > 0 {
-			return []wire.Opening{{To: runs[0].To, Count: uint16(min(n, wire.MaxSeekPorts)), From: uint16(first + 1)}}, written
+		var named []wire.Opening
+		before, from := 0, 0
+		for i, r := range readings {
+			p, ok := r()
+			if !ok {
+				continue
+			}
+			if n := int(p) - before - 1; before != 0 && n > 0 && from < len(ports) {
+				named = append(named, wire.Opening{To: ports[from], Count: uint16(min(n, wire.MaxSeekPorts)), From: uint16(before + 1)})
+			}
+			before, from = int(p), at[i]
 		}
-		return nil, written
+		return named, written
 	}
 	for i := range runs {
 		before, okBefore := readings[i]()
@@ -599,25 +644,59 @@ func strays(i, n, over, round int) int {
 // one of those opens the way when this router happens to give it the
 // port that one was opened toward, one chance in the band's width for
 // each packet and about two in three for all of them together.
-func (s *session) try(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool) (sent int) {
+// The peer opened toward where this router picks now first, and the
+// device writes to the first most of the peer's ports and no more, spread
+// over them from the first packet on: a router that hands a household a
+// small block of ports gives a packet past the block's last free port one
+// from another block, which nothing was opened toward, and goes on
+// picking there.
+func (s *session) try(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool, most int) (sent int) {
+	var ports []int
 	for _, o := range opened {
-		if o.From == 0 {
-			continue
-		}
-		for j := 0; j < int(o.Count); j++ {
-			if direct() {
-				return sent
-			}
-			select {
-			case <-s.ctx.Done():
-				return sent
-			case <-time.After(sprayEvery):
-			}
-			s.ep.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: int(o.From) + j}, punchOpen, nonce)
-			sent++
+		for j := 0; o.From != 0 && j < int(o.Count); j++ {
+			ports = append(ports, int(o.From)+j)
 		}
 	}
+	if most > 0 && len(ports) > most {
+		ports = ports[:most]
+	}
+	for _, i := range spread(len(ports)) {
+		if direct() {
+			return sent
+		}
+		select {
+		case <-s.ctx.Done():
+			return sent
+		case <-time.After(sprayEvery):
+		}
+		s.ep.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: ports[i]}, punchOpen, nonce)
+		sent++
+	}
 	return sent
+}
+
+// spread is the numbers under n in an order whose every beginning is
+// spread evenly over all of them: steps of about n over the golden ratio,
+// round and round.
+func spread(n int) []int {
+	if n <= 0 {
+		return nil
+	}
+	gcd := func(a, b int) int {
+		for b != 0 {
+			a, b = b, a%b
+		}
+		return a
+	}
+	step := max(1, n*618/1000)
+	for gcd(step, n) != 1 {
+		step++
+	}
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i * step % n
+	}
+	return out
 }
 
 // search does this device's half of a search once both halves are known,
@@ -733,7 +812,10 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 			next.Reads, next.Moved = uint8(min(reads, 255)), uint16(min(moved, 65535))
 			note = fmt.Sprintf(", the counter read %d times and moved by %d", reads, moved)
 		} else {
-			sent = s.try(addr, opened.Opened, nonce, direct)
+			s.mu.Lock()
+			most := s.bandNow
+			s.mu.Unlock()
+			sent = s.try(addr, opened.Opened, nonce, direct, most)
 		}
 		next.Sent = uint16(min(sent, 65535))
 		_ = send(next)

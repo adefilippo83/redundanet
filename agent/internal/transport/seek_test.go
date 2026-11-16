@@ -34,6 +34,10 @@ type simRouter struct {
 	// far, for a router that picks, is how far over the band a second one
 	// of the same width lies: every port comes out of one or the other.
 	far int
+	// block makes the band a block of ports the household has to itself:
+	// every mapping takes a port of its own, and when none is free the
+	// router goes on in another block four widths up.
+	block bool
 	// scramble is how long the first packet to a destination may be on
 	// its way to the router: packets written closer together than that
 	// get their ports in any order.
@@ -77,7 +81,19 @@ func (r *simRouter) open(s *simSocket, key string) *simPort {
 	defer r.mu.Unlock()
 	for {
 		r.next++
-		if r.band > 0 {
+		if r.block {
+			var free []int
+			for p := r.base; p < r.base+r.band; p++ {
+				if r.ports[p] == nil {
+					free = append(free, p)
+				}
+			}
+			if len(free) == 0 {
+				r.base += 4 * r.band
+				continue
+			}
+			r.next = free[rand.IntN(len(free))]
+		} else if r.band > 0 {
 			r.next = r.base + rand.IntN(r.band)
 			if len(r.first) > 0 {
 				r.next, r.first = r.base+r.first[0], r.first[1:]
@@ -484,12 +500,17 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 		name      string
 		bandDials bool
 		far       int
+		block     int
 	}{
 		{name: "the counting side dials"},
 		{name: "the side with the band dials", bandDials: true},
 		// Two narrow ranges far from each other: from the lowest port to
 		// the highest is no narrow band, the two ranges are.
 		{name: "the band is two ranges", far: 10900},
+		// A block of ports that is used up in the middle of a search:
+		// the router goes on in another one, and the next search has to
+		// be about that one.
+		{name: "the band is a block that moves", block: 96},
 	} {
 		bandDials, far := c.bandDials, c.far
 		t.Run(c.name, func(t *testing.T) {
@@ -498,6 +519,9 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 			n := newTestNetProbe(t, false, "127.0.0.1:0", func(c *hub.Config) { c.ProbeAnswers = 1 << 16 })
 			ra, rb := newSimRouter(false, 21000), newSimBandRouter(27000, 40)
 			rb.far = far
+			if c.block > 0 {
+				rb = &simRouter{base: 27000, band: c.block, block: true, ports: map[int]*simPort{}}
+			}
 			a, aKey := n.endpoint(seed(1), true, ra.behind)
 			b, bKey := n.endpoint(seed(2), true, rb.behind)
 			eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
@@ -689,6 +713,35 @@ func TestStraysAreAimedAt(t *testing.T) {
 	got := wire.Openings([]wire.Opening{{To: 100, Count: 4, From: 200, Over: 200}, {To: 104, Count: 4, From: 210, Exact: true, Over: 3}, {To: 108, Count: 4, Over: 2}})
 	if got[0].Over != wire.MaxSeekOver || got[1].Over != 0 || got[2].Over != 0 {
 		t.Fatalf("ports over: %+v", got)
+	}
+}
+
+// Every beginning of the order a device tries ports in is spread over
+// all of them, and the order has each port once.
+func TestTriesAreSpread(t *testing.T) {
+	for _, n := range []int{1, 2, 7, 128, 170, 1000, 1024} {
+		order := spread(n)
+		seen := map[int]bool{}
+		for _, i := range order {
+			seen[i] = true
+		}
+		if len(order) != n || len(seen) != n {
+			t.Fatalf("%d ports: %d tries of %d", n, len(order), len(seen))
+		}
+		if n < 100 {
+			continue
+		}
+		// The first quarter of the tries has one in every eighth.
+		eighths := map[int]bool{}
+		for _, i := range order[:n/4] {
+			eighths[i*8/n] = true
+		}
+		if len(eighths) != 8 {
+			t.Fatalf("%d ports: the first quarter of the tries is in %d eighths", n, len(eighths))
+		}
+	}
+	if spread(0) != nil {
+		t.Fatal("no ports, and tries")
 	}
 }
 

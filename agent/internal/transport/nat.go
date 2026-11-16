@@ -513,6 +513,26 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 	}
 }
 
+// seenNow asks the probe port from n new sockets at once and returns the
+// ranges the public ports they got fall in: where a router that picks is
+// picking at this moment. Some hand each household a small block of ports
+// and another one when that is used up, so the ranges a device was seen in
+// an hour ago may not be where its next port comes from.
+func (e *Endpoint) seenNow(ctx context.Context, n int) []portRange {
+	_, public, _ := e.router()
+	readings := make([]func() (uint16, bool), 0, n)
+	for i := 0; i < n; i++ {
+		readings = append(readings, e.reading(ctx))
+	}
+	var now portBand
+	for _, r := range readings {
+		if p, ok := r(); ok {
+			now.add(public, netip.AddrPortFrom(public, p))
+		}
+	}
+	return now.ranges
+}
+
 // paced reports that this device has to space the packets of a search:
 // written together, they do not get their ports in the order written.
 func (e *Endpoint) paced() bool {
