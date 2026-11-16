@@ -91,13 +91,21 @@ const (
 // sender's own public port the first one came out of, the next ones after
 // it; zero when the sender could not tell. Exact says the sender's router
 // gave out exactly Count ports during the run, so every packet's port is
-// known and not estimated.
+// known and not estimated. Over is how many ports more than Count it gave
+// out, to something else in the household: each of them moved the packets
+// written after it one port up, and where in the run they fell the sender
+// cannot tell. A number of ports and never a port.
 type Opening struct {
 	To    uint16 `cbor:"to"`
 	Count uint16 `cbor:"count"`
 	From  uint16 `cbor:"from,omitempty"`
 	Exact bool   `cbor:"exact,omitempty"`
+	Over  uint8  `cbor:"over,omitempty"`
 }
+
+// MaxSeekOver is the most ports over a run may name: past that the run's
+// ports are anybody's guess.
+const MaxSeekOver = 8
 
 // MaxSeekOpenings is how many runs a device may name.
 const MaxSeekOpenings = 128
@@ -122,6 +130,10 @@ func Openings(in []Opening) []Opening {
 		}
 		o.Count = uint16(n)
 		o.Exact = o.Exact && o.From != 0
+		if o.From == 0 || o.Exact {
+			o.Over = 0
+		}
+		o.Over = min(o.Over, MaxSeekOver)
 		out = append(out, o)
 		left -= n
 	}

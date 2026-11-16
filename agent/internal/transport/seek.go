@@ -108,7 +108,7 @@ func (e *Endpoint) seekAfter() time.Duration {
 // has one; before the probe has said which kind it is, the reading is
 // taken anyway.
 func (s *session) mark() {
-	if me, _, _, _ := s.ep.router(); me != "" && me != wire.MapSequential {
+	if me, _, _ := s.ep.router(); me != "" && me != wire.MapSequential {
 		return
 	}
 	p, ok := s.ep.counter(s.ctx, time.Second)
@@ -165,7 +165,7 @@ func (s *session) seek() {
 	s.mu.Lock()
 	hub, try := s.hub, s.seekTries
 	s.mu.Unlock()
-	me, _, _, _ := e.router()
+	me, _, _ := e.router()
 	if me == "" && e.probing() {
 		s.seekIn(seekSoon, false)
 		return
@@ -263,7 +263,7 @@ func (s *session) onSeek(c *hubClient, sk wire.Seek) {
 func (s *session) sought(c *hubClient, theirs wire.Seek) {
 	e := s.ep
 	answer := wire.Seek{Peer: s.peer, Round: theirs.Round, Reply: true, Try: theirs.Try}
-	me, _, _, _ := e.router()
+	me, _, _ := e.router()
 	if (me == "" && e.probing()) || !e.seeking.TryLock() {
 		answer.Busy = true
 		_ = c.sendMessage(wire.FrameSeek, answer)
@@ -297,40 +297,66 @@ func (s *session) offer(me string, sk wire.Seek, theirs string) wire.Seek {
 	return sk
 }
 
-// spans is where this device's mapping toward the peer may be: around
-// each mark behind a router that hands ports out in order, the band of
-// ports the device has been seen at behind one that picks them out of a
-// narrow band. Each failed search before this one doubles the width, up
-// to eight times.
+// spans is where this device's mapping toward the peer may be. Behind a
+// router that hands ports out in order: around the last marks, twice as
+// wide after a failed search, and then everything the router handed out
+// before where its counter stands now, as far as a search may go. A
+// mapping that is kept alive is older than any mark taken since, and it
+// is never under the lowest port this device was seen at, unless the
+// counter has come round: then the ports this device was seen at above
+// the counter are the ones just before it. Behind a router that picks
+// ports out of narrow ranges: every range the device has been seen in,
+// with a margin that each failed search doubles, up to eight times.
 func (s *session) spans(me string, try int) []wire.PortSpan {
-	widen := 1 << min(try, 3)
 	var out []wire.PortSpan
+	left := wire.MaxSeekPorts
 	add := func(first, count int) {
 		last := min(first+count, 65536)
 		first = max(first, 1)
-		if last > first {
-			out = append(out, wire.PortSpan{First: uint16(first), Count: uint16(min(last-first, 65535))})
+		if n := min(last-first, left); n > 0 && len(out) < wire.MaxSeekSpans {
+			out = append(out, wire.PortSpan{First: uint16(first), Count: uint16(n)})
+			left -= n
 		}
 	}
 	switch me {
 	case wire.MapSequential:
+		widen := 1 << min(try, 1)
 		s.mu.Lock()
 		marks := append([]uint16(nil), s.marks...)
 		s.mu.Unlock()
-		for i := len(marks) - 1; i >= 0; i-- {
+		p, ok := s.ep.counter(s.ctx, time.Second)
+		seen, known := s.ep.seenAround(p)
+		round := ok && known && int(seen.hi) > int(p)+markBefore
+		keep := wire.MaxSeekSpans - 1
+		if round {
+			keep--
+		}
+		for i := len(marks) - 1; i >= 0 && keep > 0; i, keep = i-1, keep-1 {
 			add(int(marks[i])-markBefore*widen, (markBefore+markAfter)*widen)
 		}
-		if len(marks) == 0 {
-			// No mark was taken: the mapping is somewhere under where
-			// the counter stands now.
-			if p, ok := s.ep.counter(s.ctx, time.Second); ok {
-				add(int(p)-4*markBefore*widen, 4*markBefore*widen+markAfter)
-			}
+		if !ok {
+			break
+		}
+		floor := 1
+		if known {
+			floor = max(1, int(seen.lo)-markAfter)
+		}
+		first := max(floor, int(p)+markAfter-left)
+		if round {
+			// Half of what is left for each side of the turn, and to the
+			// far side whatever the near one does not need.
+			first = max(floor, int(p)+markAfter-left/2)
+		}
+		add(first, int(p)+markAfter-first)
+		if round {
+			add(int(seen.hi)+1-left, left)
 		}
 	case wire.MapConfined:
-		if _, _, lo, hi := s.ep.router(); hi != 0 {
-			margin := max(16, (int(hi)-int(lo))/4) * widen
-			add(int(lo)-margin, int(hi)-int(lo)+1+2*margin)
+		widen := 1 << min(try, 3)
+		_, _, ranges := s.ep.router()
+		for _, r := range ranges {
+			margin := max(16, (int(r.hi)-int(r.lo))/4) * widen
+			add(int(r.lo)-margin, int(r.hi)-int(r.lo)+1+2*margin)
 		}
 	}
 	return wire.Spans(out)
@@ -399,7 +425,8 @@ func after(next uint16, n int) []uint16 {
 // that took fewer ports than it has packets, because the router still
 // had mappings to there. One or two fewer are let pass as an estimate:
 // the device has written to a port or two of the peer's before, when it
-// punched.
+// punched. A run that took more ports than it has packets is named with
+// how many more: something else in the household took those.
 func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct func() bool, paced, band bool) (runs []wire.Opening, written int) {
 	e := s.ep
 	pause := func(d time.Duration) {
@@ -464,21 +491,26 @@ func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct fun
 			continue
 		}
 		runs[i].From, runs[i].Exact = before+1, used == n
+		if used > n {
+			runs[i].Over = uint8(min(used-n, wire.MaxSeekOver))
+		}
 	}
 	return runs, written
 }
 
-// openedSum sums up what a device opened: packets, runs, and the runs whose
-// ports are measured and not estimated.
-func openedSum(opened []wire.Opening) (packets, runs, exact int) {
+// openedSum sums up what a device opened: packets, runs, the runs whose
+// ports are measured and not estimated, and the ports its router gave to
+// something else during the others.
+func openedSum(opened []wire.Opening) (packets, runs, exact, over int) {
 	for _, o := range opened {
 		packets += int(o.Count)
 		runs++
 		if o.Exact {
 			exact++
 		}
+		over += int(o.Over)
 	}
-	return packets, runs, exact
+	return packets, runs, exact, over
 }
 
 // fire aims at what the peer opened, from behind a router that counts.
@@ -489,17 +521,21 @@ func openedSum(opened []wire.Opening) (packets, runs, exact int) {
 // The reading is some milliseconds old by then, so after every fireRun
 // packets the aim moves one port further; then the counter is read
 // again. A port the peer could not name is used up on a packet that
-// opens nothing, so that the count stays true.
+// opens nothing, so that the count stays true. Where the peer's router
+// gave ports to something else during a run, the packets of that run came
+// out some ports higher than the run's first port says, the later ones of
+// the run more likely than the first: the aim is moved up by the likely
+// number, and by one more or one fewer in the readings after.
 func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, direct func() bool, paced bool) (sent, reads, moved int) {
 	e := s.ep
 	last := 0
 	for _, o := range opened {
 		last = max(last, int(o.To)+int(o.Count))
 	}
-	toward := func(q int) int {
+	toward := func(q, round int) int {
 		for _, o := range opened {
 			if q >= int(o.To) && q < int(o.To)+int(o.Count) && o.From != 0 {
-				return int(o.From) + q - int(o.To)
+				return min(int(o.From)+q-int(o.To)+strays(q-int(o.To), int(o.Count), int(o.Over), round), 65535)
 			}
 		}
 		return q // opens nothing, takes a port
@@ -527,7 +563,7 @@ func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, dir
 				case <-time.After(paceGap):
 				}
 			}
-			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: toward(q)}, punchOpen, nonce)
+			e.sendPunch(&net.UDPAddr{IP: addr.AsSlice(), Port: toward(q, round)}, punchOpen, nonce)
 			sent++
 		}
 		select {
@@ -537,6 +573,24 @@ func (s *session) fire(addr netip.Addr, opened []wire.Opening, nonce uint64, dir
 		}
 	}
 	return sent, reads, moved
+}
+
+// strays is how many ports up the packet at place i of a run of n came
+// out, when the router gave over ports to something else during the run:
+// the likely number for that place in one round, one more in the next and
+// one fewer in the one after, never under none or over all of them.
+func strays(i, n, over, round int) int {
+	if over <= 0 || n <= 0 {
+		return 0
+	}
+	likely := (over*(2*i+1) + n) / (2 * n) // over*(i+1/2)/n, rounded
+	switch round % 3 {
+	case 1:
+		likely++
+	case 2:
+		likely--
+	}
+	return max(0, min(likely, over))
 }
 
 // try writes once to every port the peer opened, from behind a router
@@ -574,7 +628,7 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 	moving := func(m string) bool { return m == wire.MapSequential || m == wire.MapConfined }
 	counts := func(m string) bool { return m == wire.MapSequential }
 	measured := mine.Ways >= wire.SeekMeasured && theirs.Ways >= wire.SeekMeasured
-	_, public, _, _ := e.router()
+	_, public, _ := e.router()
 	addr, err := netip.ParseAddr(theirs.Addr)
 	addr = addr.Unmap()
 	const (
@@ -654,8 +708,8 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 	case opens:
 		next.Step = wire.SeekOpened
 		next.Opened, sent = s.open(addr, ports, nonce, direct, paced && !band, band)
-		named, runs, exact := openedSum(next.Opened)
-		note = fmt.Sprintf(" in %d runs, %d of them measured exactly", runs, exact)
+		named, runs, exact, over := openedSum(next.Opened)
+		note = fmt.Sprintf(" in %d runs, %d of them measured exactly and %d ports over in the others", runs, exact, over)
 		if band {
 			note = fmt.Sprintf(", which took %d of this router's ports", named)
 		}
@@ -683,8 +737,8 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 		}
 		next.Sent = uint16(min(sent, 65535))
 		_ = send(next)
-		packets, runs, exact := openedSum(opened.Opened)
-		note += fmt.Sprintf("; the peer opened %d ports in %d runs, %d of them measured exactly", packets, runs, exact)
+		packets, runs, exact, over := openedSum(opened.Opened)
+		note += fmt.Sprintf("; the peer opened %d ports in %d runs, %d of them measured exactly and %d ports over in the others", packets, runs, exact, over)
 	default:
 		for _, p := range ports {
 			if direct() || !wait(pace) {

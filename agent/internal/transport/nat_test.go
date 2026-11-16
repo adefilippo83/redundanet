@@ -190,3 +190,36 @@ func TestThePortBandIsPerAddress(t *testing.T) {
 		t.Fatalf("another address: width %d over %d", w, n)
 	}
 }
+
+// Ports far from each other are ranges of their own, and the width is
+// theirs together; ranges that grow close become one; a device seen in
+// more ranges than a search may name has its width from the lowest port
+// to the highest.
+func TestThePortBandIsRanges(t *testing.T) {
+	a := netip.MustParseAddr("203.0.113.7")
+	at := func(port uint16) netip.AddrPort { return netip.AddrPortFrom(a, port) }
+	var band portBand
+	if w, _ := band.add(a, at(41000), at(52000), at(41120), at(52090), at(41050)); w != 210 || len(band.ranges) != 2 {
+		t.Fatalf("two ranges: width %d, %v", w, band.ranges)
+	}
+	if r, ok := band.around(52010); !ok || r != (portRange{52000, 52090}) {
+		t.Fatalf("the range around a port: %v %v", r, ok)
+	}
+	if _, ok := band.around(45000); ok {
+		t.Fatal("a port between the ranges is in one")
+	}
+	// 43000 is a range of its own until the ports between join all three.
+	if w, _ := band.add(a, at(43000)); w != 210 || len(band.ranges) != 3 {
+		t.Fatalf("three ranges: width %d, %v", w, band.ranges)
+	}
+	if w, _ := band.add(a, at(42050)); w != 2090 || len(band.ranges) != 2 {
+		t.Fatalf("joined: width %d, %v", w, band.ranges)
+	}
+	band = portBand{}
+	if w, n := band.add(a, at(2000), at(12000), at(22000), at(32000), at(42000)); w != 40000 || n != 5 || len(band.ranges) != 0 {
+		t.Fatalf("scattered: width %d over %d, %v", w, n, band.ranges)
+	}
+	if w, _ := band.add(a, at(2010)); w != 40000 {
+		t.Fatalf("scattered stays scattered: width %d", w)
+	}
+}

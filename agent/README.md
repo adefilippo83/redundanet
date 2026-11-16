@@ -368,7 +368,18 @@ device opens ports and measures which of its own each packet left from
 (`fire`), or writes to all of them when its router picks out of a band
 (`try`). A device whose packets reach its router out of order when they
 leave together (`burstInOrder`, wireless links mostly) writes them 30 ms
-apart. The hub writes
+apart. A run during which the router gave ports to something else is
+named with how many (`Opening.Over`, 8 at most), and the device that aims
+moves its aim up by the likely number, one more and one fewer in turn
+(`strays`). The public ports a device was seen at are kept as up to four
+ranges more than 1,024 ports apart (`portBand`): a router that picks out
+of a few narrow ranges far from each other counts as one with a band as
+wide as the ranges together, and each range is searched. Toward a peer
+with one public port, a device behind a router that counts names the
+ports around its last marks and then every port from the lowest it was
+seen at up to where the counter stands, and the ports it was seen at
+above the counter when that has come round, 1,024 ports in all at most
+(`session.spans`). The hub writes
 to a device from one goroutine per device, with a bounded control queue
 (64 frames) and a ten-second write deadline: a full queue or a late write
 closes that device's connection, and `Server.Send` never waits. The candidates

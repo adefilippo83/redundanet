@@ -214,15 +214,27 @@ func orUnknown(s string) string {
 	return s
 }
 
-// portBand is the lowest and highest public port a device was seen at on
-// one public address. A carrier that shares an address between customers
-// gives each a band of its ports, so the width says how far a search for
-// this device's next port has to go. Another address starts it again.
+// portBand is the public ports a device was seen at on one public
+// address: the lowest and the highest, and the ranges they fall in. A
+// carrier that shares an address between customers gives each a band of
+// its ports, and some routers pick out of a few narrow ranges far from
+// each other, so the ranges' width says how far a search for this
+// device's next port has to go. Another address starts it again.
 type portBand struct {
 	addr   netip.Addr
 	lo, hi uint16
 	n      int
+	// ranges are in order and more than rangeJoin apart. A device seen in
+	// more of them than a search may name has none: its ports are
+	// scattered, and what counts is the lowest and the highest.
+	ranges    []portRange
+	scattered bool
 }
+
+type portRange struct{ lo, hi uint16 }
+
+// rangeJoin is how far from a range a port may be and still widen it.
+const rangeJoin = 1024
 
 func (b *portBand) add(addr netip.Addr, seen ...netip.AddrPort) (width int32, samples int) {
 	if addr != b.addr {
@@ -239,8 +251,66 @@ func (b *portBand) add(addr netip.Addr, seen ...netip.AddrPort) (width int32, sa
 			b.hi = a.Port()
 		}
 		b.n++
+		b.place(a.Port())
 	}
-	return int32(b.hi) - int32(b.lo), b.n
+	return b.width(), b.n
+}
+
+// place puts a port into the range it is near, or into one of its own,
+// and joins ranges that have grown close.
+func (b *portBand) place(p uint16) {
+	if b.scattered {
+		return
+	}
+	at := len(b.ranges)
+	for i, r := range b.ranges {
+		if int(p) <= int(r.hi)+rangeJoin {
+			at = i
+			break
+		}
+	}
+	if at < len(b.ranges) && int(p) >= int(b.ranges[at].lo)-rangeJoin {
+		r := &b.ranges[at]
+		r.lo, r.hi = min(r.lo, p), max(r.hi, p)
+	} else {
+		b.ranges = append(b.ranges, portRange{})
+		copy(b.ranges[at+1:], b.ranges[at:])
+		b.ranges[at] = portRange{p, p}
+	}
+	for i := 0; i+1 < len(b.ranges); {
+		if int(b.ranges[i+1].lo)-int(b.ranges[i].hi) <= rangeJoin {
+			b.ranges[i].hi = b.ranges[i+1].hi
+			b.ranges = append(b.ranges[:i+1], b.ranges[i+2:]...)
+			continue
+		}
+		i++
+	}
+	if len(b.ranges) > wire.MaxSeekSpans {
+		b.ranges, b.scattered = nil, true
+	}
+}
+
+// width is how many ports wide the ranges are together, or from the
+// lowest port to the highest when the ports are scattered.
+func (b *portBand) width() int32 {
+	if b.scattered || len(b.ranges) == 0 {
+		return int32(b.hi) - int32(b.lo)
+	}
+	var w int32
+	for _, r := range b.ranges {
+		w += int32(r.hi) - int32(r.lo)
+	}
+	return w
+}
+
+// around is the range a port falls in.
+func (b *portBand) around(p uint16) (portRange, bool) {
+	for _, r := range b.ranges {
+		if p >= r.lo && p <= r.hi {
+			return r, true
+		}
+	}
+	return portRange{}, false
 }
 
 // freshPorts opens sockets one after the other, asks the probe port from
@@ -462,15 +532,27 @@ func (e *Endpoint) probing() bool {
 }
 
 // router is the label for this device's router, the address the hub sees
-// the device at and the band of public ports it was seen at there.
-func (e *Endpoint) router() (mapping string, public netip.Addr, lo, hi uint16) {
+// the device at and the ranges of public ports it was seen at there.
+func (e *Endpoint) router() (mapping string, public netip.Addr, ranges []portRange) {
 	n := &e.nat
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.ports.n > 0 && n.ports.addr == n.channel.Addr().Unmap() {
-		lo, hi = n.ports.lo, n.ports.hi
+		ranges = append(ranges, n.ports.ranges...)
 	}
-	return n.mapping, n.channel.Addr().Unmap(), lo, hi
+	return n.mapping, n.channel.Addr().Unmap(), ranges
+}
+
+// seenAround is the range of public ports, among those this device was
+// seen at, that a port falls in.
+func (e *Endpoint) seenAround(p uint16) (portRange, bool) {
+	n := &e.nat
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.ports.addr != n.channel.Addr().Unmap() {
+		return portRange{}, false
+	}
+	return n.ports.around(p)
 }
 
 // routerHolds says who holds the public address the hub sees this device

@@ -874,10 +874,20 @@ follows depends on the two labels.
   device reads the counter (the public port of a socket opened that moment,
   told by the hub's second port) every time it begins writing to a peer's
   address, and the mapping is looked for from 32 ports under that reading
-  to 16 over it, for the last three such readings; behind a router with a
-  band it is the band, with a quarter of its width on either side. Each
-  search that fails doubles the width, up to eight times, and one search
-  never covers more than 1,024 ports.
+  to 16 over it, for the last three such readings, twice as wide after a
+  search that failed. A mapping that is kept alive stays where it was made
+  while the counter and the readings move on (on the live network one was
+  found only after 45 minutes of searches that each doubled the width), so
+  the device also names every port from the lowest it has been seen at up
+  to where the counter stands, and the ports it was seen at above the
+  counter when that has come round to the start of the router's block.
+  Behind a router with a band it is the band, with a quarter of its width
+  on either side, which each search that fails doubles, up to eight times.
+  A router may pick out of a few narrow ranges far from each other (one on
+  the live network uses two, 10,900 ports apart): the ports a device has
+  been seen at are kept as up to four ranges more than 1,024 ports apart,
+  the band's width is that of the ranges together, and each range is named
+  with its own margin. One search never covers more than 1,024 ports.
 - Both routers hand ports out in order. One device opens and measures,
   the other aims. The side that dials sends 160 punches to the ports the
   other router is about to hand out, in runs of 16. Every such punch goes
@@ -895,7 +905,12 @@ follows depends on the two labels.
   reading, six readings at most. A punch gets through when it leaves from
   the port its target was opened toward. Neither side guesses how many
   connections the household behind either router opened meanwhile: one
-  measured it and the other reads it again every twelve punches.
+  measured it and the other reads it again every twelve punches. A run
+  during which the first router gave ports to something else is told with
+  how many (8 at most): its punches came out that many ports higher at
+  most, the later ones of the run more likely than the first, and the
+  second device moves its aim up by the likely number after one reading,
+  by one more after the next and one fewer after the third.
 - A device whose packets do not reach its router in the order it wrote
   them writes them one by one. Over a wireless link, packets to different
   destinations written within some twenty milliseconds of each other may
