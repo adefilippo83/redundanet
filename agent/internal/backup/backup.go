@@ -432,8 +432,7 @@ const (
 // away longer, or any file before the first snapshot, is always probed.
 // An object that is gone or tombstoned makes the file a miss, hashed and
 // stored again. In the rolling confirmation an object is gone only when
-// every server answered and fewer than k shares are left: a server that
-// is away for an hour is no reason to upload a file again.
+// enough servers answered and fewer than k shares are left: see settled.
 func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
 	away := r.lastSnapshot.IsZero() || row.LastSeen.Before(r.lastSnapshot)
 	if !away && !r.confirm[row.Path] {
@@ -449,9 +448,9 @@ func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
 			return false
 		}
 		h, err := r.cfg.Engine.Check(ctx, rc)
-		answered := err == nil && h != nil && h.Answered >= h.Asked
+		answered := err == nil && h != nil && settled(h)
 		if !away && !answered {
-			// Not every server answered: the file keeps its turn.
+			// Too few servers answered: the file keeps its turn.
 			return true
 		}
 		if err != nil || h == nil || !h.Readable {
@@ -468,6 +467,22 @@ func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
 	}
 	row.LastConfirmed = r.cfg.Now()
 	return true
+}
+
+// settled reports whether enough servers answered a placement check for
+// "fewer than k shares" to mean the object is lost and not that its
+// holders are away. An object placed in full survives the loss of n-k
+// shares, and placement gives one server ceil(n/S) of them, so that many
+// servers may be silent: the shares they could hold are the ones the
+// encoding spares. Waiting for every server would wait for ever on a
+// network where one is switched off. The cost of being wrong is an upload
+// of shares that turn out to be surplus, which the hub releases.
+func settled(h *engine.Health) bool {
+	if h.Asked <= 0 || h.N <= 0 {
+		return false
+	}
+	part := (h.N + h.Asked - 1) / h.Asked
+	return (h.Asked-h.Answered)*part <= h.N-h.K
 }
 
 // storeSection stores a file's bytes, or a chunk, as one object: asked
