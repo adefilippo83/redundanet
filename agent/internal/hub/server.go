@@ -34,6 +34,9 @@ type Config struct {
 	// ProbeAnswers is how many asks the probe port answers one device at
 	// once; zero is probeAnswers. One more is answered every probeRefill.
 	ProbeAnswers int
+	// WriteTimeout is how long one write to a device may take; zero is
+	// writeTimeout.
+	WriteTimeout time.Duration
 	// OnCensus receives each device's heartbeat; the collector keeps them.
 	OnCensus func(peer identity.Peer, carrier string, c wire.Census)
 	// OnShares receives a storage node's share census chunks.
@@ -72,8 +75,8 @@ const controlQueue = 64
 
 // writeTimeout is how long one write to a device may take. A device that
 // does not take a frame in that time loses its channel and connects again.
-// A variable so tests need not wait for it.
-var writeTimeout = 10 * time.Second
+// Config.WriteTimeout replaces it, so tests need not wait for it.
+const writeTimeout = 10 * time.Second
 
 // ErrNotReading is the answer for a device whose control queue is full.
 var ErrNotReading = errors.New("hub: the device is not reading its channel")
@@ -112,6 +115,7 @@ type client struct {
 	carrier  string
 	w        *wire.Writer
 	deadline func(time.Time) error // the write deadline of what w writes to
+	wait     time.Duration         // how long one write may take
 	conn     *quic.Conn            // datagrams, nil over TCP
 	out      chan []byte           // relayed packets
 	ctl      chan controlFrame     // control frames, written before relayed packets
@@ -230,7 +234,7 @@ func (s *Server) acceptQUIC(ctx context.Context) {
 			if conn.ConnectionState().SupportsDatagrams.Remote {
 				dg = conn
 			}
-			c := &client{peer: *peer, carrier: "udp", w: wire.NewWriter(st), deadline: st.SetWriteDeadline, conn: dg, since: time.Now(),
+			c := &client{peer: *peer, carrier: "udp", w: wire.NewWriter(st), deadline: st.SetWriteDeadline, wait: s.writeWait(), conn: dg, since: time.Now(),
 				remote: func() string { return conn.RemoteAddr().String() },
 				close:  func() { _ = conn.CloseWithError(0, "replaced") }}
 			if dg != nil {
@@ -272,7 +276,7 @@ func (s *Server) acceptTCP(ctx context.Context) {
 				return
 			}
 			remote := tc.RemoteAddr().String()
-			c := &client{peer: *peer, carrier: "tcp", w: wire.NewWriter(tc), deadline: tc.SetWriteDeadline, since: time.Now(),
+			c := &client{peer: *peer, carrier: "tcp", w: wire.NewWriter(tc), deadline: tc.SetWriteDeadline, wait: s.writeWait(), since: time.Now(),
 				remote: func() string { return remote }, close: func() { _ = tc.Close() }}
 			s.serve(ctx, c, tc)
 			_ = tc.Close()
@@ -455,12 +459,20 @@ func (c *client) candidates() []string {
 	return append(out, c.locals...)
 }
 
-// write puts one frame on the device's socket within writeTimeout. Only
+// writeWait is how long one write to a device may take on this hub.
+func (s *Server) writeWait() time.Duration {
+	if s.cfg.WriteTimeout > 0 {
+		return s.cfg.WriteTimeout
+	}
+	return writeTimeout
+}
+
+// write puts one frame on the device's socket within the hub's write wait. Only
 // the device's own two goroutines call it: serve, before the device is
 // registered and for the revocation list, and writeLoop.
 func (c *client) write(typ byte, payload []byte) error {
 	if c.deadline != nil {
-		_ = c.deadline(time.Now().Add(writeTimeout))
+		_ = c.deadline(time.Now().Add(c.wait))
 	}
 	return c.w.Frame(typ, payload)
 }

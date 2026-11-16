@@ -79,14 +79,10 @@ func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool)
 // device's rendezvous with it is answered at once, and the hub closes its
 // channel.
 func TestADeviceThatStopsReadingStallsNobody(t *testing.T) {
-	old := writeTimeout
-	writeTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { writeTimeout = old })
-
 	ctx, cancel := context.WithCancel(context.Background())
 	hubKey, hubID := testDevice(t, 100, identity.RoleHub)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	s, err := Start(ctx, Config{Identity: hubID, Device: hubKey, Allow: func(identity.Peer) error { return nil }, UDP: "127.0.0.1:0", TCP: "127.0.0.1:0", Log: log})
+	s, err := Start(ctx, Config{Identity: hubID, Device: hubKey, Allow: func(identity.Peer) error { return nil }, UDP: "127.0.0.1:0", TCP: "127.0.0.1:0", Log: log, WriteTimeout: 300 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
