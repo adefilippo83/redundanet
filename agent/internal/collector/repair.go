@@ -30,7 +30,13 @@ const (
 	tasksPerWorker    = 2
 	retryAfterFailure = 10 * time.Minute
 	hintEvery         = time.Hour
-	defaultFloor      = 10 << 30 // an older node's floor, when its heartbeat does not say
+	// hintsPerHolder is how many surplus hints one holder is sent in a
+	// tick; the rest wait for the next. The hub keeps a short queue of
+	// control frames for each device and closes the channel of one whose
+	// queue is full, so a holder with many surplus copies must not be
+	// told about all of them at once.
+	hintsPerHolder = 16
+	defaultFloor   = 10 << 30 // an older node's floor, when its heartbeat does not say
 )
 
 // repairState is what the scheduler keeps between ticks.
@@ -583,6 +589,7 @@ func (c *Collector) hintSurplus(now time.Time, objects []Object, in planInput) {
 	if c.send == nil {
 		return
 	}
+	told := map[identity.Key]int{}
 	for _, o := range objects {
 		if o.Surplus == 0 || !o.Placed || in.running[o.key()] {
 			continue
@@ -628,9 +635,10 @@ func (c *Collector) hintSurplus(now time.Time, objects []Object, in planInput) {
 			sort.Slice(h.Holders, func(i, j int) bool { return h.Holders[i].Less(h.Holders[j]) })
 			hint, to = h, pickDev
 		}
-		if hint == nil {
+		if hint == nil || told[to] >= hintsPerHolder {
 			continue
 		}
+		told[to]++
 		c.rep.hinted[o.key()] = now
 		if err := c.send(to, wire.FrameRelease, hint); err == nil {
 			c.log.Info("surplus release hinted", "si", objectID(o.StorageIndex), "n", hint.Number, "holder", to.Short())

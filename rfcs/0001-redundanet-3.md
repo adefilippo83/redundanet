@@ -874,10 +874,20 @@ follows depends on the two labels.
   device reads the counter (the public port of a socket opened that moment,
   told by the hub's second port) every time it begins writing to a peer's
   address, and the mapping is looked for from 32 ports under that reading
-  to 16 over it, for the last three such readings; behind a router with a
-  band it is the band, with a quarter of its width on either side. Each
-  search that fails doubles the width, up to eight times, and one search
-  never covers more than 1,024 ports.
+  to 16 over it, for the last three such readings, twice as wide after a
+  search that failed. A mapping that is kept alive stays where it was made
+  while the counter and the readings move on (on the live network one was
+  found only after 45 minutes of searches that each doubled the width), so
+  the device also names every port from the lowest it has been seen at up
+  to where the counter stands, and the ports it was seen at above the
+  counter when that has come round to the start of the router's block.
+  Behind a router with a band it is the band, with a quarter of its width
+  on either side, which each search that fails doubles, up to eight times.
+  A router may pick out of a few narrow ranges far from each other (one on
+  the live network uses two, 10,900 ports apart): the ports a device has
+  been seen at are kept as up to four ranges more than 1,024 ports apart,
+  the band's width is that of the ranges together, and each range is named
+  with its own margin. One search never covers more than 1,024 ports.
 - Both routers hand ports out in order. One device opens and measures,
   the other aims. The side that dials sends 160 punches to the ports the
   other router is about to hand out, in runs of 16. Every such punch goes
@@ -895,7 +905,12 @@ follows depends on the two labels.
   reading, six readings at most. A punch gets through when it leaves from
   the port its target was opened toward. Neither side guesses how many
   connections the household behind either router opened meanwhile: one
-  measured it and the other reads it again every twelve punches.
+  measured it and the other reads it again every twelve punches. A run
+  during which the first router gave ports to something else is told with
+  how many (8 at most): its punches came out that many ports higher at
+  most, the later ones of the run more likely than the first, and the
+  second device moves its aim up by the likely number after one reading,
+  by one more after the next and one fewer after the third.
 - A device whose packets do not reach its router in the order it wrote
   them writes them one by one. Over a wireless link, packets to different
   destinations written within some twenty milliseconds of each other may
@@ -920,7 +935,19 @@ follows depends on the two labels.
   those, and each has one chance in the band's width of leaving
   from the port its target was opened toward: about two searches in three
   find a way, and the next search is another draw once the routers have
-  forgotten the mappings nobody answered.
+  forgotten the mappings nobody answered. Measured on the live network
+  (16 November 2026): one member's provider gives the household a block
+  of 128 ports, each mapping a port of its own picked from the block, and
+  the next block somewhere else when none is free. A search that wrote
+  hundreds of punches used the block up, the rest came out of a block
+  nothing was opened toward, and the next search named ports the router
+  had left. So the second device asks from five new sockets where its
+  router picks at that moment and names that first, with half its width
+  on either side; it sends no more punches than the ports it named there,
+  in an order that spreads any beginning of them over the whole. The first
+  device reads its counter after every 64 punches and names what lies
+  between two readings, so one lost answer, or a counter that came round
+  between two of them, costs one stretch and not the search.
 
 Each device writes into its log what it did and what the other said it did
 (packets, runs, runs measured exactly, readings, and how far the counter
@@ -1461,6 +1488,16 @@ in place with its mtime restored, which Tahoe's backupdb also checks today.
 Each run also re-hashes a rolling 1% of hits, oldest first, so a file that
 defeats every timestamp is still caught within about a day of runs.
 
+**Confirmation.** A file seen in the last snapshot is not asked of the
+servers on every run: its root references it. But a server can lose a share,
+or have reported one it did not hold, and below k shares only the owner's
+device can store the object again. So each run also asks the servers for the
+objects of the unchanged files they have not answered for in 13 days, oldest
+first, one part in 14 of the known paths and at most 20,000 in a run. When
+every server answered and fewer than k shares are left, the device forgets
+what it remembered of the object, hashes the file and uploads it. When a
+server did not answer, nothing is concluded and the file keeps its turn.
+
 **Per-file failures.** A file that cannot be read, because it is locked, its
 permission is denied or it vanished mid-read, is skipped, counted, listed with
 the reason and retried next run; it never fails the snapshot. A snapshot with
@@ -1608,6 +1645,15 @@ integrity state servers report. In the background every server re-reads its
 shares at a bounded rate (full pass per month, under 1% CPU) and records
 `verified_at`; a share that fails its hashes is removed, reported, and becomes
 a repair task.
+
+The re-read takes a month to reach every share, and a share whose file is not
+on the disk at all need not wait for it: once a day a server looks whether
+every row of its index has its file, without reading any, and drops the rows
+that do not, which the census reports as removals. Only a file the disk says
+does not exist counts. The marker is checked before and after the look, and
+when more than a quarter of the index (and more than 16 rows) has no file the
+server drops nothing and logs it: that is a wrong or damaged disk, not a wrong
+index.
 
 **Down and dead.** A server is down when its census heartbeat has been
 missing for 10 minutes; its shares still count toward placement, as today's

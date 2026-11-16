@@ -1,9 +1,11 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"math/rand/v2"
 	"net"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -29,6 +31,13 @@ type simRouter struct {
 	base  int
 	band  int   // how many ports from base on, for a router that picks
 	first []int // what a router that picks gives out first, from base on
+	// far, for a router that picks, is how far over the band a second one
+	// of the same width lies: every port comes out of one or the other.
+	far int
+	// block makes the band a block of ports the household has to itself:
+	// every mapping takes a port of its own, and when none is free the
+	// router goes on in another block four widths up.
+	block bool
 	// scramble is how long the first packet to a destination may be on
 	// its way to the router: packets written closer together than that
 	// get their ports in any order.
@@ -72,10 +81,25 @@ func (r *simRouter) open(s *simSocket, key string) *simPort {
 	defer r.mu.Unlock()
 	for {
 		r.next++
-		if r.band > 0 {
+		if r.block {
+			var free []int
+			for p := r.base; p < r.base+r.band; p++ {
+				if r.ports[p] == nil {
+					free = append(free, p)
+				}
+			}
+			if len(free) == 0 {
+				r.base += 4 * r.band
+				continue
+			}
+			r.next = free[rand.IntN(len(free))]
+		} else if r.band > 0 {
 			r.next = r.base + rand.IntN(r.band)
 			if len(r.first) > 0 {
 				r.next, r.first = r.base+r.first[0], r.first[1:]
+			}
+			if r.far > 0 && rand.IntN(2) == 1 {
+				r.next += r.far
 			}
 		}
 		if p := r.ports[r.next]; p != nil {
@@ -472,16 +496,32 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 		seekBackoff[i] = 1500 * time.Millisecond
 	}
 	t.Cleanup(func() { seekBackoff = old })
-	for _, bandDials := range []bool{false, true} {
-		name := "the counting side dials"
-		if bandDials {
-			name = "the side with the band dials"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		bandDials bool
+		far       int
+		block     int
+	}{
+		{name: "the counting side dials"},
+		{name: "the side with the band dials", bandDials: true},
+		// Two narrow ranges far from each other: from the lowest port to
+		// the highest is no narrow band, the two ranges are.
+		{name: "the band is two ranges", far: 10900},
+		// A block of ports that is used up in the middle of a search:
+		// the router goes on in another one, and the next search has to
+		// be about that one.
+		{name: "the band is a block that moves", block: 96},
+	} {
+		bandDials, far := c.bandDials, c.far
+		t.Run(c.name, func(t *testing.T) {
 			// The searches here follow each other within seconds and not
 			// minutes, so the hub answers as many asks as they need.
 			n := newTestNetProbe(t, false, "127.0.0.1:0", func(c *hub.Config) { c.ProbeAnswers = 1 << 16 })
 			ra, rb := newSimRouter(false, 21000), newSimBandRouter(27000, 40)
+			rb.far = far
+			if c.block > 0 {
+				rb = &simRouter{base: 27000, band: c.block, block: true, ports: map[int]*simPort{}}
+			}
 			a, aKey := n.endpoint(seed(1), true, ra.behind)
 			b, bKey := n.endpoint(seed(2), true, rb.behind)
 			eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
@@ -580,6 +620,128 @@ func TestAFixedPortFindsARouterThatCounts(t *testing.T) {
 				t.Fatalf("the counting side: %q", got)
 			}
 		})
+	}
+}
+
+// Behind a router that counts, a device names the ports around its last
+// marks and then everything its router handed out before where the
+// counter stands, down to the lowest port it was seen at; when the
+// counter has come round, also the ports it was seen at above it. Behind
+// one that picks out of narrow ranges, every range with a margin. Never
+// more than a search may cover.
+func TestTheSpansADeviceNames(t *testing.T) {
+	addr := netip.MustParseAddr("203.0.113.7")
+	device := func(mapping string, counter uint16, seen ...uint16) *session {
+		e := &Endpoint{}
+		e.nat.channel = netip.AddrPortFrom(addr, 40000)
+		e.nat.mapping = mapping
+		for _, p := range seen {
+			e.nat.ports.add(addr, netip.AddrPortFrom(addr, p))
+		}
+		e.nat.readAt, e.nat.readPort = time.Now(), counter
+		return &session{ep: e, ctx: context.Background()}
+	}
+	total := func(spans []wire.PortSpan) (n int) {
+		for _, sp := range spans {
+			n += int(sp.Count)
+		}
+		return n
+	}
+	has := func(spans []wire.PortSpan, port int) bool {
+		for _, sp := range spans {
+			if port >= int(sp.First) && port < int(sp.First)+int(sp.Count) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// The counter has gone 700 ports on since the mapping was made, and
+	// two newer marks have been taken since.
+	s := device(wire.MapSequential, 30900, 30180, 30200, 30850, 30900)
+	s.marks = []uint16{30200, 30850, 30890}
+	got := s.spans(wire.MapSequential, 0)
+	if !has(got, 30200) || !has(got, 30880) || has(got, 30100) || total(got) > wire.MaxSeekPorts || len(got) > wire.MaxSeekSpans {
+		t.Fatalf("an old mapping: %v", got)
+	}
+	// The router hands out ports 20000 to 20999 and has come round: the
+	// mapping made 300 ports ago is at the top of them.
+	s = device(wire.MapSequential, 20100, 20000, 20400, 20700, 20999, 20100)
+	got = s.spans(wire.MapSequential, 2)
+	if !has(got, 20800) || !has(got, 20999) || !has(got, 20050) || has(got, 21100) || total(got) > wire.MaxSeekPorts || len(got) > wire.MaxSeekSpans {
+		t.Fatalf("a counter that came round: %v", got)
+	}
+	// Two ranges 10,900 ports apart.
+	s = device(wire.MapConfined, 0, 41000, 41100, 41050, 52000, 52090)
+	got = s.spans(wire.MapConfined, 0)
+	if len(got) != 2 || !has(got, 40990) || !has(got, 41110) || !has(got, 52095) || has(got, 45000) || total(got) > 300 {
+		t.Fatalf("two ranges: %v", got)
+	}
+	if got = s.spans(wire.MapConfined, 9); total(got) > wire.MaxSeekPorts || !has(got, 52000) {
+		t.Fatalf("two ranges after many searches: %v", got)
+	}
+}
+
+// Where a run's packets came out when the router gave ports to something
+// else meanwhile: with one port over, three rounds try both places for
+// every packet, and the first round takes the likelier one.
+func TestStraysAreAimedAt(t *testing.T) {
+	for n := 1; n <= 16; n++ {
+		for i := 0; i < n; i++ {
+			if strays(i, n, 0, 0) != 0 {
+				t.Fatalf("nothing over: place %d of %d is moved", i, n)
+			}
+			tried := map[int]bool{}
+			for round := 0; round < 3; round++ {
+				tried[strays(i, n, 1, round)] = true
+			}
+			if !tried[0] || !tried[1] {
+				t.Fatalf("one over: place %d of %d tried %v", i, n, tried)
+			}
+			for over := 1; over <= wire.MaxSeekOver; over++ {
+				for round := 0; round < 6; round++ {
+					if up := strays(i, n, over, round); up < 0 || up > over {
+						t.Fatalf("%d over: place %d of %d is moved by %d", over, i, n, up)
+					}
+				}
+			}
+		}
+	}
+	if first, last := strays(0, 4, 1, 0), strays(3, 4, 1, 0); first != 0 || last != 1 {
+		t.Fatalf("one over in a run of four: the first packet moved by %d, the last by %d", first, last)
+	}
+	got := wire.Openings([]wire.Opening{{To: 100, Count: 4, From: 200, Over: 200}, {To: 104, Count: 4, From: 210, Exact: true, Over: 3}, {To: 108, Count: 4, Over: 2}})
+	if got[0].Over != wire.MaxSeekOver || got[1].Over != 0 || got[2].Over != 0 {
+		t.Fatalf("ports over: %+v", got)
+	}
+}
+
+// Every beginning of the order a device tries ports in is spread over
+// all of them, and the order has each port once.
+func TestTriesAreSpread(t *testing.T) {
+	for _, n := range []int{1, 2, 7, 128, 170, 1000, 1024} {
+		order := spread(n)
+		seen := map[int]bool{}
+		for _, i := range order {
+			seen[i] = true
+		}
+		if len(order) != n || len(seen) != n {
+			t.Fatalf("%d ports: %d tries of %d", n, len(order), len(seen))
+		}
+		if n < 100 {
+			continue
+		}
+		// The first quarter of the tries has one in every eighth.
+		eighths := map[int]bool{}
+		for _, i := range order[:n/4] {
+			eighths[i*8/n] = true
+		}
+		if len(eighths) != 8 {
+			t.Fatalf("%d ports: the first quarter of the tries is in %d eighths", n, len(eighths))
+		}
+	}
+	if spread(0) != nil {
+		t.Fatal("no ports, and tries")
 	}
 }
 

@@ -369,7 +369,7 @@ type Device struct {
 	PortKept   bool    `json:"port_kept,omitempty"`
 	Router     string  `json:"router,omitempty"`
 	// PortBand is how wide the band of public ports the device was seen
-	// at is, PortPooled whether it got more than one public address at
+	// at is (its ranges together, when they are a few far apart), PortPooled whether it got more than one public address at
 	// once, and PCP whether something upstream answers the port control
 	// protocol.
 	PortBand   int32  `json:"port_band,omitempty"`

@@ -1061,13 +1061,15 @@ func openStore(disk, dataDir string, floorGB int64, lg *slog.Logger) (*store.Sto
 	return store.Open(store.Config{Root: root, RecordPath: filepath.Join(dataDir, "storage-id"), Floor: floorGB << 30, Log: lg})
 }
 
-// storeMaintenance expires stale partial shares, scrubs complete ones at
+// storeMaintenance drops the index rows whose file is gone (once a day),
+// expires stale partial shares, scrubs complete ones at
 // a rate that covers the store about once a month, purges the shares of
 // tombstones past the window, and applies membership-driven deletion on
 // this server's own clock.
 func storeMaintenance(ctx context.Context, st *store.Store, active func(identity.Key) bool, grace func() time.Duration, lg *slog.Logger) {
 	t := time.NewTicker(10 * time.Minute)
 	defer t.Stop()
+	var looked time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -1076,6 +1078,15 @@ func storeMaintenance(ctx context.Context, st *store.Store, active func(identity
 		}
 		if st.Available() != nil {
 			continue
+		}
+		// Once a day, and ten minutes after a start: rows without a file.
+		if time.Since(looked) >= 24*time.Hour {
+			looked = time.Now()
+			if checked, dropped, err := st.DropMissing(ctx); err != nil && ctx.Err() == nil {
+				lg.Warn("shares without a file not dropped", "checked", checked, "err", err)
+			} else if dropped > 0 {
+				lg.Warn("shares dropped from the index: their files are not on the disk", "checked", checked, "dropped", dropped)
+			}
 		}
 		if n, err := st.ExpirePartials(7 * 24 * time.Hour); err != nil {
 			lg.Warn("partial shares not expired", "err", err)

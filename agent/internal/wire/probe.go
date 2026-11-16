@@ -183,7 +183,8 @@ type CensusNAT struct {
 	// router for its outside address (wire.Router*); empty when not asked.
 	Router string `cbor:"router,omitempty" json:"router,omitempty"`
 	// Band is the width of the public ports the device has been seen at
-	// on its present address, a number of ports and not a port. Pooled
+	// on its present address, a number of ports and not a port: of up to
+	// four ranges together when the ports fall in ranges far apart. Pooled
 	// says sockets opened one after the other got more than one public
 	// address. PCP says something upstream answered at the port control
 	// protocol's well-known address, which a carrier's translator may.

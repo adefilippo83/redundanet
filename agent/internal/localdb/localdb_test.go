@@ -133,3 +133,40 @@ func TestVerificationsAreKeptNewestFirst(t *testing.T) {
 		t.Fatal("an empty test passed")
 	}
 }
+
+// The files the servers have not answered for come oldest first, a part
+// of the known paths per call, and a file without an object is never one.
+func TestOldestConfirmed(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	d, err := Open(t.TempDir(), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	for i, r := range []ScanRow{
+		{Path: "/never", Key: "k", Size: 10, Cap: "c"},
+		{Path: "/old", Key: "k", Size: 10, Cap: "c", LastConfirmed: now.Add(-20 * 24 * time.Hour)},
+		{Path: "/new", Key: "k", Size: 10, Chunks: []string{"a", "b"}, LastConfirmed: now.Add(-time.Hour)},
+		{Path: "/inline", Key: "k", Size: 10},
+	} {
+		r.LastSeen, r.LastHashed = now, now
+		if err := d.RememberScan(r); err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	before := now.Add(-13 * 24 * time.Hour)
+	got, err := d.OldestConfirmed(before, 4, 100)
+	if err != nil || len(got) != 1 || !got["/never"] {
+		t.Fatalf("one part in four: %v %v", got, err)
+	}
+	got, err = d.OldestConfirmed(before, 1, 100)
+	if err != nil || len(got) != 2 || !got["/never"] || !got["/old"] {
+		t.Fatalf("all that are due: %v %v", got, err)
+	}
+	if row, _ := d.LookupScan("/old"); row == nil || !row.LastConfirmed.Equal(now.Add(-20*24*time.Hour)) {
+		t.Fatalf("the confirmation did not come back: %+v", row)
+	}
+	if row, _ := d.LookupScan("/never"); row == nil || !row.LastConfirmed.IsZero() {
+		t.Fatalf("a row never confirmed: %+v", row)
+	}
+}
