@@ -293,6 +293,45 @@ func TestSchedulerRaisesSpreadAndHintsSurplus(t *testing.T) {
 	}
 }
 
+// A holder with many surplus copies is told about a few in a tick and
+// about the rest in the next ones: the hub closes the channel of a device
+// whose queue of control frames is full.
+func TestSurplusHintsComeAFewAtATime(t *testing.T) {
+	sw := newSchedulerWorld(t, []manifest.Hub{{Name: "hub"}}, nil)
+	sw.online(100<<30, falcon, spare, third)
+	const objects = 2*hintsPerHolder + 8
+	var onFalcon, onSpare, onThird []wire.ShareEntry
+	for i := 0; i < objects; i++ {
+		si := byte(10 + i)
+		onFalcon = append(onFalcon, share(si, 0, alice), share(si, 1, alice))
+		onSpare = append(onSpare, share(si, 0, alice), share(si, 2, alice))
+		onThird = append(onThird, share(si, 3, alice))
+	}
+	sw.report(falcon, 1, onFalcon...)
+	sw.report(spare, 1, onSpare...)
+	sw.report(third, 1, onThird...)
+	sw.advance(25 * time.Hour)
+	sw.online(100<<30, falcon, spare, third)
+	ctx := context.Background()
+	for _, want := range []int{hintsPerHolder, 2 * hintsPerHolder, objects, objects} {
+		sw.c.Schedule(ctx)
+		hints := sw.hints()
+		if len(hints) != want {
+			t.Fatalf("%d hints after this tick, want %d", len(hints), want)
+		}
+		seen := map[byte]bool{}
+		for _, h := range hints {
+			if h.to != spare {
+				t.Fatalf("hint to %s", h.to.Short())
+			}
+			seen[h.v.(*wire.ReleaseHint).StorageIndex[0]] = true
+		}
+		if len(seen) != want {
+			t.Fatalf("%d objects hinted, want %d", len(seen), want)
+		}
+	}
+}
+
 func TestOneSchedulerAtATime(t *testing.T) {
 	var mu sync.Mutex
 	otherUp := true

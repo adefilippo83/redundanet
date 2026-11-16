@@ -256,7 +256,9 @@ room for a share the page says "blocked: X short above the floors", which
 tells the community to add disk. When a server returns from the dead and
 an object has more complete shares than n, the hub hints at the holder
 with the most shares; that holder asks the other holders itself and gives
-its copy up only once every share number stays complete without it.
+its copy up only once every share number stays complete without it. One
+holder is sent at most 16 hints a minute, and an object is hinted once an
+hour.
 Tasks live in `placement.sqlite` with the table, so a hub restart neither
 loses nor doubles them. `storage drop`, run on a node as the service user
 beside the running agent, removes one share on purpose: the census
