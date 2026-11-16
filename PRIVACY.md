@@ -70,7 +70,8 @@ device to its peers and writes them in its own log. To find a direct path
 between two devices behind routers that give another port for every
 destination, each tells the other, through the hub, how its router hands
 out ports, a few ranges of its own public ports, which of them the packets
-it just sent to the other came out of, and how many packets it sent; the
+it just sent to the other came out of, how many packets it sent and how
+many ports its router gave to something else meanwhile; the
 hub passes that on with the sender's address and keeps none of it. When two devices of a
 member pair through the hub, the hub relays their sealed frames for a few
 minutes and sees only the two addresses and that a pairing happened, not
@@ -89,8 +90,8 @@ stored, how many peers it reaches directly or through a relay, how reachable
 its router leaves it for a direct connection (one word, with whether it has
 public IPv6), who holds its public address (its own router, something beyond
 it such as the provider, or unknown), how its router hands out ports (the
-differences between a few public ports and the width of the band they fall
-in, never a port; whether it got more than one public address at once; and
+differences between a few public ports and the width of the band, or of
+the few ranges together, they fall in, never a port; whether it got more than one public address at once; and
 whether something upstream answers the port control protocol), and relayed
 byte counts. Per member: name, status, contribution and allocation, devices
 and how many are online, bytes stored, object counts, the day of the last
