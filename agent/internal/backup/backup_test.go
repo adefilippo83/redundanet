@@ -342,3 +342,64 @@ func TestReturningFileIsProbedBeforeReuse(t *testing.T) {
 		t.Fatalf("%d probes for files the last snapshot holds", w.fake.Checks)
 	}
 }
+
+// An unchanged file's object is asked of the servers again when it has
+// gone two weeks without an answer, and stored again when every server
+// answered and it is no longer readable.
+func TestAnUnchangedFileIsConfirmedInItsTurn(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	report := filepath.Join(w.src, "docs", "report.bin")
+	run := func() {
+		t.Helper()
+		// Keep the rolling re-hash off the file: the confirmation is the
+		// path under test.
+		for _, name := range []string{"report.bin", "same.bin"} {
+			if row, _ := w.db.LookupScan(filepath.Join(w.src, "docs", name)); row != nil {
+				row.LastHashed = w.now
+				_ = w.db.RememberScan(*row)
+			}
+		}
+		if _, err := w.run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run()
+	h := object.Sum(pattern(300_000, 1))
+	rc, ok, _ := w.fake.Has(ctx, h, 300_000)
+	if !ok {
+		t.Fatal("the report's object is not stored")
+	}
+	// The servers lose the object. The day after, nothing asks for it:
+	// the upload confirmed it.
+	if err := w.fake.Delete(ctx, rc); err != nil {
+		t.Fatal(err)
+	}
+	w.fake.Checks = 0
+	w.now = w.now.Add(24 * time.Hour)
+	run()
+	if w.fake.Checks != 0 || !w.fake.Tombstoned(rc) {
+		t.Fatalf("a day after the upload: %d checks, stored again %v", w.fake.Checks, !w.fake.Tombstoned(rc))
+	}
+	// Two weeks on it is the file's turn, and a server does not answer:
+	// the file is not stored again and keeps its turn.
+	w.now = w.now.Add(14 * 24 * time.Hour)
+	w.fake.Silent = 1
+	run()
+	if w.fake.Checks == 0 || !w.fake.Tombstoned(rc) {
+		t.Fatalf("with a server away: %d checks, stored again %v", w.fake.Checks, !w.fake.Tombstoned(rc))
+	}
+	if row, _ := w.db.LookupScan(report); row == nil || !row.LastConfirmed.Before(w.now) {
+		t.Fatalf("the file counts as confirmed by servers that did not all answer: %+v", row)
+	}
+	// Every server answers: the object is gone, the file is stored again.
+	w.fake.Silent = 0
+	w.now = w.now.Add(24 * time.Hour)
+	run()
+	if w.fake.Tombstoned(rc) {
+		t.Fatal("the lost object was not stored again")
+	}
+	if row, _ := w.db.LookupScan(report); row == nil || !row.LastConfirmed.Equal(w.now) {
+		t.Fatalf("the file stored again is not confirmed now: %+v", row)
+	}
+}

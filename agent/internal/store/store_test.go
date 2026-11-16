@@ -638,3 +638,72 @@ func TestUsageExcludesTheEncodingBeingRetired(t *testing.T) {
 		t.Fatalf("usage %d, excluding 2-of-4 %d, excluding an absent encoding %d", all, without, other)
 	}
 }
+
+// A share whose file is gone is dropped from the index and told to the
+// census; one that is on the disk, and one that cannot be looked at, stay.
+func TestSharesWithoutAFileAreDropped(t *testing.T) {
+	s, _ := newStore(t)
+	o := newOwner(t, 1)
+	kept := encode(t, o, data(7000, 4))
+	lost := encode(t, o, data(7000, 5))
+	putAll(t, s, kept, 0)
+	putAll(t, s, lost, 0)
+	putAll(t, s, lost, 1)
+	before, err := s.Generation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	si := lost.sd.Descriptor.StorageIndex
+	if err := os.Remove(s.sharePath(o.member, si, 0, placeIndex)); err != nil {
+		t.Fatal(err)
+	}
+	checked, dropped, err := s.DropMissing(context.Background())
+	if err != nil || checked != 3 || dropped != 1 {
+		t.Fatalf("checked %d dropped %d err %v", checked, dropped, err)
+	}
+	pres, err := s.Has(o.member, si)
+	if err != nil || pres == nil || len(pres.Complete) != 1 || pres.Complete[0] != 1 {
+		t.Fatalf("what is left of the object: %+v %v", pres, err)
+	}
+	d, err := s.Census(before)
+	if err != nil || len(d.Removed) != 1 || d.Removed[0].Number != 0 {
+		t.Fatalf("the census after the drop: %+v %v", d, err)
+	}
+	if _, dropped, err := s.DropMissing(context.Background()); err != nil || dropped != 0 {
+		t.Fatalf("a second look dropped %d: %v", dropped, err)
+	}
+	// Without the marker the disk is not this node's: nothing is dropped.
+	_ = os.Remove(s.sharePath(o.member, si, 1, placeIndex))
+	marker := filepath.Join(s.cfg.Root, markerName)
+	mk, _ := os.ReadFile(marker)
+	_ = os.Remove(marker)
+	if _, dropped, err := s.DropMissing(context.Background()); !errors.Is(err, ErrUnavailable) || dropped != 0 {
+		t.Fatalf("without the marker: dropped %d, %v", dropped, err)
+	}
+	if pres, _ := s.Has(o.member, si); pres == nil || len(pres.Complete) != 1 {
+		t.Fatal("a share was dropped from a disk without its marker")
+	}
+	_ = os.WriteFile(marker, mk, 0o644)
+}
+
+// When more than a quarter of the index has no file, and more than a few
+// rows, the index is left alone.
+func TestAnIndexMostlyWithoutFilesIsLeftAlone(t *testing.T) {
+	s, _ := newStore(t)
+	o := newOwner(t, 1)
+	const objects = 40
+	for i := 0; i < objects; i++ {
+		ob := encode(t, o, data(3000, byte(i+1)))
+		putAll(t, s, ob, 0)
+		if i < missingFew+1 {
+			_ = os.Remove(s.sharePath(o.member, ob.sd.Descriptor.StorageIndex, 0, placeIndex))
+		}
+	}
+	checked, dropped, err := s.DropMissing(context.Background())
+	if !errors.Is(err, ErrManyMissing) || dropped != 0 || checked != objects {
+		t.Fatalf("checked %d dropped %d err %v", checked, dropped, err)
+	}
+	if shares, _, _ := s.Totals(); shares != objects {
+		t.Fatalf("%d rows left of %d", shares, objects)
+	}
+}

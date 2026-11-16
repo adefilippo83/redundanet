@@ -56,6 +56,23 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 			return nil, fmt.Errorf("localdb: %w", err)
 		}
 	}
+	// last_confirmed came after the first databases: a row from before it
+	// was never confirmed, which is what zero says.
+	var has int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('scan') WHERE name = 'last_confirmed'`).Scan(&has); err == nil && has == 0 {
+		_, err = db.Exec(`ALTER TABLE scan ADD COLUMN last_confirmed INTEGER NOT NULL DEFAULT 0`)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("localdb: %w", err)
+		}
+	} else if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("localdb: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS scan_confirmed ON scan(last_confirmed)`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("localdb: %w", err)
+	}
 	return d, nil
 }
 
@@ -267,6 +284,9 @@ type ScanRow struct {
 	Chunks     []string // chunk capabilities for a large file
 	LastSeen   time.Time
 	LastHashed time.Time
+	// LastConfirmed is when the servers last answered for the objects, at
+	// the upload or at a probe; zero when never.
+	LastConfirmed time.Time
 }
 
 // LookupScan returns the row of a path, nil when unknown.
@@ -275,9 +295,9 @@ func (d *DB) LookupScan(path string) (*ScanRow, error) {
 	var h []byte
 	var chunks sql.NullString
 	var capStr sql.NullString
-	var seen, hashed int64
-	err := d.db.QueryRow(`SELECT path, key, hash, size, cap, chunks, last_seen, last_hashed FROM scan WHERE path = ?`, path).
-		Scan(&r.Path, &r.Key, &h, &r.Size, &capStr, &chunks, &seen, &hashed)
+	var seen, hashed, confirmed int64
+	err := d.db.QueryRow(`SELECT path, key, hash, size, cap, chunks, last_seen, last_hashed, last_confirmed FROM scan WHERE path = ?`, path).
+		Scan(&r.Path, &r.Key, &h, &r.Size, &capStr, &chunks, &seen, &hashed, &confirmed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -290,16 +310,53 @@ func (d *DB) LookupScan(path string) (*ScanRow, error) {
 		r.Chunks = splitChunks(chunks.String)
 	}
 	r.LastSeen, r.LastHashed = time.Unix(seen, 0), time.Unix(hashed, 0)
+	if confirmed > 0 {
+		r.LastConfirmed = time.Unix(confirmed, 0)
+	}
 	return &r, nil
 }
 
 // RememberScan upserts a row.
 func (d *DB) RememberScan(r ScanRow) error {
-	_, err := d.db.Exec(`INSERT INTO scan (path, key, hash, size, cap, chunks, last_seen, last_hashed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	var confirmed int64
+	if !r.LastConfirmed.IsZero() {
+		confirmed = r.LastConfirmed.Unix()
+	}
+	_, err := d.db.Exec(`INSERT INTO scan (path, key, hash, size, cap, chunks, last_seen, last_hashed, last_confirmed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (path) DO UPDATE SET key = excluded.key, hash = excluded.hash, size = excluded.size, cap = excluded.cap, chunks = excluded.chunks,
-		last_seen = excluded.last_seen, last_hashed = excluded.last_hashed`,
-		r.Path, r.Key, r.Hash[:], r.Size, r.Cap, joinChunks(r.Chunks), r.LastSeen.Unix(), r.LastHashed.Unix())
+		last_seen = excluded.last_seen, last_hashed = excluded.last_hashed, last_confirmed = excluded.last_confirmed`,
+		r.Path, r.Key, r.Hash[:], r.Size, r.Cap, joinChunks(r.Chunks), r.LastSeen.Unix(), r.LastHashed.Unix(), confirmed)
 	return err
+}
+
+// OldestConfirmed lists the paths whose objects the servers have not
+// answered for since before the given time, oldest first: one part in
+// cycle of the known paths per call, at least one and at most limit, so
+// every file is confirmed about once a cycle of runs and no run asks for
+// all of them.
+func (d *DB) OldestConfirmed(before time.Time, cycle, limit int) (map[string]bool, error) {
+	var n int
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM scan`).Scan(&n); err != nil {
+		return nil, err
+	}
+	take := max(1, (n+cycle-1)/cycle)
+	if take > limit {
+		take = limit
+	}
+	rows, err := d.db.Query(`SELECT path FROM scan WHERE last_confirmed < ? AND (cap <> '' OR chunks <> '') ORDER BY last_confirmed ASC, path ASC LIMIT ?`, before.Unix(), take)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out[p] = true
+	}
+	return out, rows.Err()
 }
 
 // OldestHashed lists the paths whose hash is oldest, for the rolling

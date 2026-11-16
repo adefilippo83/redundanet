@@ -1041,6 +1041,99 @@ func (s *Store) Census(since uint64) (*CensusDelta, error) {
 	return d, rows.Err()
 }
 
+// ErrManyMissing is why DropMissing dropped nothing: so much of the index
+// has no file that the disk is more likely the wrong one, or damaged, than
+// the index wrong. Someone has to look.
+var ErrManyMissing = errors.New("store: too many shares have no file; nothing dropped")
+
+// missingMost is the part of the index DropMissing drops by itself: one
+// row in four, and any number up to missingFew.
+const (
+	missingMost = 4
+	missingFew  = 16
+)
+
+// DropMissing removes the index rows whose share file is not on the disk,
+// complete or partial, and records each removal for the census: a row
+// without a file is a share this server says it holds and cannot serve,
+// which the hub counts and repair then never replaces. Only a file the
+// disk says does not exist counts; a file that cannot be looked at for any
+// other reason is left to the scrub. The marker is checked before and
+// after the look, and nothing is dropped when more than a quarter of the
+// index is missing: see ErrManyMissing.
+func (s *Store) DropMissing(ctx context.Context) (checked, dropped int, err error) {
+	if err := s.Available(); err != nil {
+		return 0, 0, err
+	}
+	rows, err := s.db.Query(`SELECT owner, si, n, place FROM shares`)
+	if err != nil {
+		return 0, 0, err
+	}
+	type placed struct {
+		shareKey
+		place int
+	}
+	var all, gone []placed
+	for rows.Next() {
+		var o, si []byte
+		var k placed
+		if err := rows.Scan(&o, &si, &k.n, &k.place); err != nil {
+			rows.Close()
+			return 0, 0, err
+		}
+		copy(k.owner[:], o)
+		copy(k.si[:], si)
+		all = append(all, k)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, 0, err
+	}
+	absent := func(k placed) bool {
+		_, err := os.Lstat(s.sharePath(k.owner, k.si, k.n, k.place))
+		return errors.Is(err, os.ErrNotExist)
+	}
+	for _, k := range all {
+		if err := ctx.Err(); err != nil {
+			return checked, 0, err
+		}
+		checked++
+		if absent(k) {
+			gone = append(gone, k)
+		}
+	}
+	if len(gone) == 0 {
+		return checked, 0, nil
+	}
+	if len(gone) > missingFew && len(gone)*missingMost > len(all) {
+		return checked, 0, fmt.Errorf("%w: %d of %d", ErrManyMissing, len(gone), len(all))
+	}
+	if err := s.Available(); err != nil {
+		return checked, 0, err
+	}
+	for _, k := range gone {
+		if err := ctx.Err(); err != nil {
+			return checked, dropped, err
+		}
+		// A put writes its row and then its file under begin: with begin
+		// held, a row without a file is not a put that has just started.
+		s.begin.Lock()
+		var err error
+		if absent(k) {
+			err = s.Remove(k.owner, k.si, k.n, "its file is not on the disk")
+		} else {
+			err = ErrNotFound
+		}
+		s.begin.Unlock()
+		switch {
+		case err == nil:
+			dropped++
+		case !errors.Is(err, ErrNotFound):
+			return checked, dropped, err
+		}
+	}
+	return checked, dropped, nil
+}
+
 // Scrub re-reads up to limit complete shares, oldest verification first,
 // checks every block against the signed hashes, removes a share that
 // fails and reports it. The caller paces it: a full pass per month under

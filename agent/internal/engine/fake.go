@@ -34,6 +34,8 @@ type Fake struct {
 	UsageBytes int64
 	Deletes    int // how many delete tokens were sent
 	Checks     int // how many placement checks were asked
+	// Silent is how many servers do not answer a placement check.
+	Silent int
 	// RootsAnswered is how many servers GetRoots reports answering; -1
 	// means all of them.
 	RootsAnswered int
@@ -129,7 +131,7 @@ func (f *Fake) Check(_ context.Context, rc object.ReadCap) (*Health, error) {
 	f.mu.Lock()
 	f.Checks++
 	f.mu.Unlock()
-	h := &Health{Cap: rc.Verify(), K: f.K, N: f.N, Holders: map[identity.Key][]uint8{}, Asked: f.N, Answered: f.N}
+	h := &Health{Cap: rc.Verify(), K: f.K, N: f.N, Holders: map[identity.Key][]uint8{}, Asked: f.N, Answered: f.N - f.Silent}
 	if _, ok := f.find(rc); !ok {
 		return h, nil
 	}
