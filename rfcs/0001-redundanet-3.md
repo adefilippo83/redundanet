@@ -1488,6 +1488,16 @@ in place with its mtime restored, which Tahoe's backupdb also checks today.
 Each run also re-hashes a rolling 1% of hits, oldest first, so a file that
 defeats every timestamp is still caught within about a day of runs.
 
+**Confirmation.** A file seen in the last snapshot is not asked of the
+servers on every run: its root references it. But a server can lose a share,
+or have reported one it did not hold, and below k shares only the owner's
+device can store the object again. So each run also asks the servers for the
+objects of the unchanged files they have not answered for in 13 days, oldest
+first, one part in 14 of the known paths and at most 20,000 in a run. When
+every server answered and fewer than k shares are left, the device forgets
+what it remembered of the object, hashes the file and uploads it. When a
+server did not answer, nothing is concluded and the file keeps its turn.
+
 **Per-file failures.** A file that cannot be read, because it is locked, its
 permission is denied or it vanished mid-read, is skipped, counted, listed with
 the reason and retried next run; it never fails the snapshot. A snapshot with
@@ -1635,6 +1645,15 @@ integrity state servers report. In the background every server re-reads its
 shares at a bounded rate (full pass per month, under 1% CPU) and records
 `verified_at`; a share that fails its hashes is removed, reported, and becomes
 a repair task.
+
+The re-read takes a month to reach every share, and a share whose file is not
+on the disk at all need not wait for it: once a day a server looks whether
+every row of its index has its file, without reading any, and drops the rows
+that do not, which the census reports as removals. Only a file the disk says
+does not exist counts. The marker is checked before and after the look, and
+when more than a quarter of the index (and more than 16 rows) has no file the
+server drops nothing and logs it: that is a wrong or damaged disk, not a wrong
+index.
 
 **Down and dead.** A server is down when its census heartbeat has been
 missing for 10 minutes; its shares still count toward placement, as today's

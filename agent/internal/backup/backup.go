@@ -92,6 +92,7 @@ type run struct {
 	id           string
 	excludes     []string
 	rehash       map[string]bool
+	confirm      map[string]bool // unchanged files whose objects are asked of the servers in this run
 	prog         Progress
 	reasons      map[string]int64
 	lastSnapshot time.Time // when the last published snapshot started; zero before the first
@@ -132,6 +133,12 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	// The rolling re-hash: about 1% of the known paths, oldest first.
 	if rows, err := cfg.DB.OldestHashed(100); err == nil {
 		r.rehash = rows
+	}
+
+	// The rolling confirmation: the files the servers have not answered
+	// for in confirmEvery, a part in confirmCycle of the known paths.
+	if rows, err := cfg.DB.OldestConfirmed(r.start.Add(-confirmEvery), confirmCycle, confirmMost); err == nil {
+		r.confirm = rows
 	}
 
 	var tops []snapshot.Entry
@@ -383,7 +390,7 @@ func (r *run) scanFile(ctx context.Context, p string) (*snapshot.Entry, error) {
 	if fi2, err := f.Stat(); err == nil && scanKey(p, fi2) != key {
 		return nil, errors.New("changed while being read")
 	}
-	newRow := localdb.ScanRow{Path: p, Key: key, Hash: hash, Size: fi.Size(), LastSeen: now, LastHashed: now}
+	newRow := localdb.ScanRow{Path: p, Key: key, Hash: hash, Size: fi.Size(), LastSeen: now, LastHashed: now, LastConfirmed: now}
 	if fi.Size() <= snapshot.ChunkSize {
 		capStr, err := r.storeSection(ctx, f, 0, fi.Size(), row, hash)
 		if err != nil {
@@ -405,15 +412,31 @@ func (r *run) scanFile(ctx context.Context, p string) (*snapshot.Entry, error) {
 	return e, nil
 }
 
+// An unchanged file's objects are asked of the servers again once they
+// have gone confirmEvery without an answer, a part in confirmCycle of the
+// known paths in one run and never more than confirmMost: a storage
+// server can lose a share, or have said it held one it did not, and the
+// owner's device is the only one that can store the object again when
+// fewer than k are left.
+const (
+	confirmEvery = 13 * 24 * time.Hour
+	confirmCycle = 14
+	confirmMost  = 20000
+)
+
 // stillStored is the RFC's check before a root: a capability taken from
 // the scan cache that the previous root may not reference is confirmed
 // on the servers, which also touches it there. A file seen in the last
-// published snapshot is referenced by the current root and needs no
-// probe; one that was away longer, or any file before the first
-// snapshot, is probed, and an object that is gone or tombstoned makes
-// the file a miss, hashed and stored again.
+// published snapshot is referenced by the current root and is probed
+// only when its turn in the rolling confirmation has come; one that was
+// away longer, or any file before the first snapshot, is always probed.
+// An object that is gone or tombstoned makes the file a miss, hashed and
+// stored again. In the rolling confirmation an object is gone only when
+// every server answered and fewer than k shares are left: a server that
+// is away for an hour is no reason to upload a file again.
 func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
-	if !r.lastSnapshot.IsZero() && !row.LastSeen.Before(r.lastSnapshot) {
+	away := r.lastSnapshot.IsZero() || row.LastSeen.Before(r.lastSnapshot)
+	if !away && !r.confirm[row.Path] {
 		return true
 	}
 	caps := row.Chunks
@@ -426,11 +449,24 @@ func (r *run) stillStored(ctx context.Context, row *localdb.ScanRow) bool {
 			return false
 		}
 		h, err := r.cfg.Engine.Check(ctx, rc)
+		answered := err == nil && h != nil && h.Answered >= h.Asked
+		if !away && !answered {
+			// Not every server answered: the file keeps its turn.
+			return true
+		}
 		if err != nil || h == nil || !h.Readable {
+			if answered {
+				// What the device remembers of the object is wrong too: the
+				// upload asks the servers and not the cache.
+				if o, _ := r.cfg.DB.LookupByCap(c); o != nil {
+					_ = r.cfg.DB.Forget(o.PlaintextHash, o.Params)
+				}
+			}
 			r.log.Info("a cached object is gone from the grid; the file is stored again", "err", err)
 			return false
 		}
 	}
+	row.LastConfirmed = r.cfg.Now()
 	return true
 }
 
