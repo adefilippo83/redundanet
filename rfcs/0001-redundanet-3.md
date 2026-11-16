@@ -896,12 +896,28 @@ follows depends on the two labels.
   the port its target was opened toward. Neither side guesses how many
   connections the household behind either router opened meanwhile: one
   measured it and the other reads it again every twelve punches.
+- A device whose packets do not reach its router in the order it wrote
+  them writes them one by one. Over a wireless link, packets to different
+  destinations written within some twenty milliseconds of each other may
+  be passed on in any order, and the router then numbers them in that
+  order: the readings no longer say which punch got which port. The probe
+  finds out by asking from four new sockets at the same moment, twice:
+  ports that do not rise in the order of the asks mark the device. Such a
+  device spaces every punch and every reading of a search 30 milliseconds
+  apart, opens 96 ports in runs of 4 where another opens 160 in runs of
+  16, and spaces its punches the same way when it aims. On the live
+  network (3.0.28) a wired server and a wireless laptop behind the same
+  router showed the difference: the server found a way to every peer,
+  the laptop measured one run in ten exactly and found none to a peer
+  behind another router that counts.
 - One router hands ports out in order and the other picks each out of a
   narrow band. The first device opens as above, toward every port of the
   band the second names (the band with a quarter of its width on either
-  side), and says which of its ports each punch came out of. The second
-  cannot aim, since its router picks. It sends one punch to each port the
-  first opened, and each has one chance in the band's width of leaving
+  side). The second
+  cannot aim, since its router picks, so which punch got which port does
+  not matter here: the first names every port its router gave out between
+  its first reading and its last. The second sends one punch to each of
+  those, and each has one chance in the band's width of leaving
   from the port its target was opened toward: about two searches in three
   find a way, and the next search is another draw once the routers have
   forgotten the mappings nobody answered.

@@ -364,7 +364,9 @@ the RFC's "Searching for the port"): between two routers that count, one
 device opens ports and measures which of its own each packet left from
 (`open`, `Endpoint.reading`), and the other reads its counter and aims
 (`fire`), or writes to all of them when its router picks out of a band
-(`try`). The hub writes
+(`try`). A device whose packets reach its router out of order when they
+leave together (`burstInOrder`, wireless links mostly) writes them 30 ms
+apart. The hub writes
 to a device from one goroutine per device, with a bounded control queue
 (64 frames) and a ten-second write deadline: a full queue or a late write
 closes that device's connection, and `Server.Send` never waits. The candidates

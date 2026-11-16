@@ -29,6 +29,10 @@ type simRouter struct {
 	base  int
 	band  int   // how many ports from base on, for a router that picks
 	first []int // what a router that picks gives out first, from base on
+	// scramble is how long the first packet to a destination may be on
+	// its way to the router: packets written closer together than that
+	// get their ports in any order.
+	scramble time.Duration
 
 	mu      sync.Mutex
 	next    int // the last public port handed out
@@ -218,6 +222,31 @@ func (s *simSocket) WriteTo(b []byte, addr net.Addr) (int, error) {
 	default:
 	}
 	pub := s.public[key]
+	if pub == nil && s.r.scramble > 0 {
+		s.mu.Unlock()
+		held := append([]byte(nil), b...)
+		go func() {
+			time.Sleep(rand.N(s.r.scramble))
+			s.mu.Lock()
+			select {
+			case <-s.closed:
+				s.mu.Unlock()
+				return
+			default:
+			}
+			pub := s.public[key]
+			if pub == nil {
+				pub = s.r.open(s, key)
+				s.public[key], s.born[key] = pub, time.Now()
+			}
+			s.sent[to.String()] = true
+			s.mu.Unlock()
+			if to.IP.IsLoopback() {
+				_, _ = pub.conn.WriteToUDP(held, to)
+			}
+		}()
+		return len(b), nil
+	}
 	if pub == nil {
 		pub = s.r.open(s, key)
 		s.public[key], s.born[key] = pub, time.Now()
@@ -362,6 +391,48 @@ func TestTwoRoutersThatCountAreSearched(t *testing.T) {
 			}
 			if got := answers[len(answers)-1]; !strings.Contains(got, "aiming at the ports the peer opened: direct") || !strings.Contains(got, "the peer opened 160 ports in 10 runs") {
 				t.Fatalf("the side that aimed: %q", answers)
+			}
+		})
+	}
+}
+
+// One device's packets reach its router in any order when they are
+// written within a few milliseconds of each other, as over a wireless
+// link. Its probe notices, and it then writes the packets of a search
+// one by one, whether it opens or aims.
+func TestARouterReachedOutOfOrderIsSearchedOneByOne(t *testing.T) {
+	for _, scrambledDials := range []bool{true, false} {
+		name := "the device out of order dials"
+		if !scrambledDials {
+			name = "the device out of order answers"
+		}
+		t.Run(name, func(t *testing.T) {
+			n := newTestNetProbe(t, false, "127.0.0.1:0")
+			ra, rb := newSimRouter(false, 21000), newSimRouter(false, 25000)
+			ra.scramble = 10 * time.Millisecond
+			a, aKey := n.endpoint(seed(1), true, ra.behind)
+			b, bKey := n.endpoint(seed(2), true, rb.behind)
+			eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
+				return mapped(a, wire.MapSequential)() && mapped(b, wire.MapSequential)()
+			})
+			if !a.paced() || b.paced() {
+				t.Fatalf("out of order: %v and %v, want true and false", a.paced(), b.paced())
+			}
+			from, toKey := a, bKey
+			if !scrambledDials {
+				from, toKey = b, aKey
+			}
+			from.Connect(toKey)
+			eventually(t, 60*time.Second, "a direct connection", func() bool { return from.Connect(toKey).Best() == PathDirect })
+			if path := roundTrip(t, from, toKey, "through two routers"); path != PathDirect {
+				t.Fatalf("the stream went over %s", path)
+			}
+			eventually(t, 15*time.Second, "the word of the device out of order", func() bool {
+				return len(eventsWith(a, bKey, "one by one")) > 0
+			})
+			got := eventsWith(a, bKey, "one by one")
+			if !strings.Contains(got[len(got)-1], ": direct") {
+				t.Fatalf("the search: %q", got)
 			}
 		})
 	}
