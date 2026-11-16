@@ -429,14 +429,18 @@ func (s *session) open(addr netip.Addr, ports []uint16, nonce uint64, direct fun
 			}
 		}
 		runs = append(runs, wire.Opening{To: ports[i], Count: uint16(j - i)})
-		readings = append(readings, e.reading(s.ctx))
+		if !band {
+			readings = append(readings, e.reading(s.ctx))
+		}
 		i = j
 		pause(gap)
 	}
 	if band {
 		// Toward a router that picks, which packet got which port does
-		// not matter: every port between the first reading and the last
-		// is as good as another.
+		// not matter: every port between a reading before the first
+		// packet and one after the last is as good as another, and two
+		// readings are all the search asks the hub for.
+		readings = append(readings, e.reading(s.ctx))
 		first, last := 0, 0
 		for _, r := range readings {
 			if p, ok := r(); ok {
