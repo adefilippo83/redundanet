@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -769,13 +770,18 @@ func (c *Collector) Serve(ctx context.Context, addr string) (net.Addr, func(), e
 
 type page struct {
 	Status
+	// Online and Storage count the storage devices, with or without the
+	// client role: a laptop that is closed says nothing about the network.
 	Online   int
+	Storage  int
+	Groups   []group
 	Active   int
 	FreeSum  uint64
 	TotalSum uint64
 	// Verdict is the page's first line: ok when everything stored is fully
-	// placed and no device that was seen is away, warn when repair is due
-	// or running or a device is away, bad when an object is unreadable,
+	// placed and no storage device that was seen is away, warn when repair
+	// is due or running or a storage device is away (a client that is away
+	// is a closed laptop), bad when an object is unreadable,
 	// beyond repair or in conflict; "" before the hub tracks placement.
 	Verdict string
 }
@@ -788,7 +794,7 @@ func pageData(st Status) page {
 			p.Verdict = "warn"
 		}
 		for _, d := range st.Devices {
-			if d.State == "recent" || d.State == "down" {
+			if stores(d) && (d.State == "recent" || d.State == "down") {
 				p.Verdict = "warn"
 			}
 		}
@@ -796,13 +802,25 @@ func pageData(st Status) page {
 			p.Verdict = "bad"
 		}
 	}
+	servers, clients := group{Title: "Storage devices", Storage: true}, group{Title: "Client devices"}
 	for _, d := range st.Devices {
+		g := &clients
+		if stores(d) {
+			g = &servers
+		}
+		g.Devices = append(g.Devices, d)
 		if d.State == "online" {
-			p.Online++
+			g.Online++
 		}
 		if d.FreeBytes != nil && d.State != "dead" && d.State != "never" {
 			p.FreeSum += *d.FreeBytes
 			p.TotalSum += *d.TotalBytes
+		}
+	}
+	p.Online, p.Storage = servers.Online, len(servers.Devices)
+	for _, g := range []group{servers, clients} {
+		if len(g.Devices) > 0 {
+			p.Groups = append(p.Groups, g)
 		}
 	}
 	for _, m := range st.Members {
@@ -811,6 +829,23 @@ func pageData(st Status) page {
 		}
 	}
 	return p
+}
+
+// group is one table of devices on the page: the storage devices, which
+// have the columns about their store, or the devices that are clients only.
+type group struct {
+	Title   string
+	Storage bool
+	Online  int
+	Devices []Device
+}
+
+// stores says whether a device belongs with the storage devices: the
+// manifest lists it as a storage server (it has a name), or it reports the
+// storage role. A listed server that has not reported the role yet, or
+// reports only the client role, is still a server the network counts on.
+func stores(d Device) bool {
+	return d.Name != "" || slices.Contains(d.Roles, identity.RoleStorage)
 }
 
 func short(s string) string {

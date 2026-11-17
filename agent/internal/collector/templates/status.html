@@ -52,6 +52,7 @@ main { display: flex; flex-direction: column; gap: 20px; padding: 24px; max-widt
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px }
 .tile { display: flex; flex-direction: column; gap: 6px }
 .tile h2 { font-size: 14px; font-weight: 500; color: var(--muted) }
+.card h2 .muted { font-size: 14px; font-weight: 400; margin-left: 6px }
 .tile .muted { font-size: 14px }
 .big { font-size: 24px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px }
@@ -81,14 +82,14 @@ td:first-child code { font-weight: 400 }
 <section class="hero hero-{{.Verdict}}">
   <span class="hero-icon" aria-hidden="true">{{if eq .Verdict "ok"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{else if .Verdict}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>{{else}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 12h10"/></svg>{{end}}</span>
   <div>
-    <h1>{{if eq .Verdict "ok"}}Everything stored is fully placed{{else if eq .Verdict "warn"}}The network is repairing or waiting for a device{{else if eq .Verdict "bad"}}Some stored objects need attention{{else}}Network status{{end}}</h1>
+    <h1>{{if eq .Verdict "ok"}}Everything stored is fully placed{{else if eq .Verdict "warn"}}The network is repairing or waiting for a storage device{{else if eq .Verdict "bad"}}Some stored objects need attention{{else}}Network status{{end}}</h1>
     <p class="muted">hub <code>{{short .Hub}}</code> · up {{.HubUptime}} · manifest revision {{.ManifestRevision}}</p>
   </div>
 </section>
 
 <section class="tiles">
-  <div class="tile"><h2>Devices</h2>
-    <p class="big">{{.Online}} of {{len .Devices}}</p><p class="muted">online</p>
+  <div class="tile"><h2>Storage devices</h2>
+    <p class="big">{{.Online}} of {{.Storage}}</p><p class="muted">online</p>
   </div>
   <div class="tile"><h2>Storage free</h2>
     {{if .TotalSum}}<p class="big">{{size .FreeSum}} of {{size .TotalSum}}</p><p class="muted">on the storage devices reporting</p>{{else}}<p class="big muted">no storage device reporting</p>{{end}}
@@ -108,27 +109,27 @@ td:first-child code { font-weight: 400 }
     <progress value="{{.Converted}}" max="{{.Objects}}">{{pct .Converted .Objects}}%</progress></dd></div>{{end}}
 </dl></section>{{end}}
 
-<section class="card"><h2>Devices</h2><div class="wrap"><table>
-<thead><tr><th>device</th><th>member</th><th>roles</th><th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th><th>free</th><th>shares</th><th>checked since</th><th>peers</th><th title="how reachable the device found itself for a direct connection, who holds its public address, and how its router hands out ports">reach</th><th>relayed</th><th>update</th></tr></thead>
+{{range .Groups}}{{$storage := .Storage}}<section class="card"><h2>{{.Title}} <span class="muted">{{.Online}} of {{len .Devices}} online</span></h2><div class="wrap"><table>
+<thead><tr><th>device</th><th>member</th>{{if $storage}}<th>roles</th>{{end}}<th>state</th><th>seen</th><th>version</th><th>platform</th><th>up</th><th>manifest</th>{{if $storage}}<th>free</th><th>shares</th><th>checked since</th>{{end}}<th>peers</th><th title="how reachable the device found itself for a direct connection, who holds its public address, and how its router hands out ports">reach</th><th>relayed</th><th>update</th></tr></thead>
 <tbody>{{range .Devices}}<tr>
   <td>{{if .Name}}{{.Name}} <code class="muted">{{short .Device}}</code>{{else}}<code>{{short .Device}}</code>{{end}}</td>
   <td>{{.Member}}</td>
-  <td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}</td>
+  {{if $storage}}<td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}</td>{{end}}
   <td>{{if eq .State "online"}}<span class="ok">online</span> <span class="muted">{{.Carrier}}</span>{{else if eq .State "recent"}}<span class="warn">reconnecting</span>{{else if eq .State "down"}}<span class="bad">down</span>{{else if eq .State "dead"}}<span class="bad">dead</span>{{else}}<span class="muted">never seen</span>{{end}}</td>
   <td>{{if eq .State "online"}}since {{since .Since}}{{else}}{{since .LastSeen}}{{end}}</td>
   <td>{{.Version}}</td>
   <td>{{.OS}}</td>
   <td>{{if .Uptime}}{{dur .Uptime}}{{end}}</td>
   <td>{{if .Manifest}}{{.Manifest}}{{end}}</td>
-  <td>{{if .FreeBytes}}{{gb .FreeBytes}} of {{gb .TotalBytes}}{{end}}{{if and .Storage (ne .Storage "ok")}} <span class="bad">{{.Storage}}</span>{{end}}</td>
+  {{if $storage}}<td>{{if .FreeBytes}}{{gb .FreeBytes}} of {{gb .TotalBytes}}{{end}}{{if and .Storage (ne .Storage "ok")}} <span class="bad">{{.Storage}}</span>{{end}}</td>
   <td>{{if .Shares}}{{.Shares}}, {{size .Stored}}{{end}}</td>
-  <td>{{if .Verified}}{{.Verified}}{{else if .Shares}}<span class="muted">not all yet</span>{{end}}</td>
+  <td>{{if .Verified}}{{.Verified}}{{else if .Shares}}<span class="muted">not all yet</span>{{end}}</td>{{end}}
   <td>{{if or .Direct .Relayed}}{{.Direct}} direct, {{.Relayed}} relayed{{end}}</td>
   <td>{{if eq .Reach "open"}}<span class="ok">open</span>{{else if eq .Reach "easy"}}<span class="ok">easy</span>{{else if eq .Reach "predictable"}}<span class="warn">predictable</span>{{else if eq .Reach "hard"}}<span class="bad">hard</span>{{end}}{{if .IPv6}} <span class="muted">IPv6</span>{{end}}{{if .Router}} <span class="muted" title="who holds the device's public address: its own router (public), something beyond it (carrier), or the router did not say (silent)">{{.Router}}</span>{{end}}{{if .PortGaps}} <span class="muted" title="differences between the public ports the router gave to sockets opened one after the other{{if .PortKept}}; each kept its own port number{{end}}">{{gaps .PortGaps}}</span>{{end}}{{if .PortBand}} <span class="muted" title="how wide the band of public ports the device was seen at is">band {{.PortBand}}</span>{{end}}{{if .PortPooled}} <span class="muted" title="sockets opened together got more than one public address">pooled</span>{{end}}{{if .PCP}} <span class="muted" title="something upstream answers the port control protocol">PCP</span>{{end}}</td>
   <td>{{if or .RelayIn .RelayOut}}{{size .RelayIn}} in, {{size .RelayOut}} out{{end}}</td>
   <td>{{.Update}}</td>
 </tr>{{end}}</tbody>
-</table></div></section>
+</table></div></section>{{end}}
 
 <section class="card"><h2>Members</h2><div class="wrap"><table>
 <thead><tr><th>member</th><th>status</th><th>contribution</th><th>allocation</th><th>stored</th><th>placement</th><th>last backup</th><th>last verified restore</th><th>devices</th></tr></thead>
