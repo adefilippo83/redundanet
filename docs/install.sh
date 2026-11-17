@@ -17,6 +17,10 @@
 #       disk by accident; --allow-root-disk after it accepts a directory
 #       of the system disk, for a machine that has no other
 #
+# Without curl the line is the same with wget, which the script then uses
+# for its own downloads too:
+#   wget -qO- https://redundanet.com/install.sh | sh
+#
 # Options: --channel early takes the newest release of either channel,
 # --version X.Y.Z that release, --bin PATH puts the link there instead of
 # /usr/local/bin/redundanet ($REDUNDANET_BIN does the same).
@@ -76,6 +80,15 @@ need() {
   for t in "$@"; do
     command -v "$t" >/dev/null 2>&1 || die "$t is needed and not installed"
   done
+}
+
+# fetch downloads a URL into a file, with curl, or with wget where there is
+# no curl (a minimal Debian has only that). Either follows redirects and
+# fails on an HTTP error.
+fetch() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL -o "$1" "$2"
+  else wget -q -O "$1" "$2"
+  fi
 }
 
 # target prints linux/amd64 and the like, or stops on a platform the
@@ -143,7 +156,8 @@ main() {
     esac
   done
   case "$channel" in stable|early) ;; *) die "--channel takes stable or early, not $channel" ;; esac
-  need curl tar uname mktemp awk
+  need tar uname mktemp awk
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || die "curl or wget is needed and neither is installed"
   tgt=$(target)
   [ -z "$rootdisk" ] || [ -n "$node" ] || die "--allow-root-disk goes with --node STORAGE_PATH"
   if [ -n "$node" ]; then
@@ -152,7 +166,7 @@ main() {
   fi
 
   tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT INT TERM
-  curl -fsSL -o "$tmp/index.yaml" "$INDEX" || die "could not fetch the release index at $INDEX"
+  fetch "$tmp/index.yaml" "$INDEX" || die "could not fetch the release index at $INDEX"
   set -- $(pick "$tgt" "$channel" "$want" < "$tmp/index.yaml")
   if [ $# -ne 4 ]; then
     [ -n "$want" ] && die "the release index does not list $want for $tgt"
@@ -167,7 +181,7 @@ main() {
     note "redundanet $version is already at $real; the agent keeps itself up to date from here"
   else
     note "downloading redundanet $version for $tgt"
-    curl -fsSL -o "$tmp/$name" "$url" || die "could not download $url"
+    fetch "$tmp/$name" "$url" || die "could not download $url"
     got=$(wc -c < "$tmp/$name" | tr -d ' ')
     [ "$got" = "$size" ] || die "$name is $got bytes, the index says $size: refusing it"
     gotsha=$(sha256 "$tmp/$name")

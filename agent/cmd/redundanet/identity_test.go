@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,41 @@ func TestPhraseMatchesTheIdentityItCameFrom(t *testing.T) {
 	}
 	if phraseMatches(other, st) {
 		t.Fatal("another seed matches")
+	}
+}
+
+// device pair takes only the phrase of the member this device belongs to;
+// a device with no identity has nothing to compare a phrase with, and a
+// sealed identity is not opened for it.
+func TestPairingTakesOnlyThisMembersPhrase(t *testing.T) {
+	seed, _ := identity.NewSeed()
+	other, _ := identity.NewSeed()
+	dev, _ := identity.NewDeviceKey()
+	sc, err := identity.Issue(seed, identity.Certificate{Network: "testnet", Device: dev.ID(), Member: seed.MemberKey(), Roles: []string{identity.RoleClient}, IssuedAt: time.Now(), Serial: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &identity.State{Network: "testnet", Member: seed.MemberKey(), MemberSecret: seed.Secret(), DeviceSeed: dev.Seed(), Certificate: *sc}
+	dd := t.TempDir()
+	if err := ownPhrase(dd, "testnet", other); err != nil {
+		t.Fatalf("no identity here: %v", err)
+	}
+	if err := identity.Save(identityPath(dd), st, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownPhrase(dd, "testnet", seed); err != nil {
+		t.Fatalf("the member's own phrase: %v", err)
+	}
+	err = ownPhrase(dd, "testnet", other)
+	if err == nil || !strings.Contains(err.Error(), other.MemberKey().Short()) || !strings.Contains(err.Error(), seed.MemberKey().Short()) {
+		t.Fatalf("another member's phrase: %v", err)
+	}
+	sealed := t.TempDir()
+	if err := identity.Save(identityPath(sealed), st, []byte("a passphrase")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownPhrase(sealed, "testnet", other); err != nil {
+		t.Fatalf("a sealed identity: %v", err)
 	}
 }
 
