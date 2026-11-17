@@ -82,7 +82,7 @@ td:first-child code { font-weight: 400 }
 <section class="hero hero-{{.Verdict}}">
   <span class="hero-icon" aria-hidden="true">{{if eq .Verdict "ok"}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>{{else if .Verdict}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v6"/><path d="M12 17h.01"/></svg>{{else}}<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 12h10"/></svg>{{end}}</span>
   <div>
-    <h1>{{if eq .Verdict "ok"}}Everything stored is fully placed{{else if eq .Verdict "warn"}}The network is repairing or waiting for a device{{else if eq .Verdict "bad"}}Some stored objects need attention{{else}}Network status{{end}}</h1>
+    <h1>{{if eq .Verdict "ok"}}Everything stored is fully placed{{else if eq .Verdict "warn"}}The network is repairing or waiting for a storage device{{else if eq .Verdict "bad"}}Some stored objects need attention{{else}}Network status{{end}}</h1>
     <p class="muted">hub <code>{{short .Hub}}</code> · up {{.HubUptime}} · manifest revision {{.ManifestRevision}}</p>
   </div>
 </section>

@@ -55,7 +55,9 @@ func TestVerdict(t *testing.T) {
 	}{
 		"a hub that tracks no placement": {Status{}, ""},
 		"all placed":                     {Status{Grid: &Grid{Objects: 3, Placed: 3}, Devices: []Device{{State: "online"}, {State: "dead"}, {State: "never"}}}, "ok"},
-		"a device away":                  {Status{Grid: &Grid{Objects: 3, Placed: 3}, Devices: []Device{{State: "online"}, {State: "down"}}}, "warn"},
+		"a storage device away":          {Status{Grid: &Grid{Objects: 3, Placed: 3}, Devices: []Device{{State: "online"}, {Name: "falcon", State: "down"}}}, "warn"},
+		"a storage device reconnecting":  {Status{Grid: &Grid{Objects: 3, Placed: 3}, Devices: []Device{{Roles: []string{"storage"}, State: "recent"}}}, "warn"},
+		"a client away":                  {Status{Grid: &Grid{Objects: 3, Placed: 3}, Devices: []Device{{Name: "falcon", State: "online"}, {Roles: []string{"client"}, State: "down"}, {State: "recent"}}}, "ok"},
 		"repair due":                     {Status{Grid: &Grid{Objects: 3, Placed: 2, UnderPlaced: 1, Repair: 1}}, "warn"},
 		"unreadable wins":                {Status{Grid: &Grid{Objects: 3, UnderPlaced: 1, Unreadable: 1}, Devices: []Device{{State: "down"}}}, "bad"},
 		"servers disagree":               {Status{Grid: &Grid{Objects: 3, Placed: 3, Conflicts: 1}}, "bad"},
