@@ -73,7 +73,7 @@
   "features.e2e.title": "Chiffré sur votre appareil",
   "features.e2e.desc": "Chaque objet est chiffré avec une clé dérivée de votre secret de membre et du contenu. Personne d'autre ne peut le lire, ni le hub, ni les autres membres.",
   "features.erasure.title": "Codage à effacement entre membres",
-  "features.erasure.desc": "Chaque objet est découpé en k-parmi-n, aujourd'hui 2-parmi-3 sur le réseau en production, et les fragments vont sur les serveurs de stockage des autres membres. Le découpage est fixé par le manifeste signé et peut changer par une transition déclarée.",
+  "features.erasure.desc": "Chaque objet est découpé en k-parmi-n, aujourd'hui 2-parmi-4 sur le réseau en production, et les fragments vont sur les serveurs de stockage des autres membres. Le découpage est fixé par le manifeste signé et peut changer par une transition déclarée.",
   "features.daily.title": "Sauvegardes quotidiennes, tests de restauration hebdomadaires",
   "features.daily.desc": "Un jeu de sauvegarde est un ou plusieurs dossiers. L'agent les parcourt chaque jour. Chaque semaine, un test de restauration relit un échantillon et le compare à la source.",
   "features.repair.title": "Réparation sans le propriétaire",

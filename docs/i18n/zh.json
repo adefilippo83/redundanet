@@ -73,7 +73,7 @@
   "features.e2e.title": "在你的设备上加密",
   "features.e2e.desc": "每个对象都用由你的成员密钥和内容派生出的密钥加密。没有其他人能读取它，hub 不能，其他成员也不能。",
   "features.erasure.title": "跨成员纠删码",
-  "features.erasure.desc": "每个对象按 k-of-n 拆分，线上网络目前为 2-of-3，分片存放到其他成员的存储服务器上。拆分方式由已签名的 manifest 设定，可通过声明的过渡进行更改。",
+  "features.erasure.desc": "每个对象按 k-of-n 拆分，线上网络目前为 2-of-4，分片存放到其他成员的存储服务器上。拆分方式由已签名的 manifest 设定，可通过声明的过渡进行更改。",
   "features.daily.title": "每日备份，每周恢复测试",
   "features.daily.desc": "一个备份集是一个或多个文件夹。代理每天扫描它们。每周一次恢复测试读回一份样本并与源数据比对。",
   "features.repair.title": "无需所有者参与的修复",

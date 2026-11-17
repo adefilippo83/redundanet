@@ -73,7 +73,7 @@
   "features.e2e.title": "Auf Ihrem Gerät verschlüsselt",
   "features.e2e.desc": "Jedes Objekt wird mit einem Schlüssel verschlüsselt, der aus Ihrem Mitgliedsgeheimnis und dem Inhalt abgeleitet ist. Niemand sonst kann es lesen, weder der Hub noch andere Mitglieder.",
   "features.erasure.title": "Erasure Coding über Mitglieder hinweg",
-  "features.erasure.desc": "Jedes Objekt wird k-von-n aufgeteilt, heute 2-von-3 im Live-Netzwerk, und die Fragmente gehen an die Speicherserver anderer Mitglieder. Die Aufteilung legt das signierte Manifest fest; sie kann sich über einen angekündigten Übergang ändern.",
+  "features.erasure.desc": "Jedes Objekt wird k-von-n aufgeteilt, heute 2-von-4 im Live-Netzwerk, und die Fragmente gehen an die Speicherserver anderer Mitglieder. Die Aufteilung legt das signierte Manifest fest; sie kann sich über einen angekündigten Übergang ändern.",
   "features.daily.title": "Tägliche Backups, wöchentliche Wiederherstellungstests",
   "features.daily.desc": "Ein Backup-Set besteht aus einem oder mehreren Ordnern. Der Agent durchsucht sie täglich. Jede Woche liest ein Wiederherstellungstest eine Stichprobe zurück und vergleicht sie mit der Quelle.",
   "features.repair.title": "Reparatur ohne den Eigentümer",

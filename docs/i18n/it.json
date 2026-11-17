@@ -73,7 +73,7 @@
   "features.e2e.title": "Cifrato sul tuo dispositivo",
   "features.e2e.desc": "Ogni oggetto è cifrato con una chiave derivata dal tuo segreto di membro e dal contenuto. Nessun altro può leggerlo, né l'hub, né gli altri membri.",
   "features.erasure.title": "Erasure coding tra i membri",
-  "features.erasure.desc": "Ogni oggetto è suddiviso k-di-n, oggi 2-di-3 sulla rete in produzione, e le share vanno sui server di archiviazione degli altri membri. La suddivisione è fissata dal manifest firmato e può cambiare con una transizione dichiarata.",
+  "features.erasure.desc": "Ogni oggetto è suddiviso k-di-n, oggi 2-di-4 sulla rete in produzione, e le share vanno sui server di archiviazione degli altri membri. La suddivisione è fissata dal manifest firmato e può cambiare con una transizione dichiarata.",
   "features.daily.title": "Backup giornalieri, test di ripristino settimanali",
   "features.daily.desc": "Un set di backup è una o più cartelle. L'agente le scansiona ogni giorno. Ogni settimana un test di ripristino rilegge un campione e lo confronta con l'originale.",
   "features.repair.title": "Riparazione senza il proprietario",

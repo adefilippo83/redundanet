@@ -7,7 +7,7 @@ A Windows build is provided and passes the test suite, but it has not run on the
 There is one hub today. With it down there are no new connections, no repair scheduling and no status page; existing direct connections between devices continue. Your data is on the storage servers, not on the hub, and nothing on the hub is needed to recover it.
 
 **Where is my data?**
-On other members' storage servers, as encrypted, erasure-coded shares: every object is split into n shares of which any k rebuild it (2-of-3 on the live network today), placed across members. The status page shows the servers and the grid's health; `redundanet object check --network redundanet CAP` from one of your devices prints which servers hold an object's shares.
+On other members' storage servers, as encrypted, erasure-coded shares: every object is split into n shares of which any k rebuild it (2-of-4 on the live network today), placed across members. The status page shows the servers and the grid's health; `redundanet object check --network redundanet CAP` from one of your devices prints which servers hold an object's shares.
 
 **Can the maintainer, or a storage server, read my files?**
 No. Every object is encrypted on your device with a key derived from your member secret and the content. Servers and the hub see ciphertext, sizes, your member key and timing; never names or contents. What exactly they see is in [../PRIVACY.md](../PRIVACY.md).
@@ -24,7 +24,7 @@ Revoke it from any other device of yours: `redundanet device revoke --device KEY
 
 **How much space do I get?**
 The local page and `redundanet backup list` show "allocation: X of Y GB used"; a run is refused once the allocation is used up, and says so.
-Your allocation is your contribution, less the network's reserve, times k/n. With the live network's 15 percent reserve and 2-of-3, 1000 GB contributed gives 566 GB. `redundanet validate --manifest manifests/manifest.yaml` prints every member's allocation; the status page shows what you use against it. A member without a storage device gets an allocation from a sponsor or the reserve, set by the maintainer.
+Your allocation is your contribution, less the network's reserve, times k/n. With the live network's 15 percent reserve and 2-of-4, 1000 GB contributed gives 425 GB. `redundanet validate --manifest manifests/manifest.yaml` prints every member's allocation; the status page shows what you use against it. A member without a storage device gets an allocation from a sponsor or the reserve, set by the maintainer.
 
 **How do I add a second laptop?**
 Certify it from the phrase with the three identity commands in [join.md](join.md), "More devices". No manifest change is needed. There is no pairing without the phrase in 3.0.0.
