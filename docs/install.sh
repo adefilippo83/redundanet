@@ -12,7 +12,10 @@
 #   curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 #       a Linux storage node, as root: downloads the same way, then runs
 #       `redundanet node install`, which lays the node out under
-#       /var/lib/redundanet3 and shows a pairing code
+#       /var/lib/redundanet3 and shows a pairing code. The storage path
+#       has to be a mount point, so that shares do not land on the system
+#       disk by accident; --allow-root-disk after it accepts a directory
+#       of the system disk, for a machine that has no other
 #
 # Options: --channel early takes the newest release of either channel,
 # --version X.Y.Z that release, --bin PATH puts the link there instead of
@@ -49,7 +52,7 @@ BIN=${REDUNDANET_BIN:-/usr/local/bin/redundanet}
 usage() {
   cat <<'TXT'
 usage: install.sh [--channel stable|early] [--version X.Y.Z] [--bin PATH]
-       install.sh --node STORAGE_PATH [--channel stable|early] [--version X.Y.Z]   (Linux, as root)
+       install.sh --node STORAGE_PATH [--allow-root-disk] [--channel stable|early] [--version X.Y.Z]   (Linux, as root)
 
   curl -fsSL https://redundanet.com/install.sh | sh
   curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
@@ -127,13 +130,14 @@ sha256() {
 }
 
 main() {
-  channel=stable; want=""; node=""
+  channel=stable; want=""; node=""; rootdisk=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --channel) [ $# -ge 2 ] || die "--channel needs stable or early"; channel=$2; shift 2 ;;
       --version) [ $# -ge 2 ] || die "--version needs X.Y.Z"; want=${2#v}; shift 2 ;;
       --bin) [ $# -ge 2 ] || die "--bin needs a path"; BIN=$2; shift 2 ;;
       --node) [ $# -ge 2 ] || die "--node needs the storage path, for example --node /mnt/storage"; node=$2; shift 2 ;;
+      --allow-root-disk) rootdisk=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) usage >&2; die "unknown argument $1" ;;
     esac
@@ -141,6 +145,7 @@ main() {
   case "$channel" in stable|early) ;; *) die "--channel takes stable or early, not $channel" ;; esac
   need curl tar uname mktemp awk
   tgt=$(target)
+  [ -z "$rootdisk" ] || [ -n "$node" ] || die "--allow-root-disk goes with --node STORAGE_PATH"
   if [ -n "$node" ]; then
     [ "${tgt%%/*}" = linux ] || die "a storage node is a Linux machine; on this computer run the script without --node"
     [ "$(id -u)" = 0 ] || die "--node runs as root: curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node $node"
@@ -178,6 +183,7 @@ main() {
       # lays the node out and pairs it; it prints what comes next.
       set -- --storage-path "$node"
       [ "$channel" = stable ] || set -- "$@" --channel "$channel"
+      [ -z "$rootdisk" ] || set -- "$@" --allow-root-disk
       "$bin" node install "$@"
       return
     fi

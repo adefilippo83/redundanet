@@ -46,7 +46,13 @@ A storage node contributes disk and runs the agent as a system service, headless
 curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /mnt/storage
 ```
 
-The same download and checks as above, then `redundanet node install`: the service user `redundanet3`, the data directory `/var/lib/redundanet3` (identity, manifest copy, census state, `versions/` for updates), the binary at `/var/lib/redundanet3/bin/redundanet` owned by the service user so the updater can rename a new version into place, a second copy at `/usr/local/bin/redundanet3` owned by root, which is the one you run (`sudo redundanet3 ...`), the unit `redundanet-agent`, the settings in `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`), the share store in `/mnt/storage/redundanet3` with the unit drop-in that makes it writable for the confined service, and a pairing code on the screen. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident; `--allow-root-disk` on `node install` overrides that knowingly. The node needs at least 10 GiB free above its floor. `--channel early` is accepted here too.
+The same download and checks as above, then `redundanet node install`: the service user `redundanet3`, the data directory `/var/lib/redundanet3` (identity, manifest copy, census state, `versions/` for updates), the binary at `/var/lib/redundanet3/bin/redundanet` owned by the service user so the updater can rename a new version into place, a second copy at `/usr/local/bin/redundanet3` owned by root, which is the one you run (`sudo redundanet3 ...`), the unit `redundanet-agent`, the settings in `/etc/redundanet3/agent.env` (`NETWORK`, `CHANNEL`, `STORAGE_PATH`), the share store in `/mnt/storage/redundanet3` with the unit drop-in that makes it writable for the confined service, and a pairing code on the screen. It refuses a storage path that is not a mount point, so shares never land on the system disk by accident. A machine with one disk and nothing else to mount, a container or a small virtual server, says so knowingly with `--allow-root-disk` after the path, here or on `node install`:
+
+```bash
+curl -fsSL https://redundanet.com/install.sh | sudo sh -s -- --node /srv/redundanet --allow-root-disk
+```
+
+The store then shares the disk with the system, and the floor below is all that keeps it from filling it. The node needs at least 10 GiB free above its floor. `--channel early` is accepted here too.
 
 On your laptop, with the phrase at hand, on the same network as the node or anywhere else:
 

@@ -67,6 +67,37 @@ func TestPairThroughTheRelay(t *testing.T) {
 	}
 }
 
+// The new device shows its code and waits; its member takes minutes to get
+// to the other device and type the phrase. The time one exchange may take
+// counts from the opener's first frame, not from when the code was shown.
+func TestACodeAnsweredLateStillPairs(t *testing.T) {
+	old := connTimeout
+	connTimeout = 2 * time.Second
+	t.Cleanup(func() { connTimeout = old })
+	hub := httptest.NewServer(quietRelay())
+	defer hub.Close()
+	dev, _ := identity.NewDeviceKey()
+	l, err := Listen("testnet", dev, "127.0.0.1:0", []string{hub.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := Parse(l.Code())
+	c.Addrs = []string{"127.0.0.1:1"} // nobody listens there
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	got := make(chan error, 1)
+	go func() { _, err := l.Wait(ctx); got <- err }()
+	time.Sleep(connTimeout + time.Second)
+	if _, _, err := Pair(ctx, c.String(), "testnet", func(identity.Key, string) (*Offer, error) {
+		return &Offer{State: []byte("the identity")}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-got; err != nil {
+		t.Fatalf("the new device: %v", err)
+	}
+}
+
 // A hub without the mailbox (an older release) is reported, not retried
 // forever; a wrong code through the relay reveals nothing and fails.
 func TestRelayRefusals(t *testing.T) {

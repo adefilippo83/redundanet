@@ -37,6 +37,9 @@ import (
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 )
 
+// connTimeout bounds one exchange, from its first frame on.
+var connTimeout = 30 * time.Second
+
 const (
 	prefix      = "rn3:pair:"
 	version     = 3  // 2 added the relays, 3 the device key and the key agreement; older codes still parse
@@ -45,8 +48,6 @@ const (
 	// maxAttempts is how many connections may fail the code before the
 	// listener gives up; a wrong code reveals nothing either way.
 	maxAttempts = 3
-	// connTimeout bounds one exchange.
-	connTimeout = 30 * time.Second
 	maxMessage  = 1 << 16
 	infoLabel   = "redundanet/3/pair/1" // the key of a code before version 3: the secret alone
 	infoAgreed  = "redundanet/3/pair/2" // the key of one exchange: the agreement and the secret
@@ -292,6 +293,11 @@ func (l *Listener) serve(conn net.Conn) (*Offer, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The exchange has its time from here. Through a hub this device has
+	// been waiting for the opener since it showed its code, minutes maybe,
+	// and the time set above ran out long ago: counted from there, its own
+	// answer would be given up before it left.
+	_ = conn.SetDeadline(time.Now().Add(connTimeout))
 	mine, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, err
