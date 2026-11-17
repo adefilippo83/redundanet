@@ -223,3 +223,56 @@ func TestThePortBandIsRanges(t *testing.T) {
 		t.Fatalf("scattered stays scattered: width %d", w)
 	}
 }
+
+// A channel outlives a change of the device's public address. Readings
+// that come out at one other address, three in a row, make that address
+// the device's own and drop the ports it was seen at before; one stray
+// reading does not, and neither do any behind a router that spreads a
+// household over several addresses.
+func TestTheDeviceNoticesItsPublicAddressMoved(t *testing.T) {
+	was, now, stray := netip.MustParseAddr("198.51.100.7"), netip.MustParseAddr("203.0.113.9"), netip.MustParseAddr("192.0.2.33")
+	fresh := func() *natState {
+		n := &natState{channel: netip.AddrPortFrom(was, 4000), readAt: time.Now(), routerAsked: time.Now()}
+		n.ports.add(was, netip.AddrPortFrom(was, 5000))
+		return n
+	}
+	n := fresh()
+	if !n.sameAddress(was) {
+		t.Fatal("a reading at the channel's address was refused")
+	}
+	// Two at the new address, one at the old, two more: never three in a row.
+	for i, a := range []netip.Addr{now, now, was, now, now} {
+		if got := n.sameAddress(a); got != (a == was) {
+			t.Fatalf("reading %d at %v: %v", i, a, got)
+		}
+	}
+	// A stray address in between starts the count again.
+	for i, a := range []netip.Addr{stray, now, now} {
+		if n.sameAddress(a) {
+			t.Fatalf("reading %d at %v was taken", i, a)
+		}
+	}
+	if n.channel.Addr() != was || n.ports.n == 0 {
+		t.Fatalf("the address moved early: %v, %d ports", n.channel, n.ports.n)
+	}
+	if !n.sameAddress(now) {
+		t.Fatal("the third reading in a row at the new address was refused")
+	}
+	if n.channel.Addr() != now || n.channel.Port() != 4000 || n.ports.n != 0 || !n.readAt.IsZero() || !n.routerAsked.IsZero() {
+		t.Fatalf("after the move: channel %v, %d ports, read %v, router asked %v", n.channel, n.ports.n, n.readAt, n.routerAsked)
+	}
+	if !n.sameAddress(now) || n.sameAddress(was) {
+		t.Fatal("after the move the new address is not the one readings are held to")
+	}
+	// A pool of addresses: a socket at another one says nothing.
+	p := fresh()
+	p.pooled = true
+	for i := 0; i < 2*natMoved; i++ {
+		if p.sameAddress(now) {
+			t.Fatal("a pooled router's other address was taken for a move")
+		}
+	}
+	if p.channel.Addr() != was || p.ports.n == 0 {
+		t.Fatalf("a pooled router's address moved: %v", p.channel)
+	}
+}

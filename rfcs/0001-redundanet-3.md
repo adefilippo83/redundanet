@@ -948,6 +948,16 @@ follows depends on the two labels.
   device reads its counter after every 64 punches and names what lies
   between two readings, so one lost answer, or a counter that came round
   between two of them, costs one stretch and not the search.
+- A reading counts only when its socket came out at the public address
+  the hub named for the channel, and a channel outlives a change of that
+  address: the connection moves and nothing is said. On the live network a
+  provider gave a home a new address in the evening; both its direct
+  connections ended in the same second, and every search after that read
+  nothing, until the agent was started again two hours later. So when
+  three readings in a row come out at one other address, and the router is
+  not one that spreads a household over several, the device takes that
+  address for its own, drops the ports it was seen at before and asks its
+  router again who holds it.
 
 Each device writes into its log what it did and what the other said it did
 (packets, runs, runs measured exactly, readings, and how far the counter
