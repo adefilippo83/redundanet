@@ -103,7 +103,8 @@ type session struct {
 	punched   time.Time      // the last punch run
 	seekNext  time.Time      // no search before; zero for none due
 	seekTries int            // searches that failed since the last one that did not
-	bandNow   int            // how many of the ports this device last named are where its router picks now (spans)
+	bandNow   int            // how many packets this device writes toward the ports it last named where its router picks now (spans)
+	theirMap  string         // the peer's label for its router in the last search
 	seekBusy  bool           // a search this session started is under way
 	seekRound uint64         // the search under way, started here or by the peer
 	seekReply chan wire.Seek // where the peer's messages of that search go

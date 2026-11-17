@@ -380,7 +380,12 @@ hand a household a block of ports (128 on the live network) and another
 one when that is used up, so a device behind a router that picks asks
 from five new sockets where it picks at that moment (`Endpoint.seenNow`),
 names that first, and writes to no more of the peer's ports than it named
-there, in an order spread over all of them (`spread`). The side that
+there, in an order spread over all of them (`spread`). When those five
+ports are in one block of 128 that begins at a multiple of 128, or spread
+over one of 256 or 512 that does, the device names the block and no
+margin around it and writes a sixteenth fewer packets than the block has
+ports (`blockAround`); toward a peer whose router counts it names nothing
+else, since the ranges it was seen in before are of no use there. The side that
 opens toward a band reads its counter every 64 packets, and again when
 the last reading got no answer. Toward a peer
 with one public port, a device behind a router that counts names the

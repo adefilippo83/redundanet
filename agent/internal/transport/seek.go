@@ -80,12 +80,18 @@ const (
 	pacedRun   = 4
 	// A device behind a router that picks asks from bandAsks new sockets
 	// where it picks now, and names that with bandMargin ports on either
-	// side at least. Toward a router that picks, the side that opens reads
-	// its counter after every bandRun packets, and up to bandLast times
-	// more, bandWait apart, when the reading after the last one got no
-	// answer.
+	// side at least. When the ports they got are in one block of
+	// blockLeast ports, or spread over one of twice or four times that
+	// many, that begins at a multiple of its size, it names the block and
+	// no margin, and writes a sixteenth fewer packets than the block has
+	// ports: the asks and the household hold some of them. Toward a router
+	// that picks, the side that opens reads its counter after every
+	// bandRun packets, and up to bandLast times more, bandWait apart, when
+	// the reading after the last one got no answer.
 	bandAsks   = 5
 	bandMargin = 32
+	blockLeast = 128
+	blockMost  = 512
 	bandRun    = 64
 	bandLast   = 3
 	bandWait   = 150 * time.Millisecond
@@ -174,7 +180,7 @@ func (s *session) seek() {
 	}
 	defer e.seeking.Unlock()
 	s.mu.Lock()
-	hub, try := s.hub, s.seekTries
+	hub, try, was := s.hub, s.seekTries, s.theirMap
 	s.mu.Unlock()
 	me, _, _ := e.router()
 	if me == "" && e.probing() {
@@ -191,7 +197,9 @@ func (s *session) seek() {
 		s.seekIn(seekSoon, false)
 		return
 	}
-	mine := s.offer(me, wire.Seek{Peer: s.peer, Round: binary.BigEndian.Uint64(raw[:]), Try: uint8(min(try, 255))}, "")
+	// What the peer's router was in the last search stands in for what it
+	// is until the peer says so.
+	mine := s.offer(me, wire.Seek{Peer: s.peer, Round: binary.BigEndian.Uint64(raw[:]), Try: uint8(min(try, 255))}, "", was)
 	answer := s.listen(mine.Round)
 	defer s.unlisten(answer)
 	send := func(sk wire.Seek) error { return hub.sendMessage(wire.FrameSeek, sk) }
@@ -284,7 +292,7 @@ func (s *session) sought(c *hubClient, theirs wire.Seek) {
 	in := s.listen(theirs.Round)
 	defer s.unlisten(in)
 	send := func(sk wire.Seek) error { return c.sendMessage(wire.FrameSeek, sk) }
-	mine := s.offer(me, answer, theirs.Mapping)
+	mine := s.offer(me, answer, theirs.Mapping, theirs.Mapping)
 	if send(mine) != nil {
 		return
 	}
@@ -293,13 +301,15 @@ func (s *session) sought(c *hubClient, theirs wire.Seek) {
 
 // offer fills in this device's half of a search: its router's label, the
 // ports its mapping toward the peer may have, and where its router's
-// counter stands when the peer's may hand ports out in order too.
-func (s *session) offer(me string, sk wire.Seek, theirs string) wire.Seek {
+// counter stands when the peer's may hand ports out in order too. theirs
+// is the peer's label when it has said it in this search, and likely what
+// it is as far as this device knows.
+func (s *session) offer(me string, sk wire.Seek, theirs, likely string) wire.Seek {
 	sk.Mapping = me
 	if !s.ep.cfg.seekOld {
 		sk.Ways = wire.SeekMeasured
 	}
-	sk.Spans = s.spans(me, int(sk.Try))
+	sk.Spans = s.spans(me, int(sk.Try), likely)
 	if me == wire.MapSequential && (theirs == "" || theirs == wire.MapSequential) {
 		if p, ok := s.ep.counter(s.ctx, 0); ok {
 			sk.Next = p
@@ -317,9 +327,13 @@ func (s *session) offer(me string, sk wire.Seek, theirs string) wire.Seek {
 // counter has come round: then the ports this device was seen at above
 // the counter are the ones just before it. Behind a router that picks
 // ports out of narrow ranges: the ranges new sockets get their ports in
-// at this moment, with a margin that a failed search doubles, and then
-// every range the device has been seen in before.
-func (s *session) spans(me string, try int) []wire.PortSpan {
+// at this moment, with a margin that a failed search doubles, or the block
+// of ports those are in and no margin (blockAround), and then every range
+// the device has been seen in before. Those are left out toward a peer
+// whose router counts: such a peer opens new ports of its own toward every
+// port named, and only a port this router gives out from now on can meet
+// one of them.
+func (s *session) spans(me string, try int, theirs string) []wire.PortSpan {
 	var out []wire.PortSpan
 	left := wire.MaxSeekPorts
 	add := func(first, count int) {
@@ -369,13 +383,23 @@ func (s *session) spans(me string, try int) []wire.PortSpan {
 		// then the ranges the device was seen in before, where a mapping
 		// made earlier may still be.
 		widen := 1 << min(try, 1)
-		now := s.ep.seenNow(s.ctx, bandAsks)
-		for _, r := range now {
-			margin := max(bandMargin, (int(r.hi)-int(r.lo))/2) * widen
-			add(int(r.lo)-margin, int(r.hi)-int(r.lo)+1+2*margin)
+		now, answered := s.ep.seenNow(s.ctx, bandAsks)
+		most := 0
+		if first, size, ok := blockAround(now, answered); ok {
+			add(first, size)
+			most = size - size/16
+		} else {
+			for _, r := range now {
+				margin := max(bandMargin, (int(r.hi)-int(r.lo))/2) * widen
+				add(int(r.lo)-margin, int(r.hi)-int(r.lo)+1+2*margin)
+			}
+			most = wire.MaxSeekPorts - left
 		}
-		current := wire.MaxSeekPorts - left
+		current := min(most, wire.MaxSeekPorts-left)
 		_, _, ranges := s.ep.router()
+		if theirs == wire.MapSequential {
+			ranges = nil
+		}
 	earlier:
 		for _, r := range ranges {
 			for _, n := range now {
@@ -391,6 +415,34 @@ func (s *session) spans(me string, try int) []wire.PortSpan {
 		s.mu.Unlock()
 	}
 	return wire.Spans(out)
+}
+
+// blockAround is the block of ports a router that picks is picking in,
+// when the ports new sockets just got say there is one. A carrier that
+// shares an address hands a household a block of its ports, a power of two
+// of them that begins at a multiple of its size (128 at every multiple of
+// 128 on the live network), and picks inside it until none is free. A
+// handful of ports do not show where a range ends, which is what the
+// margin around them is for, and half of a margin lies outside such a
+// block: a packet aimed there is one the router can never give the port
+// for. So when the ports seen now, all but one at most of those asked for,
+// are in one such block, the block is what there is to name: the smallest
+// one, and a larger one only when the ports are spread over a quarter of
+// it, since a narrow range that happens to lie across the line between
+// two small blocks is no sign of a large one. Ports that are in no such
+// block, or in more than one range, name none: the router has another
+// scheme, or it went on to its next block in between.
+func blockAround(now []portRange, answered int) (first, size int, ok bool) {
+	if len(now) != 1 || answered < bandAsks-1 {
+		return 0, 0, false
+	}
+	lo, hi := int(now[0].lo), int(now[0].hi)
+	for size = blockLeast; size <= blockMost; size *= 2 {
+		if lo/size == hi/size && (size == blockLeast || hi-lo >= size/4) {
+			return lo / size * size, size, true
+		}
+	}
+	return 0, 0, false
 }
 
 // inOrder is the ports a device writes to when both routers hand ports
@@ -645,7 +697,8 @@ func strays(i, n, over, round int) int {
 // port that one was opened toward, one chance in the band's width for
 // each packet and about two in three for all of them together.
 // The peer opened toward where this router picks now first, and the
-// device writes to the first most of the peer's ports and no more, spread
+// device writes to the first most of the peer's ports and no more (as many
+// as it named there, or somewhat fewer than its block has ports), spread
 // over them from the first packet on: a router that hands a household a
 // small block of ports gives a packet past the block's last free port one
 // from another block, which nothing was opened toward, and goes on
@@ -708,6 +761,9 @@ func (s *session) search(me string, mine, theirs wire.Seek, answering bool, in <
 	counts := func(m string) bool { return m == wire.MapSequential }
 	measured := mine.Ways >= wire.SeekMeasured && theirs.Ways >= wire.SeekMeasured
 	_, public, _ := e.router()
+	s.mu.Lock()
+	s.theirMap = theirs.Mapping
+	s.mu.Unlock()
 	addr, err := netip.ParseAddr(theirs.Addr)
 	addr = addr.Unmap()
 	const (

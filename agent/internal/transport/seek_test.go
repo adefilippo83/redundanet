@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net"
 	"net/netip"
@@ -501,6 +502,7 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 		bandDials bool
 		far       int
 		block     int
+		base      int
 	}{
 		{name: "the counting side dials"},
 		{name: "the side with the band dials", bandDials: true},
@@ -510,9 +512,14 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 		// A block of ports that is used up in the middle of a search:
 		// the router goes on in another one, and the next search has to
 		// be about that one.
-		{name: "the band is a block that moves", block: 96},
+		{name: "the band is a block that moves", block: 96, base: 27000},
+		// A block of 128 ports that begins at a multiple of 128, as a
+		// carrier hands them out: the device names the block and nothing
+		// around it, and neither side writes more packets than it holds.
+		{name: "the band is a block at a multiple of its size", block: 128, base: 27008},
+		{name: "the side with such a block dials", block: 128, base: 27008, bandDials: true},
 	} {
-		bandDials, far := c.bandDials, c.far
+		c, bandDials, far := c, c.bandDials, c.far
 		t.Run(c.name, func(t *testing.T) {
 			// The searches here follow each other within seconds and not
 			// minutes, so the hub answers as many asks as they need.
@@ -520,7 +527,7 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 			ra, rb := newSimRouter(false, 21000), newSimBandRouter(27000, 40)
 			rb.far = far
 			if c.block > 0 {
-				rb = &simRouter{base: 27000, band: c.block, block: true, ports: map[int]*simPort{}}
+				rb = &simRouter{base: c.base, band: c.block, block: true, ports: map[int]*simPort{}}
 			}
 			a, aKey := n.endpoint(seed(1), true, ra.behind)
 			b, bKey := n.endpoint(seed(2), true, rb.behind)
@@ -552,6 +559,28 @@ func TestARouterWithABandIsSearched(t *testing.T) {
 			eventually(t, 10*time.Second, "both sides' word", func() bool {
 				return len(eventsWith(a, bKey, "band of ports: direct")) > 0 && len(eventsWith(b, aKey, "every port the peer opened: direct")) > 0
 			})
+			t.Logf("the counting side: %q", searched(a, bKey))
+			t.Logf("the side with the band: %q", searched(b, aKey))
+			if c.block != blockLeast || bandDials {
+				return
+			}
+			// The side with the block answered, so it knew in every search
+			// that the peer's router counts: it named the block alone.
+			for who, most := range map[*Endpoint]int{a: c.block, b: c.block - c.block/16} {
+				peer := bKey
+				if who == b {
+					peer = aKey
+				}
+				for _, ev := range searched(who, peer) {
+					var sent int
+					if _, rest, ok := strings.Cut(ev, ", "); ok {
+						_, _ = fmt.Sscanf(rest, "%d packets sent", &sent)
+					}
+					if sent == 0 || sent > most {
+						t.Fatalf("%d packets where the block allows %d: %q", sent, most, ev)
+					}
+				}
+			}
 		})
 	}
 }
@@ -660,25 +689,60 @@ func TestTheSpansADeviceNames(t *testing.T) {
 	// two newer marks have been taken since.
 	s := device(wire.MapSequential, 30900, 30180, 30200, 30850, 30900)
 	s.marks = []uint16{30200, 30850, 30890}
-	got := s.spans(wire.MapSequential, 0)
+	got := s.spans(wire.MapSequential, 0, "")
 	if !has(got, 30200) || !has(got, 30880) || has(got, 30100) || total(got) > wire.MaxSeekPorts || len(got) > wire.MaxSeekSpans {
 		t.Fatalf("an old mapping: %v", got)
 	}
 	// The router hands out ports 20000 to 20999 and has come round: the
 	// mapping made 300 ports ago is at the top of them.
 	s = device(wire.MapSequential, 20100, 20000, 20400, 20700, 20999, 20100)
-	got = s.spans(wire.MapSequential, 2)
+	got = s.spans(wire.MapSequential, 2, "")
 	if !has(got, 20800) || !has(got, 20999) || !has(got, 20050) || has(got, 21100) || total(got) > wire.MaxSeekPorts || len(got) > wire.MaxSeekSpans {
 		t.Fatalf("a counter that came round: %v", got)
 	}
 	// Two ranges 10,900 ports apart.
 	s = device(wire.MapConfined, 0, 41000, 41100, 41050, 52000, 52090)
-	got = s.spans(wire.MapConfined, 0)
+	got = s.spans(wire.MapConfined, 0, "")
 	if len(got) != 2 || !has(got, 40990) || !has(got, 41110) || !has(got, 52095) || has(got, 45000) || total(got) > 300 {
 		t.Fatalf("two ranges: %v", got)
 	}
-	if got = s.spans(wire.MapConfined, 9); total(got) > wire.MaxSeekPorts || !has(got, 52000) {
+	if got = s.spans(wire.MapConfined, 9, wire.MapIndependent); total(got) > wire.MaxSeekPorts || !has(got, 52000) {
 		t.Fatalf("two ranges after many searches: %v", got)
+	}
+	// A peer whose router counts opens new ports toward every port named:
+	// the ranges this device was seen in before are of no use to it.
+	if got = s.spans(wire.MapConfined, 0, wire.MapSequential); len(got) != 0 {
+		t.Fatalf("earlier ranges toward a router that counts: %v", got)
+	}
+}
+
+// The ports new sockets just got name a block when they are in one that
+// begins at a multiple of its size: the smallest such of 128, 256 or 512
+// ports, and one of the larger two only when the ports are spread over a
+// quarter of it. Ports across two of the widest, in two ranges, or too few
+// of them, name none.
+func TestTheBlockARouterPicksIn(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		now         []portRange
+		answered    int
+		first, size int
+	}{
+		{"inside one block of 128", []portRange{{40970, 41080}}, 5, 40960, 128},
+		{"one port", []portRange{{41087, 41087}}, 4, 40960, 128},
+		{"across two blocks of 128", []portRange{{41000, 41100}}, 5, 40960, 256},
+		{"across two blocks of 256", []portRange{{41100, 41300}}, 5, 40960, 512},
+		{"a few ports across two blocks of 128", []portRange{{41080, 41100}}, 5, 0, 0},
+		{"across two blocks of 512", []portRange{{41400, 41500}}, 5, 0, 0},
+		{"wider than any block", []portRange{{41000, 41900}}, 5, 0, 0},
+		{"two ranges", []portRange{{40970, 41080}, {52000, 52090}}, 5, 0, 0},
+		{"three ports", []portRange{{40970, 41080}}, 3, 0, 0},
+		{"none", nil, 0, 0, 0},
+	} {
+		first, size, ok := blockAround(c.now, c.answered)
+		if ok != (c.size != 0) || (ok && (first != c.first || size != c.size)) {
+			t.Fatalf("%s: %d ports from %d on, %v", c.name, size, first, ok)
+		}
 	}
 }
 
