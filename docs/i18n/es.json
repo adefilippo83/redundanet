@@ -73,7 +73,7 @@
   "features.e2e.title": "Cifrado en tu dispositivo",
   "features.e2e.desc": "Cada objeto se cifra con una clave derivada de tu secreto de miembro y del contenido. Nadie más puede leerlo, ni el hub, ni los otros miembros.",
   "features.erasure.title": "Codificación de borrado entre miembros",
-  "features.erasure.desc": "Cada objeto se divide k-de-n, hoy 2-de-3 en la red en producción, y los fragmentos van a los servidores de almacenamiento de otros miembros. La división la fija el manifiesto firmado y puede cambiar mediante una transición declarada.",
+  "features.erasure.desc": "Cada objeto se divide k-de-n, hoy 2-de-4 en la red en producción, y los fragmentos van a los servidores de almacenamiento de otros miembros. La división la fija el manifiesto firmado y puede cambiar mediante una transición declarada.",
   "features.daily.title": "Copias diarias, pruebas de restauración semanales",
   "features.daily.desc": "Un conjunto de copia son una o más carpetas. El agente las explora a diario. Cada semana una prueba de restauración lee una muestra y la compara con el original.",
   "features.repair.title": "Reparación sin el propietario",

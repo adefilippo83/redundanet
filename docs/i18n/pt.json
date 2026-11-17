@@ -73,7 +73,7 @@
   "features.e2e.title": "Cifrado no seu dispositivo",
   "features.e2e.desc": "Cada objeto é cifrado com uma chave derivada do seu segredo de membro e do conteúdo. Ninguém mais consegue lê-lo, nem o hub, nem os outros membros.",
   "features.erasure.title": "Codificação de apagamento entre membros",
-  "features.erasure.desc": "Cada objeto é dividido em k-de-n, hoje 2-de-3 na rede em produção, e os fragmentos vão para os servidores de armazenamento de outros membros. A divisão é definida pelo manifesto assinado e pode mudar por meio de uma transição declarada.",
+  "features.erasure.desc": "Cada objeto é dividido em k-de-n, hoje 2-de-4 na rede em produção, e os fragmentos vão para os servidores de armazenamento de outros membros. A divisão é definida pelo manifesto assinado e pode mudar por meio de uma transição declarada.",
   "features.daily.title": "Backups diários, testes de restauração semanais",
   "features.daily.desc": "Um conjunto de backup é uma ou mais pastas. O agente as varre diariamente. Toda semana um teste de restauração lê uma amostra de volta e a compara com a origem.",
   "features.repair.title": "Reparo sem o proprietário",

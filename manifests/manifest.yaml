@@ -3,11 +3,11 @@
 # revision whose manifest.sig an operator key signed, and only a higher one.
 # Edit, raise revision by one, then sign: scripts/sign.sh manifest.
 schema: 3
-revision: 12
+revision: 13
 network:
   name: redundanet
-  encoding: {k: 2, n: 3}
-  encoding_transition: {from: {k: 2, n: 4}, to: {k: 2, n: 3}, deadline: 2026-12-03}
+  encoding: {k: 2, n: 4}
+  encoding_transition: {from: {k: 2, n: 3}, to: {k: 2, n: 4}, deadline: 2026-12-17}
 operators:
   - name: adefilippo83
     key: qlsi3aptqpe73pu4m4b6ahlaa5bwse2op7m7hjgzvxe7dxgp7i2q

@@ -15,7 +15,7 @@ Version 3.0.0 is one static binary, written in Go, with no containers, no Python
 
 ## How it works
 
-A backup set is one or more folders. Once a day the agent scans them, encrypts every object with a key derived from your member secret and the object's content, splits it with erasure coding k-of-n (2-of-3 on the live network today; the number is set by the signed manifest and can change through a declared transition), and places the shares on other members' storage servers, across members. Snapshots follow a retention policy; restores are per file, folder or snapshot. A weekly restore test reads a sample back and compares it to the source. Deleted data stays recoverable for 30 days.
+A backup set is one or more folders. Once a day the agent scans them, encrypts every object with a key derived from your member secret and the object's content, splits it with erasure coding k-of-n (2-of-4 on the live network today; the number is set by the signed manifest and can change through a declared transition), and places the shares on other members' storage servers, across members. Snapshots follow a retention policy; restores are per file, folder or snapshot. A weekly restore test reads a sample back and compares it to the source. Deleted data stays recoverable for 30 days.
 
 Storage servers scrub their shares monthly. The hub schedules repair of under-placed objects without involving the owner, and the status page shows it.
 
