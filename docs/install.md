@@ -12,6 +12,8 @@ In a terminal on macOS and Linux:
 curl -fsSL https://redundanet.com/install.sh | sh
 ```
 
+On a machine without `curl` (a minimal Debian has only `wget`), `wget -qO- https://redundanet.com/install.sh | sh` does the same, and the script then downloads with `wget` too.
+
 In PowerShell on Windows (Windows PowerShell 5.1, which every Windows 10 and 11 has, or PowerShell 7):
 
 ```powershell

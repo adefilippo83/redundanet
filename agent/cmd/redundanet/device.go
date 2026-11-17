@@ -75,6 +75,9 @@ func devicePair(args []string) error {
 		return err
 	}
 	defer seed.Zero()
+	if err := ownPhrase(d, *network, seed); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	pd, err := pairDevice(ctx, d, *network, code, seed, *storage, *serial)
@@ -84,6 +87,32 @@ func devicePair(args []string) error {
 	fmt.Printf("paired device %s for member %s (%s); it holds its identity and the network now, and can install its service\n", short(pd.Device), seed.MemberKey().Short(), strings.Join(pd.Roles, ", "))
 	if *storage {
 		fmt.Printf("storage node %s is on record here: redundanet join-request puts it in the join form, or send its storage: lines to the maintainer\n", pd.Name)
+	}
+	return nil
+}
+
+// ownPhrase refuses a phrase that is not the one of this device's member:
+// twelve valid words of somebody else would certify the new device for
+// that member, from this one's device, which nobody means and nothing
+// would say. The page's form refuses the same (pairFromPage). A device
+// without an identity for the network has nothing to compare with, and
+// one whose identity file is sealed is not opened for this.
+func ownPhrase(dd, network string, seed identity.Seed) error {
+	path := identityPath(dd)
+	sealed, err := identity.IsSealed(path)
+	if err != nil {
+		return nil
+	}
+	if sealed {
+		fmt.Fprintln(os.Stderr, "note: this device's identity is sealed with a passphrase, so the phrase is not compared with its member")
+		return nil
+	}
+	st, err := identity.Load(path, network, nil)
+	if err != nil {
+		return nil
+	}
+	if seed.MemberKey() != st.Member {
+		return fmt.Errorf("these twelve words are the phrase of member %s, and this device belongs to member %s: nothing was paired; run it on a device of the new device's member", seed.MemberKey().Short(), st.Member.Short())
 	}
 	return nil
 }
