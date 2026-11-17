@@ -948,6 +948,20 @@ follows depends on the two labels.
   device reads its counter after every 64 punches and names what lies
   between two readings, so one lost answer, or a counter that came round
   between two of them, costs one stretch and not the search.
+  Measured again on 17 November: about one such search in three found a
+  way, not two in three. The blocks all begin at a multiple of 128, five
+  ports do not show where a block begins and ends, and half of the margin
+  around them lay outside it: half the first device's ports pointed at
+  ports the router could never pick, and the second device sent more
+  punches than the block had free ports. So when the five ports are in
+  one block of 128 that begins at a multiple of 128 (or spread over a
+  quarter at least of one of 256 or 512 that does), the second device
+  names the block and no margin, sends a sixteenth fewer punches than the
+  block has ports, and toward a router that counts names none of the
+  ranges it was seen in before. Ports that fit no such block are named
+  with the margin as before. With every punch aimed inside the block the
+  odds are those of drawing a port against its target once for each free
+  port: a little under two in three at best.
 - A reading counts only when its socket came out at the public address
   the hub named for the channel, and a channel outlives a change of that
   address: the connection moves and nothing is said. On the live network a
