@@ -77,3 +77,47 @@ func TestVerdict(t *testing.T) {
 		t.Fatalf("page: %s", page[strings.Index(page, "<body>"):])
 	}
 }
+
+// The page counts and lists the storage devices apart from the devices
+// that are clients only: a server is one the manifest names or one that
+// reports the storage role, with or without the client role.
+func TestThePageKeepsStorageDevicesApart(t *testing.T) {
+	st := Status{Network: "testnet", Devices: []Device{
+		{Device: "a", Name: "falcon", Roles: []string{"client", "storage"}, State: "online"},
+		{Device: "b", Name: "pi", Roles: []string{"client"}, State: "dead"},
+		{Device: "c", Roles: []string{"storage"}, State: "online"},
+		{Device: "d", Roles: []string{"client"}, State: "online"},
+		{Device: "e", Roles: []string{"client"}, State: "down"},
+		{Device: "f", Roles: []string{}, State: "never"},
+	}}
+	p := pageData(st)
+	if p.Online != 2 || p.Storage != 3 || len(p.Groups) != 2 {
+		t.Fatalf("storage devices: %d of %d online in %d groups, want 2 of 3 in 2", p.Online, p.Storage, len(p.Groups))
+	}
+	if g := p.Groups[0]; !g.Storage || len(g.Devices) != 3 || g.Online != 2 {
+		t.Errorf("storage group: %+v", g)
+	}
+	if g := p.Groups[1]; g.Storage || len(g.Devices) != 3 || g.Online != 1 {
+		t.Errorf("client group: %+v", g)
+	}
+	c, err := New(Config{Manifest: func() *manifest.Manifest { return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := c.render(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(html)
+	for _, want := range []string{"<h2>Storage devices</h2>", "2 of 3</p>", "2 of 3 online", "Client devices", "1 of 3 online"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	if strings.Count(page, "<th>shares</th>") != 1 {
+		t.Error("the store's columns belong to the storage table alone")
+	}
+	if only := pageData(Status{Devices: []Device{{Device: "d", Roles: []string{"client"}, State: "online"}}}); len(only.Groups) != 1 || only.Groups[0].Storage || only.Storage != 0 {
+		t.Errorf("a network of clients has one table: %+v", only.Groups)
+	}
+}
