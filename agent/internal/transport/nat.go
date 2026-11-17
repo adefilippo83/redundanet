@@ -61,6 +61,10 @@ type natState struct {
 	readMu   sync.Mutex // one reading at a time
 	readAt   time.Time
 	readPort uint16
+	// The public address new sockets came out at when it was not the
+	// channel's, and how many readings in a row said so: see sameAddress.
+	elseAddr netip.Addr
+	elseSeen int
 }
 
 // measurement is what one finished probe run found.
@@ -428,6 +432,39 @@ func (e *Endpoint) freshSocket(hub netip.AddrPort) (net.PacketConn, error) {
 	return net.ListenUDP(network, nil)
 }
 
+// natMoved is how many readings in a row have to come out at one other
+// public address before the device takes that address for its own.
+const natMoved = 3
+
+// sameAddress says whether a new socket came out at the public address
+// the hub sees the channel at, which is what makes its port a reading of
+// the router's counter. The address is the one the hub named when the
+// channel came up, and a channel outlives a change of it: the connection
+// moves to the new address and nothing is said. So when natMoved readings
+// in a row come out at one other address, and the router is not one that
+// spreads a household over several, that address is the device's now: the
+// ranges it was seen in at the old one are dropped and the router is asked
+// again who holds it. Called with n.mu held.
+func (n *natState) sameAddress(a netip.Addr) bool {
+	a = a.Unmap()
+	if a == n.channel.Addr().Unmap() {
+		n.elseAddr, n.elseSeen = netip.Addr{}, 0
+		return true
+	}
+	if a != n.elseAddr {
+		n.elseAddr, n.elseSeen = a, 0
+	}
+	n.elseSeen++
+	if n.elseSeen < natMoved || n.pooled {
+		return false
+	}
+	n.channel = netip.AddrPortFrom(a, n.channel.Port())
+	n.elseAddr, n.elseSeen = netip.Addr{}, 0
+	n.ports = portBand{}
+	n.readAt, n.routerAsked = time.Time{}, time.Time{}
+	return true
+}
+
 // counter reads where the router's port counter stands: the public port
 // it gives a socket opened now. A reading no older than fresh is used
 // again. It says nothing without a probe port, or when the socket came
@@ -437,7 +474,7 @@ func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bo
 	n.readMu.Lock()
 	defer n.readMu.Unlock()
 	n.mu.Lock()
-	hub, token, channel := n.hub, n.run, n.channel
+	hub, token := n.hub, n.run
 	port, recent := n.readPort, fresh > 0 && !n.readAt.IsZero() && time.Since(n.readAt) < fresh
 	n.mu.Unlock()
 	if recent {
@@ -453,16 +490,16 @@ func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bo
 	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
 	a, ok := askFrom(conn, hub, ask, make([]byte, 2048), false)
 	_ = conn.Close()
-	if !ok || a.Addr().Unmap() != channel.Addr().Unmap() {
+	if !ok {
 		return 0, false
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.run != token {
+	if n.run != token || !n.sameAddress(a.Addr()) {
 		return 0, false
 	}
 	n.readAt, n.readPort = time.Now(), a.Port()
-	n.ports.add(channel.Addr().Unmap(), a)
+	n.ports.add(n.channel.Addr().Unmap(), a)
 	return a.Port(), true
 }
 
@@ -476,7 +513,7 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 	none := func() (uint16, bool) { return 0, false }
 	n := &e.nat
 	n.mu.Lock()
-	hub, token, channel := n.hub, n.run, n.channel
+	hub, token := n.hub, n.run
 	n.mu.Unlock()
 	if !hub.IsValid() || token == 0 || ctx.Err() != nil {
 		return none
@@ -494,15 +531,20 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 	go func() {
 		a, ok := askFrom(conn, hub, ask, make([]byte, 2048), true)
 		_ = conn.Close()
-		if !ok || a.Addr().Unmap() != channel.Addr().Unmap() {
+		if !ok {
 			got <- 0
 			return
 		}
 		n.mu.Lock()
-		if n.run == token {
-			n.ports.add(channel.Addr().Unmap(), a)
+		same := n.run == token && n.sameAddress(a.Addr())
+		if same {
+			n.ports.add(n.channel.Addr().Unmap(), a)
 		}
 		n.mu.Unlock()
+		if !same {
+			got <- 0
+			return
+		}
 		got <- a.Port()
 	}()
 	var port uint16
@@ -519,16 +561,21 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 // and another one when that is used up, so the ranges a device was seen in
 // an hour ago may not be where its next port comes from.
 func (e *Endpoint) seenNow(ctx context.Context, n int) []portRange {
-	_, public, _ := e.router()
 	readings := make([]func() (uint16, bool), 0, n)
 	for i := 0; i < n; i++ {
 		readings = append(readings, e.reading(ctx))
 	}
-	var now portBand
+	ports := make([]uint16, 0, n)
 	for _, r := range readings {
 		if p, ok := r(); ok {
-			now.add(public, netip.AddrPortFrom(public, p))
+			ports = append(ports, p)
 		}
+	}
+	// The address after the readings: they are what notices a change of it.
+	_, public, _ := e.router()
+	var now portBand
+	for _, p := range ports {
+		now.add(public, netip.AddrPortFrom(public, p))
 	}
 	return now.ranges
 }
