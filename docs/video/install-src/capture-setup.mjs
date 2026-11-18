@@ -1,0 +1,53 @@
+import { chromium } from "playwright-core";
+import { readFileSync, writeFileSync } from "node:fs";
+const out = "shots/";
+const b = await chromium.launch({ channel: "chrome" });
+const ctx = await b.newContext({ viewport: { width: 1200, height: 760 }, deviceScaleFactor: 2, colorScheme: "light" });
+const p = await ctx.newPage();
+const boxes = {};
+const link = (st) => /http:\/\/127\.0\.0\.1:\d+\/login\?t=\w+/.exec(readFileSync(`prev-${st}.log`, "utf8"))[0];
+const tidy = () => p.evaluate(() => {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = w.nextNode());) n.nodeValue = n.nodeValue.replace(/pi-attic/g, "my-server").replace(/3\.0\.12/g, "3.0.38");
+});
+const shot = async (name, sel) => {
+  await tidy();
+  await p.waitForTimeout(400);
+  boxes[name] = {};
+  for (const [k, l] of Object.entries(sel || {})) boxes[name][k] = await l.boundingBox();
+  await p.screenshot({ path: out + name + ".png" });
+};
+await p.goto(link("setup"));
+await shot("welcome", { button: p.getByRole("button", { name: "Show my phrase" }), card: p.locator("section.card, .card").first() });
+await p.getByRole("button", { name: "Show my phrase" }).click();
+await p.waitForTimeout(500);
+await shot("phrase", { words: p.locator("ol.words"), fields: p.locator("form.fields") });
+const words = await p.evaluate(() => [...document.querySelectorAll("ol.words li")].map((e) => e.innerText.replace(/^\d+\.\s*/, "").trim()));
+for (const lab of await p.locator("form.fields label").all()) {
+  const n = parseInt((await lab.innerText()).replace(/\D+/g, ""), 10);
+  await lab.locator("input").fill(words[n - 1]);
+}
+await p.locator("h1").first().click();
+await shot("typed", { button: p.getByRole("button", { name: "Confirm" }), fields: p.locator("form.fields") });
+await p.getByRole("button", { name: "Confirm" }).click();
+await p.waitForTimeout(300);
+await shot("written", { card: p.locator("main").first() });
+await p.goto(link("empty"));
+await shot("empty", { request: p.getByRole("link", { name: "Open the request" }), folder: p.getByRole("link", { name: "Choose a folder" }) });
+await p.goto(link("protected"));
+await shot("protected", { title: p.locator("h1").first() });
+const key = "abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrst", dev = "tsrqponmlkjihgfedcba765432zyxwvutsrqponmlkjihgfedcba";
+await p.goto(new URL("../../join.html", import.meta.url).href + `?key=${key}&device=${dev}&devicename=my-server`);
+await p.waitForTimeout(1200);
+await p.locator("#memberName").scrollIntoViewIfNeeded();
+await p.evaluate(() => window.scrollBy(0, -150));
+await shot("form", { name: p.locator("#memberName"), gb: p.locator("#contributionGb"), key: p.locator("#memberKey") });
+await p.locator("#memberName").fill("alex");
+await p.locator("#contributionGb").fill("500");
+await p.locator("#acceptTerms").check().catch(() => {});
+await p.locator("button.submit-btn").scrollIntoViewIfNeeded();
+await shot("form-filled", { name: p.locator("#memberName"), gb: p.locator("#contributionGb"), submit: p.locator("button.submit-btn"), terms: p.locator("#acceptTerms") });
+writeFileSync(out + "boxes.json", JSON.stringify(boxes, null, 1));
+writeFileSync(out + "boxes.js", "window.BOXES = " + JSON.stringify(boxes, null, 1) + ";\n");
+console.log(JSON.stringify(boxes));
+await b.close();
