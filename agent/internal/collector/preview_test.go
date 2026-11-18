@@ -116,6 +116,11 @@ func TestThePageKeepsStorageDevicesApart(t *testing.T) {
 			t.Errorf("page lacks %q", want)
 		}
 	}
+	// "pi" is listed and reports no storage role; "c" has the role and is
+	// not listed: each is marked once, and "falcon" is not.
+	if strings.Count(page, `<span class="warn">no storage role</span>`) != 1 || strings.Count(page, `<span class="warn">not listed</span>`) != 1 {
+		t.Error("a storage role and a listing that disagree are each marked once")
+	}
 	if strings.Count(page, "<th>shares</th>") != 1 {
 		t.Error("the store's columns belong to the storage table alone")
 	}

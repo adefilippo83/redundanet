@@ -24,7 +24,11 @@
   <h2>{{.T "setup.new.title"}}</h2>
   <p>{{.T "setup.new.text"}}</p>
   <form method="post" action="setup/begin" class="stack">{{template "csrf" .}}
-    <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
+    <details class="advanced">
+      <summary>{{.T "setup.advanced"}}</summary>
+      <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
+      <p class="muted">{{.T "setup.storage.hint"}}</p>
+    </details>
     <div><button class="btn primary">{{.T "setup.new.button"}}</button></div>
   </form>
 </section>
@@ -33,7 +37,11 @@
   <p>{{.T "setup.phrase.text"}}</p>
   <form method="post" action="setup/restore" class="stack">{{template "csrf" .}}
     <label>{{.T "setup.phrase.label"}}<textarea name="phrase" rows="3" autocomplete="off" autocapitalize="none" spellcheck="false" required></textarea></label>
-    <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
+    <details class="advanced">
+      <summary>{{.T "setup.advanced"}}</summary>
+      <label class="check"><input type="checkbox" name="storage"><span>{{.T "setup.storage"}}</span></label>
+      <p class="muted">{{.T "setup.storage.hint"}}</p>
+    </details>
     <div><button class="btn">{{.T "setup.phrase.button"}}</button></div>
   </form>
 </section>

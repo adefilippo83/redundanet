@@ -230,6 +230,12 @@ func buildOverview(s Snapshot, online string, l tr) overviewData {
 	} else if s.JoinURL != "" {
 		add(issue{Kind: "info", Title: l.T("issue.node.title", s.JoinDevice), Text: l.T("issue.node.text"), Href: s.JoinURL, Label: l.T("issue.node.button")})
 	}
+	switch s.StorageNote {
+	case "unlisted":
+		add(issue{Kind: "info", Title: l.T("issue.storage.unlisted.title"), Text: l.T("issue.storage.unlisted.text")})
+	case "norole":
+		add(issue{Kind: "warn", Title: l.T("issue.storage.norole.title"), Text: l.T("issue.storage.norole.text")})
+	}
 	if online == "down" {
 		add(issue{Kind: "bad", Title: l.T("issue.offline.title"), Text: l.T("issue.offline.text")})
 	}

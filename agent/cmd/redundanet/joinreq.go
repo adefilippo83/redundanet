@@ -11,7 +11,10 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/manifest"
@@ -86,24 +89,46 @@ func devicePrefill(m *manifest.Manifest, member identity.Key, devices []pairedDe
 }
 
 // prefillFor builds the join request for an identity: its member key, the
-// first storage device on record (or this device itself when it has the
-// storage role), and a contribution of 0 when there is no storage device,
-// since the form requires a number.
+// first storage device on record, and a contribution of 0 when there is
+// none, since the form requires a number. The devices are the nodes this
+// device paired and, when its member said so, this device (withSelf);
+// never this device for its storage role alone.
 func prefillFor(st *identity.State, devices []pairedDevice) joinPrefill {
 	p := joinPrefill{MemberKey: st.Member.String()}
 	if sd := storageDevice(devices); sd != nil {
 		p.DeviceKey, p.DeviceName = sd.Device, sd.Name
-	} else if slices.Contains(st.Certificate.Certificate.Roles, identity.RoleStorage) {
-		if dev, err := st.Device(); err == nil {
-			p.DeviceKey = dev.ID().String()
-			p.DeviceName, _ = os.Hostname()
-		}
 	}
 	if p.DeviceKey == "" {
 		zero := 0
 		p.ContributionGB = &zero
 	}
 	return p
+}
+
+// storageNote says when this device's storage role and the manifest
+// disagree, for a listed member: "unlisted" when the device has the role
+// and the manifest does not list it, so it stores nothing for the network,
+// and its member has not said it is their server (a server waiting for its
+// request has the page's request button instead); "norole" when the
+// manifest lists it and its certificate has no storage role, so it opens
+// no store. "" when they agree.
+func storageNote(m *manifest.Manifest, device identity.Key, roles []string, dd string) string {
+	listed := false
+	for _, s := range m.Storage {
+		if s.Device == device {
+			listed = true
+		}
+	}
+	has := slices.Contains(roles, identity.RoleStorage)
+	switch {
+	case listed && !has:
+		return "norole"
+	case has && !listed:
+		if yes, _ := serverChoice(dd); !yes {
+			return "unlisted"
+		}
+	}
+	return ""
 }
 
 // memberListed reports whether the manifest lists the member: the device is
@@ -142,6 +167,7 @@ func runJoinRequest(args []string) error {
 	fs := flag.NewFlagSet("join-request", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
 	noBrowser := fs.Bool("print", false, "only print the link")
+	thisDevice := fs.Bool("this-device", false, "this computer is my storage server, a machine that stays on all day: name it in the request (it needs the storage role)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -156,7 +182,28 @@ func runJoinRequest(args []string) error {
 	if err != nil {
 		return fmt.Errorf("this device has no identity yet (%w); run redundanet setup", err)
 	}
+	// Whether this computer is the member's storage server is theirs to
+	// say, once: the role alone does not put it in a request.
+	if hasRole := slices.Contains(st.Certificate.Certificate.Roles, identity.RoleStorage); *thisDevice {
+		if !hasRole {
+			return errors.New("--this-device: this computer has no storage role, and a role is not added to an identity: `redundanet reset`, then set it up as a storage server")
+		}
+		if err := recordServerChoice(d, true); err != nil {
+			return err
+		}
+	} else if _, known := serverChoice(d); hasRole && !known {
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			fmt.Println("This computer has the storage role. A storage server is a machine that stays on all day and keeps other members' shares on its disk.")
+			yes := strings.EqualFold(ask("Is this computer your storage server? [y/N] "), "y")
+			if err := recordServerChoice(d, yes); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "this computer has the storage role and the request does not name it; if it is your storage server: redundanet join-request --this-device")
+		}
+	}
 	devices, _ := loadDevices(d)
+	devices = withSelf(d, st, devices)
 	m, err := membership.Open(membershipConfig(d, *network))
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

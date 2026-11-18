@@ -87,6 +87,12 @@ func runStatus(args []string) error {
 	case "waiting":
 		fmt.Println("member: not in the manifest yet; redundanet join-request opens the join form filled in, and the maintainer admits you by signing")
 	}
+	switch s.StorageNote {
+	case "unlisted":
+		fmt.Println("storage: this device has the storage role and the manifest does not list it, so it stores nothing for the network; if it is your storage server: redundanet join-request --this-device")
+	case "norole":
+		fmt.Println("storage: the manifest lists this device as a storage server and its certificate has no storage role, so it stores nothing; tell the maintainer, or `redundanet reset` and set it up as a server")
+	}
 	if s.Membership != nil {
 		m := s.Membership
 		fmt.Printf("manifest revision %d, %d members, %d hubs", m.Revision, m.Members, m.Hubs)

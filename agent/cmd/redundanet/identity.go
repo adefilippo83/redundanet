@@ -93,7 +93,7 @@ func commonFlags(fs *flag.FlagSet) (dir *string, network *string) {
 func identityInit(args []string) error {
 	fs := flag.NewFlagSet("identity init", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
-	storage := fs.Bool("storage", false, "this device will also contribute disk")
+	storage := fs.Bool("storage", false, "this computer is my storage server: a machine that stays on all day, named in the join request")
 	yes := fs.Bool("yes", false, "skip typing three words back (scripts only)")
 	passphrase := fs.Bool("passphrase", false, "seal the identity file with a passphrase")
 	fromPhrase := fs.Bool("from-phrase", false, "an existing member on a new device: type the recovery phrase instead of making one")
@@ -188,6 +188,11 @@ func createIdentity(d, network string, seed identity.Seed, storage bool, serial 
 	st := &identity.State{Network: network, Member: seed.MemberKey(), MemberSecret: seed.Secret(), DeviceSeed: dev.Seed(), Certificate: *sc}
 	if err := identity.Save(path, st, pass); err != nil {
 		return nil, err
+	}
+	if storage {
+		// Asked for in so many words, on the page or by the flag: this
+		// computer is its member's storage server, and a request names it.
+		_ = recordServerChoice(d, true)
 	}
 	return st, nil
 }
