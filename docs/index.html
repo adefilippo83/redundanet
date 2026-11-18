@@ -237,6 +237,17 @@
             background: var(--bg-card);
         }
 
+        .how-video {
+            display: block;
+            width: 100%;
+            max-width: 960px;
+            aspect-ratio: 16 / 9;
+            margin: 0 auto 60px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--bg-dark);
+        }
+
         .process-steps {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -654,6 +665,10 @@
                 <p data-i18n="how.subtitle">Identity from a phrase, membership in a signed file, data on your peers' disks</p>
             </div>
 
+            <video class="how-video" controls playsinline preload="metadata" poster="video/poster.jpg">
+                <source src="video/how-it-works.mp4" type="video/mp4">
+            </video>
+
             <div class="data-flow">
                 <h3 data-i18n="how.flow.title">A backup, from your folder to the grid</h3>
                 <div class="flow-diagram">
@@ -670,7 +685,7 @@
                         <span class="flow-arrow">&#8594;</span>
                         <div class="flow-box highlight">
                             <h5 data-i18n="how.flow.split">Split</h5>
-                            <p data-i18n="how.flow.splitDesc">Erasure coding, 2-of-3</p>
+                            <p data-i18n="how.flow.splitDesc">Erasure coding, 2-of-4</p>
                         </div>
                     </div>
                     <div class="flow-row">
@@ -681,10 +696,11 @@
                             <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 1<br><span data-i18n="how.flow.member">Member</span> A</div>
                             <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 2<br><span data-i18n="how.flow.member">Member</span> B</div>
                             <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 3<br><span data-i18n="how.flow.member">Member</span> C</div>
+                            <div class="flow-node"><span data-i18n="how.flow.share">Share</span> 4<br><span data-i18n="how.flow.member">Member</span> D</div>
                         </div>
                     </div>
                     <p style="text-align: center; margin-top: 24px; color: var(--text-muted);" data-i18n="how.flow.note">
-                        <strong>Any 2 of the 3 shares rebuild the object.</strong> Storage servers hold ciphertext only; file names and folder structure are inside encrypted objects too.
+                        <strong>Any 2 of the 4 shares rebuild the object.</strong> Storage servers hold ciphertext only; file names and folder structure are inside encrypted objects too.
                     </p>
                 </div>
             </div>
