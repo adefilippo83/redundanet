@@ -211,8 +211,10 @@ old encoding at zero, so a member near budget converts without deleting
 first; the hub page shows the conversion as a bar, converted of all
 objects, with the old encoding's bytes and whether they count yet, and
 per member the objects still to convert. Each device converts what its
-own root references (`backup rebalance`, and on its own every six hours
-while a transition is declared): fetch, decode, store under the new
+own root references (`backup rebalance`, and on its own while a
+transition is declared: ten minutes after the agent starts, fifteen
+minutes after a run that did not complete, every six hours after one
+that did): fetch, decode, store under the new
 encoding, rewrite the directories and the index, publish the root after
 each snapshot. The old objects fall to the cleanup. Once every member
 has converted, the operators remove the transition.

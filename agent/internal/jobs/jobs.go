@@ -472,9 +472,11 @@ func (r *Runner) Run(ctx context.Context) {
 	defer v.Stop()
 	cl := time.NewTicker(cleanupEvery)
 	defer cl.Stop()
-	// A conversion runs while the manifest declares a transition, a few
-	// times a day, and after each backup run has had its say.
-	rb := time.NewTicker(rebalanceEvery)
+	// A conversion runs while the manifest declares a transition: soon
+	// after start, once the first backup run has had its say, again
+	// shortly after a run that did not complete, and a few times a day
+	// once one has.
+	rb := time.NewTimer(rebalanceFirst)
 	defer rb.Stop()
 	// The first run shortly after start, so a new set is not a day away.
 	first := time.NewTimer(2 * time.Minute)
@@ -503,9 +505,11 @@ func (r *Runner) Run(ctx context.Context) {
 		case <-cl.C:
 			_, _ = r.RunCleanup(ctx, false, false)
 		case <-rb.C:
+			var err error
 			if r.transitionDeclared() {
-				_, _ = r.RunRebalance(ctx)
+				_, err = r.RunRebalance(ctx)
 			}
+			rb.Reset(rebalanceAfter(err))
 		case <-r.reconf:
 			r.mu.Lock()
 			every, verifyEvery, cleanupEvery = r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery
@@ -517,9 +521,30 @@ func (r *Runner) Run(ctx context.Context) {
 	}
 }
 
-// rebalanceEvery is how often a device looks for objects to convert while
-// a transition is declared.
-const rebalanceEvery = 6 * time.Hour
+// When a device looks for objects to convert while a transition is
+// declared. The first look comes after the first backup run (two minutes
+// after start), so a restart, which every release is, does not put the
+// conversion off by hours. A run that did not complete, which is mostly
+// servers out of reach, is tried again shortly: it resumes where it
+// stopped, and what is converted costs only lookups. A run that completed
+// left nothing to convert, and backups since the transition write the new
+// encoding, so the look after it is rare: it reads every directory of
+// every snapshot again from the servers.
+const (
+	rebalanceFirst = 10 * time.Minute
+	rebalanceRetry = 15 * time.Minute
+	rebalanceEvery = 6 * time.Hour
+)
+
+// rebalanceAfter is how long the loop waits after a look: shortly when the
+// run did not complete, except when it was another run's turn (a member
+// started one by hand, and that one reports for itself).
+func rebalanceAfter(err error) time.Duration {
+	if err != nil && !errors.Is(err, ErrRebalancing) {
+		return rebalanceRetry
+	}
+	return rebalanceEvery
+}
 
 func (r *Runner) transitionDeclared() bool {
 	if r.cfg.Manifest == nil {

@@ -2,6 +2,8 @@ package jobs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -414,5 +416,24 @@ func TestBudgetRefusesARunWhenUsedUp(t *testing.T) {
 	}
 	if b := r.Status().Budget; b == nil || b.Exhausted || b.UsedGB > 5.1 {
 		t.Fatalf("budget after: %+v", b)
+	}
+}
+
+// A conversion that did not complete is tried again within minutes, one
+// that did (or had nothing to do) waits hours, and so does a look that
+// found a run already going. The first look is minutes after start, so a
+// release's restart does not put the conversion off.
+func TestWhenTheConversionLooksAgain(t *testing.T) {
+	if got := rebalanceAfter(errors.New("snapshot x: no server answered")); got != rebalanceRetry {
+		t.Fatalf("after a failed run: %v", got)
+	}
+	if got := rebalanceAfter(fmt.Errorf("wrapped: %w", ErrRebalancing)); got != rebalanceEvery {
+		t.Fatalf("while another run is going: %v", got)
+	}
+	if got := rebalanceAfter(nil); got != rebalanceEvery {
+		t.Fatalf("after a complete run: %v", got)
+	}
+	if rebalanceFirst > 15*time.Minute || rebalanceRetry > 30*time.Minute || rebalanceRetry >= rebalanceEvery {
+		t.Fatalf("first %v, retry %v, every %v", rebalanceFirst, rebalanceRetry, rebalanceEvery)
 	}
 }
