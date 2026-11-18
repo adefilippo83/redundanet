@@ -2,7 +2,7 @@
 
 RedundaNet 3 is one static binary named `redundanet`. There are no containers and nothing else to install. One line installs it on macOS, Linux and Windows, and the agent then keeps itself up to date from the signed release index. Joining the network is the next page: [join.md](join.md).
 
-Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
+Runs on Linux (x86-64 and ARM64, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
 
 ## One line
 
