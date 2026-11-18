@@ -152,6 +152,29 @@ redundanet update apply
 redundanet update status
 ```
 
+## Starting over
+
+A device's identity is never replaced in place: `identity init`, `identity pair` and the page refuse while the data directory holds one. To give a device a new identity (a new phrase after the old one was disclosed or lost, or the same phrase without the storage role), remove what it has and set it up again. A new phrase is a new member: tell the maintainer first, who removes the old entry from the manifest before your new join request arrives.
+
+On a laptop:
+
+```bash
+redundanet service uninstall
+rm -rf ~/.config/redundanet          # macOS: ~/Library/Application\ Support/redundanet; Windows: %AppData%\redundanet
+```
+
+Then the one line at the top of this page again. On a Linux storage node, as root:
+
+```bash
+sudo redundanet3 node uninstall
+sudo rm -rf /var/lib/redundanet3 /etc/redundanet3
+sudo rm -rf STORAGE_PATH/redundanet3  # the store: only once the maintainer has taken the node out of the manifest
+```
+
+Then the node's one line again. A node from the Raspberry Pi image is flashed again, or, without flashing: `sudo systemctl stop redundanet-agent`, remove everything in `/var/lib/redundanet3` except `bin`, and reboot; the first-boot unit runs whenever `/var/lib/redundanet3/identity` is missing and shows a new pairing code.
+
+A data directory that is kept through a change of identity is safe to keep: the local database records which member and device it served, and the agent drops from it what belonged to another (the root counters for a new device key, the whole cache for another member, after which the next backup reads every file again).
+
 ## Uninstall
 
 ```bash

@@ -48,6 +48,7 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 		`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_version', 0)`,
 		`INSERT OR IGNORE INTO meta (key, value) VALUES ('root_confirmed', 0)`,
+		`CREATE TABLE IF NOT EXISTS owner (id INTEGER PRIMARY KEY CHECK (id = 1), member TEXT NOT NULL, device TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS verifications (at INTEGER PRIMARY KEY, snapshot TEXT NOT NULL, sampled INTEGER NOT NULL,
 			verified INTEGER NOT NULL, compared INTEGER NOT NULL, unchanged INTEGER NOT NULL, failed TEXT NOT NULL)`,
 	} {
@@ -74,6 +75,56 @@ func Open(dir string, now func() time.Time) (*DB, error) {
 		return nil, fmt.Errorf("localdb: %w", err)
 	}
 	return d, nil
+}
+
+// What Bind found.
+const (
+	BoundSame   = ""       // the identity the database already served, or its first
+	BoundDevice = "device" // the same member under a new device key
+	BoundMember = "member" // another member
+)
+
+// Bind ties the database to the identity that uses it, and drops what
+// belonged to another one: the data directory outlives an identity that is
+// replaced in place. A new device key of the same member starts its root
+// counters from zero, since the servers hold no root of that key and a
+// version the old key confirmed would make every reading of the roots look
+// like a loss. Another member keeps nothing: the objects, the scan and the
+// verifications are of data it cannot read. A database from before this
+// record takes the identity it is given and keeps what it has.
+func (d *DB) Bind(member, device string) (string, error) {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var m, dev string
+	switch err := tx.QueryRow(`SELECT member, device FROM owner WHERE id = 1`).Scan(&m, &dev); {
+	case errors.Is(err, sql.ErrNoRows):
+		m, dev = member, device
+	case err != nil:
+		return "", err
+	}
+	found := BoundSame
+	var reset []string
+	switch {
+	case m != member:
+		found = BoundMember
+		reset = []string{`DELETE FROM objects`, `DELETE FROM scan`, `DELETE FROM verifications`, `UPDATE meta SET value = 0 WHERE key IN ('root_version', 'root_confirmed')`}
+	case dev != device:
+		found = BoundDevice
+		reset = []string{`UPDATE meta SET value = 0 WHERE key IN ('root_version', 'root_confirmed')`}
+	}
+	for _, q := range append(reset, `INSERT INTO owner (id, member, device) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET member = excluded.member, device = excluded.device`) {
+		args := []any{}
+		if strings.Contains(q, "?") {
+			args = []any{member, device}
+		}
+		if _, err := tx.Exec(q, args...); err != nil {
+			return "", err
+		}
+	}
+	return found, tx.Commit()
 }
 
 // Close closes the database.

@@ -40,6 +40,10 @@ const (
 	downAfter        = 10 * time.Minute
 	defaultDeadAfter = 72 * time.Hour
 	saveEvery        = 30 * time.Second
+	// forgetAfter is how long a device that is not a listed storage server
+	// stays in the census without a heartbeat. It comes back with its next
+	// one: the census holds nothing of a client but its last report.
+	forgetAfter = 7 * 24 * time.Hour
 )
 
 // Config wires a collector.
@@ -49,6 +53,9 @@ type Config struct {
 	Live     func() hub.Status                                     // the hub's channels right now; set with SetLive after the hub starts
 	Path     string                                                // the census file kept across restarts; "" keeps it in memory
 	Fetch    func(ctx context.Context, url string) ([]byte, error) // defaults to an HTTP GET with a timeout
+	// Revocations is every device revocation the hub keeps; nil means none.
+	// A revoked device leaves the census.
+	Revocations func() []*identity.SignedRevocation
 	// Placement is the SQLite file of the placement table; "" keeps it in
 	// memory, for tests.
 	Placement string
@@ -248,11 +255,74 @@ func (c *Collector) Run(ctx context.Context) {
 		case <-schedule.C:
 			c.Schedule(ctx)
 		case <-save.C:
+			c.Forget()
 			if err := c.Save(); err != nil {
 				c.log.Warn("census not saved", "err", err)
 			}
 		}
 	}
+}
+
+// Forget drops from the census the devices the status page has no reason
+// to show any more: a device whose member the manifest no longer lists, a
+// device its member revoked, and a device that is not a listed storage
+// server and has sent no heartbeat for forgetAfter. A device on a channel
+// right now stays whatever else holds (a revocation covers a certificate,
+// and the device may carry a later one), and so do a listed storage server,
+// which must stay in sight while it is dead until the manifest retires it,
+// and a hub. Without a manifest nothing is dropped. It returns how many
+// went.
+func (c *Collector) Forget() int {
+	m := c.cfg.Manifest()
+	if m == nil {
+		return 0
+	}
+	type pair struct{ member, device identity.Key }
+	revoked := map[pair]bool{}
+	if c.cfg.Revocations != nil {
+		for _, r := range c.cfg.Revocations() {
+			revoked[pair{r.Revocation.Member, r.Revocation.Device}] = true
+		}
+	}
+	for _, r := range m.SignedRevocations() {
+		revoked[pair{r.Revocation.Member, r.Revocation.Device}] = true
+	}
+	listed := map[identity.Key]bool{}
+	for _, s := range m.Storage {
+		listed[s.Device] = true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	live := map[identity.Key]bool{}
+	if c.cfg.Live != nil {
+		for _, cl := range c.cfg.Live().Clients {
+			if k, err := identity.ParseKey(cl.Device); err == nil {
+				live[k] = true
+			}
+		}
+	}
+	now, gone := c.cfg.Now(), 0
+	for dev, e := range c.entries {
+		if live[dev] || m.HubByKey(dev) != nil {
+			continue
+		}
+		why := ""
+		switch {
+		case m.MemberByKey(e.Member) == nil:
+			why = "its member is not in the manifest"
+		case revoked[pair{e.Member, dev}]:
+			why = "its member revoked it"
+		case !listed[dev] && now.Sub(e.LastSeen) > forgetAfter:
+			why = "no heartbeat for a week and not a listed storage server"
+		default:
+			continue
+		}
+		delete(c.entries, dev)
+		c.dirty = true
+		gone++
+		c.log.Info("device dropped from the census", "device", dev.Short(), "why", why)
+	}
+	return gone
 }
 
 // Health is the collector's own state, for the hub's status line.

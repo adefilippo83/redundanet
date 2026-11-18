@@ -246,11 +246,16 @@ func runHub(args []string) error {
 	// The pairing mailbox outlives a self-update handover like the census:
 	// a pairing in progress is not lost when the bundle restarts.
 	pairRelay := pairing.NewRelay(rc.log)
+	// The census drops a device its member revoked.
+	var revocations func() []*identity.SignedRevocation
+	if rc.member != nil {
+		revocations = rc.member.Revocations
+	}
 	start := func() (*bundle, error) {
 		bctx, cancel := context.WithCancel(ctx)
 		col, err := collector.New(collector.Config{Device: rc.device, Signer: hubKey, Manifest: rc.current, Path: filepath.Join(rc.dataDir, "census.json"),
 			Placement: filepath.Join(rc.dataDir, "placement.sqlite"), Started: rc.started, Log: rc.log,
-			Pair: pairRelay})
+			Pair: pairRelay, Revocations: revocations})
 		if err != nil {
 			cancel()
 			return nil, err
@@ -595,6 +600,14 @@ func runAgent(args []string) error {
 		return err
 	}
 	defer ldb.Close()
+	switch found, err := ldb.Bind(rc.state.Member.String(), rc.device.String()); {
+	case err != nil:
+		return err
+	case found == localdb.BoundDevice:
+		rc.log.Info("the local database served another device key of this member; this device's root starts again")
+	case found == localdb.BoundMember:
+		rc.log.Info("the local database served another member; its cache is dropped and the next backup reads every file again")
+	}
 	devKey, err := rc.state.Device()
 	if err != nil {
 		return err

@@ -109,6 +109,11 @@ func newEngine(ctx context.Context, rc *runtimeConfig, timeout time.Duration) (*
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if _, err := db.Bind(rc.state.Member.String(), rc.device.String()); err != nil {
+		_ = ep.Close()
+		_ = db.Close()
+		return nil, nil, err
+	}
 	spool := filepath.Join(rc.dataDir, "spool")
 	_ = os.MkdirAll(spool, 0o700)
 	e, err := engine.New(engine.Config{Network: rc.state.Network, Member: rc.state.Member, Secret: rc.state.MemberSecret, Device: dev, Cert: &rc.state.Certificate,
