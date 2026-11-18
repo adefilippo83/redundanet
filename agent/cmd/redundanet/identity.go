@@ -78,6 +78,12 @@ func dataDir(override string) (string, error) {
 
 func identityPath(dir string) string { return filepath.Join(dir, "identity") }
 
+// hasIdentity is the refusal to write an identity over another, with the
+// way out: an identity is replaced by starting over, never in place.
+func hasIdentity(path string) error {
+	return fmt.Errorf("%s exists: this device already has an identity. To give it a new one, start over: stop the agent and remove the data directory, then set the device up again (\"Starting over\" in https://github.com/adefilippo83/redundanet/blob/main/docs/install.md)", path)
+}
+
 func commonFlags(fs *flag.FlagSet) (dir *string, network *string) {
 	dir = fs.String("data-dir", "", "data directory (default: the platform's user config directory, or $REDUNDANET_DATA_DIR)")
 	network = fs.String("network", defaultNetwork(), "network name, as in the manifest")
@@ -103,7 +109,7 @@ func identityInit(args []string) error {
 	}
 	path := identityPath(d)
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s exists: this device already has an identity", path)
+		return hasIdentity(path)
 	}
 
 	// A new member draws a seed and must write the phrase down; an existing
@@ -162,7 +168,7 @@ func identityInit(args []string) error {
 func createIdentity(d, network string, seed identity.Seed, storage bool, serial uint64, pass []byte) (*identity.State, error) {
 	path := identityPath(d)
 	if _, err := os.Stat(path); err == nil {
-		return nil, fmt.Errorf("%s exists: this device already has an identity", path)
+		return nil, hasIdentity(path)
 	}
 	dev, err := identity.NewDeviceKey()
 	if err != nil {
@@ -401,7 +407,7 @@ func identityCertify(args []string) error {
 func pendingDeviceKey(d string) (*identity.DeviceKey, error) {
 	path := filepath.Join(d, "device-key.pending")
 	if _, err := os.Stat(identityPath(d)); err == nil {
-		return nil, fmt.Errorf("%s exists: this device already has an identity", identityPath(d))
+		return nil, hasIdentity(identityPath(d))
 	}
 	if b, err := os.ReadFile(path); err == nil {
 		return identity.DeviceKeyFromSeed(b)

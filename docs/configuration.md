@@ -108,7 +108,7 @@ What is in it:
 | `network.yaml` | The network descriptor the device joined with: the pinned operator keys, the hubs, where the manifest is served. |
 | `manifest.yaml`, `manifest.sig` | The last good signed manifest, for offline starts. |
 | `backup.yaml` | Above. |
-| `local.sqlite` | The device's local database: files by scan key and hash, capabilities, placement, restore tests. A cache, rebuilt when lost. |
+| `local.sqlite` | The device's local database: files by scan key and hash, capabilities, placement, restore tests. A cache, rebuilt when lost. It records the member and the device it served: under a new device key its root counters start again, and under another member it is emptied. |
 | `api.addr`, `api.token` | Where the local API listens and the token the CLI proves itself with, mode 0600. The CLI signs its requests with the token and never sends it. |
 | `service.log` | The service's output on macOS; Linux uses the journal. |
 | `spool/` | Staging for uploads. |

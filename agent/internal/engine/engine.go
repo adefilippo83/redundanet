@@ -79,10 +79,10 @@ var ErrRootsUnsure = errors.New("engine: the storage servers did not give a sure
 // list, a cleanup's set of referenced objects) drops what came after it.
 func (r *Roots) Trusted() error {
 	if w := r.Servers/2 + 1; r.Servers == 0 || r.Answered < r.Servers-w+1 {
-		return fmt.Errorf("%w: %d of %d answered", ErrRootsUnsure, r.Answered, r.Servers)
+		return fmt.Errorf("%w: %d of %d answered. See redundanet status for which are unreachable; the next run tries again", ErrRootsUnsure, r.Answered, r.Servers)
 	}
 	if r.Own < r.Confirmed {
-		return fmt.Errorf("%w: they returned version %d of this device's root, and it confirmed version %d", ErrRootsUnsure, r.Own, r.Confirmed)
+		return fmt.Errorf("%w: they returned version %d of this device's root, and it confirmed version %d. The servers that hold the newer one may be unreachable right now: see redundanet status, and the next run tries again", ErrRootsUnsure, r.Own, r.Confirmed)
 	}
 	return nil
 }

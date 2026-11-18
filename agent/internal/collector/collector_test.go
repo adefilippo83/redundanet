@@ -268,3 +268,74 @@ func TestTheListenerAnswersFromOneComputedStatus(t *testing.T) {
 		t.Fatalf("the page after %s is still the old one", pageTTL)
 	}
 }
+
+// The census forgets a device the page has no reason to show: its member
+// left the manifest, its member revoked it, or it is a client silent for a
+// week. A listed storage server stays however long it is silent, and so
+// does whatever is on a channel now.
+func TestForget(t *testing.T) {
+	carol, carolPC, bobOld, bobPhone := key(3), key(14), key(15), key(16)
+	m := demoManifest()
+	w := &world{now: time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)}
+	var revoked []*identity.SignedRevocation
+	c, err := New(Config{Device: hubKey, Manifest: func() *manifest.Manifest { return m },
+		Revocations: func() []*identity.SignedRevocation { return revoked },
+		Now:         func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	c.SetLive(func() hub.Status { w.mu.Lock(); defer w.mu.Unlock(); return w.live })
+	has := func(dev identity.Key) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.entries[dev] != nil
+	}
+	c.Record(identity.Peer{Device: falcon, Member: alice}, "udp", wire.Census{Roles: []string{"storage"}})
+	c.Record(identity.Peer{Device: bobPC, Member: bob}, "udp", wire.Census{Roles: []string{"client"}})
+	c.Record(identity.Peer{Device: bobOld, Member: bob}, "udp", wire.Census{Roles: []string{"client"}})
+	c.Record(identity.Peer{Device: bobPhone, Member: bob}, "udp", wire.Census{Roles: []string{"client"}})
+	c.Record(identity.Peer{Device: carolPC, Member: carol}, "udp", wire.Census{Roles: []string{"client"}})
+
+	// Carol is not a member: her device goes at once. The rest stays.
+	if n := c.Forget(); n != 1 || has(carolPC) {
+		t.Fatalf("a device of a member the manifest does not list: dropped %d, still there %v", n, has(carolPC))
+	}
+	// Bob revokes two devices; the phone is on a channel now (it carries a
+	// later certificate) and stays, the old one goes.
+	revoked = []*identity.SignedRevocation{
+		{Revocation: identity.Revocation{Network: "demo", Member: bob, Device: bobOld}},
+		{Revocation: identity.Revocation{Network: "demo", Member: bob, Device: bobPhone}},
+	}
+	w.setLive(hub.Status{Clients: []hub.ClientStatus{{Device: bobPhone.String()}}})
+	if n := c.Forget(); n != 1 || has(bobOld) || !has(bobPhone) {
+		t.Fatalf("revoked devices: dropped %d, old %v, phone on a channel %v", n, has(bobOld), has(bobPhone))
+	}
+	w.setLive(hub.Status{})
+	if n := c.Forget(); n != 1 || has(bobPhone) {
+		t.Fatalf("the revoked phone off its channel: dropped %d, still there %v", n, has(bobPhone))
+	}
+	// A revocation the manifest carries counts the same; here for a device
+	// that is not in the census, which changes nothing.
+	m.Revocations = []manifest.RevocationRecord{{Member: bob, Device: key(17)}}
+	// Six days of silence: nothing goes. Eight: the client goes, the
+	// listed storage server stays.
+	w.advance(6 * 24 * time.Hour)
+	if n := c.Forget(); n != 0 {
+		t.Fatalf("dropped %d devices after six days", n)
+	}
+	w.advance(2 * 24 * time.Hour)
+	if n := c.Forget(); n != 1 || has(bobPC) || !has(falcon) {
+		t.Fatalf("after eight days: dropped %d, client %v, storage server %v", n, has(bobPC), has(falcon))
+	}
+	// It comes back with its next heartbeat.
+	c.Record(identity.Peer{Device: bobPC, Member: bob}, "udp", wire.Census{Roles: []string{"client"}})
+	if n := c.Forget(); n != 0 || !has(bobPC) {
+		t.Fatal("a client that reported again was dropped")
+	}
+	// Bob leaves the manifest: his device goes, whatever its age.
+	m.Members = m.Members[:1]
+	if n := c.Forget(); n != 1 || has(bobPC) {
+		t.Fatalf("a member removed from the manifest: dropped %d", n)
+	}
+}

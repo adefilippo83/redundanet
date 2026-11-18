@@ -170,3 +170,75 @@ func TestOldestConfirmed(t *testing.T) {
 		t.Fatalf("a row never confirmed: %+v", row)
 	}
 }
+
+// A data directory outlives an identity replaced in place: the root
+// counters are the old device key's, and the cache is the old member's.
+func TestBindDropsWhatAnotherIdentityLeft(t *testing.T) {
+	dir := t.TempDir()
+	d, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var h object.Hash
+	h[0] = 9
+	p := object.DefaultParams(2, 4)
+	fill := func() {
+		t.Helper()
+		if err := d.RememberObject(Object{PlaintextHash: h, Params: p, Cap: object.ReadCap{Size: 1}, Placed: 4}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := d.NextRootVersion(); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.ConfirmRootVersion(1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A database from before the record keeps what it has.
+	fill()
+	if found, err := d.Bind("alice", "laptop"); err != nil || found != BoundSame {
+		t.Fatalf("first bind: %q %v", found, err)
+	}
+	if v, _ := d.RootConfirmed(); v != 1 {
+		t.Fatalf("the first bind lost the confirmed version: %d", v)
+	}
+	// It survives a restart.
+	_ = d.Close()
+	if d, err = Open(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if found, _ := d.Bind("alice", "laptop"); found != BoundSame {
+		t.Fatalf("same identity after a restart: %q", found)
+	}
+	if v, _ := d.RootConfirmed(); v != 1 {
+		t.Fatalf("confirmed version after a restart: %d", v)
+	}
+	// A new device key of the same member: the counters go, the cache stays.
+	if found, err := d.Bind("alice", "laptop-again"); err != nil || found != BoundDevice {
+		t.Fatalf("new device: %q %v", found, err)
+	}
+	if v, _ := d.RootConfirmed(); v != 0 {
+		t.Fatalf("a new device key kept the old one's confirmed version %d", v)
+	}
+	if v, _ := d.RootVersion(); v != 0 {
+		t.Fatalf("a new device key kept the old one's counter %d", v)
+	}
+	if got, _ := d.LookupObject(h, p); got == nil {
+		t.Fatal("the member's cache went with the device key")
+	}
+	// Another member: nothing stays.
+	fill()
+	if found, err := d.Bind("bob", "laptop-again"); err != nil || found != BoundMember {
+		t.Fatalf("new member: %q %v", found, err)
+	}
+	if got, _ := d.LookupObject(h, p); got != nil {
+		t.Fatal("another member's object is still in the cache")
+	}
+	if v, _ := d.RootConfirmed(); v != 0 {
+		t.Fatalf("another member's confirmed version stayed: %d", v)
+	}
+	if found, _ := d.Bind("bob", "laptop-again"); found != BoundSame {
+		t.Fatalf("bound twice: %q", found)
+	}
+}

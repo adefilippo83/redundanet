@@ -65,6 +65,10 @@ redundanet device revoke --device KEY
 
 It asks for the phrase, signs a revocation record, and the running agent applies it and sends it to every storage server and every hub; the hubs keep it, send it to every connected device at once and to each device that connects later. A hub or a device keeps one record per certificate (the earliest date), only for a member the manifest lists as active or leaving, and at most 256 for one member; a record for a member the manifest does not list yet waits in memory until a manifest lists that member. The member also sends you the printed record: add it to the manifest under `revocations:`, raise the revision, sign and merge, so it survives every later manifest and reaches whoever was unreachable. Signatures the device made before the revocation stay valid, so what it wrote keeps verifying and repair keeps working.
 
+## Devices on the status page
+
+The hub lists every device that reported to it and drops one in three cases: its member is no longer in the manifest (within five minutes of the revision that removed them), its member revoked it (as soon as the revocation is in and the device is off its channel), or it is not listed under `storage:` and has sent nothing for seven days. A device that reports again is listed again. A device under `storage:` is never dropped this way: a dead server stays on the page until you take it out of the manifest. You cannot remove a single device of a member yourself; a revocation is the member's to sign.
+
 ## Changing k-of-n
 
 Declare the transition beside the new encoding:
