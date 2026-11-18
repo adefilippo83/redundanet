@@ -23,7 +23,7 @@ import (
 
 func runNode(args []string) error {
 	if len(args) == 0 {
-		return errors.New("node: a subcommand is needed: install, uninstall, status")
+		return errors.New("node: a subcommand is needed: install, reset, uninstall, status")
 	}
 	if runtime.GOOS != "linux" {
 		return errors.New("node: a storage node is a Linux machine; on a laptop use `service install`")
@@ -32,6 +32,8 @@ func runNode(args []string) error {
 	switch sub {
 	case "install":
 		return nodeInstall(rest)
+	case "reset":
+		return nodeReset(rest)
 	case "uninstall":
 		return nodeUninstall(rest)
 	case "status":
@@ -111,17 +113,23 @@ func nodeInstall(args []string) error {
 		fmt.Println("laid out without an identity; next: sudo redundanet3 node install again without --no-pair, or install.sh finish with a certificate file")
 		return nil
 	}
-	// Pairing, as the service user so the identity is its own: the code
-	// shows here, the member's other device answers it.
+	return pairNode(*network, rep.Binary)
+}
+
+// pairNode shows a pairing code on a node that has no identity, waits for
+// a device of the member to answer it, starts the service and prints the
+// node's lines for the manifest. The pairing runs as the service user, so
+// the identity is its own.
+func pairNode(network, bin string) error {
 	fmt.Println()
-	fmt.Printf("On a device of yours that has its identity, with the phrase at hand (on this network or anywhere: the hub relays the exchange):\n  redundanet device pair%s --storage\n\n", networkArg(*network))
-	if err := asServiceUser(rep.Binary, "identity", "pair", "--network", *network, "--data-dir", node.DataDir); err != nil {
+	fmt.Printf("On a device of yours that has its identity, with the phrase at hand (on this network or anywhere: the hub relays the exchange):\n  redundanet device pair%s --storage\n\n", networkArg(network))
+	if err := asServiceUser(bin, "identity", "pair", "--network", network, "--data-dir", node.DataDir); err != nil {
 		return fmt.Errorf("pairing did not complete (%w); run the install again for a new code, or install.sh finish with a certificate file", err)
 	}
 	if err := startNode(); err != nil {
 		return err
 	}
-	st, err := identity.Load(filepath.Join(node.DataDir, "identity"), *network, nil)
+	st, err := identity.Load(filepath.Join(node.DataDir, "identity"), network, nil)
 	if err != nil {
 		return nil
 	}

@@ -55,6 +55,12 @@ The join form opens an issue; the workflow validates it and opens the pull reque
 
 Set `status: leaving` with `leaving_since: YYYY-MM-DD`, raise the revision, sign, merge. Servers note the time and purge that member's shares and roots once `grace_days` (30 by default) have run on their own clocks with the manifest still saying so; a member who reappears as active before that clears the note. Remove the entry after the grace period. The repository's history keeps every revision.
 
+## A member's phrase was disclosed
+
+Whoever holds the phrase can certify a device and read that member's backups, so the member key has to stop working now, not after a grace period. Do not mark the member `leaving`: a leaving member can still read. Remove the member's entry under `members:` and their entries under `storage:`, raise the revision, sign, merge; within five minutes every server and hub refuses every device under that key, and the servers purge the member's shares and roots after `grace_days`. Check the status page first for what the member's nodes hold: shares on a node you remove are repaired elsewhere once the hub stops counting it.
+
+The member then starts over with a new phrase (`redundanet reset`, `sudo redundanet3 node reset`; [install.md](install.md), "Starting over") and sends a new join request, which you admit like any other. Merge the removal before that request arrives: the validator refuses a member name that is still in the manifest.
+
 ## Revoking a device
 
 A member revokes a lost or stolen device from any other device of theirs:

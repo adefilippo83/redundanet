@@ -59,6 +59,13 @@ redundanet service uninstall
 Installs this binary as a user service that starts at login: a launchd agent on macOS, a systemd user unit with lingering on Linux, a logon task on Windows. The service runs `agent --network NAME --data-dir DIR [--channel early]`. On macOS it runs that through a launcher: a copy of the binary made once at `launcher/redundanet` in the data directory and never replaced, which starts the agent as its child and starts it again when it exits. macOS keys the permissions it grants a program (Documents, Desktop, Downloads, Full Disk Access) to the program's code identity, and for an ad-hoc signed binary that identity is the file's hash, so every self-update would be a new program to it; macOS attributes a child's file access to the process launchd started, so a permission granted once to the launcher covers every version of the agent underneath. Deleting the launcher file and installing the service again makes a new one, at the cost of one more prompt.
 
 ```
+redundanet reset [--wipe-store] [--channel stable|early] [--yes]
+sudo redundanet3 node reset [--wipe-store] [--no-pair] [--yes]
+```
+Takes the device back to before it had an identity: how a member starts over after a phrase was disclosed or lost, or gives a device another role, since an identity is never replaced in place. It says what it will remove, asks for the word `reset` (`--yes` does not ask), stops the service, and removes from the data directory everything but the program (`bin/`, on macOS `launcher/`), the updater's downloads and record (`versions/`, `updates/`), `network.yaml` and `service.log`: the identity, the backup settings, the local database, the manifest copy, the list of paired devices. On a laptop the service is then put back, on the channel the updater recorded (`--channel` names another), and runs without an identity, so `redundanet open` shows the setup. A reset of another directory (`--data-dir`) leaves the service alone, since the service serves the default one. On a storage node the settings in `/etc/redundanet3/agent.env` and the unit stay, and the node shows a new pairing code at once, as `node install` does; `--no-pair` stops before that. The share store and its record stay, because the shares are other members'; `--wipe-store` empties it and is refused while the manifest copy on the device lists the device under `storage:`. Nothing reaches the network: the member stays in the manifest until the maintainer removes them, and the device's old key stays certified until its member revokes it; the command prints the `device revoke` line for it.
+
+
+```
 redundanet launch -- EXECUTABLE ARGS...
 ```
 What the macOS launcher runs: starts the program, starts it again when it exits (two seconds later, ten after a quick failure), and stops it when launchd stops the service.
@@ -108,6 +115,7 @@ redundanet update status [--channel early]
 redundanet update retry VERSION
 redundanet node install --storage-path DIR [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]   # Linux, as root: lays the storage node out, pairs it, starts the service
 redundanet node status | uninstall                # the node's layout and service; uninstall keeps the data directory and the store
+redundanet node reset [--wipe-store] [--no-pair] [--yes]   # Linux, as root: the node back to before its identity, then a new pairing code; see `reset` above
 redundanet update channel stable|early          # chosen on this device, kept with the updater's state, wins over the service's flag
 ```
 The self-updater by hand. `check` names the newest release that fits the channel; `apply` installs it (restart the agent or the service to run it); `status` is the updater's record; `retry` allows a version that failed probation to be installed again.

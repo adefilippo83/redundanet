@@ -19,6 +19,9 @@ No. Every object is encrypted on your device with a key derived from your member
 **What if I lose the phrase?**
 The data is unreadable to everyone, by design; there is no escrow and nobody can recover it for you. A new identity is a new member entry, and the maintainer retires the old one. Keep the phrase like a passport. Seal the identity file with `--passphrase` if the device is shared.
 
+**What if someone else has seen my phrase?**
+Treat the identity as lost to you: whoever holds the phrase can certify a device of their own and read your backups. Tell the maintainer at once, who removes your member entry, which shuts every device under that phrase out within five minutes. Then start over with a new phrase: `redundanet reset` on each laptop, `sudo redundanet3 node reset` on each storage node, set them up again and send a new join request ([install.md](install.md), "Starting over"). What you had backed up under the old phrase is purged by the servers after the grace period; back it up again under the new identity.
+
 **What if I lose a device?**
 Revoke it from any other device of yours: `redundanet device revoke --device KEY`. The agent sends the signed record to every storage server and hub within seconds, and the maintainer adds it to the manifest for good; the device is refused from then on. Until then it can read what your devices can read and write as that device, but anything it deletes stays recoverable for 30 days. Revoking stops the device; it does not change the secret that device held, which reads your data and is the same on all your devices. What that leaves open, and when a new identity is the answer: [security.md](security.md), "What a lost device can do".
 

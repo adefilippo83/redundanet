@@ -81,7 +81,7 @@ func identityPath(dir string) string { return filepath.Join(dir, "identity") }
 // hasIdentity is the refusal to write an identity over another, with the
 // way out: an identity is replaced by starting over, never in place.
 func hasIdentity(path string) error {
-	return fmt.Errorf("%s exists: this device already has an identity. To give it a new one, start over: stop the agent and remove the data directory, then set the device up again (\"Starting over\" in https://github.com/adefilippo83/redundanet/blob/main/docs/install.md)", path)
+	return fmt.Errorf("%s exists: this device already has an identity. An identity is not replaced in place: to give the device a new one, `redundanet reset` (on a storage node `sudo redundanet3 node reset`) and set it up again", path)
 }
 
 func commonFlags(fs *flag.FlagSet) (dir *string, network *string) {
