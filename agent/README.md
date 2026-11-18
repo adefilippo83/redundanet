@@ -289,6 +289,8 @@ redundanet service install [--network NAME] [--channel early]  # this binary, as
 redundanet launch -- EXECUTABLE ARGS...                        # what that launcher runs: the program, again when it exits
 redundanet node install --storage-path DIR [--network NAME] [--channel stable|early] [--allow-root-disk] [--no-pair]   # Linux, as root: a storage node laid out, paired and started
 redundanet node status | uninstall
+redundanet node reset [--wipe-store] [--no-pair] [--yes]   # the node back to before its identity, then a new pairing code
+redundanet reset [--wipe-store] [--channel stable|early] [--yes]   # a laptop back to before its identity; the program and the service stay
 redundanet service status | uninstall
 
 redundanet update check | apply | status [--channel early]

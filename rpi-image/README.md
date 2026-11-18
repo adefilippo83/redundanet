@@ -101,6 +101,16 @@ installer's `finish`: on the Pi, `sudo -u redundanet3
 back on the Pi, `sudo redundanet-install finish redundanet-node.cert`. The
 pairing code leaves the card once the node has its identity either way.
 
+## Reset
+
+To give the Pi a new identity (your phrase was disclosed, or the Pi goes to another member), over SSH:
+
+```bash
+sudo redundanet3 node reset
+```
+
+It asks for the word `reset`, stops the agent, removes the identity and its state, and shows a new pairing code at once: answer it from a device of yours with `redundanet device pair --storage`. The program, the settings and the disk's store stay; `--wipe-store` empties the store, and is refused while the manifest lists the Pi. With `--no-pair` it stops after the reset, and the next boot shows a pairing code on the boot partition as the first boot did. Flashing the card again does the same and needs no SSH.
+
 ## If something is off
 
 - **No `redundanet-pairing-code.txt` after a boot**: `journalctl -u

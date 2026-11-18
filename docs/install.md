@@ -154,26 +154,25 @@ redundanet update status
 
 ## Starting over
 
-A device's identity is never replaced in place: `identity init`, `identity pair` and the page refuse while the data directory holds one. To give a device a new identity (a new phrase after the old one was disclosed or lost, or the same phrase without the storage role), remove what it has and set it up again. A new phrase is a new member: tell the maintainer first, who removes the old entry from the manifest before your new join request arrives.
+A device's identity is never replaced in place: `identity init`, `identity pair` and the page refuse while the data directory holds one. To give a device a new identity (a new phrase after the old one was disclosed or lost, or the same phrase without the storage role), reset it and set it up again.
 
 On a laptop:
 
 ```bash
-redundanet service uninstall
-rm -rf ~/.config/redundanet          # macOS: ~/Library/Application\ Support/redundanet; Windows: %AppData%\redundanet
+redundanet reset
 ```
 
-Then the one line at the top of this page again. On a Linux storage node, as root:
+It says what it removes, asks for the word `reset`, and leaves the program and the service in place: the agent runs without an identity and `redundanet open` shows the setup, as after the first install. On a storage node, the Raspberry Pi image included:
 
 ```bash
-sudo redundanet3 node uninstall
-sudo rm -rf /var/lib/redundanet3 /etc/redundanet3
-sudo rm -rf STORAGE_PATH/redundanet3  # the store: only once the maintainer has taken the node out of the manifest
+sudo redundanet3 node reset
 ```
 
-Then the node's one line again. A node from the Raspberry Pi image is flashed again, or, without flashing: `sudo systemctl stop redundanet-agent`, remove everything in `/var/lib/redundanet3` except `bin`, and reboot; the first-boot unit runs whenever `/var/lib/redundanet3/identity` is missing and shows a new pairing code.
+The node shows a new pairing code at once; answer it from a device of yours with `redundanet device pair --storage`. The settings (storage path, channel) stay.
 
-A data directory that is kept through a change of identity is safe to keep: the local database records which member and device it served, and the agent drops from it what belonged to another (the root counters for a new device key, the whole cache for another member, after which the next backup reads every file again).
+Both keep the share store, which holds other members' shares. `--wipe-store` empties it, and is refused while the manifest lists the device as a storage server: ask the maintainer to take the node out first.
+
+A reset changes nothing on the network. With a new phrase you are a new member: tell the maintainer before you send the new join request, so that the old entry leaves the manifest first (your member name is free again then). With the same phrase, revoke the device's old key from a device of yours; the reset prints the line.
 
 ## Uninstall
 
