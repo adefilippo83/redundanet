@@ -5,6 +5,13 @@
   "use strict";
   const DURATION = (window.STRINGS && window.STRINGS.duration) || 30;
   const cv = document.getElementById("c");
+  // Two layouts of one film: wide for the site, tall (?story) for a phone
+  // story, 1080 by 1920, with the top and the bottom left clear for the
+  // app's own controls.
+  const TALL = /[?&]story/.test(location.search);
+  const W = TALL ? 1080 : 1920, H = TALL ? 1920 : 1080, CX = W / 2;
+  cv.width = W; cv.height = H;
+  if (TALL) cv.style.cssText = "display:block;height:100vh;width:auto;max-width:100vw;margin:0 auto";
   const g = cv.getContext("2d");
   const S = window.STRINGS;
   const C = {
@@ -23,14 +30,17 @@
   const win = (t, a, b, f) => Math.min(seg(t, a, a + (f || 0.4)), 1 - seg(t, b - (f || 0.4), b));
 
   // The stage.
-  const LAP = { x: 430, y: 400 };
-  const MID = { x: 940, y: 440 };
+  const LAP = TALL ? { x: 540, y: 410 } : { x: 430, y: 400 };
+  const MID = TALL ? { x: 540, y: 735 } : { x: 940, y: 440 };
   // Six servers and six pieces: enough that nobody counts them. The film
   // says "pieces" and "some servers", never how many of how many.
-  const SRV = [0, 1, 2, 3, 4, 5].map((i) => ({ x: 1310 + (i % 2) * 320, y: 220 + Math.floor(i / 2) * 190 }));
+  const SRV = [0, 1, 2, 3, 4, 5].map((i) => (TALL
+    ? { x: 320 + (i % 2) * 440, y: 985 + Math.floor(i / 2) * 146 }
+    : { x: 1310 + (i % 2) * 320, y: 220 + Math.floor(i / 2) * 190 }));
   const LOST = [false, true, false, true, true, false];
   const SOURCE = { 1: 0, 3: 2, 4: 5 }; // where repair copies a lost piece from
-  const MINE = { x: 430, y: 716 };
+  const EY = TALL ? 330 : 0;
+  const MINE = TALL ? { x: 540, y: 735 } : { x: 430, y: 716 };
   const BLOCK = 184, GAP = 8, PIECE = 56;
   const QUAD = [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]];
   const SHADE = ["#818cf8", "#6366f1", "#7c83f5", "#4f46e5", "#8b93fa", "#5b5ff0"];
@@ -197,13 +207,27 @@
     });
   }
 
+  // wrap breaks a sentence into lines no wider than max.
+  function wrap(s, max, size, weight) {
+    g.font = `${weight} ${size}px ${FONT}`;
+    const out = [];
+    let line = "";
+    for (const w of s.split(" ")) {
+      const next = line ? line + " " + w : w;
+      if (line && g.measureText(next).width > max) { out.push(line); line = w; } else line = next;
+    }
+    if (line) out.push(line);
+    return out;
+  }
+
   function captions(t) {
     for (const c of S.captions) {
       const a = win(t, c.from, c.to, 0.35);
       if (a <= 0) continue;
       at(a, () => {
-        const n = c.lines.length;
-        c.lines.forEach((ln, i) => text(ln, 960, 978 + (i - (n - 1) / 2) * 62, 46, 600, C.fg));
+        const lines = TALL ? wrap(c.lines.join(" "), 940, 54, 600) : c.lines;
+        const n = lines.length, y = TALL ? 1478 : 978, lh = TALL ? 70 : 62;
+        lines.forEach((ln, i) => text(ln, CX, y + (i - (n - 1) / 2) * lh, TALL ? 54 : 46, 600, C.fg));
       });
     }
   }
@@ -222,7 +246,7 @@
     const t = warp(T);
     g.globalAlpha = 1;
     g.fillStyle = C.bg;
-    g.fillRect(0, 0, 1920, 1080);
+    g.fillRect(0, 0, W, H);
     const stage = 1 - e(t, 26.0, 26.7);
 
     at(stage, () => {
@@ -231,7 +255,7 @@
       const flick = failing * (0.55 + 0.45 * Math.sin(t * 19));
       laptop(e(t, 0, 0.6), flick);
       warning(LAP.x, LAP.y - 205, failing * pop(seg(t, 1.5, 1.9)));
-      cloud(MID.x + 40, MID.y - 10, win(t, 2.1, 4.1, 0.35), e(t, 2.7, 3.0));
+      cloud(MID.x + (TALL ? 0 : 40), MID.y - 10, win(t, 2.1, 4.1, 0.35), e(t, 2.7, 3.0));
 
       // The three files: on the screen, then to the middle, then one block.
       const go = e(t, 4.2, 5.4);
@@ -259,12 +283,14 @@
       const serverOn = LOST.map((l) => (l ? clamp(1 - away + returned) : 1));
 
       // Servers and their links.
-      at(e(t, 9.0, 9.5), () => text(S.labels.members, 1470, SRV[0].y - 104, 30, 500, C.muted));
+      at(e(t, 9.0, 9.5), () => text(S.labels.members, TALL ? CX : 1470, SRV[0].y - 104, 30, 500, C.muted));
       SRV.forEach((p, i) => {
         const a = e(t, 9.0 + i * 0.15, 9.7 + i * 0.15);
         at(a * 0.5 * serverOn[i] * (1 - e(t, 20.4, 21.2)), () => {
           g.setLineDash([4, 14]); g.lineCap = "round";
-          g.beginPath(); g.moveTo(MID.x + 120, MID.y); g.lineTo(p.x - 150, p.y); stroke(C.line, 4);
+          g.beginPath();
+          if (TALL) { g.moveTo(MID.x, MID.y + 130); g.lineTo(p.x, p.y - 72); } else { g.moveTo(MID.x + 120, MID.y); g.lineTo(p.x - 150, p.y); }
+          stroke(C.line, 4);
           g.setLineDash([]);
         });
       });
@@ -330,7 +356,7 @@
       server(MINE, mine, 1, win(t, 23.2, 24.0, 0.3));
       at(mine, () => text(S.labels.yours, MINE.x, MINE.y + 100, 30, 500, C.muted));
       [[0, C.amber], [2, C.teal]].forEach(([from, color], n) => {
-        const a = { x: SRV[from].x - 150, y: SRV[from].y + 20 };
+        const a = TALL ? { x: SRV[from].x, y: SRV[from].y - 80 } : { x: SRV[from].x - 150, y: SRV[from].y + 20 };
         const b = slot(MINE, n);
         const k = e(t, 22.0 + n * 0.35, 23.5 + n * 0.35);
         piece(lerp(a.x, b.x, k), lerp(a.y, b.y, k), 64, color, seg(t, 22.0 + n * 0.35, 22.3 + n * 0.35));
@@ -344,17 +370,17 @@
     at(end, () => {
       const s = lerp(0.7, 1, pop(seg(t, 26.5, 27.2)));
       g.save();
-      g.translate(960, 380); g.scale(s, s);
+      g.translate(CX, 380 + EY); g.scale(s, s);
       const grad = g.createLinearGradient(-80, -80, 80, 80);
       grad.addColorStop(0, C.pri); grad.addColorStop(1, C.ok);
       rr(-80, -80, 160, 160, 34); fill(grad);
       text("R", 0, 6, 104, 700, C.fg);
       g.restore();
     });
-    at(e(t, 27.0, 27.6), () => text(S.end.name, 960, 560 + 16 * (1 - e(t, 27.0, 27.6)), 92, 700, C.fg));
-    at(e(t, 27.5, 28.1), () => text(S.end.tagline, 960, 660, 42, 500, C.muted));
-    at(e(t, 28.0, 28.6), () => text(S.end.address, 960, 760, 50, 600, C.priL));
-    at(e(t, 29.6, 30.0), () => { g.fillStyle = C.bg; g.fillRect(0, 0, 1920, 1080); });
+    at(e(t, 27.0, 27.6), () => text(S.end.name, CX, EY + 560 + 16 * (1 - e(t, 27.0, 27.6)), 92, 700, C.fg));
+    at(e(t, 27.5, 28.1), () => (TALL ? S.end.tagline.split(/(?<=\.) /) : [S.end.tagline]).forEach((ln, i) => text(ln, CX, EY + 660 + i * 58, TALL ? 44 : 42, 500, C.muted)));
+    at(e(t, 28.0, 28.6), () => text(S.end.address, CX, EY + (TALL ? 820 : 760), TALL ? 58 : 50, 600, C.priL));
+    at(e(t, 29.6, 30.0), () => { g.fillStyle = C.bg; g.fillRect(0, 0, W, H); });
   }
 
   function mix(a, b, x) {
@@ -364,6 +390,7 @@
   }
 
   window.DURATION = DURATION;
+  window.SIZE = { width: W, height: H };
   window.seek = (t) => draw(Math.max(0, Math.min(DURATION, t)));
 
   // Played live unless the renderer asked for stills (?still).

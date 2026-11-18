@@ -9,6 +9,8 @@
 
 The film shows six pieces and six servers on purpose and never says how many of how many: the encoding of the live network changes, the film should not.
 
+`../how-it-works-story.mp4` is the same film laid out tall, 1080 by 1920, for a phone story: `index.html?story` shows it, and its top and bottom are left clear for the app's own controls. No page of the site links to it; it is there to be downloaded.
+
 ## Making the video again
 
 Needs Node, Chrome and ffmpeg.
@@ -26,3 +28,15 @@ rm -r frames silent.mp4 node_modules
 ```
 
 With a new recording, find its pauses (`ffmpeg -i voice/narration.mp3 -af silencedetect=noise=-35dB:d=0.18 -f null -`) and set `duration`, `timing` and the captions' times in `strings.en.js` to them.
+
+The tall one:
+
+```bash
+npm install --no-save playwright-core
+STORY=1 node render.mjs frames
+ffmpeg -y -framerate 30 -i frames-story/f%04d.png -c:v libx264 -preset slow -crf 19 -pix_fmt yuv420p silent-story.mp4
+ffmpeg -y -i silent-story.mp4 -i voice/narration.mp3 \
+  -filter_complex "[1:a]aresample=48000,loudnorm=I=-16:TP=-1.5:LRA=11,apad=whole_dur=32[a]" \
+  -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 160k -t 32 -movflags +faststart ../how-it-works-story.mp4
+rm -r frames-story silent-story.mp4 node_modules
+```
