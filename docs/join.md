@@ -12,7 +12,7 @@ The network needs no step of yours: its name, its hub, the operator keys and whe
 
 ## 2. If you contribute disk: prepare your storage node
 
-A member who contributes disk lists at least one storage device. Prepare the node now, before the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". Pairing records the node on your laptop, so `redundanet setup` and `redundanet join-request` fill its key and name into the form; the node prints them too, and `sudo redundanet3 status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
+A member who contributes disk lists at least one storage device, and the form names one only when you made it one: a node you paired with `redundanet device pair --storage`, or the computer you sit at when you set it up as your storage server. A computer is never listed just because it has the storage role. Prepare the node now, before the form: one line on the node and a pairing command on your laptop, in [install.md](install.md), "Linux storage node". Pairing records the node on your laptop, so `redundanet setup` and `redundanet join-request` fill its key and name into the form; the node prints them too, and `sudo redundanet3 status` on it shows them again. The node needs at least 10 GiB free above its floor. Your contribution in GB is what you promise the network from that disk.
 
 ## 3. The form
 

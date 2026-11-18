@@ -27,7 +27,7 @@ func runSetup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	dir, network := commonFlags(fs)
 	channel := fs.String("channel", release.ChannelStable, "release channel for self-update: stable or early")
-	storage := fs.Bool("storage", false, "this device will also contribute disk")
+	storage := fs.Bool("storage", false, "this computer is my storage server: a machine that stays on all day, named in the join request")
 	noBrowser := fs.Bool("print", false, "print the links instead of opening the browser")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -146,6 +146,7 @@ func runSetup(args []string) error {
 	// 5. The join request, while the member is not listed; for a listed
 	// member, a paired storage node the manifest does not list yet.
 	devices, _ := loadDevices(d)
+	devices = withSelf(d, st, devices)
 	if !listed {
 		link := joinRequestURL(prefillFor(st, devices))
 		step("request", "the join form, filled in from this device:\n          %s\n          fill the member name and the contribution, then open the issue on GitHub; `redundanet status` says when you are listed", link)

@@ -75,6 +75,8 @@ It asks for the phrase, signs a revocation record, and the running agent applies
 
 The hub lists every device that reported to it and drops one in three cases: its member is no longer in the manifest (within five minutes of the revision that removed them), its member revoked it (as soon as the revocation is in and the device is off its channel), or it is not listed under `storage:` and has sent nothing for seven days. A device that reports again is listed again. A device under `storage:` is never dropped this way: a dead server stays on the page until you take it out of the manifest. You cannot remove a single device of a member yourself; a revocation is the member's to sign.
 
+In the storage table a device is marked when its storage role and the manifest disagree: `no storage role` on a listed device whose certificate lacks the role (it opens no store, so the entry is wrong or the device was set up as a client), and `not listed` on a device that has the role and no entry under `storage:` (it is given no shares; either its request is still to come or the role was not meant). The member sees the same on their own page and in `redundanet status`.
+
 ## Changing k-of-n
 
 Declare the transition beside the new encoding:

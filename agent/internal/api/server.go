@@ -58,9 +58,14 @@ type Snapshot struct {
 	// JoinURL is the join form filled in from this device, when there is
 	// something to ask for: membership, or a paired storage node the
 	// manifest does not list (JoinDevice names it). For the page only.
-	JoinURL    string    `json:"-"`
-	JoinDevice string    `json:"-"`
-	Generated  time.Time `json:"generated"`
+	JoinURL string `json:"-"`
+	// StorageNote says when this device's storage role and the manifest
+	// disagree: "unlisted" (the role, not listed, and not said to be the
+	// member's server), "norole" (listed, no role). Either way the device
+	// stores nothing for the network.
+	StorageNote string    `json:"storage_note,omitempty"`
+	JoinDevice  string    `json:"-"`
+	Generated   time.Time `json:"generated"`
 }
 
 // Device is a device this one paired for its member.

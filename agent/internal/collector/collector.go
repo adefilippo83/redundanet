@@ -914,6 +914,21 @@ type group struct {
 // manifest lists it as a storage server (it has a name), or it reports the
 // storage role. A listed server that has not reported the role yet, or
 // reports only the client role, is still a server the network counts on.
+// RoleNote says, for the page, when a device's storage role and the
+// manifest disagree: a device the manifest lists whose certificate has no
+// storage role opens no store, and a device with the role that the
+// manifest does not list is given no shares. Either stores nothing.
+func (d Device) RoleNote() string {
+	has := slices.Contains(d.Roles, identity.RoleStorage)
+	switch {
+	case d.Name != "" && !has:
+		return "no storage role"
+	case d.Name == "" && has:
+		return "not listed"
+	}
+	return ""
+}
+
 func stores(d Device) bool {
 	return d.Name != "" || slices.Contains(d.Roles, identity.RoleStorage)
 }

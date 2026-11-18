@@ -76,12 +76,16 @@ func (rc *runtimeConfig) snapshot(ep *transport.Endpoint, u *update.Updater, w *
 		}
 		s.Devices = withListedNodes(s.Devices, m, rc.state.Member, rc.device)
 		// The join form, filled in from here: a member not listed yet asks
-		// to join; a listed one has a storage node the manifest lacks.
+		// to join; a listed one has a storage node the manifest lacks. This
+		// device is among the nodes only when its member said it is their
+		// storage server.
+		devices = withSelf(rc.dataDir, rc.state, devices)
 		if memberListed(m, rc.state.Member) {
 			s.Admission = "listed"
 			if p := devicePrefill(m, rc.state.Member, devices); p != nil {
 				s.JoinURL, s.JoinDevice = joinRequestURL(*p), p.DeviceName
 			}
+			s.StorageNote = storageNote(m, rc.device, s.Roles, rc.dataDir)
 		} else {
 			s.JoinURL = joinRequestURL(prefillFor(rc.state, devices))
 		}

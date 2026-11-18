@@ -114,7 +114,7 @@ td:first-child code { font-weight: 400 }
 <tbody>{{range .Devices}}<tr>
   <td>{{if .Name}}{{.Name}} <code class="muted">{{short .Device}}</code>{{else}}<code>{{short .Device}}</code>{{end}}</td>
   <td>{{.Member}}</td>
-  {{if $storage}}<td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}</td>{{end}}
+  {{if $storage}}<td>{{range $i, $r := .Roles}}{{if $i}} {{end}}{{$r}}{{end}}{{with .RoleNote}} <span class="warn">{{.}}</span>{{end}}</td>{{end}}
   <td>{{if eq .State "online"}}<span class="ok">online</span> <span class="muted">{{.Carrier}}</span>{{else if eq .State "recent"}}<span class="warn">reconnecting</span>{{else if eq .State "down"}}<span class="bad">down</span>{{else if eq .State "dead"}}<span class="bad">dead</span>{{else}}<span class="muted">never seen</span>{{end}}</td>
   <td>{{if eq .State "online"}}since {{since .Since}}{{else}}{{since .LastSeen}}{{end}}</td>
   <td>{{.Version}}</td>
