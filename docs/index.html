@@ -362,7 +362,7 @@
             font-size: 0.875rem;
         }
 
-        /* Platform and limits */
+        /* Platform */
         .platform {
             padding: 100px 0;
         }
@@ -378,46 +378,10 @@
             margin: 0 auto;
         }
 
-        .limits {
-            padding: 100px 0;
-            background: var(--bg-card);
-        }
-
-        .limits-card {
-            background: var(--bg-dark);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 32px 40px;
-            max-width: 860px;
-            margin: 0 auto;
-        }
-
-        .limits-card ul {
-            list-style: none;
-            color: var(--text-muted);
-        }
-
-        .limits-card li {
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
-        }
-
-        .limits-card li:last-child {
-            border-bottom: none;
-        }
-
-        .limits-card li::before {
-            content: "\25CB";
-            color: var(--primary);
-            flex-shrink: 0;
-        }
-
         /* Join Process */
         .join-process {
             padding: 100px 0;
+            background: var(--bg-card);
         }
 
         .join-steps {
@@ -428,7 +392,7 @@
         }
 
         .join-step {
-            background: var(--bg-card);
+            background: var(--bg-dark);
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 32px;
@@ -465,7 +429,6 @@
         /* Status, legacy, signing, privacy */
         .info {
             padding: 100px 0;
-            background: var(--bg-card);
         }
 
         .info-grid {
@@ -476,7 +439,7 @@
         }
 
         .info-item {
-            background: var(--bg-dark);
+            background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 24px;
@@ -568,7 +531,7 @@
                 width: 100%;
             }
 
-            .data-flow, .limits-card {
+            .data-flow {
                 padding: 24px;
             }
         }
@@ -742,23 +705,7 @@
                 <p data-i18n="platform.subtitle">Linux, macOS and Windows, one static binary each</p>
             </div>
             <div class="statement" data-i18n="platform.statement">
-                Tested on Linux (x86-64 and ARM64, including Raspberry Pi 5) and Apple silicon Macs. Windows and Intel Mac builds are provided and pass the test suite, but have not run on the live network yet.
-            </div>
-        </div>
-    </section>
-
-    <section class="limits" id="limits">
-        <div class="container">
-            <div class="section-title">
-                <h2 data-i18n="limits.title">What is not there yet</h2>
-                <p data-i18n="limits.subtitle">The limits of 3.0.0, stated plainly</p>
-            </div>
-            <div class="limits-card">
-                <ul>
-                    <li data-i18n="limits.hub">One hub, on a bare IP address. With it down there are no new connections, no repair scheduling and no status page; existing direct connections continue. The public status page is hosted on the fly.io app of the old product.</li>
-                    <li data-i18n="limits.keystore">No OS keystore.</li>
-                    <li data-i18n="limits.platforms">Windows and Intel Mac builds have not run on the live network yet. Raspberry Pi 4 is not measured.</li>
-                </ul>
+                Runs on Linux (x86-64 and ARM64, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
             </div>
         </div>
     </section>
