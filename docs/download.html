@@ -417,6 +417,11 @@ irm https://redundanet.com/install.ps1 | iex</code></pre>
                             <td><a data-rn-asset="linux/arm64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-linux-arm64.tar.gz"><code>redundanet-3.0.0-linux-arm64.tar.gz</code></a></td>
                             <td class="sha" data-rn-sha="linux/arm64"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
                         </tr>
+                        <tr data-rn-row="linux/arm" hidden>
+                            <td data-i18n="dl.builds.linuxArm32">Linux ARMv7, 32-bit (Raspberry Pi 2 and later)</td>
+                            <td><a data-rn-asset="linux/arm" href="https://github.com/adefilippo83/redundanet/releases"><code>redundanet-linux-arm.tar.gz</code></a></td>
+                            <td class="sha" data-rn-sha="linux/arm"><span data-i18n="dl.builds.shaStatic">in sha256sums.txt and the index</span></td>
+                        </tr>
                         <tr>
                             <td data-i18n="dl.builds.macArm">macOS, Apple silicon</td>
                             <td><a data-rn-asset="darwin/arm64" href="https://github.com/adefilippo83/redundanet/releases/download/agent%2Fv3.0.0/redundanet-3.0.0-darwin-arm64.tar.gz"><code>redundanet-3.0.0-darwin-arm64.tar.gz</code></a></td>
@@ -443,7 +448,7 @@ irm https://redundanet.com/install.ps1 | iex</code></pre>
                     <a href="https://github.com/adefilippo83/redundanet/releases" data-i18n="dl.builds.allReleases">All releases</a>
                 </p>
                 <div class="statement" data-i18n="platform.statement">
-                    Runs on Linux (x86-64 and ARM64, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
+                    Runs on Linux (x86-64, ARM64 and 32-bit ARMv7, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
                 </div>
                 <p data-i18n="dl.builds.next">Downloaded by hand? The <a href="installation.html">install page</a> takes it from here: put the binary where the agent can update it, create your identity, install the service.</p>
             </section>
@@ -542,6 +547,9 @@ sudo systemctl restart redundanet-agent</code></pre>
         "use strict";
         var INDEX = "https://raw.githubusercontent.com/adefilippo83/redundanet/main/releases/index.yaml";
         var TARGETS = ["linux/amd64", "linux/arm64", "darwin/arm64", "darwin/amd64", "windows/amd64"];
+        // Targets added after 3.0.0: a row for one stays hidden until the
+        // release shown has its archive.
+        var LATER = ["linux/arm"];
 
         function parse(text) {
             var releases = [], cur = null;
@@ -555,7 +563,7 @@ sudo systemctl restart redundanet-agent</code></pre>
                 if (m) { cur.withdrawn = m[1] === "true"; return; }
                 m = line.match(/^\s+notes:\s*(\S+)/);
                 if (m) { cur.notes = m[1]; return; }
-                m = line.match(/^\s+(linux|darwin|windows)\/(amd64|arm64):\s*\{(.*)\}/);
+                m = line.match(/^\s+(linux|darwin|windows)\/(amd64|arm64|arm):\s*\{(.*)\}/);
                 if (m) {
                     var url = (m[3].match(/url:\s*([^,\s}]+)/) || [])[1];
                     var sha = (m[3].match(/sha256:\s*([0-9a-f]{64})/) || [])[1];
@@ -579,10 +587,15 @@ sudo systemctl restart redundanet-agent</code></pre>
             var tag = "agent%2Fv" + r.version;
             var base = "https://github.com/adefilippo83/redundanet/releases/";
             document.querySelectorAll("[data-rn-version]").forEach(function (el) { el.textContent = r.version; });
-            TARGETS.forEach(function (t) {
+            LATER.forEach(function (t) {
+                var row = document.querySelector('[data-rn-row="' + t + '"]');
+                if (row) row.hidden = !(r.assets[t] && r.assets[t].url);
+            });
+            TARGETS.concat(LATER).forEach(function (t) {
                 var a = document.querySelector('[data-rn-asset="' + t + '"]');
                 var s = document.querySelector('[data-rn-sha="' + t + '"]');
                 var asset = r.assets[t];
+                if (!asset) return;
                 if (a && asset.url) {
                     a.href = asset.url;
                     var code = a.querySelector("code");

@@ -104,8 +104,14 @@ target() {
   case "$arch" in
     x86_64|amd64) arch=amd64 ;;
     aarch64|arm64) arch=arm64 ;;
+    armv7l|armv8l) arch=arm ;;
+    armv6l) die "no release for ARMv6 (Raspberry Pi 1 and Zero); the 32-bit ARM build needs ARMv7, a Raspberry Pi 2 or later" ;;
     *) die "no release for $os on $arch" ;;
   esac
+  # A 32-bit system under a 64-bit kernel (Raspberry Pi OS 32-bit on a Pi 3
+  # or 4) reports aarch64 and cannot run the arm64 binary: go by the
+  # system's word size.
+  if [ "$os" = linux ] && [ "$arch" = arm64 ] && [ "$(getconf LONG_BIT 2>/dev/null)" = 32 ]; then arch=arm; fi
   echo "$os/$arch"
 }
 

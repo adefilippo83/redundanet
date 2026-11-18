@@ -2,7 +2,7 @@
 
 RedundaNet 3 is one static binary named `redundanet`. There are no containers and nothing else to install. One line installs it on macOS, Linux and Windows, and the agent then keeps itself up to date from the signed release index. Joining the network is the next page: [join.md](join.md).
 
-Runs on Linux (x86-64 and ARM64, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
+Runs on Linux (x86-64, ARM64 and 32-bit ARMv7, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
 
 ## One line
 
@@ -81,6 +81,8 @@ The local page stays on `127.0.0.1:4470`. Over SSH: `ssh -L 4470:127.0.0.1:4470 
 
 Each stable release carries a ready-to-boot image, `redundanet-rpi-<version>-arm64.img.xz`, with the agent installed as a storage node and nothing else. Flash it, boot it, and pair it from a device of yours with the code it writes to the SD card's boot partition (`redundanet device pair --storage`, which asks for the code, from anywhere: the hub relays the exchange; the code is the same after every reboot until the Pi is paired). Give it a disk labeled `REDUNDANET`: the Pi mounts it on its own and runs the agent only while it is mounted, so shares never land on the SD card; `sudo redundanet-install disk /dev/sda` over SSH formats one. The steps are in [rpi-image/README.md](../rpi-image/README.md). A Pi running any other 64-bit Linux is a Linux storage node: the one line above picks the `linux-arm64` release on its own. Raspberry Pi 5 is the tested board; Pi 4 has not been measured.
 
+An older Pi, or any Pi on a 32-bit system, is a Linux storage node too: the same line picks the `linux-arm` release, built for ARMv7 (Raspberry Pi 2 and later; a 32-bit system on a Pi 3 or 4 counts, whatever kernel it runs). There is no 32-bit image. This build's tests run under emulation, not on a board, and encryption and encoding have no hand-tuned code on 32-bit ARM, so expect backups and repair to be slower. ARMv6 (Raspberry Pi 1 and the first Zero) has no release, and the installer says so.
+
 ## A second device, without the phrase
 
 On the new device, after the one line, `redundanet setup` offers it as the third choice; by hand:
@@ -120,6 +122,7 @@ Every release is at <https://github.com/adefilippo83/redundanet/releases>, as `r
 | --- | --- | --- |
 | Linux x86-64 | `redundanet-<version>-linux-amd64.tar.gz` | `redundanet-<version>-linux-amd64/redundanet` |
 | Linux ARM64, Raspberry Pi 5 | `redundanet-<version>-linux-arm64.tar.gz` | `redundanet-<version>-linux-arm64/redundanet` |
+| Linux ARMv7 (32-bit), Raspberry Pi 2 and later | `redundanet-<version>-linux-arm.tar.gz` | `redundanet-<version>-linux-arm/redundanet` |
 | Apple silicon Mac | `redundanet-<version>-darwin-arm64.tar.gz` | `redundanet-<version>-darwin-arm64/redundanet` |
 | Intel Mac | `redundanet-<version>-darwin-amd64.tar.gz` | `redundanet-<version>-darwin-amd64/redundanet` |
 | Windows x86-64 | `redundanet-<version>-windows-amd64.zip` | `redundanet-<version>-windows-amd64\redundanet.exe` |
