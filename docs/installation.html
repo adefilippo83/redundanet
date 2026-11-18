@@ -152,6 +152,16 @@
         }
 
         /* Table of contents */
+        .guide-video {
+            display: block;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            margin: 0 0 32px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: var(--bg-dark);
+        }
+
         .toc {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -361,6 +371,10 @@
             <h1 data-i18n="ig.header.title">Install</h1>
             <p data-i18n="ig.header.subtitle">One line installs the agent and opens its page in your browser; the page makes your identity and sends you to the join form. A Linux storage node is one line and a pairing code. Then your first backup set.</p>
         </div>
+
+        <video class="guide-video" controls playsinline preload="metadata" poster="video/install-poster.jpg">
+            <source src="video/how-to-install.mp4" type="video/mp4">
+        </video>
 
         <nav class="toc" aria-label="On this page">
             <h2 data-i18n="ig.toc.title">On this page</h2>

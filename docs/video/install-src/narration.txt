@@ -1,0 +1,11 @@
+Here is how to join Redunda Net, from start to finish. You need a laptop, a sheet of paper, and a free GitHub account. If you want to share disk space, you also need a Linux machine that stays on.
+
+Step one. On your laptop, open a terminal, paste this line, and press Enter. On Windows, use this one, in PowerShell. When it finishes, your browser opens the Redunda Net page.
+
+Step two. Choose "I am new here", and click "Show my phrase". You get twelve words. Write them on paper, in order, and keep them safe. They are the only key to your backups, and nobody can reset them, not even us. Type back the three words the page asks for, and confirm.
+
+Step three is for your storage server. Skip it if you don't have one. On the server, as root, paste this line, ending with the folder where your disk is mounted. The server shows a pairing code. Now go back to your laptop, run this command, and type the code, then your twelve words. The words stay on your laptop. The server only receives its own certificate.
+
+Step four. Back on the page, open the join request. The form is already filled in. Add a name, and how much disk you share, and send it.
+
+Step five: wait. The maintainer adds you within a day. When the page says you are in, choose the folders you want to keep safe. From then on, your backups run every day, by themselves.
