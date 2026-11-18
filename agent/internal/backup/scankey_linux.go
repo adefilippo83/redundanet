@@ -2,4 +2,4 @@ package backup
 
 import "syscall"
 
-func ctime(st *syscall.Stat_t) int64 { return st.Ctim.Sec*1e9 + st.Ctim.Nsec }
+func ctime(st *syscall.Stat_t) int64 { return int64(st.Ctim.Sec)*1e9 + int64(st.Ctim.Nsec) }

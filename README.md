@@ -27,7 +27,7 @@ More in [docs/architecture.md](docs/architecture.md).
 
 ## Platforms
 
-Runs on Linux (x86-64 and ARM64, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
+Runs on Linux (x86-64, ARM64 and 32-bit ARMv7, including Raspberry Pi), macOS (Apple silicon and Intel) and Windows. Every build passes the same test suite on all three systems.
 
 ## Install
 

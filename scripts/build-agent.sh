@@ -22,7 +22,10 @@ mkdir -p "$out"
 out=$(cd "$out" && pwd)
 cd "$(dirname "$0")/../agent"
 
-export CGO_ENABLED=0 GOFLAGS=-mod=readonly
+# GOARM names the 32-bit ARM variant of linux/arm: ARMv7, which is the
+# Raspberry Pi 2 and any later Pi on a 32-bit system. Set here so that the
+# build does not take it from the machine.
+export CGO_ENABLED=0 GOFLAGS=-mod=readonly GOARM=7
 GOTOOLCHAIN="go$(sed -n 's/^go //p' go.mod)"
 export GOTOOLCHAIN
 
@@ -36,7 +39,7 @@ go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.7.0 -64 \
   -o cmd/redundanet/resource_windows_amd64.syso cmd/redundanet/versioninfo.json
 
 flags="-s -w -buildid= -X github.com/adefilippo83/redundanet/agent/internal/version.Version=$version"
-for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+for target in linux/amd64 linux/arm64 linux/arm darwin/arm64 darwin/amd64 windows/amd64; do
   os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=.exe
   GOOS=$os GOARCH=$arch go build -trimpath -ldflags="$flags" -o "$out/redundanet-$version-$os-$arch/redundanet$ext" ./cmd/redundanet
 done

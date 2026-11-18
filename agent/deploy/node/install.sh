@@ -50,7 +50,12 @@ die() { echo "install.sh: $*" >&2; exit 1; }
 arch() {
   case "$(uname -m)" in
     x86_64) echo amd64 ;;
-    aarch64|arm64) echo arm64 ;;
+    aarch64|arm64)
+      # A 32-bit system under a 64-bit kernel (Raspberry Pi OS 32-bit on a
+      # Pi 3 or 4) reports aarch64 and cannot run the arm64 binary.
+      if [ "$(getconf LONG_BIT 2>/dev/null)" = 32 ]; then echo arm; else echo arm64; fi ;;
+    armv7l|armv8l) echo arm ;;
+    armv6l) die "no release for ARMv6 (Raspberry Pi 1 and Zero); the 32-bit ARM build needs ARMv7, a Raspberry Pi 2 or later" ;;
     *) die "unsupported architecture $(uname -m)" ;;
   esac
 }
