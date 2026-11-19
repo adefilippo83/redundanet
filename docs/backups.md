@@ -93,7 +93,7 @@ A server tombstones an object only when the owner has not touched it for 7 days 
 
 ## Encoding changes
 
-When the manifest declares a k-of-n transition, each device converts the objects its own snapshots reference, on its own and on `redundanet backup rebalance`, and publishes the root after each snapshot. On its own means ten minutes after the agent starts, again fifteen minutes after a run that did not complete (it resumes where it stopped), and every six hours after one that did. Until the deadline the old shares do not count against your allocation, so you convert without deleting first. The status page shows the conversion as a bar.
+When the manifest declares a k-of-n transition, each device converts the objects its own snapshots reference, on its own and on `redundanet backup rebalance`, and publishes the root after each snapshot. On its own means ten minutes after the agent starts, again fifteen minutes after a run that did not complete, and every six hours after one that did. A run that stops resumes where it stopped: a snapshot it finished is published, and inside the one it stopped in it does not read again an object it had stored already, only the directories. A read that fails, as every read does at the moment a laptop goes to sleep, is tried again three times over a few minutes before the run gives up. Until the deadline the old shares do not count against your allocation, so you convert without deleting first. The status page shows the conversion as a bar.
 
 ## The local page
 
