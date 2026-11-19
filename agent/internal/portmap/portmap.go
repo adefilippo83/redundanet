@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/huin/goupnp/dcps/internetgateway2"
@@ -240,25 +241,46 @@ func Upstream(ctx context.Context) bool {
 	return false
 }
 
-// upnpClients is every internet gateway that answers the discovery.
+// upnpClients is every internet gateway that answers the discovery, in a
+// fixed order of the three kinds of service a gateway may offer. Each kind
+// is its own search, which listens for two seconds whatever answers, so
+// the three run side by side: one after the other, the last would get what
+// the first two left of the time, and a router that offers only that kind
+// (a PPP connection, as on many DSL lines) would never be found.
 func upnpClients(ctx context.Context) []igd {
-	dctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	var found [3][]igd
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		if cs, _, err := internetgateway2.NewWANIPConnection2ClientsCtx(dctx); err == nil {
+			for _, c := range cs {
+				found[0] = append(found[0], c)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if cs, _, err := internetgateway2.NewWANIPConnection1ClientsCtx(dctx); err == nil {
+			for _, c := range cs {
+				found[1] = append(found[1], c)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if cs, _, err := internetgateway2.NewWANPPPConnection1ClientsCtx(dctx); err == nil {
+			for _, c := range cs {
+				found[2] = append(found[2], c)
+			}
+		}
+	}()
+	wg.Wait()
 	var clients []igd
-	if cs, _, err := internetgateway2.NewWANIPConnection2ClientsCtx(dctx); err == nil {
-		for _, c := range cs {
-			clients = append(clients, c)
-		}
-	}
-	if cs, _, err := internetgateway2.NewWANIPConnection1ClientsCtx(dctx); err == nil {
-		for _, c := range cs {
-			clients = append(clients, c)
-		}
-	}
-	if cs, _, err := internetgateway2.NewWANPPPConnection1ClientsCtx(dctx); err == nil {
-		for _, c := range cs {
-			clients = append(clients, c)
-		}
+	for _, f := range found {
+		clients = append(clients, f...)
 	}
 	return clients
 }

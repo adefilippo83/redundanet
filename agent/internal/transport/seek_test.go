@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/quic-go/quic-go"
+
 	"github.com/adefilippo83/redundanet/agent/internal/hub"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/wire"
@@ -463,28 +465,6 @@ func TestARouterReachedOutOfOrderIsSearchedOneByOne(t *testing.T) {
 	}
 }
 
-// A device of the version that guessed, and one of this version: the two
-// search the way both know.
-func TestAnOlderPeerIsSearchedTheOldWay(t *testing.T) {
-	n := newTestNetProbe(t, false, "127.0.0.1:0")
-	ra, rb := newSimRouter(false, 21000), newSimRouter(false, 25000)
-	a, aKey := n.endpoint(seed(1), true, func(c *Config) { ra.behind(c); c.seekOld = true })
-	b, bKey := n.endpoint(seed(2), true, rb.behind)
-	eventually(t, 15*time.Second, "both routers to be told apart", func() bool {
-		return mapped(a, wire.MapSequential)() && mapped(b, wire.MapSequential)()
-	})
-	a.Connect(bKey)
-	eventually(t, 30*time.Second, "a direct connection", func() bool { return a.Connect(bKey).Best() == PathDirect })
-	eventually(t, 10*time.Second, "both sides' word", func() bool {
-		return len(searched(a, bKey)) > 0 && len(searched(b, aKey)) > 0
-	})
-	for _, got := range [][]string{searched(a, bKey), searched(b, aKey)} {
-		if !strings.Contains(got[len(got)-1], "both routers' next ports: direct") {
-			t.Fatalf("the search: %q", got)
-		}
-	}
-}
-
 // One router counts, the other gives each destination any port out of a
 // narrow band. The first device opens a port of its own toward every port
 // of the band; the second writes once to each of those, and the way is
@@ -809,43 +789,6 @@ func TestTriesAreSpread(t *testing.T) {
 	}
 }
 
-// The packets of a search between two routers that count, on paper: each
-// packet to a port not written to before takes the router's next port.
-// However many ports the two routers gave away before the search, up to
-// twice what the side that started writes to spare, a run of mappings
-// points at each other.
-func TestInOrderMeets(t *testing.T) {
-	const here, there = 10000, 40000
-	for lost := 0; lost <= 2*seekSpare; lost++ {
-		for _, split := range []int{0, lost / 2, lost} {
-			// The side that started lost split ports since its reading, the other the rest.
-			mine, theirs := map[uint16]uint16{}, map[uint16]uint16{} // public port to destination
-			port := uint16(here + split)
-			for _, to := range inOrder(there, false) {
-				port++
-				mine[port] = to
-			}
-			port = uint16(there + lost - split)
-			for _, to := range inOrder(here, true) {
-				port++
-				theirs[port] = to
-			}
-			met := 0
-			for p, to := range mine {
-				if theirs[to] == p {
-					met++
-				}
-			}
-			if met != seekRun {
-				t.Fatalf("%d ports lost, %d of them here: %d pairs meet, want %d", lost, split, met, seekRun)
-			}
-		}
-	}
-	if n := len(inOrder(65500, false)); n != 35 {
-		t.Fatalf("past the last port: %d packets", n)
-	}
-}
-
 // What a search may ask of a device is cut twice, by the hub and by the
 // device: a handful of spans, a bounded number of ports, none past the
 // last one.
@@ -924,4 +867,45 @@ func TestTheHubNamesTheAddressOfASearch(t *testing.T) {
 	// A router that picks any port cannot be searched for, and the asked
 	// side says so instead of writing anywhere.
 	eventually(t, 10*time.Second, "the asked side's word", func() bool { return len(eventsWith(b, aKey, "port search: no way")) > 0 })
+	// Asked again about the same pair of routers, it comes to the same end
+	// and does not say it a second time.
+	sb = b.session(aKey, false)
+	sb.mu.Lock()
+	sb.soughtAt = time.Time{}
+	sb.mu.Unlock()
+	if err := hub.sendMessage(wire.FrameSeek, forged); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-answer:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no answer to the second search")
+	}
+	time.Sleep(500 * time.Millisecond)
+	if got := eventsWith(b, aKey, "port search: no way"); len(got) != 1 {
+		t.Fatalf("no way said %d times: %q", len(got), got)
+	}
+}
+
+// A session with its relayed connection and no direct one for a while asks
+// the hub less often; any other session keeps the short interval.
+func TestRendezvousSlowsDownBehindTheRelay(t *testing.T) {
+	long := time.Now().Add(-2 * rendezvousSlowAfter)
+	relay := &quic.Conn{}
+	for _, c := range []struct {
+		what          string
+		relay, direct *quic.Conn
+		undirect      time.Time
+		want          time.Duration
+	}{
+		{"no connection at all", nil, nil, long, rendezvousEvery},
+		{"the relay, and the direct one gone a moment ago", relay, nil, time.Now(), rendezvousEvery},
+		{"the relay, and no direct one for long", relay, nil, long, rendezvousSlow},
+		{"both", relay, relay, time.Time{}, rendezvousEvery},
+	} {
+		s := &session{relayConn: c.relay, directConn: c.direct, undirect: c.undirect}
+		if got := s.rendezvousIn(); got != c.want {
+			t.Errorf("%s: the next rendezvous in %s, want %s", c.what, got, c.want)
+		}
+	}
 }

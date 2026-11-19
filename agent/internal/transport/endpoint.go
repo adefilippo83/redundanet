@@ -94,9 +94,6 @@ type Config struct {
 	// seekAfter replaces how long ordinary punching gets before a port
 	// search (seek.go), in tests.
 	seekAfter time.Duration
-	// seekOld makes the device search like the first version that
-	// searched, which guessed and did not measure (tests).
-	seekOld bool
 }
 
 // Endpoint is one device's presence on the mesh.
@@ -189,10 +186,7 @@ func Start(ctx context.Context, cfg Config) (*Endpoint, error) {
 // this device is current at once.
 func (e *Endpoint) Close() error {
 	e.cancel()
-	e.mu.Lock()
-	hubs := append([]*hubClient(nil), e.hubs...)
-	e.mu.Unlock()
-	for _, h := range hubs {
+	for _, h := range e.hubList() {
 		h.goodbye()
 	}
 	_ = e.ln.Close()
@@ -243,6 +237,9 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stre
 	s := e.Connect(peer).session
 	start := time.Now()
 	for {
+		// Taken before the look, so that a connection filed in between
+		// is not waited for.
+		up := s.connUp()
 		if conn, path := s.best(); conn != nil {
 			st, err := conn.OpenStreamSync(ctx)
 			if err == nil {
@@ -258,6 +255,7 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stre
 		select {
 		case <-ctx.Done():
 			return nil, "", fmt.Errorf("no connection to %s: %w", peer.Short(), ctx.Err())
+		case <-up:
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -267,11 +265,8 @@ func (e *Endpoint) OpenStream(ctx context.Context, peer identity.Key) (wire.Stre
 // channel is up, which keeps it and spreads it; the count is how many
 // took it.
 func (e *Endpoint) SendRevocation(r *identity.SignedRevocation) int {
-	e.mu.Lock()
-	hubs := append([]*hubClient(nil), e.hubs...)
-	e.mu.Unlock()
 	n := 0
-	for _, h := range hubs {
+	for _, h := range e.hubList() {
 		if h.sendMessage(wire.FrameRevocation, r) == nil {
 			n++
 		}
@@ -283,13 +278,7 @@ func (e *Endpoint) SendRevocation(r *identity.SignedRevocation) int {
 // the connections of those it no longer admits: what happens when a newly
 // signed manifest or a revocation arrives.
 func (e *Endpoint) Recheck() {
-	e.mu.Lock()
-	list := make([]*session, 0, len(e.sessions))
-	for _, s := range e.sessions {
-		list = append(list, s)
-	}
-	e.mu.Unlock()
-	for _, s := range list {
+	for _, s := range e.sessionList() {
 		s.mu.Lock()
 		peer := s.peerInfo
 		conns := []*quic.Conn{s.relayConn, s.directConn}
@@ -320,12 +309,8 @@ type Status struct {
 
 // Status snapshots the endpoint.
 func (e *Endpoint) Status() Status {
+	hubs, sessions := e.hubList(), e.sessionList()
 	e.mu.Lock()
-	hubs := append([]*hubClient(nil), e.hubs...)
-	sessions := make([]*session, 0, len(e.sessions))
-	for _, s := range e.sessions {
-		sessions = append(sessions, s)
-	}
 	mapped := append([]string(nil), e.mapped...)
 	e.mu.Unlock()
 	nat := e.NAT()
@@ -352,9 +337,7 @@ func (e *Endpoint) acceptLoop(ctx context.Context, ln *quic.Listener, path strin
 			_ = conn.CloseWithError(1, "bad identity")
 			continue
 		}
-		s := e.session(peer.Device, true)
-		s.setPeer(*peer)
-		s.setConn(conn, path)
+		e.session(peer.Device, true).setConn(conn, path)
 	}
 }
 
@@ -553,13 +536,7 @@ func (e *Endpoint) onHubUp(c *hubClient) {
 			e.mu.Unlock()
 		}
 	}
-	e.mu.Lock()
-	list := make([]*session, 0, len(e.sessions))
-	for _, s := range e.sessions {
-		list = append(list, s)
-	}
-	e.mu.Unlock()
-	for _, s := range list {
+	for _, s := range e.sessionList() {
 		if s.wantsRendezvous() {
 			_ = c.sendMessage(wire.FrameConnect, wire.Connect{Peer: s.peer})
 		}
@@ -581,11 +558,8 @@ func (e *Endpoint) onCandidates(c *hubClient, cand wire.Candidates) {
 
 // rendezvous asks the first hub that is up for a peer's candidates.
 func (e *Endpoint) rendezvous(peer identity.Key) error {
-	e.mu.Lock()
-	hubs := append([]*hubClient(nil), e.hubs...)
-	e.mu.Unlock()
 	lastErr := errors.New("no hub channel is up")
-	for _, h := range hubs {
+	for _, h := range e.hubList() {
 		err := h.sendMessage(wire.FrameConnect, wire.Connect{Peer: peer})
 		if err == nil {
 			return nil
@@ -604,6 +578,24 @@ func (e *Endpoint) session(peer identity.Key, create bool) *session {
 		e.sessions[peer] = s
 	}
 	return s
+}
+
+// sessionList and hubList are the sessions and the hub channels as they
+// are now, for a caller that goes through them without the endpoint's lock.
+func (e *Endpoint) sessionList() []*session {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	list := make([]*session, 0, len(e.sessions))
+	for _, s := range e.sessions {
+		list = append(list, s)
+	}
+	return list
+}
+
+func (e *Endpoint) hubList() []*hubClient {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]*hubClient(nil), e.hubs...)
 }
 
 func (e *Endpoint) dropSession(s *session) {

@@ -39,13 +39,7 @@ func (e *Endpoint) census() (wire.Census, bool) {
 		return wire.Census{}, false
 	}
 	c := e.cfg.Census()
-	e.mu.Lock()
-	sessions := make([]*session, 0, len(e.sessions))
-	for _, s := range e.sessions {
-		sessions = append(sessions, s)
-	}
-	e.mu.Unlock()
-	for _, s := range sessions {
+	for _, s := range e.sessionList() {
 		st := s.status()
 		if st.Relay || st.Direct != "" {
 			c.Peers = append(c.Peers, wire.CensusPeer{Device: s.peer, Direct: st.Direct != "", Relay: st.Relay})

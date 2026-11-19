@@ -25,6 +25,13 @@ const (
 	punchNonceLife  = 30 * time.Second
 	maxConfirmed    = 32
 	rendezvousEvery = 15 * time.Second
+	// A session that has its relayed connection and has had no direct one
+	// for rendezvousSlowAfter asks and punches every rendezvousSlow: the
+	// pair has been through its searches, and what changes from here on
+	// is a network, which makes the device that moved ask at once, and
+	// the hub answers both.
+	rendezvousSlow      = time.Minute
+	rendezvousSlowAfter = 5 * time.Minute
 	// punchBacks is how many addresses a session punches back at between
 	// two rendezvous: the peer has a handful, a stranger gets no more.
 	punchBacks  = 8
@@ -96,6 +103,10 @@ type session struct {
 	created    time.Time
 	lastConn   time.Time
 	down       time.Time // since when no connection is up; zero while one is
+	undirect   time.Time // since when no direct connection is up; zero while one is
+	// up is closed, and made again, whenever a connection is filed: what
+	// a request that waits for one listens to.
+	up chan struct{}
 
 	// The port search (seek.go).
 	marks     []uint16       // where the router's port counter stood each time this session began writing to the peer, newest last
@@ -105,6 +116,7 @@ type session struct {
 	seekTries int            // searches that failed since the last one that did not
 	bandNow   int            // how many packets this device writes toward the ports it last named where its router picks now (spans)
 	theirMap  string         // the peer's label for its router in the last search
+	noWay     string         // the pair of routers the last search had no way between, as it was said
 	seekBusy  bool           // a search this session started is under way
 	seekRound uint64         // the search under way, started here or by the peer
 	seekReply chan wire.Seek // where the peer's messages of that search go
@@ -121,8 +133,8 @@ type punchNonce struct {
 
 func newSession(e *Endpoint, peer identity.Key) *session {
 	ctx, cancel := context.WithCancel(e.ctx)
-	s := &session{ep: e, peer: peer, ctx: ctx, stop: cancel, seen: map[string]bool{}, dialing: map[string]bool{}, created: time.Now()}
-	s.down = s.created
+	s := &session{ep: e, peer: peer, ctx: ctx, stop: cancel, seen: map[string]bool{}, dialing: map[string]bool{}, created: time.Now(), up: make(chan struct{})}
+	s.down, s.undirect = s.created, s.created
 	go s.loop()
 	return s
 }
@@ -185,6 +197,42 @@ func (s *session) wantsRendezvous() bool {
 	return s.directConn == nil || s.relayConn == nil
 }
 
+// rendezvousIn is how long after a rendezvous the next one is due.
+func (s *session) rendezvousIn() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.relayConn != nil && s.directConn == nil && !s.undirect.IsZero() && time.Since(s.undirect) > rendezvousSlowAfter {
+		return rendezvousSlow
+	}
+	return rendezvousEvery
+}
+
+// connUp is closed when the next connection is filed.
+func (s *session) connUp() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.up
+}
+
+// sleep waits d, and reports false when the session ended meanwhile.
+func (s *session) sleep(d time.Duration) bool {
+	select {
+	case <-s.ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// random64 is a random number nobody else can tell in advance.
+func random64() (uint64, bool) {
+	var raw [8]byte
+	if _, err := crand.Read(raw[:]); err != nil {
+		return 0, false
+	}
+	return binary.BigEndian.Uint64(raw[:]), true
+}
+
 // setConn files a connection, direct or relayed, replacing one of the same
 // kind, and serves its streams until it ends. The handshake checked the
 // policy when it began; the manifest may have changed since, and a Recheck
@@ -203,11 +251,16 @@ func (s *session) setConn(conn *quic.Conn, path string) {
 	var old *quic.Conn
 	if path == PathDirect {
 		old, s.directConn = s.directConn, conn
+		s.undirect = time.Time{}
 	} else {
 		old, s.relayConn = s.relayConn, conn
 	}
 	s.lastConn = time.Now()
 	s.down = time.Time{}
+	if s.up != nil {
+		close(s.up)
+		s.up = make(chan struct{})
+	}
 	s.mu.Unlock()
 	if old != nil && old != conn {
 		_ = old.CloseWithError(0, "replaced")
@@ -239,6 +292,7 @@ func (s *session) serve(conn *quic.Conn, path string) {
 	mine := false
 	if path == PathDirect && s.directConn == conn {
 		s.directConn, mine = nil, true
+		s.undirect = time.Now()
 		s.direct = nil
 		s.seen = map[string]bool{}
 		s.seekNext = time.Now().Add(s.ep.seekAfter())
@@ -270,7 +324,7 @@ func (s *session) loop() {
 			return
 		}
 		if !time.Now().Before(next) {
-			wait := rendezvousEvery
+			wait := s.rendezvousIn()
 			if s.wantsRendezvous() {
 				s.mu.Lock()
 				online := s.online
@@ -310,8 +364,8 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 	s.roleKnown, s.dialer = true, cand.Dialer
 	dialer, relayUp := s.dialer, s.relayConn != nil
 	direct, directUp, dialing := s.direct, s.directConn != nil, s.dialing[PathDirect]
-	s.mu.Unlock()
 	if !cand.Online {
+		s.mu.Unlock()
 		return
 	}
 	// The first packet to an address the peer was not at before, or after
@@ -321,7 +375,6 @@ func (s *session) candidates(c *hubClient, cand wire.Candidates) {
 	if len(cand.Addrs) > 0 {
 		first = cand.Addrs[0]
 	}
-	s.mu.Lock()
 	opens := first != s.markedFor || time.Since(s.punched) > mappingLife
 	s.markedFor, s.punched = first, time.Now()
 	if s.seekNext.IsZero() && s.directConn == nil {
@@ -370,10 +423,8 @@ func (s *session) punch(addrs []string) {
 		for _, t := range targets {
 			s.ep.sendPunch(t, punchOpen, nonce)
 		}
-		select {
-		case <-s.ctx.Done():
+		if !s.sleep(punchInterval) {
 			return
-		case <-time.After(punchInterval):
 		}
 	}
 }
@@ -381,11 +432,10 @@ func (s *session) punch(addrs []string) {
 // newNonce starts a punch run: a new random number, and the run before
 // it still counts.
 func (s *session) newNonce() (uint64, bool) {
-	var raw [8]byte
-	if _, err := crand.Read(raw[:]); err != nil {
+	nonce, ok := random64()
+	if !ok {
 		return 0, false
 	}
-	nonce := binary.BigEndian.Uint64(raw[:])
 	s.mu.Lock()
 	s.nonces[1] = s.nonces[0]
 	s.nonces[0] = punchNonce{value: nonce, at: time.Now()}
@@ -417,12 +467,12 @@ func (s *session) opened(addr *net.UDPAddr) {
 	s.backs++
 	n := s.nonces[0]
 	if n.at.IsZero() || time.Since(n.at) >= punchNonceLife/2 {
-		var raw [8]byte
-		if _, err := crand.Read(raw[:]); err != nil {
+		value, ok := random64()
+		if !ok {
 			s.mu.Unlock()
 			return
 		}
-		n = punchNonce{value: binary.BigEndian.Uint64(raw[:]), at: time.Now()}
+		n = punchNonce{value: value, at: time.Now()}
 		s.nonces[1], s.nonces[0] = s.nonces[0], n
 	}
 	s.mu.Unlock()
@@ -491,9 +541,6 @@ func (s *session) dialRelay(c *hubClient) {
 		return
 	}
 	s.event("relay handshake took %s", time.Since(started).Round(time.Millisecond))
-	if p, err := identity.PeerFromConnectionState(conn.ConnectionState().TLS); err == nil {
-		s.setPeer(*p)
-	}
 	s.setConn(conn, PathRelay)
 }
 
