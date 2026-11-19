@@ -15,7 +15,7 @@ A member is a 128-bit seed, shown once as a 12-word phrase by `redundanet identi
 
 The split is the point: everything a device does every day is signed by its own key, so a device that is taken can be told from the others and refused, and it can neither certify nor revoke: those need the phrase in hand. What it does hold is the member secret, the same on every device of the member, which reads everything the member stored; "What a lost device can do" says what that means after a revocation.
 
-The phrase appears only on the device itself: in the CLI or in the local page on `127.0.0.1`, and on a headless node through SSH. Nothing on the network ever asks for it; the weekly restore test never asks for it. There is no phrase check command in 3.0.0 and no OS keystore: the identity file is sealed with a passphrase when you ask for one (`--passphrase`), otherwise the file mode is its protection, as on a headless node.
+The phrase appears only on the device itself: in the CLI or in the local page on `127.0.0.1`, and on a headless node through SSH. Nothing on the network ever asks for it; the weekly restore test never asks for it. `redundanet identity check` asks for the phrase on the device and says whether it derives this device's member key; it writes nothing. There is no OS keystore: the identity file is sealed with a passphrase when you ask for one (`--passphrase`), otherwise the file mode is its protection, as on a headless node.
 
 ## What is encrypted, and by whom
 
