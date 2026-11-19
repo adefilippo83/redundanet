@@ -41,7 +41,7 @@ One hub, `hub-hetzner`, run by the maintainer on a rented server, holds no key b
 
 ## Running your own network
 
-The binary carries no reference to this network: which network a device joins comes from the descriptor it is given. The RFC promises (F23) one guide that takes a new community from an empty repository to a running hub and a first member. This section is the stub of that guide; the full version is not written yet.
+The released binary has this network's descriptor built in (`agent/internal/version`), and every `--network` flag defaults to it. A device joins another network when it is given that network's descriptor (`redundanet network join <descriptor>`), and a fork that builds its own binary puts its own descriptor and release key in that package. The RFC promises (F23) one guide that takes a new community from an empty repository to a running hub and a first member. This section is the stub of that guide; the full version is not written yet.
 
 What a fork needs: a GitHub repository with Actions, a server for the hub, an operator key, and either this project's release chain or its own release key and build.
 
