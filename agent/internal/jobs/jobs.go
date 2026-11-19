@@ -526,7 +526,8 @@ func (r *Runner) Run(ctx context.Context) {
 // after start), so a restart, which every release is, does not put the
 // conversion off by hours. A run that did not complete, which is mostly
 // servers out of reach, is tried again shortly: it resumes where it
-// stopped, and what is converted costs only lookups. A run that completed
+// stopped, and what it stored already is found and not read again (see
+// internal/rebalance). A run that completed
 // left nothing to convert, and backups since the transition write the new
 // encoding, so the look after it is rare: it reads every directory of
 // every snapshot again from the servers.

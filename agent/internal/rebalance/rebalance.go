@@ -6,8 +6,16 @@
 // storage index, rewrites the directory objects up to the top, updates
 // the local database before anything is published, and publishes the
 // root after each snapshot. The old objects become unreferenced and the
-// cleanup job retires them. A run that stops resumes where it left off:
-// what is converted costs only lookups the next time.
+// cleanup job retires them.
+//
+// A run that stops resumes where it left off. A snapshot it finished is
+// published and costs only lookups the next time. Inside the snapshot it
+// stopped in, an object it stored already is found by its content under
+// the new encoding, in the local database or on the servers, and is not
+// read again; the directories of that snapshot are read again, and they
+// are small. A read that fails is tried again after a pause before the
+// run gives up: a laptop that slept loses every connection at once and
+// has them back within a minute.
 package rebalance
 
 import (
@@ -15,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
@@ -57,6 +66,7 @@ type Status struct {
 	Snapshots int       `json:"snapshots"`          // in the index
 	Done      int       `json:"snapshots_done"`     // converted this run or before
 	Objects   int       `json:"objects"`            // objects re-encoded this run
+	Found     int       `json:"objects_found"`      // objects an earlier run had stored already
 	Bytes     int64     `json:"bytes"`              // plaintext bytes re-encoded this run
 	At        time.Time `json:"at,omitempty"`       // when the run ended
 	Err       string    `json:"error,omitempty"`    //
@@ -144,7 +154,7 @@ func Run(ctx context.Context, cfg Config) (*Status, error) {
 		if err := r.publish(ctx, x); err != nil {
 			return finish(err)
 		}
-		lg.Info("snapshot converted", "snapshot", snap.ID, "objects", st.Objects-before, "bytes", st.Bytes)
+		lg.Info("snapshot converted", "snapshot", snap.ID, "objects", st.Objects-before, "found", st.Found, "bytes", st.Bytes)
 	}
 	st.Snapshot = ""
 	return finish(nil)
@@ -161,16 +171,73 @@ type run struct {
 	report   func()
 }
 
+// readPauses is how long a read that failed waits before each further
+// try. Most failures here are a laptop that slept or changed network: the
+// connections to the servers come back within a minute. An object that is
+// really out of reach costs the sum of them once per run.
+var readPauses = []time.Duration{30 * time.Second, 2 * time.Minute, 5 * time.Minute}
+
+// read reads an object into what fresh returns, which is called before
+// every try so that a try never appends to what a failed one left.
+func (r *run) read(ctx context.Context, rc object.ReadCap, fresh func() (io.Writer, error)) error {
+	for try := 0; ; try++ {
+		w, err := fresh()
+		if err != nil {
+			return err
+		}
+		err = r.cfg.Grid.Get(ctx, rc, w, nil)
+		if err == nil || ctx.Err() != nil || try >= len(readPauses) {
+			return err
+		}
+		r.lg.Info("read failed; trying again", "after", readPauses[try].String(), "err", err)
+		t := time.NewTimer(readPauses[try])
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// readAll is read for an object that fits in memory.
+func (r *run) readAll(ctx context.Context, rc object.ReadCap) ([]byte, error) {
+	var buf bytes.Buffer
+	err := r.read(ctx, rc, func() (io.Writer, error) {
+		buf.Reset()
+		return &buf, nil
+	})
+	return buf.Bytes(), err
+}
+
+// stored is the capability of an object's content under the new encoding
+// when an earlier run stored it and stopped before its snapshot was
+// published. The content is known by the hash the local database keeps
+// for the old capability; whether it is stored is the engine's word (the
+// local database while its word is recent, the servers otherwise, which
+// also keeps the cleanup from retiring it).
+func (r *run) stored(ctx context.Context, capStr string, size int64) (string, bool) {
+	o, err := r.cfg.DB.LookupByCap(capStr)
+	if err != nil || o == nil {
+		return "", false
+	}
+	rc, ok, err := r.cfg.Grid.Has(ctx, o.PlaintextHash, size)
+	if err != nil || !ok {
+		return "", false
+	}
+	return rc.String(), true
+}
+
 func (r *run) fetchIndex(ctx context.Context, capStr string) (*snapshot.Index, error) {
 	rc, err := object.ParseReadCap(capStr)
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	if err := r.cfg.Grid.Get(ctx, rc, &buf, nil); err != nil {
+	b, err := r.readAll(ctx, rc)
+	if err != nil {
 		return nil, fmt.Errorf("index: %w", err)
 	}
-	return snapshot.DecodeIndex(buf.Bytes())
+	return snapshot.DecodeIndex(b)
 }
 
 // encodingOf is the encoding an object was written under: the local
@@ -214,11 +281,11 @@ func (r *run) convertDir(ctx context.Context, capStr string) (string, bool, erro
 	if err != nil {
 		return "", false, err
 	}
-	var buf bytes.Buffer
-	if err := r.cfg.Grid.Get(ctx, rc, &buf, nil); err != nil {
+	db, err := r.readAll(ctx, rc)
+	if err != nil {
 		return "", false, fmt.Errorf("directory: %w", err)
 	}
-	d, err := snapshot.DecodeDirectory(buf.Bytes())
+	d, err := snapshot.DecodeDirectory(db)
 	if err != nil {
 		return "", false, err
 	}
@@ -295,13 +362,27 @@ func (r *run) convertObject(ctx context.Context, capStr string) (string, bool, e
 	if err != nil {
 		return "", false, err
 	}
+	if n, ok := r.stored(ctx, capStr, int64(rc.Size)); ok {
+		r.params[n] = r.target
+		r.replaced[capStr] = n
+		r.st.Found++
+		r.report()
+		return n, true, nil
+	}
 	spool, err := os.CreateTemp(r.cfg.SpoolDir, "rn3-convert-*")
 	if err != nil {
 		return "", false, err
 	}
 	defer os.Remove(spool.Name())
 	defer spool.Close()
-	if err := r.cfg.Grid.Get(ctx, rc, spool, nil); err != nil {
+	err = r.read(ctx, rc, func() (io.Writer, error) {
+		if err := spool.Truncate(0); err != nil {
+			return nil, err
+		}
+		_, err := spool.Seek(0, 0)
+		return spool, err
+	})
+	if err != nil {
 		return "", false, fmt.Errorf("object: %w", err)
 	}
 	if _, err := spool.Seek(0, 0); err != nil {

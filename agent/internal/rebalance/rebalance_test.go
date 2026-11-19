@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -368,6 +369,124 @@ func TestConversionOnTheGrid(t *testing.T) {
 	crep, err := cleanup.Run(ctx, cleanup.Config{Grid: e, Member: laptop.key, Now: g.clock, Log: g.log, Force: true})
 	if err != nil || crep.Tombstoned != before.Objects+2 || crep.Reachable != 6 {
 		t.Fatalf("cleanup after conversion: %+v %v (old objects %d)", crep, err, before.Objects)
+	}
+}
+
+// flaky is a grid whose reads fail when fail says so; it counts the
+// reads by the size of what was asked for.
+type flaky struct {
+	Grid
+	mu   sync.Mutex
+	fail func(size uint64, nth int) error
+	gets map[uint64]int
+}
+
+func (f *flaky) Get(ctx context.Context, rc object.ReadCap, w io.Writer, rng *engine.Range) error {
+	f.mu.Lock()
+	f.gets[rc.Size]++
+	nth := f.gets[rc.Size]
+	f.mu.Unlock()
+	if f.fail != nil {
+		if err := f.fail(rc.Size, nth); err != nil {
+			// Half an object first, as a read that broke midway leaves it.
+			_, _ = w.Write([]byte("left over by the failed read"))
+			return err
+		}
+	}
+	return f.Grid.Get(ctx, rc, w, rng)
+}
+
+// A run that stopped inside a snapshot stored some of its objects. The
+// next run finds them by their content and does not read them again, and
+// a read that fails once is tried again instead of ending the run.
+func TestAStoppedConversionDoesNotReadAgainWhatItStored(t *testing.T) {
+	old := readPauses
+	readPauses = []time.Duration{time.Millisecond, time.Millisecond}
+	defer func() { readPauses = old }()
+	g, e, laptop, db := newGrid(t)
+	ctx, cancel := context.WithTimeout(g.ctx, 3*time.Minute)
+	defer cancel()
+	src := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(src, "sub"), 0o755)
+	const small, large = 5000, 70000
+	files := map[string][]byte{"a.bin": bytes.Repeat([]byte("a"), small), "sub/b.bin": bytes.Repeat([]byte("b"), large)}
+	for name, b := range files {
+		if err := os.WriteFile(filepath.Join(src, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := backup.Run(ctx, backup.Config{Engine: e, DB: db, Member: laptop.key, Device: laptop.dev.ID(), Set: backup.Set{Name: "home", Folders: []string{src}}, Now: g.clock, Log: g.log}); err != nil {
+		t.Fatal(err)
+	}
+	m2 := *g.manifest()
+	m2.Network.Encoding = manifest.Encoding{K: 2, N: 3}
+	m2.Network.EncodingTransition = &manifest.Transition{From: manifest.Encoding{K: 2, N: 4}, To: manifest.Encoding{K: 2, N: 3}, Deadline: g.clock().Add(30 * 24 * time.Hour).UTC().Format("2006-01-02")}
+	g.setManifest(&m2)
+
+	// The first run converts a.bin and cannot read sub/b.bin, however often
+	// it tries: it stops inside the snapshot and publishes nothing.
+	gone := errors.New("the servers are out of reach")
+	f1 := &flaky{Grid: e, gets: map[uint64]int{}, fail: func(size uint64, _ int) error {
+		if size == large {
+			return gone
+		}
+		return nil
+	}}
+	cfg := Config{Grid: f1, DB: db, Member: laptop.key, Device: laptop.dev.ID(), Manifest: g.manifest, SpoolDir: t.TempDir(), Now: g.clock, Log: g.log}
+	st, err := Run(ctx, cfg)
+	if !errors.Is(err, gone) || st.Done != 0 || st.Objects != 1 {
+		t.Fatalf("the run that stops: %+v %v", st, err)
+	}
+	if f1.gets[small] != 1 || f1.gets[large] != 1+len(readPauses) {
+		t.Fatalf("reads in the run that stops: %v, want a.bin once and sub/b.bin %d times", f1.gets, 1+len(readPauses))
+	}
+
+	// The second run does not read a.bin again, and gets past one failed
+	// read of sub/b.bin without what that read left behind.
+	f2 := &flaky{Grid: e, gets: map[uint64]int{}, fail: func(size uint64, nth int) error {
+		if size == large && nth == 1 {
+			return gone
+		}
+		return nil
+	}}
+	cfg.Grid = f2
+	st, err = Run(ctx, cfg)
+	if err != nil || st.Done != 1 || st.Found != 1 {
+		t.Fatalf("the run that resumes: %+v %v", st, err)
+	}
+	if f2.gets[small] != 0 || f2.gets[large] != 2 {
+		t.Fatalf("reads in the run that resumes: %v, want none of a.bin and two of sub/b.bin", f2.gets)
+	}
+	// sub/b.bin and the three directories above it; a.bin was found.
+	if st.Objects != 4 {
+		t.Fatalf("%d objects re-encoded, want 4", st.Objects)
+	}
+	l, err := restore.List(ctx, e, laptop.key)
+	if err != nil || len(l.Devices) != 1 || l.Devices[0].Index == nil || len(l.Devices[0].Index.Snapshots) != 1 {
+		t.Fatalf("listing after conversion: %+v %v", l, err)
+	}
+	snap := l.Devices[0].Index.Snapshots[0]
+	target := t.TempDir()
+	rep, err := restore.Restore(ctx, e, &snap, nil, target, restore.Options{})
+	if err != nil || rep.Files != 2 {
+		t.Fatalf("restore after conversion: %+v %v", rep, err)
+	}
+	restored := map[string][]byte{}
+	_ = filepath.WalkDir(target, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			b, _ := os.ReadFile(p)
+			restored[filepath.Base(p)] = b
+		}
+		return nil
+	})
+	for name, b := range files {
+		if got, ok := restored[filepath.Base(name)]; !ok || !bytes.Equal(got, b) {
+			t.Fatalf("restored %s: present %v, same %v", name, ok, bytes.Equal(got, b))
+		}
+	}
+	// Nothing is left to convert.
+	if st, err := Run(ctx, cfg); err != nil || st.Objects != 0 || st.Found != 0 {
+		t.Fatalf("a third run: %+v %v", st, err)
 	}
 }
 
