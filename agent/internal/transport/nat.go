@@ -42,7 +42,7 @@ type natState struct {
 	mu      sync.Mutex
 	run     uint64         // the probe run under way, by its token
 	hub     netip.AddrPort // the probe port
-	channel netip.AddrPort // the channel's source address as the hub sees it
+	channel netip.AddrPort // the channel's source address as the hub sees it, never an IPv4 one written as IPv6
 	asked   bool
 	knocked bool
 	seen    netip.AddrPort // the ask's source address as the hub sees it
@@ -96,6 +96,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 	}
 	n := &e.nat
 	n.mu.Lock()
+	channel = unmapped(channel)
 	n.run, n.hub, n.channel = w.ProbeToken, netip.AddrPortFrom(udp.AddrPort().Addr().Unmap(), w.Probe), channel
 	n.asked, n.knocked, n.seen = false, false, netip.AddrPort{}
 	token, to := n.run, net.UDPAddrFromAddrPort(n.hub)
@@ -112,7 +113,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 			n.asked = true
 		}
 		n.mu.Unlock()
-		ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
+		ask := e.ask(token)
 		for i := 0; i < natAsks && current(); i++ {
 			n.mu.Lock()
 			told := n.seen.IsValid()
@@ -141,7 +142,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 		var fresh []netip.AddrPort
 		if seen.IsValid() {
 			m.mapping, m.filtering = wire.Mapping(channel, seen, ownAddr), wire.FilterStrict
-			if seen.Addr().Unmap() == channel.Addr().Unmap() {
+			if seen.Addr().Unmap() == channel.Addr() {
 				m.across = int32(seen.Port()) - int32(channel.Port())
 			}
 			if m.mapping != wire.MapNone {
@@ -154,16 +155,16 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 		ports := make([]uint16, 0, len(fresh))
 		for _, a := range fresh {
 			ports = append(ports, a.Port())
-			m.pooled = m.pooled || a.Addr().Unmap() != channel.Addr().Unmap()
+			m.pooled = m.pooled || a.Addr() != channel.Addr()
 		}
-		m.pooled = m.pooled || (seen.IsValid() && seen.Addr().Unmap() != channel.Addr().Unmap())
+		m.pooled = m.pooled || (seen.IsValid() && seen.Addr().Unmap() != channel.Addr())
 		m.gaps, m.kept = wire.PortGaps(ports), m.kept && len(ports) > 1
 		n.mu.Lock()
 		if n.run != token {
 			n.mu.Unlock()
 			return
 		}
-		band, samples := n.ports.add(channel.Addr().Unmap(), append(append(fresh, channel), seen)...)
+		band, samples := n.ports.add(channel.Addr(), append(append(fresh, channel), seen)...)
 		label := wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
 		if label == wire.MapRandom && !m.pooled && len(fresh) > 0 {
 			// Unrelated ports so far, and too few of them to say whether
@@ -175,7 +176,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 				n.mu.Unlock()
 				return
 			}
-			band, samples = n.ports.add(channel.Addr().Unmap(), more...)
+			band, samples = n.ports.add(channel.Addr(), more...)
 			label = wire.Refine(m.mapping, m.gaps, m.pooled, band, samples)
 		}
 		if label == wire.MapSequential {
@@ -200,7 +201,7 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 		if m.mapping == "" || m.mapping == wire.MapNone {
 			return
 		}
-		router, pcp := e.routerHolds(ctx, channel.Addr().Unmap())
+		router, pcp := e.routerHolds(ctx, channel.Addr())
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		if n.run != token {
@@ -209,6 +210,16 @@ func (e *Endpoint) startProbe(ctx context.Context, hub net.Addr, w wire.Welcome)
 		n.router, n.pcp = router, pcp
 		e.log.Info("router asked", "router", orUnknown(router), "pcp", pcp)
 	}()
+}
+
+// ask is the packet that asks the probe port which address it came from.
+func (e *Endpoint) ask(token uint64) []byte {
+	return wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
+}
+
+// unmapped is an address and port with an IPv4 address written as IPv4.
+func unmapped(a netip.AddrPort) netip.AddrPort {
+	return netip.AddrPortFrom(a.Addr().Unmap(), a.Port())
 }
 
 func orUnknown(s string) string {
@@ -335,7 +346,7 @@ func freshPorts(ctx context.Context, hub netip.AddrPort, ask []byte, open func(n
 		if !ok {
 			break
 		}
-		seen = append(seen, netip.AddrPortFrom(a.Addr().Unmap(), a.Port()))
+		seen = append(seen, unmapped(a))
 		kept = kept && int(a.Port()) == local
 	}
 	return seen, kept
@@ -412,7 +423,7 @@ func askFrom(conn net.PacketConn, hub netip.AddrPort, ask, buf []byte, sent bool
 			from := udp.AddrPort()
 			p, ok := wire.ParseProbe(buf[:n])
 			if ok && p.Kind == wire.ProbeTell && p.Token == want.Token && p.Addr.IsValid() &&
-				netip.AddrPortFrom(from.Addr().Unmap(), from.Port()) == hub {
+				unmapped(from) == hub {
 				return p.Addr, true
 			}
 		}
@@ -447,7 +458,7 @@ const natMoved = 3
 // again who holds it. Called with n.mu held.
 func (n *natState) sameAddress(a netip.Addr) bool {
 	a = a.Unmap()
-	if a == n.channel.Addr().Unmap() {
+	if a == n.channel.Addr() {
 		n.elseAddr, n.elseSeen = netip.Addr{}, 0
 		return true
 	}
@@ -466,41 +477,27 @@ func (n *natState) sameAddress(a netip.Addr) bool {
 }
 
 // counter reads where the router's port counter stands: the public port
-// it gives a socket opened now. A reading no older than fresh is used
-// again. It says nothing without a probe port, or when the socket came
-// out at another public address than the channel.
+// it gives a socket opened now (reading). A reading no older than fresh is
+// used again. It says nothing without a probe port, or when the socket
+// came out at another public address than the channel.
 func (e *Endpoint) counter(ctx context.Context, fresh time.Duration) (uint16, bool) {
 	n := &e.nat
 	n.readMu.Lock()
 	defer n.readMu.Unlock()
 	n.mu.Lock()
-	hub, token := n.hub, n.run
 	port, recent := n.readPort, fresh > 0 && !n.readAt.IsZero() && time.Since(n.readAt) < fresh
 	n.mu.Unlock()
 	if recent {
 		return port, true
 	}
-	if !hub.IsValid() || token == 0 || ctx.Err() != nil {
-		return 0, false
-	}
-	conn, err := e.freshSocket(hub)
-	if err != nil {
-		return 0, false
-	}
-	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
-	a, ok := askFrom(conn, hub, ask, make([]byte, 2048), false)
-	_ = conn.Close()
+	port, ok := e.reading(ctx)()
 	if !ok {
 		return 0, false
 	}
 	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.run != token || !n.sameAddress(a.Addr()) {
-		return 0, false
-	}
-	n.readAt, n.readPort = time.Now(), a.Port()
-	n.ports.add(n.channel.Addr().Unmap(), a)
-	return a.Port(), true
+	n.readAt, n.readPort = time.Now(), port
+	n.mu.Unlock()
+	return port, true
 }
 
 // reading takes a reading of the router's port counter whose place among
@@ -522,7 +519,7 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 	if err != nil {
 		return none
 	}
-	ask := wire.Probe{Kind: wire.ProbeAsk, Device: e.cfg.Device, Token: token}.Encode()
+	ask := e.ask(token)
 	if _, err := conn.WriteTo(ask, net.UDPAddrFromAddrPort(hub)); err != nil {
 		_ = conn.Close()
 		return none
@@ -538,7 +535,7 @@ func (e *Endpoint) reading(ctx context.Context) func() (uint16, bool) {
 		n.mu.Lock()
 		same := n.run == token && n.sameAddress(a.Addr())
 		if same {
-			n.ports.add(n.channel.Addr().Unmap(), a)
+			n.ports.add(n.channel.Addr(), a)
 		}
 		n.mu.Unlock()
 		if !same {
@@ -605,10 +602,10 @@ func (e *Endpoint) router() (mapping string, public netip.Addr, ranges []portRan
 	n := &e.nat
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.ports.n > 0 && n.ports.addr == n.channel.Addr().Unmap() {
+	if n.ports.n > 0 && n.ports.addr == n.channel.Addr() {
 		ranges = append(ranges, n.ports.ranges...)
 	}
-	return n.mapping, n.channel.Addr().Unmap(), ranges
+	return n.mapping, n.channel.Addr(), ranges
 }
 
 // seenAround is the range of public ports, among those this device was
@@ -617,7 +614,7 @@ func (e *Endpoint) seenAround(p uint16) (portRange, bool) {
 	n := &e.nat
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.ports.addr != n.channel.Addr().Unmap() {
+	if n.ports.addr != n.channel.Addr() {
 		return portRange{}, false
 	}
 	return n.ports.around(p)
@@ -663,8 +660,7 @@ func (e *Endpoint) onProbe(p wire.Probe, from *net.UDPAddr) {
 	n := &e.nat
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	src := from.AddrPort()
-	if n.run == 0 || p.Token != n.run || netip.AddrPortFrom(src.Addr().Unmap(), src.Port()) != n.hub {
+	if n.run == 0 || p.Token != n.run || unmapped(from.AddrPort()) != n.hub {
 		return
 	}
 	switch p.Kind {
