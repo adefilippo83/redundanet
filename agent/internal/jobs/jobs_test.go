@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/adefilippo83/redundanet/agent/internal/backup"
+	"github.com/adefilippo83/redundanet/agent/internal/cleanup"
 	"github.com/adefilippo83/redundanet/agent/internal/engine"
 	"github.com/adefilippo83/redundanet/agent/internal/identity"
 	"github.com/adefilippo83/redundanet/agent/internal/localdb"
@@ -435,5 +436,122 @@ func TestWhenTheConversionLooksAgain(t *testing.T) {
 	}
 	if rebalanceFirst > 15*time.Minute || rebalanceRetry > 30*time.Minute || rebalanceRetry >= rebalanceEvery {
 		t.Fatalf("first %v, retry %v, every %v", rebalanceFirst, rebalanceRetry, rebalanceEvery)
+	}
+}
+
+// The restore test and the cleanup are due their interval after the last
+// one on record, and a restart, which every release is, does not start
+// the count again.
+func TestTheWeeklyJobsAreCountedFromTheLastOneAcrossARestart(t *testing.T) {
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	fake := engine.NewFake(member, device, 2, 4)
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	src := filepath.Join(t.TempDir(), "docs")
+	_ = os.MkdirAll(src, 0o755)
+	_ = os.WriteFile(filepath.Join(src, "a.bin"), make([]byte, 5000), 0o644)
+	open := func() *Runner {
+		r, err := New(Config{DataDir: dir, Engine: fake, DB: db, Member: member, Device: device, Now: clock})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	r := open()
+	if !r.verifyDue() || !r.cleanupDue() {
+		t.Fatal("jobs that never ran are not due")
+	}
+	set := backup.Set{Name: "docs", Folders: []string{src}}
+	if err := r.AddSet(set); err != nil {
+		t.Fatal(err)
+	}
+	if rs := r.RunSet(context.Background(), set, snapshot.DefaultRetention); rs == nil || rs.LastErr != "" {
+		t.Fatalf("run: %+v", rs)
+	}
+	if v := r.Verify(context.Background()); v == nil || v.Verified != 1 {
+		t.Fatalf("verify: %+v", v)
+	}
+	// A dry run is not a cleanup.
+	if _, err := r.RunCleanup(context.Background(), true, false); err != nil {
+		t.Fatal(err)
+	}
+	if !r.cleanupDue() {
+		t.Fatal("a dry run put the cleanup off")
+	}
+	if rep, err := r.RunCleanup(context.Background(), false, false); err != nil || rep == nil {
+		t.Fatalf("cleanup: %+v, %v", rep, err)
+	}
+	if r.verifyDue() || r.cleanupDue() {
+		t.Fatal("due again right after running")
+	}
+	// Six days and a restart later neither is due; a day after that both.
+	now = now.AddDate(0, 0, 6)
+	r = open()
+	if rep := r.Status().LastCleanup; rep == nil || rep.Error != "" {
+		t.Fatalf("the last cleanup after a restart: %+v", rep)
+	}
+	if r.verifyDue() || r.cleanupDue() {
+		t.Fatal("a restart made the jobs due early")
+	}
+	now = now.AddDate(0, 0, 1)
+	r = open()
+	if !r.verifyDue() || !r.cleanupDue() {
+		t.Fatal("not due a week after the last one, across restarts")
+	}
+}
+
+func TestAJobThatDidNotCompleteIsTriedAgainAfterADay(t *testing.T) {
+	t0 := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	week := 7 * 24 * time.Hour
+	for _, c := range []struct {
+		name        string
+		done, tried time.Time
+		every       time.Duration
+		want        time.Time
+	}{
+		{"never ran", time.Time{}, time.Time{}, week, time.Time{}.Add(week)},
+		{"completed", t0, t0, week, t0.Add(week)},
+		{"failed since, late in the week", t0, t0.Add(week), week, t0.Add(week + retryAfter)},
+		{"failed since, early in the week", t0, t0.Add(time.Hour), week, t0.Add(week)},
+		{"never completed, tried", time.Time{}, t0, week, t0.Add(retryAfter)},
+		{"an interval shorter than the pause", time.Time{}, t0, 2 * time.Hour, t0.Add(2 * time.Hour)},
+	} {
+		if got := nextRun(c.done, c.tried, c.every); !got.Equal(c.want) {
+			t.Errorf("%s: next run %v, want %v", c.name, got, c.want)
+		}
+	}
+	// A cleanup report with an error counts as an attempt, also after a
+	// restart.
+	var member, device identity.Key
+	member[0], device[0] = 1, 2
+	now := t0
+	clock := func() time.Time { return now }
+	dir := t.TempDir()
+	db, err := localdb.Open(dir, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := saveCleanup(dir, &cleanup.Report{At: t0, Error: "too few servers answered"}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(Config{DataDir: dir, Engine: engine.NewFake(member, device, 2, 4), DB: db, Member: member, Device: device, Now: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = t0.Add(23 * time.Hour)
+	if r.cleanupDue() {
+		t.Fatal("a failed cleanup is tried again within the day")
+	}
+	now = t0.Add(25 * time.Hour)
+	if !r.cleanupDue() {
+		t.Fatal("a failed cleanup is not tried again after a day")
 	}
 }

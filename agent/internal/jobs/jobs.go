@@ -49,6 +49,20 @@ const fileName = "backup.yaml"
 // `backup list` and in migrate-node's checks.
 const runsFile = "runs.json"
 
+// cleanupFile keeps the report of the last cleanup across restarts: the
+// page shows it, and the scheduler counts the next cleanup from it.
+const cleanupFile = "cleanup.json"
+
+// The restore test and the cleanup are due by the clock on the wall,
+// counted from the last one on record, so a restart, which every release
+// is, and a laptop's sleep do not put them off. The scheduler looks every
+// dueEvery; one that did not complete is tried again after retryAfter, or
+// after its own interval when that is shorter.
+const (
+	dueEvery   = 10 * time.Minute
+	retryAfter = 24 * time.Hour
+)
+
 // Defaults of the file.
 const (
 	fileVersion        = 2
@@ -204,6 +218,9 @@ type Runner struct {
 	lastCleanup *cleanup.Report
 	cleaning    bool
 	rebalance   *rebalance.Status
+	// When this process last started a restore test and a cleanup, for
+	// the pause after one that did not complete.
+	verifyTried, cleanupTried time.Time
 }
 
 // New loads the configuration.
@@ -227,6 +244,7 @@ func New(cfg Config) (*Runner, error) {
 	if vs, err := cfg.DB.Verifications(1); err == nil && len(vs) == 1 {
 		r.lastVerify = fromRecord(vs[0])
 	}
+	r.lastCleanup = loadCleanup(cfg.DataDir)
 	if cfg.OnLimits != nil {
 		cfg.OnLimits(f.UploadKBps, f.DownloadKBps)
 	}
@@ -460,18 +478,17 @@ func (r *Runner) RunNow(set string) {
 	}
 }
 
-// Run is the scheduler: a run of every set at each interval, a restore
-// test at its own interval, and runs asked for in between.
+// Run is the scheduler: a run of every set at each interval, the restore
+// test and the cleanup when they are due (see dueEvery), and runs asked
+// for in between.
 func (r *Runner) Run(ctx context.Context) {
 	r.mu.Lock()
-	every, verifyEvery, cleanupEvery := r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery
+	every := r.file.Every
 	r.mu.Unlock()
 	t := time.NewTicker(every)
 	defer t.Stop()
-	v := time.NewTicker(verifyEvery)
-	defer v.Stop()
-	cl := time.NewTicker(cleanupEvery)
-	defer cl.Stop()
+	due := time.NewTicker(dueEvery)
+	defer due.Stop()
 	// A conversion runs while the manifest declares a transition: soon
 	// after start, once the first backup run has had its say, again
 	// shortly after a run that did not complete, and a few times a day
@@ -500,10 +517,13 @@ func (r *Runner) Run(ctx context.Context) {
 			default:
 				r.runAll(ctx, name)
 			}
-		case <-v.C:
-			r.verify(ctx)
-		case <-cl.C:
-			_, _ = r.RunCleanup(ctx, false, false)
+		case <-due.C:
+			if r.verifyDue() {
+				r.verify(ctx)
+			}
+			if r.cleanupDue() {
+				_, _ = r.RunCleanup(ctx, false, false)
+			}
 		case <-rb.C:
 			var err error
 			if r.transitionDeclared() {
@@ -512,13 +532,53 @@ func (r *Runner) Run(ctx context.Context) {
 			rb.Reset(rebalanceAfter(err))
 		case <-r.reconf:
 			r.mu.Lock()
-			every, verifyEvery, cleanupEvery = r.file.Every, r.file.VerifyEvery, r.file.CleanupEvery
+			every = r.file.Every
 			r.mu.Unlock()
 			t.Reset(every)
-			v.Reset(verifyEvery)
-			cl.Reset(cleanupEvery)
 		}
 	}
+}
+
+// nextRun is when a job is due: its interval after the last one that
+// completed, and not before the pause after an attempt since then. A job
+// that never ran is due at once.
+func nextRun(done, tried time.Time, every time.Duration) time.Time {
+	next := done.Add(every)
+	if tried.After(done) {
+		if retry := tried.Add(min(every, retryAfter)); retry.After(next) {
+			next = retry
+		}
+	}
+	return next
+}
+
+// verifyDue says whether the restore test is due: its interval after the
+// last one on record.
+func (r *Runner) verifyDue() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var done time.Time
+	if r.lastVerify != nil {
+		done = r.lastVerify.At
+	}
+	return !r.cfg.Now().Before(nextRun(done, r.verifyTried, r.file.VerifyEvery))
+}
+
+// cleanupDue says whether the cleanup is due: its interval after the last
+// one that completed. A report with an error is an attempt.
+func (r *Runner) cleanupDue() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var done time.Time
+	tried := r.cleanupTried
+	if rep := r.lastCleanup; rep != nil {
+		if rep.Error == "" {
+			done = rep.At
+		} else if rep.At.After(tried) {
+			tried = rep.At
+		}
+	}
+	return !r.cfg.Now().Before(nextRun(done, tried, r.file.CleanupEvery))
 }
 
 // When a device looks for objects to convert while a transition is
@@ -613,12 +673,18 @@ func (r *Runner) RunCleanup(ctx context.Context, dryRun, force bool) (*cleanup.R
 		return nil, ErrCleaning
 	}
 	r.cleaning = true
+	if !dryRun {
+		r.cleanupTried = r.cfg.Now()
+	}
 	r.mu.Unlock()
 	rep, err := cleanup.Run(ctx, cleanup.Config{Grid: g, Member: r.cfg.Member, Revocations: r.cfg.Revocations, DryRun: dryRun, Force: force, Now: r.cfg.Now, Log: r.log})
 	r.mu.Lock()
 	r.cleaning = false
 	if rep != nil && !dryRun {
 		r.lastCleanup = rep
+		if serr := saveCleanup(r.cfg.DataDir, rep); serr != nil {
+			r.log.Warn("last cleanup not saved", "err", serr)
+		}
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -734,8 +800,35 @@ func saveRuns(dir string, runs map[string]*RunStatus) error {
 	return os.Rename(tmp, filepath.Join(dir, runsFile))
 }
 
+func loadCleanup(dir string) *cleanup.Report {
+	b, err := os.ReadFile(filepath.Join(dir, cleanupFile))
+	if err != nil {
+		return nil
+	}
+	var rep cleanup.Report
+	if json.Unmarshal(b, &rep) != nil || rep.At.IsZero() {
+		return nil
+	}
+	return &rep
+}
+
+func saveCleanup(dir string, rep *cleanup.Report) error {
+	b, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(dir, cleanupFile+".tmp")
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, cleanupFile))
+}
+
 // verify is the unattended restore test on this device's latest snapshot.
 func (r *Runner) verify(ctx context.Context) {
+	r.mu.Lock()
+	r.verifyTried = r.cfg.Now()
+	r.mu.Unlock()
 	l, err := restore.List(ctx, r.cfg.Engine, r.cfg.Member)
 	if err != nil {
 		r.log.Warn("restore test: roots", "err", err)
