@@ -81,7 +81,7 @@ Every week the agent restores a sample of a snapshot to a scratch location, veri
 
 ## Cleanup and the 30-day window
 
-Deleting a file from a folder does not delete it from the grid: the snapshots that hold it keep it, under retention. What nothing references any more is removed by the cleanup job, weekly on its own or by hand:
+Deleting a file from a folder does not delete it from the grid: the snapshots that hold it keep it, under retention. What nothing references any more is removed by the cleanup job, weekly on its own or by hand. The week is counted from the last cleanup that completed, and so is the restore test's from the last test: a restart of the agent, which every update is, does not start it again, and a job that did not complete is tried again a day later.
 
 ```bash
 redundanet backup cleanup [--dry-run] [--force]

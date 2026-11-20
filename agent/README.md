@@ -162,7 +162,12 @@ The agent runs the backup sets in `backup.yaml` of its data directory
 (daily by default, two minutes after start first, and on `backup run`),
 the restore test weekly (a file saved by an earlier version with the
 monthly default it then had moves to weekly on load), the cleanup
-weekly, and restores in the background; `backup` and `restore` are thin
+weekly, and restores in the background. The restore test and the cleanup
+are counted from the last one on record (the local database for the
+test, `cleanup.json` in the data directory for the cleanup), so a
+restart does not start the week again: the scheduler looks every ten
+minutes and runs what is due, and one that did not complete is tried
+again a day later; `backup` and `restore` are thin
 clients of its API. Every restore test is kept in the local database and
 listed on the local page and by `backup list`, and the last one survives
 a restart. The heartbeat carries the day of the last backup, the day of
