@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
           echo "no archives yet for $GITHUB_REF_NAME"
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: agent/go.mod
           cache-dependency-path: agent/go.sum
@@ -135,7 +135,7 @@ jobs:
       contents: read
     steps:
       - name: Authenticode through SignPath Foundation
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
