@@ -192,7 +192,11 @@ func TestCleanupOnTheGrid(t *testing.T) {
 	}
 	write("keep.bin", bytes.Repeat([]byte("k"), 5000))
 	write("gone.bin", bytes.Repeat([]byte("g"), 6000))
-	retention := snapshot.Retention{Days: 1, Daily: 1, Weekly: 1, Monthly: 1}
+	// A day of everything and no calendar buckets: the clock starts today,
+	// and a monthly bucket keeps the first snapshot whenever the next one,
+	// eight days on, falls in another month, which is the last week of
+	// every month.
+	retention := snapshot.Retention{Days: 1}
 	run := func() *backup.Result {
 		t.Helper()
 		res, err := backup.Run(ctx, backup.Config{Engine: e, DB: db, Member: laptop.key, Device: laptop.dev.ID(), Set: backup.Set{Name: "home", Folders: []string{src}}, Retention: retention, Now: g.clock, Log: g.log})
