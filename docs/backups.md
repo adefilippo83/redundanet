@@ -87,7 +87,7 @@ Deleting a file from a folder does not delete it from the grid: the snapshots th
 redundanet backup cleanup [--dry-run] [--force]
 ```
 
-Cleanup reads every root of the member, walks the snapshots on the grid to the set of reachable objects, lists what every server holds for the member, and sends a signed delete token for each object nothing references. It refuses to run when a root or a directory cannot be read, and refuses to delete more than half of what the grid holds unless `--force`.
+Cleanup reads every root of the member, walks the snapshots on the grid to the set of reachable objects, lists what every server holds for the member, and sends a signed delete token for each object nothing references. It refuses to run when a root or a directory cannot be read. It also refuses to delete more than half of what the grid holds, since that much garbage may mean the reachable set is wrong. Two things lift that refusal: `--force`, and a reachable set that is still at least nine tenths as large as at the last cleanup that completed on this device. The second is what lets the scheduled cleanup remove the old copies after a conversion, which are more than half of everything while the reachable set is the same size as before. A device with no completed cleanup on record has nothing to compare with and needs `--force` once.
 
 A server tombstones an object only when the owner has not touched it for 7 days on the server's own clock. Within the 30-day window after that the owner's devices still read the object and a new upload of the same content clears the tombstone. After the window the shares go and the record stays, so repair never fills a deleted object back in. So anything deleted stays recoverable for 30 days, from any device of the member.
 

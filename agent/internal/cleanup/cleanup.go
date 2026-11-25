@@ -43,10 +43,15 @@ type Config struct {
 	Revocations func() []*identity.SignedRevocation
 	DryRun      bool // compute and count, send nothing
 	// Force lifts the bound on how much one run may delete.
-	Force    bool
-	Parallel int // tokens in flight at once; default 8
-	Now      func() time.Time
-	Log      *slog.Logger
+	Force bool
+	// LastReachable is how many objects the reachable set had at the last
+	// run that completed on this device, 0 when none is known. A run that
+	// would delete more than the bound goes on when the set is still what
+	// it was.
+	LastReachable int
+	Parallel      int // tokens in flight at once; default 8
+	Now           func() time.Time
+	Log           *slog.Logger
 }
 
 // Windows the job applies on its side.
@@ -55,9 +60,14 @@ const (
 	immunity        = 7 * 24 * time.Hour
 	// maxGarbageShare is how much of what the grid holds one run may
 	// delete without --force: a guard against a wrong reachable set, on
-	// top of the two-phase deletion.
+	// top of the two-phase deletion. A conversion leaves more than that
+	// behind, every object once more under the old encoding, with a
+	// reachable set as large as before: the guard is not for that, so a
+	// set no smaller than intactShare of the last completed run's lets
+	// the run go on.
 	maxGarbageShare = 0.5
 	minGarbageGuard = 100
+	intactShare     = 0.9
 )
 
 // Report is what a run found and did.
@@ -76,7 +86,25 @@ type Report struct {
 	Recent        int       `json:"recent"`         // refused for a recent touch; next run
 	Incomplete    int       `json:"incomplete"`     // not every holder answered; next run
 	Failed        int       `json:"failed"`         // other errors
-	Error         string    `json:"error,omitempty"`
+	// LastReachable is Reachable of the last run that completed, this
+	// one included: a run that did not complete carries it on.
+	LastReachable int    `json:"last_reachable,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// Baseline is the reachable set's size at the last run that completed, as
+// the next run's Config.LastReachable: what the report carries, or its
+// own count when it completed and was written before reports carried one.
+func (r *Report) Baseline() int {
+	switch {
+	case r == nil:
+		return 0
+	case r.LastReachable > 0:
+		return r.LastReachable
+	case r.Error == "" && !r.DryRun:
+		return r.Reachable
+	}
+	return 0
 }
 
 // Errors a caller tells apart.
@@ -102,7 +130,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 		cfg.Parallel = 8
 	}
 	lg := cfg.Log.With("component", "cleanup")
-	rep := &Report{At: cfg.Now(), DryRun: cfg.DryRun}
+	rep := &Report{At: cfg.Now(), DryRun: cfg.DryRun, LastReachable: cfg.LastReachable}
 	fail := func(err error) (*Report, error) {
 		rep.Error = err.Error()
 		return rep, err
@@ -189,10 +217,19 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	sort.Slice(garbage, func(i, j int) bool { return bytes.Compare(garbage[i].StorageIndex[:], garbage[j].StorageIndex[:]) < 0 })
 	rep.Garbage = len(garbage)
 	if !cfg.Force && len(garbage) > minGarbageGuard && float64(len(garbage)) > maxGarbageShare*float64(len(listing.Objects)) {
-		return fail(fmt.Errorf("%w: %d of %d objects", ErrTooMuch, len(garbage), len(listing.Objects)))
+		if cfg.LastReachable <= 0 {
+			return fail(fmt.Errorf("%w: %d of %d objects", ErrTooMuch, len(garbage), len(listing.Objects)))
+		}
+		if float64(rep.Reachable) < intactShare*float64(cfg.LastReachable) {
+			return fail(fmt.Errorf("%w: %d of %d objects, and the reachable set went from %d objects to %d since the last cleanup that completed", ErrTooMuch, len(garbage), len(listing.Objects), cfg.LastReachable, rep.Reachable))
+		}
+		lg.Info("more than half of what the grid holds is unreferenced and the reachable set is what it was: going on", "garbage", len(garbage), "listed", len(listing.Objects), "reachable", rep.Reachable, "last_reachable", cfg.LastReachable)
 	}
 	if cfg.DryRun || len(garbage) == 0 {
 		lg.Info("cleanup", "dry_run", cfg.DryRun, "reachable", rep.Reachable, "listed", rep.Listed, "garbage", rep.Garbage)
+		if !cfg.DryRun {
+			rep.LastReachable = rep.Reachable
+		}
 		return rep, nil
 	}
 
@@ -230,6 +267,7 @@ func Run(ctx context.Context, cfg Config) (*Report, error) {
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
+	rep.LastReachable = rep.Reachable
 	return rep, nil
 }
 
