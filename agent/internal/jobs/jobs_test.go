@@ -496,6 +496,9 @@ func TestTheWeeklyJobsAreCountedFromTheLastOneAcrossARestart(t *testing.T) {
 	r = open()
 	if rep := r.Status().LastCleanup; rep == nil || rep.Error != "" {
 		t.Fatalf("the last cleanup after a restart: %+v", rep)
+	} else if rep.Reachable == 0 || rep.Baseline() != rep.Reachable {
+		// What the next cleanup compares its reachable set with.
+		t.Fatalf("the size of the reachable set was not kept: %+v", rep)
 	}
 	if r.verifyDue() || r.cleanupDue() {
 		t.Fatal("a restart made the jobs due early")

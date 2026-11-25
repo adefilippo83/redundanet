@@ -676,8 +676,9 @@ func (r *Runner) RunCleanup(ctx context.Context, dryRun, force bool) (*cleanup.R
 	if !dryRun {
 		r.cleanupTried = r.cfg.Now()
 	}
+	last := r.lastCleanup.Baseline()
 	r.mu.Unlock()
-	rep, err := cleanup.Run(ctx, cleanup.Config{Grid: g, Member: r.cfg.Member, Revocations: r.cfg.Revocations, DryRun: dryRun, Force: force, Now: r.cfg.Now, Log: r.log})
+	rep, err := cleanup.Run(ctx, cleanup.Config{Grid: g, Member: r.cfg.Member, Revocations: r.cfg.Revocations, DryRun: dryRun, Force: force, LastReachable: last, Now: r.cfg.Now, Log: r.log})
 	r.mu.Lock()
 	r.cleaning = false
 	if rep != nil && !dryRun {

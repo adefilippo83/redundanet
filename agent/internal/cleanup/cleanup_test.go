@@ -205,3 +205,71 @@ func TestRevokedRootsStopCountingAfterTheWindow(t *testing.T) {
 		t.Fatalf("past the window: %+v %v", rep, err)
 	}
 }
+
+// A conversion leaves every object once more under the old encoding, which
+// is more than half of what the grid holds, with a reachable set as large
+// as before. The bound is against a wrong reachable set, so it holds a run
+// only when the set shrank, or when no earlier run says how large it was.
+func TestTheBoundLetsARunGoOnWhenTheReachableSetIsWhatItWas(t *testing.T) {
+	ctx := context.Background()
+	garbageWorld := func() (*world, int) {
+		w := newWorld(t)
+		for i := 0; i < 150; i++ {
+			w.put([]byte{byte(i), byte(i >> 8), 7})
+		}
+		if _, err := w.f.PutRoot(ctx, engine.Root{IndexCap: w.index(w.device)}); err != nil {
+			t.Fatal(err)
+		}
+		rep, err := Run(ctx, Config{Grid: w.f, Member: w.member, DryRun: true, Force: true, Now: func() time.Time { return w.now }})
+		if err != nil || rep.Reachable == 0 || rep.Garbage != 150 {
+			t.Fatalf("dry run: %+v %v", rep, err)
+		}
+		if rep.LastReachable != 0 {
+			t.Fatalf("a dry run set the size of the last completed run: %+v", rep)
+		}
+		return w, rep.Reachable
+	}
+	run := func(w *world, last int) (*Report, error) {
+		return Run(ctx, Config{Grid: w.f, Member: w.member, LastReachable: last, Now: func() time.Time { return w.now }})
+	}
+
+	// No earlier run: held, and the report carries nothing on.
+	w, reachable := garbageWorld()
+	rep, err := run(w, 0)
+	if !errors.Is(err, ErrTooMuch) || w.f.Deletes != 0 || rep.LastReachable != 0 || rep.Baseline() != 0 {
+		t.Fatalf("no earlier run: %+v %v, %d deletes", rep, err, w.f.Deletes)
+	}
+	// The set was ten times larger at the last completed run: held, and
+	// the report carries that size on, so the next run is held as well.
+	rep, err = run(w, reachable*10)
+	if !errors.Is(err, ErrTooMuch) || w.f.Deletes != 0 || rep.Baseline() != reachable*10 {
+		t.Fatalf("a shrunken set: %+v %v, %d deletes", rep, err, w.f.Deletes)
+	}
+	// The set is what it was: the run goes on, and its own size is what
+	// the next run compares with.
+	rep, err = run(w, reachable)
+	if err != nil || rep.Tombstoned != 150 || rep.Baseline() != reachable {
+		t.Fatalf("an intact set: %+v %v", rep, err)
+	}
+
+	// A report written before reports carried the size counts when it
+	// completed, and not when it failed or was a dry run.
+	if n := (&Report{Reachable: 7}).Baseline(); n != 7 {
+		t.Fatalf("a completed report of an older version: %d", n)
+	}
+	if n := (&Report{Reachable: 7, Error: "held"}).Baseline(); n != 0 {
+		t.Fatalf("a failed report of an older version: %d", n)
+	}
+	if n := (&Report{Reachable: 7, DryRun: true}).Baseline(); n != 0 {
+		t.Fatalf("a dry run of an older version: %d", n)
+	}
+	if n := (*Report)(nil).Baseline(); n != 0 {
+		t.Fatalf("no report: %d", n)
+	}
+	// A forced run completes and sets the size, whatever it was before.
+	w2, reachable2 := garbageWorld()
+	rep, err = Run(ctx, Config{Grid: w2.f, Member: w2.member, Force: true, LastReachable: reachable2 * 10, Now: func() time.Time { return w2.now }})
+	if err != nil || rep.Baseline() != reachable2 {
+		t.Fatalf("forced: %+v %v", rep, err)
+	}
+}

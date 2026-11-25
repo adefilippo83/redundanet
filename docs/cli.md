@@ -98,7 +98,7 @@ redundanet backup verify
 redundanet backup cleanup [--dry-run] [--force]
 redundanet backup rebalance
 ```
-Backup sets of the running agent. `list` shows each set's last run, skipped files by reason, the schedule, the restore tests and the streak. `run` starts a run now. `verify` asks for a restore test. `cleanup` deletes what nothing references: `--dry-run` counts and deletes nothing, `--force` lifts the bound on how much one run may delete. `rebalance` converts the device's objects to the new encoding while the manifest declares a transition.
+Backup sets of the running agent. `list` shows each set's last run, skipped files by reason, the schedule, the restore tests and the streak. `run` starts a run now. `verify` asks for a restore test. `cleanup` deletes what nothing references: `--dry-run` counts and deletes nothing, `--force` lifts the bound on how much one run may delete (more than half of what the grid holds, unless the reachable set is as large as at the last cleanup that completed on the device). `rebalance` converts the device's objects to the new encoding while the manifest declares a transition.
 
 ```
 redundanet restore list
